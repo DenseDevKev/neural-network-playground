@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minimal Neural Network Playground</title>
+  <style>
+    :root {
+      --bg-color: #0c1021;
+      --panel-bg: rgba(25, 30, 50, 0.85);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --text-color: rgba(255, 255, 255, 0.92);
+      --text-secondary: rgba(255, 255, 255, 0.7);
+      --accent-blue: #4d8bf9;
+      --accent-blue-dark: #3a66c2;
+      --accent-teal: #00c8d7;
+      --accent-orange: #ff9f1c;
+      --accent-red: #ff5757;
+      --accent-green: #41d98b;
+      --neuron-border: rgba(255, 255, 255, 0.3);
+      --neuron-fill: rgba(30, 35, 60, 0.9);
+      --neuron-active: rgba(77, 139, 249, 0.3);
+      --neuron-hover: rgba(77, 139, 249, 0.15);
+      --panel-radius: 16px;
+      --button-radius: 10px;
+      --control-radius: 8px;
+      --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.16);
+      --shadow-md: 0 8px 15px rgba(0, 0, 0, 0.18);
+      --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.25);
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .container {
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .network-panel {
+      background-color: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--panel-radius);
+      padding: 20px;
+      margin-bottom: 20px;
+      min-height: 500px;
+    }
+
+    #network-container {
+      position: relative;
+      width: 100%;
+      height: 400px;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    #decision-boundary-container {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      width: 220px;
+      height: 220px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+    }
+
+    .tooltip {
+      position: absolute;
+      background-color: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--control-radius);
+      padding: 10px;
+      box-shadow: var(--shadow-md);
+      pointer-events: none;
+      z-index: 1000;
+      max-width: 250px;
+      transition: opacity 0.2s;
+    }
+    
+    .tooltip-title {
+      font-weight: 600;
+      margin-bottom: 5px;
+      color: var(--accent-blue);
+      font-size: 0.9rem;
+    }
+    
+    .tooltip-content {
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    button {
+      background-color: var(--accent-blue);
+      color: white;
+      border: none;
+      border-radius: var(--button-radius);
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+
+    #log {
+      background-color: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: var(--panel-radius);
+      padding: 20px;
+      margin-top: 20px;
+      min-height: 200px;
+      color: var(--text-color);
+      font-family: monospace;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Minimal Neural Network Playground</h1>
+    
+    <div class="controls">
+      <button id="initButton">Initialize Network</button>
+      <button id="trainButton">Train Step</button>
+    </div>
+    
+    <div class="network-panel">
+      <div id="network-container"></div>
+      <div id="decision-boundary-container"></div>
+    </div>
+    
+    <div id="log"></div>
+  </div>
+
+  <!-- Load libraries -->
+  <script src="lib/d3.min.js"></script>
+  <script src="lib/tf.min.js"></script>
+  
+  <!-- Load application scripts -->
+  <script src="js/data-generator.js"></script>
+  <script src="js/visualization.js"></script>
+  
+  <script>
+    // Simple logging function
+    function log(message) {
+      const logElement = document.getElementById('log');
+      const p = document.createElement('p');
+      p.textContent = message;
+      logElement.appendChild(p);
+      console.log(message);
+    }
+
+    // Catch errors
+    window.addEventListener('error', function(event) {
+      log(`Error: ${event.message} in ${event.filename} at line ${event.lineno}`);
+    });
+
+    // Create a simple model
+    function createModel() {
+      log('Creating model...');
+      
+      // Get the number of features from the data generator
+      const numFeatures = dataGenerator.getEnabledFeatureCount();
+      log(`Number of features: ${numFeatures}`);
+      
+      const model = tf.sequential();
+      
+      // Input layer
+      model.add(tf.layers.dense({
+        inputShape: [numFeatures],
+        units: 5,
+        activation: 'relu'
+      }));
+      
+      // Hidden layer
+      model.add(tf.layers.dense({
+        units: 3,
+        activation: 'relu'
+      }));
+      
+      // Output layer
+      model.add(tf.layers.dense({
+        units: 1,
+        activation: 'sigmoid'
+      }));
+      
+      // Compile model
+      model.compile({
+        optimizer: tf.train.adam(0.01),
+        loss: 'binaryCrossentropy',
+        metrics: ['accuracy']
+      });
+      
+      log('Model created successfully');
+      return model;
+    }
+
+    // Generate simple data
+    function generateData() {
+      log('Generating data...');
+      return dataGenerator.generateData();
+    }
+
+    // Initialize visualization
+    function initVisualization(model, data) {
+      log('Initializing visualization...');
+      
+      try {
+        const featureNames = dataGenerator.getEnabledFeatureNames();
+        log(`Feature names: ${featureNames.join(', ')}`);
+        
+        // Skip transformation previews
+        log('Skipping transformation previews');
+        
+        // Visualize network
+        const networkData = window.nn_vis.visualizeNetwork(
+          model,
+          featureNames,
+          data.rawXs,
+          data.rawYs,
+          data.rawXsTest,
+          data.rawYsTest,
+          false,
+          null // Pass null instead of transformationPreviews
+        );
+        
+        // Visualize decision boundary
+        window.nn_vis.visualizeDecisionBoundary(
+          model,
+          dataGenerator,
+          data.rawXs,
+          data.rawYs,
+          data.rawXsTest,
+          data.rawYsTest,
+          false,
+          false
+        );
+        
+        log('Visualization initialized successfully');
+        return networkData;
+      } catch (e) {
+        log(`Error initializing visualization: ${e.message}`);
+        console.error(e);
+      }
+    }
+
+    // Helper function to transform a sample for the model
+    function transformSampleForModel(sample) {
+      const x1 = sample[0];
+      const x2 = sample[1];
+      const features = [];
+      
+      // Use the same feature transformation as in the data generator
+      if (dataGenerator.enabledFeatures.x1) features.push(x1);
+      if (dataGenerator.enabledFeatures.x2) features.push(x2);
+      if (dataGenerator.enabledFeatures.x1Squared) features.push(x1 * x1);
+      if (dataGenerator.enabledFeatures.x2Squared) features.push(x2 * x2);
+      if (dataGenerator.enabledFeatures.x1x2) features.push(x1 * x2);
+      if (dataGenerator.enabledFeatures.sinX1) features.push(Math.sin(x1));
+      if (dataGenerator.enabledFeatures.sinX2) features.push(Math.sin(x2));
+      
+      return tf.tensor2d([features]);
+    }
+
+    // Train the model for one step
+    async function trainStep(model, data, networkData) {
+      log('Training step...');
+      
+      try {
+        // Log the shape of the input data
+        log(`Input data shape: ${data.xs.shape}`);
+        
+        // Get the number of features
+        const numFeatures = dataGenerator.getEnabledFeatureCount();
+        log(`Number of features: ${numFeatures}`);
+        
+        // Use the data that's already been transformed by the data generator
+        const h = await model.fit(data.xs, data.ys, {
+          batchSize: 32,
+          epochs: 1,
+          shuffle: true
+        });
+        
+        log(`Loss: ${h.history.loss[0].toFixed(4)}`);
+        
+        // Update visualization
+        const featureNames = dataGenerator.getEnabledFeatureNames();
+        const sampleInput = data.rawXs[0];
+        const activations = window.nn_vis.getActivations(model, transformSampleForModel(sampleInput));
+        
+        // Animate data flow
+        window.nn_vis.animateDataFlow(
+          networkData.neuronPositions,
+          networkData.edgesData,
+          activations
+        );
+        
+        // Update decision boundary
+        window.nn_vis.visualizeDecisionBoundary(
+          model,
+          dataGenerator,
+          data.rawXs,
+          data.rawYs,
+          data.rawXsTest,
+          data.rawYsTest,
+          false,
+          false
+        );
+        
+        log('Training step completed');
+      } catch (e) {
+        log(`Error during training: ${e.message}`);
+        console.error(e);
+      }
+    }
+
+    // Main initialization
+    let model, data, networkData;
+    
+    document.getElementById('initButton').addEventListener('click', () => {
+      model = createModel();
+      data = generateData();
+      networkData = initVisualization(model, data);
+    });
+    
+    document.getElementById('trainButton').addEventListener('click', () => {
+      if (model && data && networkData) {
+        trainStep(model, data, networkData);
+      } else {
+        log('Please initialize the network first');
+      }
+    });
+    
+    // Log initialization
+    log('Page loaded. Click "Initialize Network" to start.');
+  </script>
+</body>
+</html>

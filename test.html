@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test JavaScript Loading</title>
+</head>
+<body>
+  <h1>Test JavaScript Loading</h1>
+  <div id="output"></div>
+
+  <script>
+    function log(message) {
+      const output = document.getElementById('output');
+      const p = document.createElement('p');
+      p.textContent = message;
+      output.appendChild(p);
+    }
+
+    window.addEventListener('error', function(event) {
+      log(`Error: ${event.message} in ${event.filename} at line ${event.lineno}`);
+    });
+  </script>
+
+  <script>
+    log('Loading d3.min.js...');
+  </script>
+  <script src="lib/d3.min.js"></script>
+  <script>
+    log('d3.min.js loaded successfully: ' + (typeof d3 !== 'undefined'));
+  </script>
+
+  <script>
+    log('Loading tf.min.js...');
+  </script>
+  <script src="lib/tf.min.js"></script>
+  <script>
+    log('tf.min.js loaded successfully: ' + (typeof tf !== 'undefined'));
+  </script>
+
+  <script>
+    log('Loading data-generator.js...');
+  </script>
+  <script src="js/data-generator.js"></script>
+  <script>
+    log('data-generator.js loaded successfully: ' + (typeof DataGenerator !== 'undefined'));
+  </script>
+
+  <script>
+    log('Loading visualization.js...');
+  </script>
+  <script src="js/visualization.js"></script>
+  <script>
+    log('visualization.js loaded successfully: ' + (typeof window.nn_vis !== 'undefined'));
+  </script>
+
+  <script>
+    log('Loading main.js...');
+  </script>
+  <script src="js/main.js"></script>
+  <script>
+    log('main.js loaded successfully');
+  </script>
+</body>
+</html>

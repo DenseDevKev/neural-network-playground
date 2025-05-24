@@ -80,6 +80,7 @@ body {
 }
 .btn-group {
   display: flex;
+  flex-wrap: wrap; /* Allow buttons to wrap to the next line */
   gap: 10px;
   margin-bottom: 16px;
 }
