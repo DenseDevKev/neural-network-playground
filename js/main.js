@@ -493,32 +493,6 @@ function setupNeuronCountControls() {
 }
 
 /**
- * Pause training by cancelling the animation frame
- */
-function pauseTraining() {
-  if (appState.training) {
-    // console.info('Pausing training loop...'); // For debugging, uncomment if needed
-    appState.training = false; // Set flag to stop the loop
-    if (appState.intervalId) {
-      cancelAnimationFrame(appState.intervalId); // Cancel the next scheduled frame
-      appState.intervalId = null;
-    }
-  }
-}
-
-/**
- * Reset training state (epoch count, loss display)
- */
-function resetTraining() {
-  pauseTraining(); // Ensure training loop is stopped
-  document.getElementById('playBtn').textContent = '▶'; // Reset button text
-  appState.epochCount = 0; // Reset epoch count
-  updateEpochCounter(appState.epochCount); // Update display
-  updateLossDisplay('N/A', 'N/A'); // Reset loss display
-  // Note: Model weights are NOT reset here.
-}
-
-/**
  * Full reset of the network and UI to default configuration
  */
 function fullReset() {
@@ -576,21 +550,6 @@ function fullReset() {
 
   // Generate new data and create a fresh model (disposes old one)
   generateData();
-}
-
-/**
- * Update the epoch counter display
- */
-function updateEpochCounter(count) {
-  epochCounter.textContent = count.toString().padStart(6, '0');
-}
-
-/**
- * Update the loss display
- */
-function updateLossDisplay(testLoss, trainingLoss) {
-  testLossDisplay.textContent = testLoss;
-  trainingLossDisplay.textContent = trainingLoss;
 }
 
 /**
