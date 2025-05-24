@@ -1,13 +1,13 @@
-// data-generator.js - minimal dataset generator for demo
-
-//
-// This file handles dataset generation and feature transformations.
-// It provides functions to create different types of datasets and transform features.
+/**
+ * Data Generator Module
+ * Handles dataset generation and feature transformations for the neural network playground.
+ * @module DataGenerator
+ */
 
 /**
  * Class to handle dataset generation and feature transformations
  */
-class DataGenerator {
+export class DataGenerator {
   constructor() {
     this.rawData = []; // Original 2D points
     this.rawLabels = []; // Original labels
@@ -29,6 +29,7 @@ class DataGenerator {
   /**
    * Generate a dataset based on the current settings
    * @returns {Object} Object containing training and test data as TensorFlow tensors
+   * @public
    */
   generateData() {
     // Clear previous data

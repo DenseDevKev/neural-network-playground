@@ -1,87 +1,173 @@
-// Application State
-const appState = {
-  model: null,
-  training: false,
-  intervalId: null, // Used for requestAnimationFrame ID
-  epochCount: 0,
-  hiddenLayers: 3,
-  neuronsPerLayer: 7,
-  showTestData: false,
-  discretizeOutput: false,
-  networkData: null, // Result from visualizeNetwork (plain JS objects/arrays)
-  // Data Tensors (managed with tf.keep/dispose)
-  xs: null,
-  ys: null,
-  xsTest: null,
-  ysTest: null,
-  // Raw Data (for visualization)
-  rawXs: [],
-  rawYs: [],
-  rawXsTest: [],
-  rawYsTest: [],
-  batchSize: 30, // New property
-  optimizer: null, // New property
+/**
+ * Main Application Entry Point
+ * @module Main
+ */
+
+import * as tf from '@tensorflow/tfjs';
+import { DataGenerator } from './data-generator.js';
+import { nn_vis } from './visualization.js';
+import { appState, defaultConfig } from './state.js';
+import { initUI, updateEpochCounter, updateLossDisplay, updateLayerCountDisplay } from './ui.js';
+import { toggleTraining, trainStep, resetTraining, startTraining, pauseTraining } from './training.js';
+
+// Initialize the data generator
+appState.dataGenerator = new DataGenerator();
+
+// Make available globally for debugging
+window.app = {
+  tf,
+  appState,
+  toggleTraining,
+  trainStep,
+  resetTraining
 };
 
-// Store initial configuration for reset
-const defaultConfig = {
-  hiddenLayers: 3,
-  neuronsPerLayer: 7,
-  activation: 'relu',
-  learningRate: 0.03,
-  regularization: 'none',
-  regularizationRate: 0,
-  ratio: 50,
-  noise: 0,
-  batchSize: 30,
-  dataset: 'circle',
-  features: {
-    x1: true,
-    x2: true,
-    x1Squared: false,
-    x2Squared: false,
-    x1x2: false,
-    sinX1: false,
-    sinX2: false,
-  },
-};
+// Re-export for backward compatibility
+const trainingLossDisplay = document.getElementById('trainingLoss');
+const layerCountDisplay = document.getElementById('layerCountDisplay');
+const ratioSlider = document.getElementById('ratioSlider');
+const ratioValue = document.getElementById('ratioValue');
+const noiseSlider = document.getElementById('noiseSlider');
+const noiseValue = document.getElementById('noiseValue');
+const regenerateBtn = document.getElementById('regenerateBtn');
+const showTestCheckbox = document.getElementById('showTestData');
+const discretizeCheckbox = document.getElementById('discretizeOutput');
+const layerCountSlider = document.getElementById('layerCountSlider');
+const layerCountValue = document.getElementById('layerCountValue');
+const neuronCountSlider = document.getElementById('neuronCountSlider');
+const neuronCountValue = document.getElementById('neuronCountValue');
+const activationSelect = document.getElementById('activation');
+const learningRateInput = document.getElementById('learningRate');
+const regularizationSelect = document.getElementById('regularization');
+const regularizationRateInput = document.getElementById('regularizationRate');
+const batchSizeInput = document.getElementById('batchSize');
+const datasetSelect = document.getElementById('dataset');
+const featureCheckboxes = document.querySelectorAll('.feature-checkbox');
+const playBtn = document.getElementById('playBtn');
+const stepBtn = document.getElementById('stepBtn');
+const resetBtn = document.getElementById('resetBtn');
+const datasetOptions = document.querySelectorAll('.dataset-option');
 
-// DOM elements (Assigned once on load)
-let epochCounter;
-let testLossDisplay;
-let trainingLossDisplay;
-let layerCountDisplay;
-let ratioSlider, ratioValue, noiseSlider, noiseValue;
-let regenerateBtn, showTestData;
-let featureCheckboxes;
-let addLayerBtn, removeLayerBtn;
-let neuronCountSlider, neuronCountInput;
-let activationSelect, learningRateSelect, regularizationSelect, regularizationRateSelect;
-let batchSizeSlider, batchSizeValue;
-let discretizeOutput;
-let playBtn, stepBtn, resetBtn;
-let datasetOptions;
+/**
+ * Generate data and update the model
+ */
+async function generateData() {
+  try {
+    // Reset training state
+    resetTraining();
+    
+    // Generate new data using the data generator
+    const { trainData, testData } = appState.dataGenerator.generateData();
+    
+    // Update app state with new data
+    appState.rawXs = trainData.xs;
+    appState.rawYs = trainData.ys;
+    appState.rawXsTest = testData.xs;
+    appState.rawYsTest = testData.ys;
+    
+    // Convert data to tensors
+    appState.xs = tf.tensor2d(trainData.xs, [trainData.xs.length, trainData.xs[0].length]);
+    appState.ys = tf.tensor2d(trainData.ys, [trainData.ys.length, 1]);
+    appState.xsTest = tf.tensor2d(testData.xs, [testData.xs.length, testData.xs[0].length]);
+    appState.ysTest = tf.tensor2d(testData.ys, [testData.ys.length, 1]);
+    
+    // Create a new model with the current configuration
+    await createModel();
+    
+    // Update visualizations
+    updateVisualization();
+    updateDecisionBoundary();
+    
+    console.log('Data and model updated successfully');
+  } catch (error) {
+    console.error('Error generating data:', error);
+  }
+}
 
-// Create global data generator instance
-const dataGenerator = new DataGenerator();
-
-// Initialize the application
-window.addEventListener('load', () => {
-  // Handle window resize
-  window.addEventListener('resize', debounce(() => {
-    if (appState.model) { // Use appState
-      updateVisualization();
-      updateDecisionBoundary();
+/**
+ * Create a new model with the current configuration
+ */
+async function createModel() {
+  try {
+    // Clean up previous model if it exists
+    if (appState.model) {
+      appState.model.dispose();
     }
-  }, 250));
+    
+    // Create a new sequential model
+    appState.model = tf.sequential();
+    
+    // Add input layer
+    const inputShape = [appState.dataGenerator.getEnabledFeatureCount()];
+    appState.model.add(tf.layers.dense({
+      units: appState.neuronsPerLayer,
+      inputShape,
+      activation: appState.activation,
+      kernelInitializer: 'glorotNormal',
+      biasInitializer: 'zeros'
+    }));
+    
+    // Add hidden layers
+    for (let i = 0; i < appState.hiddenLayers - 1; i++) {
+      appState.model.add(tf.layers.dense({
+        units: appState.neuronsPerLayer,
+        activation: appState.activation,
+        kernelInitializer: 'glorotNormal',
+        biasInitializer: 'zeros'
+      }));
+    }
+    
+    // Add output layer
+    appState.model.add(tf.layers.dense({
+      units: 1,
+      activation: 'sigmoid',
+      kernelInitializer: 'glorotNormal',
+      biasInitializer: 'zeros'
+    }));
+    
+    // Compile the model
+    const optimizer = tf.train.adam(appState.learningRate);
+    appState.model.compile({
+      optimizer,
+      loss: 'binaryCrossentropy',
+      metrics: ['accuracy']
+    });
+    
+    console.log('Model created and compiled successfully');
+  } catch (error) {
+    console.error('Error creating model:', error);
+    throw error;
+  }
+}
 
-  // Get DOM elements
-  epochCounter = document.getElementById('epochCounter');
-  testLossDisplay = document.getElementById('testLoss');
-  trainingLossDisplay = document.getElementById('trainingLoss');
-  layerCountDisplay = document.getElementById('layerCountDisplay');
-  ratioSlider = document.getElementById('ratioSlider');
-  ratioValue = document.getElementById('ratioValue');
+/**
+ * Initialize the application
+ */
+async function init() {
+  try {
+    // Initialize UI
+    initUI();
+    
+    // Initialize data and model
+    await generateData();
+    
+    // Initial visualization update
+    updateVisualization();
+    updateDecisionBoundary();
+    
+    console.log('Application initialized successfully');
+  } catch (error) {
+    console.error('Error initializing application:', error);
+  }
+}
+
+// Start the application when the DOM is fully loaded
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
   noiseSlider = document.getElementById('noiseSlider');
   noiseValue = document.getElementById('noiseValue');
   regenerateBtn = document.getElementById('regenerateBtn');

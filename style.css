@@ -19,22 +19,6 @@ body {
   color: var(--on-background);
   font-family: 'Inter', 'Roboto', Arial, sans-serif;
 }
-.app-bar {
-  background: var(--surface);
-  color: var(--primary);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-  height: 64px;
-  box-shadow: var(--shadow);
-  border-bottom: 1px solid rgba(255,255,255,0.12);
-}
-.app-bar h1 {
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin: 0;
-}
 .epoch-loss-panel {
   display: flex;
   gap: 18px;
@@ -83,22 +67,6 @@ body {
   flex-wrap: wrap; /* Allow buttons to wrap to the next line */
   gap: 10px;
   margin-bottom: 16px;
-}
-.btn {
-  background: var(--primary);
-  color: var(--on-primary);
-  border: none;
-  border-radius: 6px;
-  font-size: 1rem;
-  font-weight: 600;
-  padding: 8px 18px;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
-}
-.btn:hover, .btn:focus {
-  background: var(--secondary);
-  color: var(--on-secondary);
 }
 .feature-checkboxes {
   display: flex;
@@ -310,12 +278,6 @@ body {
   display: block;
 }
 
-.dataset-types {
-  display: flex;
-  gap: 10px;
-  margin: 10px 0 15px 0;
-}
-
 .md-btn.dataset-option {
   background: var(--surface);
   color: var(--secondary);
@@ -383,27 +345,6 @@ body {
   gap: 8px;
   margin-bottom: 10px;
 }
-.toggle-btn {
-  background: var(--surface);
-  color: var(--secondary);
-  border: 2px solid var(--divider);
-  border-radius: 18px;
-  padding: 6px 18px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background var(--transition), color var(--transition), border var(--transition);
-}
-.toggle-btn.active,
-.toggle-btn:focus {
-  background: var(--secondary);
-  color: var(--on-secondary);
-  border: 2px solid var(--secondary);
-}
-.toggle-btn:hover {
-  border: 2px solid var(--primary);
-  color: var(--primary);
-}
 
 /* Remove old checkbox styles */
 
@@ -423,17 +364,6 @@ body {
 }
 
 /* SVG Layer/Neuron Controls */
-.svg-control-btn {
-  fill: var(--secondary);
-  stroke: var(--primary);
-  stroke-width: 2px;
-  cursor: pointer;
-  transition: fill 0.18s, stroke 0.18s;
-}
-.svg-control-btn:hover {
-  fill: var(--primary);
-  stroke: var(--secondary);
-}
 
 /* Features Panel */
 .feature-checkboxes {

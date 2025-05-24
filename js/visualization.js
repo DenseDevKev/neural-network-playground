@@ -1,7 +1,10 @@
-// visualization.js - Minimal robust D3 neural network visualization
+/**
+ * Visualization Module
+ * Handles drawing the neural network layers, neurons, edges, and decision boundaries using D3.
+ * @module Visualization
+ */
 
-// This file handles drawing the network layers, neurons, edges, and the decision boundary using D3.
-// It provides visualization functions called from main.js.
+import * as d3 from 'd3';
 
 // Configuration
 const networkWidth = 800;
@@ -842,7 +845,7 @@ function visualizeDecisionBoundary(model, dataGenerator, trainX, trainY, testX, 
 let currentDecisionBoundaryData = null;
 
 // Export visualization functions
-window.nn_vis = {
+export const nn_vis = {
   visualizeNetwork,
   visualizeDecisionBoundary: function(model, dataGenerator, trainX, trainY, testX, testY, showTest, discretize) {
     if (!decisionCanvas) {
@@ -862,6 +865,8 @@ window.nn_vis = {
   getActivations,
   createTransformationPreview
 };
+
+export default nn_vis;
 
 /**
  * (new) Function to create SVG previews for feature transformations
