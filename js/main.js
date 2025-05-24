@@ -493,23 +493,6 @@ function setupNeuronCountControls() {
 }
 
 /**
- * Toggle training on/off
- */
-function toggleTraining() {
-  if (!appState.model) {
-    console.warn('Cannot toggle training: model not available.');
-    return;
-  }
-  if (appState.training) { // Use appState
-    pauseTraining();
-    document.getElementById('playBtn').textContent = '▶';
-  } else {
-    startTraining();
-    document.getElementById('playBtn').textContent = '⏸';
-  }
-}
-
-/**
  * Pause training by cancelling the animation frame
  */
 function pauseTraining() {
