@@ -22,7 +22,7 @@ window.app = {
   resetTraining
 };
 
-// Re-export for backward compatibility
+// Cache DOM elements
 const trainingLossDisplay = document.getElementById('trainingLoss');
 const layerCountDisplay = document.getElementById('layerCountDisplay');
 const ratioSlider = document.getElementById('ratioSlider');
@@ -47,6 +47,28 @@ const playBtn = document.getElementById('playBtn');
 const stepBtn = document.getElementById('stepBtn');
 const resetBtn = document.getElementById('resetBtn');
 const datasetOptions = document.querySelectorAll('.dataset-option');
+
+// Additional DOM elements
+const addLayerBtn = document.getElementById('addLayerBtn');
+const removeLayerBtn = document.getElementById('removeLayerBtn');
+const neuronCountInput = document.getElementById('neuronCountInput');
+const activationSelectEl = document.getElementById('activationSelect');
+const learningRateSelect = document.getElementById('learningRateSelect');
+const regularizationSelectEl = document.getElementById('regularizationSelect');
+const regularizationRateSelect = document.getElementById('regularizationRateSelect');
+const batchSizeSlider = document.getElementById('batchSizeSlider');
+const batchSizeValue = document.getElementById('batchSizeValue');
+
+// Feature checkboxes
+const featureCheckboxElements = {
+  x1: document.getElementById('feature-x1'),
+  x2: document.getElementById('feature-x2'),
+  x1sq: document.getElementById('feature-x1sq'),
+  x2sq: document.getElementById('feature-x2sq'),
+  x1x2: document.getElementById('feature-x1x2'),
+  sinx1: document.getElementById('feature-sinx1'),
+  sinx2: document.getElementById('feature-sinx2')
+};
 
 /**
  * Generate data and update the model
@@ -141,6 +163,43 @@ async function createModel() {
 }
 
 /**
+ * Update the visualization
+ */
+function updateVisualization() {
+  if (!appState.model) return;
+  
+  const featureNames = appState.dataGenerator.getEnabledFeatureNames();
+  appState.networkData = nn_vis.visualizeNetwork(
+    appState.model,
+    featureNames,
+    appState.rawXs,
+    appState.rawYs,
+    appState.rawXsTest,
+    appState.rawYsTest,
+    appState.showTestData,
+    null // transformationPreviews
+  );
+}
+
+/**
+ * Update the decision boundary visualization
+ */
+function updateDecisionBoundary() {
+  if (!appState.model) return;
+  
+  nn_vis.visualizeDecisionBoundary(
+    appState.model,
+    appState.dataGenerator,
+    appState.rawXs,
+    appState.rawYs,
+    appState.rawXsTest,
+    appState.rawYsTest,
+    appState.showTestData,
+    appState.discretizeOutput
+  );
+}
+
+/**
  * Initialize the application
  */
 async function init() {
@@ -163,40 +222,30 @@ async function init() {
 
 // Start the application when the DOM is fully loaded
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => {
+    init().then(() => setupAllEventListeners());
+  });
 } else {
-  init();
+  init().then(() => setupAllEventListeners());
 }
 
-  noiseSlider = document.getElementById('noiseSlider');
-  noiseValue = document.getElementById('noiseValue');
-  regenerateBtn = document.getElementById('regenerateBtn');
-  showTestData = document.getElementById('showTestData');
-  featureCheckboxes = [
-    document.getElementById('feature-x1'),
-    document.getElementById('feature-x2'),
-    document.getElementById('feature-x1sq'),
-    document.getElementById('feature-x2sq'),
-    document.getElementById('feature-x1x2'),
-    document.getElementById('feature-sinx1'),
-    document.getElementById('feature-sinx2'),
-  ];
-  addLayerBtn = document.getElementById('addLayerBtn');
-  removeLayerBtn = document.getElementById('removeLayerBtn');
-  neuronCountSlider = document.getElementById('neuronCountSlider');
-  neuronCountInput = document.getElementById('neuronCountInput');
-  activationSelect = document.getElementById('activationSelect');
-  learningRateSelect = document.getElementById('learningRateSelect');
-  regularizationSelect = document.getElementById('regularizationSelect');
-  regularizationRateSelect = document.getElementById('regularizationRateSelect');
-  batchSizeSlider = document.getElementById('batchSizeSlider');
-  batchSizeValue = document.getElementById('batchSizeValue');
-  discretizeOutput = document.getElementById('discretizeOutput');
-  playBtn = document.getElementById('playBtn');
-  stepBtn = document.getElementById('stepBtn');
-  resetBtn = document.getElementById('resetBtn');
-  datasetOptions = Array.from(document.querySelectorAll('.dataset-option'));
+// Export public API
+export {
+  toggleTraining,
+  trainStep,
+  resetTraining,
+  startTraining,
+  pauseTraining,
+  generateData,
+  createModel,
+  updateVisualization,
+  updateDecisionBoundary
+};
 
+  /**
+ * Set up all event listeners
+ */
+function setupAllEventListeners() {
   // Set up event listeners for controls
   setupEventListeners();
 
@@ -208,7 +257,7 @@ if (document.readyState === 'loading') {
 
   // Generate initial data
   generateData();
-});
+}
 
 /**
  * Set up event listeners for all UI controls
