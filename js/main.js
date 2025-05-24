@@ -32,17 +32,14 @@ const noiseValue = document.getElementById('noiseValue');
 const regenerateBtn = document.getElementById('regenerateBtn');
 const showTestCheckbox = document.getElementById('showTestData');
 const discretizeCheckbox = document.getElementById('discretizeOutput');
-const layerCountSlider = document.getElementById('layerCountSlider');
-const layerCountValue = document.getElementById('layerCountValue');
 const neuronCountSlider = document.getElementById('neuronCountSlider');
-const neuronCountValue = document.getElementById('neuronCountValue');
+const neuronCountInput = document.getElementById('neuronCountInput');
 const activationSelect = document.getElementById('activation');
 const learningRateInput = document.getElementById('learningRate');
 const regularizationSelect = document.getElementById('regularization');
 const regularizationRateInput = document.getElementById('regularizationRate');
 const batchSizeInput = document.getElementById('batchSize');
 const datasetSelect = document.getElementById('dataset');
-const featureCheckboxes = document.querySelectorAll('.feature-checkbox');
 const playBtn = document.getElementById('playBtn');
 const stepBtn = document.getElementById('stepBtn');
 const resetBtn = document.getElementById('resetBtn');
@@ -51,7 +48,6 @@ const datasetOptions = document.querySelectorAll('.dataset-option');
 // Additional DOM elements
 const addLayerBtn = document.getElementById('addLayerBtn');
 const removeLayerBtn = document.getElementById('removeLayerBtn');
-const neuronCountInput = document.getElementById('neuronCountInput');
 const activationSelectEl = document.getElementById('activationSelect');
 const learningRateSelect = document.getElementById('learningRateSelect');
 const regularizationSelectEl = document.getElementById('regularizationSelect');
@@ -63,35 +59,64 @@ const batchSizeValue = document.getElementById('batchSizeValue');
 const featureCheckboxElements = {
   x1: document.getElementById('feature-x1'),
   x2: document.getElementById('feature-x2'),
-  x1sq: document.getElementById('feature-x1sq'),
-  x2sq: document.getElementById('feature-x2sq'),
+  x1Squared: document.getElementById('feature-x1sq'),
+  x2Squared: document.getElementById('feature-x2sq'),
   x1x2: document.getElementById('feature-x1x2'),
-  sinx1: document.getElementById('feature-sinx1'),
-  sinx2: document.getElementById('feature-sinx2')
+  sinX1: document.getElementById('feature-sinx1'),
+  sinX2: document.getElementById('feature-sinx2')
 };
+
+// Error display helpers
+function showError(message) {
+  const errorDiv = document.getElementById('errorMessage');
+  if (errorDiv) {
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+  }
+}
+function hideError() {
+  const errorDiv = document.getElementById('errorMessage');
+  if (errorDiv) {
+    errorDiv.textContent = '';
+    errorDiv.style.display = 'none';
+  }
+}
 
 /**
  * Generate data and update the model
  */
 async function generateData() {
   try {
+    hideError();
     // Reset training state
     resetTraining();
     
+    // Dispose old tensors before overwriting
+    if (appState.xs) { appState.xs.dispose(); appState.xs = null; }
+    if (appState.ys) { appState.ys.dispose(); appState.ys = null; }
+    if (appState.xsTest) { appState.xsTest.dispose(); appState.xsTest = null; }
+    if (appState.ysTest) { appState.ysTest.dispose(); appState.ysTest = null; }
+    
     // Generate new data using the data generator
-    const { trainData, testData } = appState.dataGenerator.generateData();
+    const data = appState.dataGenerator.generateData();
+    
+    // Check for no features enabled
+    if (appState.dataGenerator.getEnabledFeatureCount() === 0) {
+      showError('Please enable at least one input feature.');
+      return;
+    }
     
     // Update app state with new data
-    appState.rawXs = trainData.xs;
-    appState.rawYs = trainData.ys;
-    appState.rawXsTest = testData.xs;
-    appState.rawYsTest = testData.ys;
+    appState.rawXs = data.rawXs;
+    appState.rawYs = data.rawYs;
+    appState.rawXsTest = data.rawXsTest;
+    appState.rawYsTest = data.rawYsTest;
     
-    // Convert data to tensors
-    appState.xs = tf.tensor2d(trainData.xs, [trainData.xs.length, trainData.xs[0].length]);
-    appState.ys = tf.tensor2d(trainData.ys, [trainData.ys.length, 1]);
-    appState.xsTest = tf.tensor2d(testData.xs, [testData.xs.length, testData.xs[0].length]);
-    appState.ysTest = tf.tensor2d(testData.ys, [testData.ys.length, 1]);
+    // Use tensors directly from data generator
+    appState.xs = data.xs;
+    appState.ys = data.ys;
+    appState.xsTest = data.xsTest;
+    appState.ysTest = data.ysTest;
     
     // Create a new model with the current configuration
     await createModel();
@@ -100,8 +125,10 @@ async function generateData() {
     updateVisualization();
     updateDecisionBoundary();
     
+    hideError();
     console.log('Data and model updated successfully');
   } catch (error) {
+    showError('An error occurred while generating data or creating the model. See console for details.');
     console.error('Error generating data:', error);
   }
 }
@@ -114,6 +141,12 @@ async function createModel() {
     // Clean up previous model if it exists
     if (appState.model) {
       appState.model.dispose();
+    }
+    
+    // Check for no features enabled
+    if (appState.dataGenerator.getEnabledFeatureCount() === 0) {
+      showError('Please enable at least one input feature.');
+      return;
     }
     
     // Create a new sequential model
@@ -155,8 +188,10 @@ async function createModel() {
       metrics: ['accuracy']
     });
     
+    hideError();
     console.log('Model created and compiled successfully');
   } catch (error) {
+    showError('An error occurred while creating the model. See console for details.');
     console.error('Error creating model:', error);
     throw error;
   }
@@ -297,12 +332,15 @@ function setupEventListeners() {
   // Feature checkboxes: enable/disable features and regenerate data
   document.querySelectorAll('.feature-checkboxes input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', e => {
-      const id = e.target.id.replace('feature-','');
+      // Map checkbox id to feature key
+      const id = e.target.id.replace('feature-', '');
       let featureKey = id;
       if (id === 'x1sq') featureKey = 'x1Squared';
       else if (id === 'x2sq') featureKey = 'x2Squared';
+      else if (id === 'x1x2') featureKey = 'x1x2';
       else if (id === 'sinx1') featureKey = 'sinX1';
       else if (id === 'sinx2') featureKey = 'sinX2';
+      // x1 and x2 are already correct
       dataGenerator.setFeatureEnabled(featureKey, e.target.checked);
       generateData();
     });
@@ -455,137 +493,6 @@ function setupNeuronCountControls() {
 }
 
 /**
- * Generate data using the DataGenerator and create a new model
- */
-function generateData() {
-  // Use tf.tidy to ensure proper cleanup of tensors
-  tf.tidy(() => {
-    try {
-      // Generate new data
-      const data = dataGenerator.generateData();
-      
-      // Clean up previous data if it exists
-      if (appState.xs) appState.xs.dispose();
-      if (appState.ys) appState.ys.dispose();
-      if (appState.xsTest) appState.xsTest.dispose();
-      if (appState.ysTest) appState.ysTest.dispose();
-      
-      // Store new data with proper memory management
-      appState.xs = tf.keep(data.xs);
-      appState.ys = tf.keep(data.ys);
-      appState.xsTest = tf.keep(data.xsTest);
-      appState.ysTest = tf.keep(data.ysTest);
-      appState.rawXs = data.rawXs;
-      appState.rawYs = data.rawYs;
-      appState.rawXsTest = data.rawXsTest;
-      appState.rawYsTest = data.rawYsTest;
-      
-      // Reset training state
-      resetTraining();
-      
-      // Create a new model for the new data
-      createModel();
-      
-      // Update visualizations
-      updateVisualization();
-      updateDecisionBoundary();
-      updateLossDisplay('N/A', 'N/A');
-      
-    } catch (error) {
-      console.error('Error generating data:', error);
-      // Fallback to default data if generation fails
-      dataGenerator.setDataset('circle');
-      this.generateData();
-    }
-  });
-  
-  // Log memory usage for debugging
-  if (typeof tf.memory !== 'undefined') {
-    // console.info('Memory after data generation:', tf.memory()); // For debugging, uncomment if needed
-  }
-}
-
-/**
- * Creates a new sequential model based on user input from the UI
- */
-function createModel() {
-  pauseTraining(); // Ensure training is stopped
-
-  // Dispose previous model if it exists
-  if (appState.model) {
-    appState.model.dispose();
-    appState.model = null;
-  }
-
-  // Get parameters from UI
-  const activation = document.getElementById('activationSelect').value;
-  const learningRate = parseFloat(document.getElementById('learningRateSelect').value);
-  const regularizationType = document.getElementById('regularizationSelect').value;
-  const regularizationRate = parseFloat(document.getElementById('regularizationRateSelect').value);
-  const inputShape = dataGenerator.getEnabledFeatureCount();
-
-  if (inputShape === 0) {
-    console.error('No features enabled. Cannot create model.');
-    // Optionally disable UI elements or show error message
-    return;
-  }
-
-  // Create model within a tidy scope
-  tf.tidy(() => {
-    appState.model = tf.sequential(); // Assign to appState
-
-    let regularizer = null;
-    if (regularizationType === 'l1') {
-      regularizer = tf.regularizers.l1({ l1: regularizationRate });
-    } else if (regularizationType === 'l2') {
-      regularizer = tf.regularizers.l2({ l2: regularizationRate });
-    }
-
-    // Input layer
-    appState.model.add(tf.layers.dense({
-      inputShape: [inputShape],
-      units: appState.neuronsPerLayer,
-      activation: activation,
-      kernelRegularizer: regularizer,
-      kernelInitializer: 'glorotUniform',
-    }));
-
-    // Hidden layers
-    for (let i = 1; i < appState.hiddenLayers; i++) {
-      appState.model.add(tf.layers.dense({
-        units: appState.neuronsPerLayer,
-        activation: activation,
-        kernelRegularizer: regularizer,
-        kernelInitializer: 'glorotUniform',
-      }));
-    }
-
-    // Output layer
-    appState.model.add(tf.layers.dense({
-      units: 1,
-      activation: 'sigmoid',
-      kernelInitializer: 'glorotUniform',
-    }));
-
-    // Compile model
-    const optimizer = tf.train.adam(learningRate); // Using Adam optimizer
-    appState.optimizer = optimizer; // Store optimizer for custom training loop
-    appState.model.compile({
-      optimizer: optimizer,
-      loss: 'binaryCrossentropy',
-      metrics: ['accuracy'],
-    });
-
-    // NOTE: Weight caching logic removed for simplification.
-    // Always uses new random weights on model creation.
-
-  }); // End tf.tidy for model creation
-
-  // Model structure is created, ready for training/visualization
-  // console.info(`Created model: ${appState.hiddenLayers} layers, ${appState.neuronsPerLayer} neurons/layer`); // For debugging, uncomment if needed
-}
-
-/**
  * Toggle training on/off
  */
 function toggleTraining() {
@@ -600,132 +507,6 @@ function toggleTraining() {
     startTraining();
     document.getElementById('playBtn').textContent = '⏸';
   }
-}
-
-/**
- * Start the training loop using requestAnimationFrame
- */
-function startTraining() {
-  if (!appState.model || appState.training) return; // Check model and training status
-  appState.training = true; // Use appState
-  // console.info('startTraining called'); // For debugging, uncomment if needed
-
-  let lastFrameTime = performance.now();
-  const targetFPS = 30; // Target FPS for training steps + UI updates
-  const interval = 1000 / targetFPS;
-
-  async function trainLoop(currentTime) {
-    // Store the frame ID immediately
-    appState.intervalId = requestAnimationFrame(trainLoop); // Use appState
-
-    if (!appState.training) { // Check if stopped during the previous frame
-      cancelAnimationFrame(appState.intervalId);
-      appState.intervalId = null;
-      return;
-    }
-
-    const deltaTime = currentTime - lastFrameTime;
-
-    // Only train if enough time has passed
-    if (deltaTime >= interval) {
-      lastFrameTime = currentTime - (deltaTime % interval); // Adjust for precision
-
-      const batchSize = appState.batchSize; // Use appState
-      // Perform one training step
-      try {
-        await trainStep(batchSize); // Await the single step
-      } catch (error) {
-        console.error('Error during training step:', error);
-        pauseTraining(); // Stop training on error
-        document.getElementById('playBtn').textContent = '▶';
-        // No need to return here, loop is stopped by pauseTraining setting appState.training=false
-      }
-    }
-    // Continue the loop via the requestAnimationFrame at the beginning
-  }
-
-  // Start the loop by requesting the first frame
-  appState.intervalId = requestAnimationFrame(trainLoop);
-}
-
-/**
- * Perform a single training step
- */
-async function trainStep(batchSize = appState.batchSize) {
-  if (!appState.model || !appState.xs || !appState.ys) return null;
-
-  let trainLoss = 0;
-  let valLoss = 0;
-  
-  // Use tf.tidy to automatically clean up intermediate tensors
-  const losses = await tf.tidy(() => {
-    try {
-      // Sample a random batch
-      const numExamples = appState.xs.shape[0];
-      const indices = tf.util.createShuffledIndices(numExamples).slice(0, batchSize);
-      
-      // Get the batch
-      const xBatch = appState.xs.gather(indices);
-      const yBatch = appState.ys.gather(indices);
-      
-      // Train on the batch
-      const history = appState.optimizer.minimize(() => {
-        const preds = appState.model.predict(xBatch);
-        return tf.losses.binaryCrossentropy(yBatch, preds).mean();
-      }, true);
-      
-      // Compute training loss
-      const trainPreds = appState.model.predict(xBatch);
-      trainLoss = tf.losses.binaryCrossentropy(yBatch, trainPreds).mean();
-      
-      // Compute validation loss if test data is available
-      let valLoss = 0;
-      if (appState.xsTest && appState.ysTest) {
-        const testPreds = appState.model.predict(appState.xsTest);
-        valLoss = tf.losses.binaryCrossentropy(appState.ysTest, testPreds).mean();
-      }
-      
-      return { trainLoss, valLoss };
-    } catch (error) {
-      console.error('Error during training step:', error);
-      return { trainLoss: 0, valLoss: 0 };
-    }
-  });
-  
-  // Update epoch count and displays
-  appState.epochCount++;
-  updateEpochCounter(appState.epochCount);
-  updateLossDisplay(losses.valLoss, losses.trainLoss);
-  
-  // Update visualizations
-  updateVisualization();
-  updateDecisionBoundary();
-  
-  // Animate data flow with the first training example
-  if (appState.networkData && appState.rawXs.length > 0) {
-    const activations = tf.tidy(() => {
-      const tensor = tf.tensor2d([appState.rawXs[0]]);
-      return window.nn_vis.getActivations(appState.model, tensor);
-    });
-    
-    window.nn_vis.animateDataFlow(
-      appState.networkData.neurons,
-      appState.networkData.edges,
-      activations
-    );
-    
-    tf.dispose(activations);
-  }
-  
-  // Force garbage collection occasionally to prevent memory buildup
-  if (appState.epochCount % 100 === 0) {
-    await tf.nextFrame(); // Allow the browser to breathe
-    if (typeof tf.memory !== 'undefined') {
-      // console.info('Memory status:', tf.memory()); // For debugging, uncomment if needed
-    }
-  }
-  
-  return losses.trainLoss;
 }
 
 /**

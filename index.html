@@ -5,10 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Neural Network Playground (Dark Material)</title>
   <link rel="stylesheet" href="style.css">
-  <!-- TensorFlow.js -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
-  <!-- D3.js -->
-  <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
   <header class="md-app-bar">
@@ -20,6 +16,7 @@
       <span id="testLoss" class="test-loss">0.000</span>
     </div>
   </header>
+  <div id="errorMessage" style="display:none;color:#cf6679;background:#222;padding:8px 16px;margin:8px 0;border-radius:4px;"></div>
 
   <main class="main-layout">
     <!-- Left Sidebar: Controls -->
@@ -147,9 +144,7 @@
     </section>
   </main>
 
-  <!-- Main application scripts -->
-  <script src="js/data-generator.js"></script>
-  <script src="js/visualization.js"></script>
-  <script src="js/main.js" type="module"></script>
+  <!-- Main application script as module -->
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>
