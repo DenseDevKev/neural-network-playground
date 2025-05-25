@@ -22,7 +22,7 @@ export function initUI() {
   epochCounter = document.getElementById('epochCounter');
   testLossDisplay = document.getElementById('testLoss');
   trainingLossDisplay = document.getElementById('trainingLoss');
-  layerCountDisplay = document.getElementById('layerCount');
+  layerCountDisplay = document.getElementById('layerCountDisplay');
   
   // Setup event listeners
   setupEventListeners();

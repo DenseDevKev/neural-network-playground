@@ -3,7 +3,8 @@
  * @module Main
  */
 
-import * as tf from '@tensorflow/tfjs';
+// TensorFlow is loaded globally via script tag
+const tf = window.tf;
 import { DataGenerator } from './data-generator.js';
 import { nn_vis } from './visualization.js';
 import { appState, defaultConfig } from './state.js';
@@ -19,7 +20,11 @@ window.app = {
   appState,
   toggleTraining,
   trainStep,
-  resetTraining
+  resetTraining,
+  generateData,
+  createModel,
+  updateVisualization,
+  updateDecisionBoundary
 };
 
 // Cache DOM elements
@@ -197,42 +202,7 @@ async function createModel() {
   }
 }
 
-/**
- * Update the visualization
- */
-function updateVisualization() {
-  if (!appState.model) return;
-  
-  const featureNames = appState.dataGenerator.getEnabledFeatureNames();
-  appState.networkData = nn_vis.visualizeNetwork(
-    appState.model,
-    featureNames,
-    appState.rawXs,
-    appState.rawYs,
-    appState.rawXsTest,
-    appState.rawYsTest,
-    appState.showTestData,
-    null // transformationPreviews
-  );
-}
-
-/**
- * Update the decision boundary visualization
- */
-function updateDecisionBoundary() {
-  if (!appState.model) return;
-  
-  nn_vis.visualizeDecisionBoundary(
-    appState.model,
-    appState.dataGenerator,
-    appState.rawXs,
-    appState.rawYs,
-    appState.rawXsTest,
-    appState.rawYsTest,
-    appState.showTestData,
-    appState.discretizeOutput
-  );
-}
+// Note: updateVisualization and updateDecisionBoundary functions are defined later in the file with batching support
 
 /**
  * Initialize the application
@@ -299,38 +269,40 @@ function setupAllEventListeners() {
  */
 function setupEventListeners() {
   // Dataset selection
-  document.querySelectorAll('.dataset-option').forEach(option => {
+  for (const option of document.querySelectorAll('.dataset-option')) {
     option.addEventListener('click', () => {
-      document.querySelectorAll('.dataset-option').forEach(opt => opt.classList.remove('active'));
+      for (const opt of document.querySelectorAll('.dataset-option')) {
+        opt.classList.remove('active');
+      }
       option.classList.add('active');
-      dataGenerator.setDataset(option.dataset.dataset);
+      appState.dataGenerator.setDataset(option.dataset.dataset);
       generateData(); // Regenerate data and model on dataset change
     });
-  });
+  }
 
   // Sliders
   document.getElementById('ratioSlider').addEventListener('input', e => {
     const value = e.target.value;
     document.getElementById('ratioValue').textContent = `${value}%`;
-    dataGenerator.setTrainTestRatio(value);
+    appState.dataGenerator.setTrainTestRatio(value);
     generateData(); // Regenerate data on split change
   });
 
   document.getElementById('noiseSlider').addEventListener('input', e => {
     const value = e.target.value;
     document.getElementById('noiseValue').textContent = value;
-    dataGenerator.setNoise(value);
+    appState.dataGenerator.setNoise(value);
     generateData(); // Regenerate data on noise change
   });
 
   document.getElementById('batchSizeSlider').addEventListener('input', e => {
     const value = e.target.value;
     document.getElementById('batchSizeValue').textContent = value;
-    appState.batchSize = parseInt(value, 10);
+    appState.batchSize = Number.parseInt(value, 10);
   });
 
   // Feature checkboxes: enable/disable features and regenerate data
-  document.querySelectorAll('.feature-checkboxes input[type="checkbox"]').forEach(cb => {
+  for (const cb of document.querySelectorAll('.feature-checkboxes input[type="checkbox"]')) {
     cb.addEventListener('change', e => {
       // Map checkbox id to feature key
       const id = e.target.id.replace('feature-', '');
@@ -341,15 +313,15 @@ function setupEventListeners() {
       else if (id === 'sinx1') featureKey = 'sinX1';
       else if (id === 'sinx2') featureKey = 'sinX2';
       // x1 and x2 are already correct
-      dataGenerator.setFeatureEnabled(featureKey, e.target.checked);
+      appState.dataGenerator.setFeatureEnabled(featureKey, e.target.checked);
       generateData();
     });
-  });
+  }
 
   // Network configuration controls: recreate model on change
-  ['activationSelect','learningRateSelect','regularizationSelect','regularizationRateSelect'].forEach(id => {
+  for (const id of ['activationSelect','learningRateSelect','regularizationSelect','regularizationRateSelect']) {
     document.getElementById(id).addEventListener('change', () => generateData());
-  });
+  }
 
   // Discretize output toggle: update decision boundary
   document.getElementById('discretizeOutput').addEventListener('change', e => {
@@ -455,8 +427,8 @@ function setupNeuronCountControls() {
   let currentNeurons = appState.neuronsPerLayer; // Use appState
   const handleNeuronCountChange = debounce(() => {
     // Use the input field's value as the source of truth when debounced function runs
-    const newValue = parseInt(neuronCountInput.value, 10);
-    if (!isNaN(newValue)) { // Check if parsing was successful
+    const newValue = Number.parseInt(neuronCountInput.value, 10);
+    if (!Number.isNaN(newValue)) { // Check if parsing was successful
       currentNeurons = neuronCountReducer(currentNeurons, newValue);
     } else {
       // Handle invalid input, maybe reset to slider value or previous valid value
@@ -473,8 +445,8 @@ function setupNeuronCountControls() {
 
   // Sync controls: Input updates Slider (and triggers debounced update on blur/enter)
   neuronCountInput.addEventListener('input', function() {
-    const value = parseInt(this.value, 10);
-    if (!isNaN(value)) {
+    const value = Number.parseInt(this.value, 10);
+    if (!Number.isNaN(value)) {
       // Clamp value for slider update
       neuronCountSlider.value = String(Math.max(1, Math.min(32, value)));
     }
@@ -533,16 +505,16 @@ function fullReset() {
 
   // Reset dataset selection UI
   const datasetOptions = document.querySelectorAll('.dataset-option');
-  datasetOptions.forEach(opt => opt.classList.remove('active'));
+  for (const opt of datasetOptions) opt.classList.remove('active');
   const defaultDataset = document.querySelector(`.dataset-option[data-dataset="${defaultConfig.dataset}"]`);
   if (defaultDataset) defaultDataset.classList.add('active');
 
   // Reset data generator state to defaults
-  dataGenerator.setDataset(defaultConfig.dataset);
-  dataGenerator.setTrainTestRatio(defaultConfig.ratio);
-  dataGenerator.setNoise(defaultConfig.noise);
+  appState.dataGenerator.setDataset(defaultConfig.dataset);
+  appState.dataGenerator.setTrainTestRatio(defaultConfig.ratio);
+  appState.dataGenerator.setNoise(defaultConfig.noise);
   for (const [feature, enabled] of Object.entries(defaultConfig.features)) {
-    dataGenerator.setFeatureEnabled(feature, enabled);
+    appState.dataGenerator.setFeatureEnabled(feature, enabled);
   }
 
   // Update layer count display
@@ -552,12 +524,7 @@ function fullReset() {
   generateData();
 }
 
-/**
- * Update the layer count display
- */
-function updateLayerCountDisplay() {
-  layerCountDisplay.textContent = `${appState.hiddenLayers} HIDDEN LAYERS`; // Use appState
-}
+// updateLayerCountDisplay is imported from ui.js
 
 
 /**
@@ -601,7 +568,7 @@ function updateVisualization() {
 
   // Always push the latest feature names to the queue
   visualizationQueue.push({
-    featureNames: dataGenerator.getEnabledFeatureNames(),
+    featureNames: appState.dataGenerator.getEnabledFeatureNames(),
   });
 
   // Schedule batch update only if one isn't already pending
@@ -620,7 +587,7 @@ function updateDecisionBoundary() {
   // This function uses tf.tidy internally for its predictions
   window.nn_vis.visualizeDecisionBoundary(
     appState.model,
-    dataGenerator, // Pass the global instance
+    appState.dataGenerator, // Pass the global instance
     appState.rawXs,
     appState.rawYs,
     appState.rawXsTest,
@@ -635,7 +602,7 @@ function updateDecisionBoundary() {
  */
 function setupCollapseIcons() {
   const headers = document.querySelectorAll('.panel .panel-header'); // Select headers directly
-  headers.forEach(header => {
+  for (const header of headers) {
     const icon = header.querySelector('.collapse-icon');
     const panelContent = header.nextElementSibling;
 
@@ -655,5 +622,5 @@ function setupCollapseIcons() {
         // Storage.save(`${panelTitle}-collapsed`, currentlyCollapsed);
       });
     }
-  });
+  }
 }

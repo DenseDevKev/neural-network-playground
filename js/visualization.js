@@ -4,7 +4,8 @@
  * @module Visualization
  */
 
-import * as d3 from 'd3';
+// D3 is loaded globally via script tag
+const d3 = window.d3;
 
 // Configuration
 const networkWidth = 800;

@@ -4,7 +4,8 @@
  * @module Training
  */
 
-import * as tf from '@tensorflow/tfjs';
+// TensorFlow is loaded globally via script tag
+const tf = window.tf;
 import { appState, defaultConfig } from './state.js';
 import { updateEpochCounter, updateLossDisplay } from './ui.js';
 
