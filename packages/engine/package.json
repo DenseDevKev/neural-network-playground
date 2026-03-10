@@ -1,0 +1,16 @@
+{
+    "name": "@nn-playground/engine",
+    "version": "1.0.0",
+    "private": true,
+    "type": "module",
+    "main": "src/index.ts",
+    "types": "src/index.ts",
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "devDependencies": {
+        "vitest": "^3.0.0",
+        "typescript": "^5.7.0"
+    }
+}

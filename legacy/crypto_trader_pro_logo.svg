@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 64 64" fill="none">
+  <!-- Coin / circle outline -->
+  <circle cx="32" cy="32" r="26" stroke="#ffffff" stroke-width="4" />
+  <!-- Up‑and‑to‑the‑right arrow (growth) -->
+  <path d="M22 42 L42 22" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="32 22 42 22 42 32" stroke="#ffffff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

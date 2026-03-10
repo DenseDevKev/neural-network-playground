@@ -1,5 +1,20 @@
 {
   "name": "neural-network-playground",
-  "version": "1.0.0",
-  "type": "module"
+  "version": "2.0.0",
+  "private": true,
+  "description": "An interactive neural network playground for learning — inspired by TensorFlow Playground",
+  "scripts": {
+    "dev": "pnpm --filter @nn-playground/web dev",
+    "build": "pnpm --filter @nn-playground/web build",
+    "test": "pnpm -r test",
+    "test:engine": "pnpm --filter @nn-playground/engine test",
+    "lint": "eslint . --ext .ts,.tsx",
+    "format": "prettier --write .",
+    "clean": "pnpm -r exec rm -rf dist node_modules"
+  },
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=8"
+  }
 }

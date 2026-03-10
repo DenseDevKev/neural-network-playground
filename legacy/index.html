@@ -5,15 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Neural Network Playground (Dark Material)</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Load TensorFlow.js -->
-  <script src="lib/tf.min.js"></script>
-  <!-- Load D3.js -->
-  <script src="lib/d3.min.js"></script>
 </head>
 <body>
   <header class="md-app-bar">
     <h1>Neural Network Playground</h1>
-    <div class="epoch-loss-panel">
+    <div class="epoch-loss-panel" role="status" aria-live="polite">
       <span id="epochCounter">Epoch: 000000</span>
       <span>Loss:</span>
       <span id="trainingLoss" class="train-loss">0.000</span>
@@ -31,16 +27,16 @@
         <div class="dataset-controls">
           <label>Dataset</label>
           <div class="btn-group dataset-group">
-            <button class="md-btn dataset-option" data-dataset="circle">Circle</button>
-            <button class="md-btn dataset-option active" data-dataset="spiral">Spiral</button>
-            <button class="md-btn dataset-option" data-dataset="xor">XOR</button>
-            <button class="md-btn dataset-option" data-dataset="gaussian">Gaussian</button>
+            <button class="md-btn dataset-option active" data-dataset="circle" aria-pressed="true">Circle</button>
+            <button class="md-btn dataset-option" data-dataset="spiral" aria-pressed="false">Spiral</button>
+            <button class="md-btn dataset-option" data-dataset="xor" aria-pressed="false">XOR</button>
+            <button class="md-btn dataset-option" data-dataset="gaussian" aria-pressed="false">Gaussian</button>
           </div>
         </div>
         <div class="slider-control">
           <label for="ratioSlider">Train/Test Split (%)</label>
-          <input type="range" id="ratioSlider" min="10" max="90" value="60"/>
-          <span id="ratioValue">60%</span>
+          <input type="range" id="ratioSlider" min="10" max="90" value="50"/>
+          <span id="ratioValue">50%</span>
         </div>
         <div class="slider-control">
           <label for="noiseSlider">Noise</label>
@@ -64,6 +60,8 @@
           <label><input type="checkbox" id="feature-x1x2"/> X₁X₂</label>
           <label><input type="checkbox" id="feature-sinx1"/> sin(X₁)</label>
           <label><input type="checkbox" id="feature-sinx2"/> sin(X₂)</label>
+          <label><input type="checkbox" id="feature-cosx1"/> cos(X₁)</label>
+          <label><input type="checkbox" id="feature-cosx2"/> cos(X₂)</label>
         </div>
       </section>
 
@@ -72,9 +70,11 @@
         <div class="network-config">
           <div>
             <label>Hidden Layers</label>
-            <button class="md-btn" id="removeLayerBtn">-</button>
-            <span id="layerCountDisplay">3 HIDDEN LAYERS</span>
-            <button class="md-btn" id="addLayerBtn">+</button>
+            <div class="layer-controls-row">
+              <button class="md-btn" id="removeLayerBtn">−</button>
+              <span id="layerCountDisplay">3 HIDDEN LAYERS</span>
+              <button class="md-btn" id="addLayerBtn">+</button>
+            </div>
           </div>
           <div>
             <label for="neuronCountSlider">Neurons Per Layer</label>
@@ -90,10 +90,10 @@
             </select>
           </div>
           <div>
-            <label for="learningRateSelect">Learning rate</label>
+          <label for="learningRateSelect">Learning rate</label>
             <select id="learningRateSelect">
-              <option value="0.03">0.03</option>
-              <option value="0.01" selected>0.01</option>
+              <option value="0.03" selected>0.03</option>
+              <option value="0.01">0.01</option>
               <option value="0.003">0.003</option>
               <option value="0.001">0.001</option>
             </select>
@@ -118,9 +118,9 @@
             </select>
           </div>
           <div>
-            <label for="batchSizeSlider">Batch Size</label>
-            <input type="range" id="batchSizeSlider" min="1" max="100" value="30"/>
-            <span id="batchSizeValue">30</span>
+          <label for="batchSizeSlider">Batch Size</label>
+          <input type="range" id="batchSizeSlider" min="1" max="100" value="10"/>
+          <span id="batchSizeValue">10</span>
           </div>
           <label class="md-checkbox">
             <input type="checkbox" id="discretizeOutput"/>
@@ -134,21 +134,33 @@
     <!-- Main Visualization Area -->
     <section class="main-visualization">
       <div class="controls-bar">
-        <button class="md-btn" id="playBtn">▶</button>
-        <button class="md-btn" id="stepBtn">Step</button>
-        <button class="md-btn" id="resetBtn">Reset</button>
+        <button class="md-btn" id="playBtn" aria-label="Play or Pause training">▶</button>
+        <button class="md-btn" id="stepBtn" aria-label="Run one training step">Step</button>
+        <button class="md-btn" id="resetBtn" aria-label="Reset training and model">Reset</button>
       </div>
       <div class="network-visualization">
         <div id="network-container"></div>
       </div>
       <div class="output-panel">
         <div id="decision-boundary-container"></div>
-        <!-- Additional output info/legend can go here -->
+        <div class="legend" aria-label="Color legend">
+          <span class="legend-swatch legend-neg"></span>
+          <span>Negative / class 0</span>
+          <span class="legend-swatch legend-pos"></span>
+          <span>Positive / class 1</span>
+        </div>
+        <div class="loss-chart-container">
+          <canvas id="lossChart" width="400" height="140" aria-label="Training loss over epochs"></canvas>
+        </div>
       </div>
     </section>
   </main>
 
-  <!-- Main application script as module -->
-  <script type="module" src="js/main.js"></script>
+  <!-- Load TensorFlow.js -->
+  <script src="lib/tf.min.js"></script>
+  <!-- Load D3.js -->
+  <script src="lib/d3.min.js"></script>
+  <!-- Fresh minimal application script -->
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
