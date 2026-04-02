@@ -63,27 +63,47 @@ export const DecisionBoundary = memo(function DecisionBoundary({ trainPoints, te
 
         // Always draw data points (even before training)
         const drawPoints = (points: DataPoint[], isTest: boolean): void => {
+            const orangePoints: DataPoint[] = [];
+            const bluePoints: DataPoint[] = [];
+
             for (const p of points) {
-                const px = ((p.x + 1) / 2) * CANVAS_SIZE;
-                const py = ((1 - (p.y + 1) / 2)) * CANVAS_SIZE;
+                if (p.label >= 0.5) {
+                    orangePoints.push(p);
+                } else {
+                    bluePoints.push(p);
+                }
+            }
 
+            const drawBatch = (batch: DataPoint[], color: string) => {
+                if (batch.length === 0) return;
+
+                ctx.fillStyle = color;
                 ctx.beginPath();
-                ctx.arc(px, py, isTest ? 3 : 3.5, 0, 2 * Math.PI);
 
-                ctx.fillStyle = p.label >= 0.5 ? HEX_ORANGE : HEX_BLUE;
+                const radius = isTest ? 3 : 3.5;
+
+                for (const p of batch) {
+                    const px = ((p.x + 1) / 2) * CANVAS_SIZE;
+                    const py = ((1 - (p.y + 1) / 2)) * CANVAS_SIZE;
+                    ctx.moveTo(px + radius, py);
+                    ctx.arc(px, py, radius, 0, 2 * Math.PI);
+                }
+
+                ctx.fill();
 
                 if (isTest) {
                     ctx.strokeStyle = '#fff';
                     ctx.lineWidth = 1;
                     ctx.stroke();
-                    ctx.fill();
                 } else {
-                    ctx.fill();
                     ctx.strokeStyle = 'rgba(0,0,0,0.5)';
                     ctx.lineWidth = 0.5;
                     ctx.stroke();
                 }
-            }
+            };
+
+            drawBatch(orangePoints, HEX_ORANGE);
+            drawBatch(bluePoints, HEX_BLUE);
         };
 
         drawPoints(trainPoints, false);
