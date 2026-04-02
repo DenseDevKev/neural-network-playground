@@ -157,7 +157,6 @@ export function stopRenderLoop(): void {
  */
 export function postStreamCommand(cmd: MainToWorkerCommand): void {
     if (!_streamPort) {
-        console.warn('Stream channel not set up yet. Call setupStreamChannel() first.');
         return;
     }
     _streamPort.postMessage(cmd);
