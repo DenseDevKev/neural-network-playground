@@ -1,8 +1,9 @@
 // ── Decision Boundary Heatmap (Canvas) ──
 // Renders the prediction grid as a heatmap with data points overlaid.
 
-import { useRef, useEffect } from 'react';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useRef, useEffect, memo } from 'react';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { writeGridToImageData, HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
 import type { DataPoint } from '@nn-playground/engine';
 
 const CANVAS_SIZE = 320;
@@ -14,38 +15,12 @@ interface Props {
     discretize: boolean;
 }
 
-function valueToColor(v: number, discretize: boolean): [number, number, number] {
-    // v is typically 0–1 for classification (sigmoid output)
-    // Map to blue (0) → dark (0.5) → orange (1)
-    let t = v;
-    if (discretize) {
-        t = t > 0.5 ? 1 : 0;
-    }
-    // Clamp
-    t = Math.max(0, Math.min(1, t));
-
-    if (t < 0.5) {
-        // Blue to dark
-        const p = t / 0.5;
-        return [
-            Math.round(59 * (1 - p) + 28 * p),
-            Math.round(130 * (1 - p) + 32 * p),
-            Math.round(246 * (1 - p) + 48 * p),
-        ];
-    } else {
-        // Dark to orange
-        const p = (t - 0.5) / 0.5;
-        return [
-            Math.round(28 * (1 - p) + 249 * p),
-            Math.round(32 * (1 - p) + 115 * p),
-            Math.round(48 * (1 - p) + 22 * p),
-        ];
-    }
-}
-
-export function DecisionBoundary({ trainPoints, testPoints, showTestData, discretize }: Props) {
+export const DecisionBoundary = memo(function DecisionBoundary({ trainPoints, testPoints, showTestData, discretize }: Props) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const snapshot = usePlaygroundStore((s) => s.snapshot);
+    const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const imageDataRef = useRef<ImageData | null>(null);
+    const lastGridSizeRef = useRef(0);
+    const snapshot = useTrainingStore((s) => s.snapshot);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -63,21 +38,22 @@ export function DecisionBoundary({ trainPoints, testPoints, showTestData, discre
 
         // Draw heatmap (only when grid data is available)
         if (grid && gridSize > 0) {
-            const imageData = ctx.createImageData(gridSize, gridSize);
-
-            for (let i = 0; i < grid.length; i++) {
-                const [r, g, b] = valueToColor(grid[i], discretize);
-                const idx = i * 4;
-                imageData.data[idx] = r;
-                imageData.data[idx + 1] = g;
-                imageData.data[idx + 2] = b;
-                imageData.data[idx + 3] = 200;
+            // Reuse temp canvas and ImageData if dimensions match
+            if (!tempCanvasRef.current || lastGridSizeRef.current !== gridSize) {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = gridSize;
+                tempCanvas.height = gridSize;
+                tempCanvasRef.current = tempCanvas;
+                const tempCtx = tempCanvas.getContext('2d')!;
+                imageDataRef.current = tempCtx.createImageData(gridSize, gridSize);
+                lastGridSizeRef.current = gridSize;
             }
 
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = gridSize;
-            tempCanvas.height = gridSize;
+            const tempCanvas = tempCanvasRef.current!;
             const tempCtx = tempCanvas.getContext('2d')!;
+            const imageData = imageDataRef.current!;
+
+            writeGridToImageData(grid, imageData, 200, discretize);
             tempCtx.putImageData(imageData, 0, 0);
 
             ctx.imageSmoothingEnabled = true;
@@ -86,7 +62,7 @@ export function DecisionBoundary({ trainPoints, testPoints, showTestData, discre
         }
 
         // Always draw data points (even before training)
-        const drawPoints = (points: DataPoint[], isTest: boolean) => {
+        const drawPoints = (points: DataPoint[], isTest: boolean): void => {
             for (const p of points) {
                 const px = ((p.x + 1) / 2) * CANVAS_SIZE;
                 const py = ((1 - (p.y + 1) / 2)) * CANVAS_SIZE;
@@ -94,11 +70,7 @@ export function DecisionBoundary({ trainPoints, testPoints, showTestData, discre
                 ctx.beginPath();
                 ctx.arc(px, py, isTest ? 3 : 3.5, 0, 2 * Math.PI);
 
-                if (p.label >= 0.5) {
-                    ctx.fillStyle = '#f97316';
-                } else {
-                    ctx.fillStyle = '#3b82f6';
-                }
+                ctx.fillStyle = p.label >= 0.5 ? HEX_ORANGE : HEX_BLUE;
 
                 if (isTest) {
                     ctx.strokeStyle = '#fff';
@@ -130,4 +102,4 @@ export function DecisionBoundary({ trainPoints, testPoints, showTestData, discre
             />
         </div>
     );
-}
+});

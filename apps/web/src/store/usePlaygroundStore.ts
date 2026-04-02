@@ -1,18 +1,17 @@
-// ── Zustand store — single source of truth for app state ──
+// ── Zustand store — stable configuration state ──
+// This store holds ONLY configuration that changes on user interaction.
+// Volatile runtime state (snapshot, history, status) lives in useTrainingStore.
 import { create } from 'zustand';
 import type {
     NetworkConfig,
     TrainingConfig,
     DataConfig,
     FeatureFlags,
-    NetworkSnapshot,
-    HistoryPoint,
     DatasetType,
     ActivationType,
     LossType,
     OptimizerType,
     RegularizationType,
-    DataPoint,
     DataSplit,
 } from '@nn-playground/engine';
 import {
@@ -20,13 +19,14 @@ import {
     generateDataset,
     getDefaultProblemType,
 } from '@nn-playground/engine';
-import type { UIConfig, TrainingStatus, AppConfig } from '@nn-playground/shared';
+import type { UIConfig, AppConfig, VisualizationDemand } from '@nn-playground/shared';
 import type { Preset } from '@nn-playground/shared';
 import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
     DEFAULT_DATA,
+    DEFAULT_DEMAND,
     MAX_HIDDEN_LAYERS,
     MAX_NEURONS_PER_LAYER,
     encodeUrlState,
@@ -41,15 +41,11 @@ export interface PlaygroundStore {
     features: FeatureFlags;
     ui: UIConfig;
 
-    // ── Runtime ──
-    status: TrainingStatus;
-    snapshot: NetworkSnapshot | null;
-    history: HistoryPoint[];
+    // ── Visualization Demand ──
+    demand: VisualizationDemand;
+
+    // ── Transient ──
     dataset: DataSplit | null;
-    trainPoints: DataPoint[];
-    testPoints: DataPoint[];
-    /** Steps of training to run per animation frame. Not persisted to URL. */
-    stepsPerFrame: number;
 
     // ── Actions ──
     setDataset: (type: DatasetType) => void;
@@ -70,14 +66,8 @@ export interface PlaygroundStore {
     setRegularizationRate: (rate: number) => void;
     setShowTestData: (show: boolean) => void;
     setDiscretize: (d: boolean) => void;
-    setStepsPerFrame: (n: number) => void;
-    setStatus: (s: TrainingStatus) => void;
-    setSnapshot: (snap: NetworkSnapshot) => void;
-    addHistoryPoint: (point: HistoryPoint) => void;
+    setDemand: (demand: VisualizationDemand) => void;
     regenerateData: () => void;
-    resetHistory: () => void;
-    setTrainPoints: (pts: DataPoint[]) => void;
-    setTestPoints: (pts: DataPoint[]) => void;
     applyPreset: (preset: Preset) => void;
     getConfig: () => AppConfig;
     syncToUrl: () => void;
@@ -117,14 +107,11 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         features: initial.features,
         ui: initial.ui,
 
-        // Runtime
-        status: 'idle',
-        snapshot: null,
-        history: [],
+        // Visualization demand
+        demand: { ...DEFAULT_DEMAND },
+
+        // Transient
         dataset: null,
-        trainPoints: [],
-        testPoints: [],
-        stepsPerFrame: 5,
 
         // Actions
         setDataset: (dataset) => {
@@ -221,14 +208,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
             ui: { ...s.ui, discretizeOutput },
         })),
 
-        setStepsPerFrame: (n) => set({ stepsPerFrame: Math.max(1, Math.min(100, n)) }),
-
-        setStatus: (status) => set({ status }),
-        setSnapshot: (snapshot) => set({ snapshot }),
-        addHistoryPoint: (point) => set((s) => ({ history: [...s.history, point] })),
-        resetHistory: () => set({ history: [], snapshot: null }),
-        setTrainPoints: (trainPoints) => set({ trainPoints }),
-        setTestPoints: (testPoints) => set({ testPoints }),
+        setDemand: (demand) => set({ demand }),
 
         regenerateData: () => {
             const s = get();
@@ -278,11 +258,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
 
         applyPreset: (preset: Preset) => {
             const c = preset.config;
-            const updates: Partial<PlaygroundStore> = {
-                snapshot: null,
-                history: [],
-                status: 'idle' as TrainingStatus,
-            };
+            const updates: Partial<PlaygroundStore> = {};
             if (c.data) updates.data = { ...get().data, ...c.data };
             if (c.network) updates.network = { ...get().network, ...c.network };
             if (c.features) updates.features = { ...get().features, ...c.features };

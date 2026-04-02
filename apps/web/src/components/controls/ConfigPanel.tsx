@@ -1,7 +1,7 @@
 // ── Config Import/Export Panel ──
 // Allows users to save and restore playground configurations as JSON.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { exportConfigJson, importConfigJson } from '@nn-playground/shared';
 
@@ -9,7 +9,7 @@ interface ConfigPanelProps {
     onReset: () => void;
 }
 
-export function ConfigPanel({ onReset }: ConfigPanelProps) {
+export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -101,4 +101,4 @@ export function ConfigPanel({ onReset }: ConfigPanelProps) {
             />
         </div>
     );
-}
+});

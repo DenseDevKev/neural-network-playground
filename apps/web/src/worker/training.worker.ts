@@ -1,6 +1,8 @@
 // ── Training Web Worker ──
 // Owns the engine instance, runs training off the main thread.
-// Communicates via Comlink RPC.
+// Hybrid communication:
+//   - Comlink RPC for commands (initialize, updateConfig, reset, step, etc.)
+//   - MessageChannel for high-frequency streamed snapshots during training
 
 import * as Comlink from 'comlink';
 import {
@@ -19,8 +21,15 @@ import type {
     FeatureFlags,
     NetworkSnapshot,
     DataPoint,
+    HistoryPoint,
 } from '@nn-playground/engine';
-import { GRID_SIZE } from '@nn-playground/shared';
+import { GRID_SIZE, DEFAULT_DEMAND } from '@nn-playground/shared';
+import type {
+    VisualizationDemand,
+    WorkerSnapshotMessage,
+    WorkerStatusMessage,
+    MainToWorkerCommand,
+} from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 
 interface WorkerState {
@@ -45,6 +54,22 @@ interface WorkerState {
     shuffledIndices: number[];
     /** Separate PRNG for epoch shuffling, independent from network weights. */
     shufflePrng: PRNG | null;
+    /** What visual data the UI currently needs. */
+    demand: VisualizationDemand;
+    /** Counter for test-eval frequency gating. */
+    snapshotsSinceLastTestEval: number;
+    /** Cached last test metrics to reuse when skipping test evaluation. */
+    lastTestMetrics: { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null;
+    /** MessagePort for streaming snapshot delivery. */
+    streamPort: MessagePort | null;
+    /** Monotonically increasing run ID — incremented on init/reset/rebuild. */
+    runId: number;
+    /** Monotonically increasing snapshot ID within a run. */
+    snapshotId: number;
+    /** Steps per frame for the internal training loop. */
+    stepsPerFrame: number;
+    /** Timer ID for the internal training loop. */
+    trainLoopTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const state: WorkerState = {
@@ -67,6 +92,14 @@ const state: WorkerState = {
     rafId: null,
     shuffledIndices: [],
     shufflePrng: null,
+    demand: { ...DEFAULT_DEMAND },
+    snapshotsSinceLastTestEval: 0,
+    lastTestMetrics: null,
+    streamPort: null,
+    runId: 0,
+    snapshotId: 0,
+    stepsPerFrame: 5,
+    trainLoopTimer: null,
 };
 
 
@@ -106,20 +139,33 @@ function buildDataAndNetwork(): void {
     state.step = 0;
     state.epoch = 0;
 
+    // Reset test-eval gating
+    state.snapshotsSinceLastTestEval = 0;
+    state.lastTestMetrics = null;
+
+    // Increment run ID
+    state.runId++;
+    state.snapshotId = 0;
+
     // Initialise shuffle state — seed is offset from data seed to stay independent.
     const n = state.trainInputs.length;
     state.shuffledIndices = Array.from({ length: n }, (_, i) => i);
     state.shufflePrng = new PRNG((state.dataConfig!.seed ?? 42) + 1234);
 }
 
+// ── Snapshot computation ──
+
 function computeSnapshot(): NetworkSnapshot {
+    performance.mark('perf:worker:snapshot:start');
     if (!state.network || !state.trainingConfig || !state.dataConfig) {
         throw new Error('Not initialized');
     }
 
+    const { demand } = state;
     const problemType = state.dataConfig.problemType;
     const lossType = state.trainingConfig.lossType;
 
+    // ── Train metrics (always computed — cheap, uses cached forward pass) ──
     const trainMetrics = state.network.evaluate(
         state.trainInputs,
         state.trainTargets,
@@ -127,14 +173,47 @@ function computeSnapshot(): NetworkSnapshot {
         problemType,
     );
 
-    const testMetrics = state.network.evaluate(
-        state.testInputs,
-        state.testTargets,
-        lossType,
-        problemType,
-    );
+    // ── Test metrics (gated by testEvalInterval) ──
+    const shouldRunTestEval =
+        state.snapshotsSinceLastTestEval >= demand.testEvalInterval ||
+        state.lastTestMetrics === null;
 
-    const { outputGrid, neuronGrids } = state.network.predictGridWithNeurons(state.gridInputs);
+    let testMetrics;
+    if (shouldRunTestEval) {
+        testMetrics = state.network.evaluate(
+            state.testInputs,
+            state.testTargets,
+            lossType,
+            problemType,
+        );
+        state.lastTestMetrics = {
+            loss: testMetrics.loss,
+            accuracy: testMetrics.accuracy,
+            confusionMatrix: demand.needConfusionMatrix ? testMetrics.confusionMatrix : undefined,
+        };
+        state.snapshotsSinceLastTestEval = 0;
+    } else {
+        testMetrics = state.lastTestMetrics!;
+        state.snapshotsSinceLastTestEval++;
+    }
+
+    // ── Decision boundary grid (demand-gated) ──
+    let outputGrid: number[];
+    let neuronGrids: number[][] | undefined;
+
+    if (demand.needNeuronGrids) {
+        performance.mark('perf:worker:predictGridNeurons:start');
+        const result = state.network.predictGridWithNeurons(state.gridInputs);
+        performance.measure('perf:worker:predictGridNeurons', 'perf:worker:predictGridNeurons:start');
+        outputGrid = result.outputGrid;
+        neuronGrids = result.neuronGrids;
+    } else if (demand.needDecisionBoundary) {
+        performance.mark('perf:worker:predictGrid:start');
+        outputGrid = state.network.predictGrid(state.gridInputs);
+        performance.measure('perf:worker:predictGrid', 'perf:worker:predictGrid:start');
+    } else {
+        outputGrid = [];
+    }
 
     const snap = state.network.getSnapshot(
         state.step,
@@ -144,10 +223,96 @@ function computeSnapshot(): NetworkSnapshot {
         outputGrid,
         GRID_SIZE,
     );
-    snap.neuronGrids = neuronGrids;
-    snap.layerStats = state.network.getLayerStats();
+
+    if (neuronGrids) {
+        snap.neuronGrids = neuronGrids;
+    }
+
+    if (demand.needLayerStats) {
+        snap.layerStats = state.network.getLayerStats();
+    }
+
+    performance.measure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
 }
+
+/**
+ * Pack a NetworkSnapshot into a WorkerSnapshotMessage with Transferable Float32Arrays.
+ * Returns { message, transferables }.
+ */
+function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMessage; transferables: Transferable[] } {
+    performance.mark('perf:worker:snapshotPack:start');
+
+    const transferables: Transferable[] = [];
+    const gridSize = snap.gridSize;
+
+    // Pack outputGrid
+    let outputGrid: Float32Array | undefined;
+    if (snap.outputGrid && snap.outputGrid.length > 0) {
+        outputGrid = new Float32Array(snap.outputGrid);
+        transferables.push(outputGrid.buffer);
+    }
+
+    // Pack neuronGrids (concatenated into one flat array)
+    let neuronGrids: Float32Array | undefined;
+    let neuronGridLayout: { count: number; gridSize: number } | undefined;
+    if (snap.neuronGrids && snap.neuronGrids.length > 0) {
+        const count = snap.neuronGrids.length;
+        const totalSize = count * gridSize * gridSize;
+        neuronGrids = new Float32Array(totalSize);
+        for (let n = 0; n < count; n++) {
+            neuronGrids.set(snap.neuronGrids[n], n * gridSize * gridSize);
+        }
+        neuronGridLayout = { count, gridSize };
+        transferables.push(neuronGrids.buffer);
+    }
+
+    // Pack weights
+    const { buffer: weightsFlat, layerSizes } = state.network!.getWeightsFlat();
+    transferables.push(weightsFlat.buffer);
+
+    // Pack biases
+    const biasesFlat = state.network!.getBiasesFlat();
+    transferables.push(biasesFlat.buffer);
+
+    // History point
+    const historyPoint: HistoryPoint = {
+        step: snap.step,
+        trainLoss: snap.trainLoss,
+        testLoss: snap.testLoss,
+        trainAccuracy: snap.trainMetrics?.accuracy,
+        testAccuracy: snap.testMetrics?.accuracy,
+    };
+
+    const message: WorkerSnapshotMessage = {
+        type: 'snapshot',
+        runId: state.runId,
+        snapshotId: ++state.snapshotId,
+        scalars: {
+            step: snap.step,
+            epoch: snap.epoch,
+            trainLoss: snap.trainLoss,
+            testLoss: snap.testLoss,
+            trainAccuracy: snap.trainMetrics?.accuracy,
+            testAccuracy: snap.testMetrics?.accuracy,
+            gridSize,
+        },
+        outputGrid,
+        neuronGrids,
+        neuronGridLayout,
+        weights: weightsFlat,
+        biases: biasesFlat,
+        weightLayout: { layerSizes },
+        layerStats: snap.layerStats,
+        historyPoint,
+        confusionMatrix: snap.testMetrics?.confusionMatrix,
+    };
+
+    performance.measure('perf:worker:snapshotPack', 'perf:worker:snapshotPack:start');
+    return { message, transferables };
+}
+
+// ── Training ──
 
 function trainOneStep(): void {
     if (!state.network || !state.trainingConfig) return;
@@ -159,7 +324,6 @@ function trainOneStep(): void {
     const numBatches = Math.ceil(n / bs);
     const batchSlot = state.step % numBatches;
 
-    // Re-shuffle at the start of each epoch (except epoch 0, which uses the initial order).
     if (batchSlot === 0 && state.step > 0 && state.shufflePrng) {
         state.shufflePrng.shuffle(state.shuffledIndices);
     }
@@ -180,6 +344,83 @@ function trainOneStep(): void {
     }
 }
 
+// ── Internal training loop (worker-driven) ──
+
+function trainTick(): void {
+    if (!state.running || !state.streamPort) return;
+
+    performance.mark('perf:worker:trainStep:start');
+    for (let i = 0; i < state.stepsPerFrame; i++) {
+        trainOneStep();
+    }
+    performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
+
+    // Compute snapshot and stream it to the main thread
+    const snap = computeSnapshot();
+    const { message, transferables } = packSnapshotMessage(snap);
+    state.streamPort.postMessage(message, transferables);
+
+    // Schedule next tick (yield to allow message processing)
+    if (state.running) {
+        state.trainLoopTimer = setTimeout(trainTick, 0);
+    }
+}
+
+function startInternalLoop(): void {
+    state.running = true;
+    state.trainLoopTimer = setTimeout(trainTick, 0);
+}
+
+function stopInternalLoop(): void {
+    state.running = false;
+    if (state.trainLoopTimer !== null) {
+        clearTimeout(state.trainLoopTimer);
+        state.trainLoopTimer = null;
+    }
+}
+
+// ── MessageChannel command handler ──
+
+function handleStreamCommand(cmd: MainToWorkerCommand): void {
+    switch (cmd.type) {
+        case 'startTraining':
+            state.stepsPerFrame = cmd.stepsPerFrame;
+            startInternalLoop();
+            if (state.streamPort) {
+                const statusMsg: WorkerStatusMessage = {
+                    type: 'status',
+                    runId: state.runId,
+                    status: 'running',
+                };
+                state.streamPort.postMessage(statusMsg);
+            }
+            break;
+
+        case 'stopTraining':
+            stopInternalLoop();
+            if (state.streamPort) {
+                const statusMsg: WorkerStatusMessage = {
+                    type: 'status',
+                    runId: state.runId,
+                    status: 'paused',
+                };
+                state.streamPort.postMessage(statusMsg);
+            }
+            break;
+
+        case 'updateDemand':
+            state.demand = { ...cmd.demand };
+            state.snapshotsSinceLastTestEval = cmd.demand.testEvalInterval;
+            break;
+
+        case 'updateSpeed':
+            state.stepsPerFrame = cmd.stepsPerFrame;
+            break;
+    }
+}
+
+// ── Comlink API ──
+
 const workerApi = {
     initialize(
         networkConfig: NetworkConfig,
@@ -187,6 +428,7 @@ const workerApi = {
         dataConfig: DataConfig,
         features: FeatureFlags,
     ): NetworkSnapshot {
+        stopInternalLoop();
         state.networkConfig = { ...networkConfig };
         state.trainingConfig = { ...trainingConfig };
         state.dataConfig = { ...dataConfig };
@@ -214,6 +456,7 @@ const workerApi = {
         state.features = { ...features };
 
         if (needsRebuild) {
+            stopInternalLoop();
             state.running = false;
             buildDataAndNetwork();
         }
@@ -229,6 +472,7 @@ const workerApi = {
     },
 
     reset(): NetworkSnapshot {
+        stopInternalLoop();
         buildDataAndNetwork();
         return computeSnapshot();
     },
@@ -253,11 +497,27 @@ const workerApi = {
         return state.running;
     },
 
-    // Run continuous training — called in a loop from main thread
+    /** Update what visual data the UI currently needs. */
+    updateDemand(demand: VisualizationDemand): void {
+        state.demand = { ...demand };
+        state.snapshotsSinceLastTestEval = demand.testEvalInterval;
+    },
+
+    /** Accept a MessagePort from the main thread for streaming. */
+    setStreamPort(port: MessagePort): void {
+        state.streamPort = port;
+        port.onmessage = (event: MessageEvent<MainToWorkerCommand>) => {
+            handleStreamCommand(event.data);
+        };
+    },
+
+    // Legacy: Run continuous training — called in a loop from main thread
     trainAndSnapshot(stepsPerFrame: number): NetworkSnapshot {
+        performance.mark('perf:worker:trainStep:start');
         for (let i = 0; i < stepsPerFrame; i++) {
             trainOneStep();
         }
+        performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
         return computeSnapshot();
     },
 };

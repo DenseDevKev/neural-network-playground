@@ -1,8 +1,9 @@
 // ── Code Export Panel ──
 // Tabbed panel that generates pseudocode, NumPy, and TF.js code from the current network.
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { generatePseudocode, generateNumPy, generateTFJS } from '@nn-playground/shared';
 
 type CodeTab = 'pseudocode' | 'numpy' | 'tfjs';
@@ -13,7 +14,7 @@ const TABS: { id: CodeTab; label: string }[] = [
     { id: 'tfjs', label: 'TF.js' },
 ];
 
-export function CodeExportPanel() {
+export const CodeExportPanel = memo(function CodeExportPanel() {
     const [activeTab, setActiveTab] = useState<CodeTab>('pseudocode');
     const [copied, setCopied] = useState(false);
     const [expanded, setExpanded] = useState(false);
@@ -21,7 +22,7 @@ export function CodeExportPanel() {
     const network = usePlaygroundStore((s) => s.network);
     const training = usePlaygroundStore((s) => s.training);
     const features = usePlaygroundStore((s) => s.features);
-    const snapshot = usePlaygroundStore((s) => s.snapshot);
+    const snapshot = useTrainingStore((s) => s.snapshot);
 
     const code = useMemo(() => {
         const config = {
@@ -95,4 +96,4 @@ export function CodeExportPanel() {
             </button>
         </div>
     );
-}
+});

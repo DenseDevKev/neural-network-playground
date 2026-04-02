@@ -1,19 +1,26 @@
 // ── Loss + Accuracy Chart (Canvas) ──
 // Tab-toggled line chart for training/test loss and accuracy history.
 // Accuracy tab is only shown for classification problems.
+//
+// Incremental drawing: each frame only appends new line segments to the canvas.
+// Full redraw is triggered when: tab changes, y-axis scale expands, or history resets.
 
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 
 const CHART_W = 400;
 const CHART_H = 140;
 const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 
 type ChartTab = 'loss' | 'accuracy';
+type HistoryPoint = { trainLoss: number; testLoss: number; trainAccuracy?: number; testAccuracy?: number };
+
+// ── Full redraw ──────────────────────────────────────────────────────────────
 
 function drawChart(
     ctx: CanvasRenderingContext2D,
-    history: { trainLoss: number; testLoss: number; trainAccuracy?: number; testAccuracy?: number }[],
+    history: HistoryPoint[],
     tab: ChartTab,
 ) {
     const w = CHART_W;
@@ -39,8 +46,7 @@ function drawChart(
 
     if (tab === 'loss') {
         // ── Loss chart ──
-        const maxLoss = Math.max(...history.map((p) => Math.max(p.trainLoss, p.testLoss)));
-        const yMax = Math.max(maxLoss * 1.1, 0.01);
+        const yMax = computeYMax(history, 'loss');
         const scaleY = (v: number) => PADDING.top + plotH - (v / yMax) * plotH;
 
         drawGrid(ctx, plotW, plotH, yMax, (v) => v.toFixed(2));
@@ -89,6 +95,97 @@ function drawChart(
         ]);
     }
 }
+
+// ── Incremental draw: append only new line segments ──────────────────────────
+// Uses the same yMax as the last full redraw (caller guarantees it hasn't changed).
+// Slightly re-draws the last segment from (fromIndex-1) to anchor the new segments,
+// which handles the sub-pixel x-axis shift from appending one more point.
+
+function drawChartIncremental(
+    ctx: CanvasRenderingContext2D,
+    history: HistoryPoint[],
+    fromIndex: number,
+    tab: ChartTab,
+    yMax: number,
+) {
+    if (fromIndex < 1 || fromIndex >= history.length) return;
+
+    const plotW = CHART_W - PADDING.left - PADDING.right;
+    const plotH = CHART_H - PADDING.top - PADDING.bottom;
+    const xMax = history.length - 1;
+    const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
+
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (tab === 'loss') {
+        const scaleY = (v: number) => PADDING.top + plotH - (Math.min(v, yMax) / yMax) * plotH;
+
+        // Extend train loss line from the last drawn point
+        ctx.strokeStyle = '#00e5c3';
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].trainLoss));
+        for (let i = fromIndex; i < history.length; i++) {
+            ctx.lineTo(scaleX(i), scaleY(history[i].trainLoss));
+        }
+        ctx.stroke();
+
+        // Extend test loss line (dashed)
+        ctx.strokeStyle = '#7c5cfc';
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].testLoss));
+        for (let i = fromIndex; i < history.length; i++) {
+            ctx.lineTo(scaleX(i), scaleY(history[i].testLoss));
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else {
+        // Accuracy tab — y-axis is fixed 0–1, no yMax needed from caller
+        const scaleY = (v: number) => PADDING.top + plotH - Math.min(1, Math.max(0, v)) * plotH;
+        const hasAcc = history.some((p) => p.trainAccuracy !== undefined);
+        if (!hasAcc) return;
+
+        // Extend train accuracy line
+        ctx.strokeStyle = '#00e5c3';
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].trainAccuracy ?? 0));
+        for (let i = fromIndex; i < history.length; i++) {
+            ctx.lineTo(scaleX(i), scaleY(history[i].trainAccuracy ?? 0));
+        }
+        ctx.stroke();
+
+        // Extend test accuracy line (dashed)
+        ctx.strokeStyle = '#7c5cfc';
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].testAccuracy ?? 0));
+        for (let i = fromIndex; i < history.length; i++) {
+            ctx.lineTo(scaleX(i), scaleY(history[i].testAccuracy ?? 0));
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+}
+
+// ── Compute a stable y-axis ceiling ──────────────────────────────────────────
+// Loop instead of spread+map to avoid GC pressure at 2000 history points.
+
+function computeYMax(history: HistoryPoint[], tab: ChartTab): number {
+    if (tab === 'accuracy') return 1;
+    if (history.length === 0) return 0.01;
+    let maxLoss = 0;
+    for (const p of history) {
+        if (p.trainLoss > maxLoss) maxLoss = p.trainLoss;
+        if (p.testLoss > maxLoss) maxLoss = p.testLoss;
+    }
+    return Math.max(maxLoss * 1.1, 0.01);
+}
+
+// ── Grid / line / legend helpers (unchanged) ─────────────────────────────────
 
 function drawGrid(
     ctx: CanvasRenderingContext2D,
@@ -170,11 +267,18 @@ function drawLegend(
     }
 }
 
-export function LossChart() {
+// ── Component ────────────────────────────────────────────────────────────────
+
+export const LossChart = memo(function LossChart() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const history = usePlaygroundStore((s) => s.history);
+    const history = useTrainingStore((s) => s.history);
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const [tab, setTab] = useState<ChartTab>('loss');
+
+    // Incremental draw state — track what was already on the canvas
+    const lastDrawnIndexRef = useRef(0);
+    const lastYMaxRef = useRef(0);
+    const lastTabRef = useRef<ChartTab>('loss');
 
     // If we switch to regression, snap back to loss tab
     useEffect(() => {
@@ -186,7 +290,44 @@ export function LossChart() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        drawChart(ctx, history, tab);
+
+        const len = history.length;
+        const tabChanged = tab !== lastTabRef.current;
+        const historyShrank = len < lastDrawnIndexRef.current;
+        const notEnoughData = len <= 1;
+
+        // Determine if we need a full redraw
+        let needFullRedraw = tabChanged || historyShrank || notEnoughData;
+        let currentYMax = lastYMaxRef.current;
+
+        if (!needFullRedraw && tab === 'loss') {
+            // Fast path: only check NEW points to see if y-axis must expand.
+            // This avoids O(N) scan every frame when the scale is stable.
+            for (let i = lastDrawnIndexRef.current; i < len; i++) {
+                const p = history[i];
+                const maxThis = Math.max(p.trainLoss, p.testLoss);
+                if (maxThis * 1.1 > currentYMax * 1.05) {
+                    // Y-axis needs to grow — recompute full yMax and force full redraw
+                    currentYMax = computeYMax(history, 'loss');
+                    needFullRedraw = true;
+                    break;
+                }
+            }
+        }
+
+        if (needFullRedraw) {
+            // Recompute yMax from scratch for the full draw
+            if (tab === 'loss') currentYMax = computeYMax(history, 'loss');
+            drawChart(ctx, history, tab);
+            lastDrawnIndexRef.current = len;
+            lastYMaxRef.current = currentYMax;
+            lastTabRef.current = tab;
+        } else if (len > lastDrawnIndexRef.current) {
+            // Incremental: append only the new line segments
+            drawChartIncremental(ctx, history, lastDrawnIndexRef.current, tab, lastYMaxRef.current);
+            lastDrawnIndexRef.current = len;
+        }
+        // else: len === lastDrawnIndex → no new data, skip canvas update entirely
     }, [history, tab]);
 
     return (
@@ -217,4 +358,4 @@ export function LossChart() {
             />
         </div>
     );
-}
+});

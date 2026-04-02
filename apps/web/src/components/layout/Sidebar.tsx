@@ -1,4 +1,5 @@
 // ── Sidebar Component ──
+import { memo } from 'react';
 import { PresetPanel } from '../controls/PresetPanel.tsx';
 import { DataPanel } from '../controls/DataPanel.tsx';
 import { FeaturesPanel } from '../controls/FeaturesPanel.tsx';
@@ -10,7 +11,7 @@ interface SidebarProps {
     onReset: () => void;
 }
 
-export function Sidebar({ onReset }: SidebarProps) {
+export const Sidebar = memo(function Sidebar({ onReset }: SidebarProps) {
     return (
         <aside className="sidebar" role="complementary" aria-label="Configuration">
             <PresetPanel onReset={onReset} />
@@ -21,5 +22,5 @@ export function Sidebar({ onReset }: SidebarProps) {
             <ConfigPanel onReset={onReset} />
         </aside>
     );
-}
+});
 

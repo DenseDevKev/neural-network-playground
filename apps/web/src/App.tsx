@@ -1,14 +1,14 @@
 // ── Root App Component ──
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/layout/Header.tsx';
 import { Sidebar } from './components/layout/Sidebar.tsx';
 import { MainArea } from './components/layout/MainArea.tsx';
 import { useTraining } from './hooks/useTraining.ts';
-import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
+import { useTrainingStore } from './store/useTrainingStore.ts';
 
 export default function App() {
     const training = useTraining();
-    const status = usePlaygroundStore((s) => s.status);
+    const status = useTrainingStore((s) => s.status);
 
     // Stable ref so the keydown handler never goes stale between renders.
     const trainingRef = useRef(training);
@@ -45,12 +45,15 @@ export default function App() {
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, []); // empty deps — handler reads always-current refs
+    // Stable callback for Sidebar — delegates to the always-current ref
+    // so React.memo on Sidebar actually prevents re-renders.
+    const stableReset = useCallback(() => trainingRef.current.reset(), []);
 
     return (
         <div className="app-shell">
             <Header />
             <div className="main-layout">
-                <Sidebar onReset={training.reset} />
+                <Sidebar onReset={stableReset} />
                 <MainArea training={training} />
             </div>
             <footer className="footer">

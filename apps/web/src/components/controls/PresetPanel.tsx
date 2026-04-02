@@ -1,7 +1,7 @@
 // ── Preset Panel ──
 // Dropdown to quickly apply curated experiment presets.
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, memo } from 'react';
 import { PRESETS } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 
@@ -9,7 +9,7 @@ interface PresetPanelProps {
     onReset: () => void;
 }
 
-export function PresetPanel({ onReset }: PresetPanelProps) {
+export const PresetPanel = memo(function PresetPanel({ onReset }: PresetPanelProps) {
     const applyPreset = usePlaygroundStore((s) => s.applyPreset);
     const [selectedId, setSelectedId] = useState('');
     const selectedPreset = PRESETS.find((p) => p.id === selectedId);
@@ -55,4 +55,4 @@ export function PresetPanel({ onReset }: PresetPanelProps) {
             )}
         </div>
     );
-}
+});

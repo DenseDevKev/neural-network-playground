@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 // ── URL serialization for shareable state ──
 import type { FeatureFlags, DataConfig, TrainingConfig, DatasetType } from '@nn-playground/engine';
 import type { AppConfig, UIConfig } from './types.js';
@@ -72,7 +73,7 @@ export function decodeUrlState(hash: string): AppConfig {
 
     const hiddenLayersStr = p.get('hl');
     const hiddenLayers = hiddenLayersStr
-        ? hiddenLayersStr.split(',').map(Number).filter((n) => !isNaN(n) && n > 0)
+        ? hiddenLayersStr.split(',').map(Number).filter((n: number) => !isNaN(n) && n > 0)
         : [...DEFAULT_NETWORK.hiddenLayers];
 
     const inputSize = countActiveFeatures(features);

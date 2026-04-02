@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { getActivation } from '../activations.js';
 import type { ActivationType } from '../types.js';
 
-const EPSILON = 1e-5;
-
 describe('getActivation', () => {
     it('returns a function pair for all known types', () => {
         const types: ActivationType[] = [

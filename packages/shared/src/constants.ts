@@ -13,12 +13,6 @@ export const LEARNING_RATES = [0.00001, 0.0001, 0.001, 0.003, 0.01, 0.03, 0.1, 0
 export const BATCH_SIZES = [1, 2, 4, 8, 10, 16, 32, 64];
 export const REGULARIZATION_RATES = [0, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1];
 
-/** Color scale for decision boundary heatmap (blue → white → orange). */
-export const HEATMAP_COLORS = {
-    negative: '#1a73e8',   // blue
-    neutral: '#1e1e2e',    // dark
-    positive: '#f4511e',   // orange
-};
 
 export const DEFAULT_FEATURES: FeatureFlags = {
     x: true, y: true,

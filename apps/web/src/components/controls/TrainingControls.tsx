@@ -1,5 +1,6 @@
 // ── Training Controls ──
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { memo } from 'react';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 
 interface Props {
@@ -14,11 +15,11 @@ const SPEED_OPTIONS: { value: number; label: string }[] = [
     { value: 50, label: '50×' },
 ];
 
-export function TrainingControls({ training }: Props) {
-    const status = usePlaygroundStore((s) => s.status);
-    const snapshot = usePlaygroundStore((s) => s.snapshot);
-    const stepsPerFrame = usePlaygroundStore((s) => s.stepsPerFrame);
-    const setStepsPerFrame = usePlaygroundStore((s) => s.setStepsPerFrame);
+export const TrainingControls = memo(function TrainingControls({ training }: Props) {
+    const status = useTrainingStore((s) => s.status);
+    const snapshot = useTrainingStore((s) => s.snapshot);
+    const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
+    const setStepsPerFrame = useTrainingStore((s) => s.setStepsPerFrame);
     const isRunning = status === 'running';
 
     return (
@@ -75,4 +76,4 @@ export function TrainingControls({ training }: Props) {
             </div>
         </div>
     );
-}
+});

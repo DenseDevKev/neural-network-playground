@@ -1,4 +1,5 @@
 // ── Data Panel ──
+import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import type { DatasetType } from '@nn-playground/engine';
 
@@ -22,7 +23,7 @@ interface DataPanelProps {
     onReset: () => void;
 }
 
-export function DataPanel({ onReset }: DataPanelProps) {
+export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
     const dataset = usePlaygroundStore((s) => s.data.dataset);
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const noise = usePlaygroundStore((s) => s.data.noise);
@@ -105,4 +106,4 @@ export function DataPanel({ onReset }: DataPanelProps) {
             </button>
         </div>
     );
-}
+});

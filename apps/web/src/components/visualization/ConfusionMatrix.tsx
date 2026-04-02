@@ -1,9 +1,11 @@
 // ── Confusion Matrix Component ──
+import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 
-export function ConfusionMatrix() {
+export const ConfusionMatrix = memo(function ConfusionMatrix() {
     const problemType = usePlaygroundStore((s) => s.data.problemType);
-    const cm = usePlaygroundStore((s) => s.snapshot?.testMetrics.confusionMatrix);
+    const cm = useTrainingStore((s) => s.snapshot?.testMetrics.confusionMatrix);
 
     if (problemType !== 'classification') return null;
     if (!cm) return null;
@@ -44,4 +46,4 @@ export function ConfusionMatrix() {
             </div>
         </div>
     );
-}
+});

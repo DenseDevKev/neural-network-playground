@@ -1,3 +1,14 @@
+export {
+    valueToColor,
+    writeGridToImageData,
+    writeNormalizedHeatmap,
+    HEX_BLUE,
+    HEX_ORANGE,
+    COLOR_BLUE,
+    COLOR_ORANGE,
+    COLOR_DARK,
+} from './colorScale.js';
+export type { RGB } from './colorScale.js';
 export { PRESETS } from './presets.js';
 export { generatePseudocode, generateNumPy, generateTFJS } from './codeExport.js';
 export {
@@ -16,7 +27,6 @@ export {
     LEARNING_RATES,
     BATCH_SIZES,
     REGULARIZATION_RATES,
-    HEATMAP_COLORS,
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
@@ -29,3 +39,19 @@ export type {
     TrainingStatus,
     PlaygroundState,
 } from './types.js';
+export {
+    DEFAULT_DEMAND,
+} from './workerProtocol.js';
+export type {
+    VisualizationDemand,
+    SnapshotScalars,
+    WorkerSnapshotMessage,
+    WorkerStatusMessage,
+    WorkerErrorMessage,
+    WorkerToMainMessage,
+    StartTrainingCommand,
+    StopTrainingCommand,
+    UpdateDemandCommand,
+    UpdateSpeedCommand,
+    MainToWorkerCommand,
+} from './workerProtocol.js';

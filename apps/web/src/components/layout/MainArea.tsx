@@ -1,4 +1,5 @@
 // ── MainArea Component ──
+import { memo } from 'react';
 import { TrainingControls } from '../controls/TrainingControls.tsx';
 import { NetworkGraph } from '../visualization/NetworkGraph.tsx';
 import { DecisionBoundary } from '../visualization/DecisionBoundary.tsx';
@@ -8,16 +9,18 @@ import { CodeExportPanel } from '../controls/CodeExportPanel.tsx';
 import { InspectionPanel } from '../controls/InspectionPanel.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
 
 interface MainAreaProps {
     training: TrainingHook;
 }
 
-export function MainArea({ training }: MainAreaProps) {
+export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
     const showTestData = usePlaygroundStore((s) => s.ui.showTestData);
     const discretize = usePlaygroundStore((s) => s.ui.discretizeOutput);
-    const trainPoints = usePlaygroundStore((s) => s.trainPoints);
-    const testPoints = usePlaygroundStore((s) => s.testPoints);
+    const trainPoints = useTrainingStore((s) => s.trainPoints);
+    const testPoints = useTrainingStore((s) => s.testPoints);
 
     return (
         <>
@@ -36,11 +39,11 @@ export function MainArea({ training }: MainAreaProps) {
                 />
                 <div className="legend">
                     <div className="legend__item">
-                        <div className="legend__swatch" style={{ background: '#3b82f6' }} />
+                        <div className="legend__swatch" style={{ background: HEX_BLUE }} />
                         <span>Negative / Class 0</span>
                     </div>
                     <div className="legend__item">
-                        <div className="legend__swatch" style={{ background: '#f97316' }} />
+                        <div className="legend__swatch" style={{ background: HEX_ORANGE }} />
                         <span>Positive / Class 1</span>
                     </div>
                 </div>
@@ -70,5 +73,5 @@ export function MainArea({ training }: MainAreaProps) {
             </aside>
         </>
     );
-}
+});
 

@@ -1,4 +1,5 @@
 // ── Network Configuration Panel ──
+import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { ACTIVATION_LABELS } from '@nn-playground/engine';
 import type { ActivationType } from '@nn-playground/engine';
@@ -6,7 +7,7 @@ import { MAX_HIDDEN_LAYERS } from '@nn-playground/shared';
 
 const ACTIVATIONS: ActivationType[] = ['relu', 'tanh', 'sigmoid', 'linear', 'leakyRelu', 'elu', 'swish', 'softplus'];
 
-export function NetworkConfigPanel() {
+export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const activation = usePlaygroundStore((s) => s.network.activation);
     const store = usePlaygroundStore;
@@ -71,4 +72,4 @@ export function NetworkConfigPanel() {
             </div>
         </div>
     );
-}
+});

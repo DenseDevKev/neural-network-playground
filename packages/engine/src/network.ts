@@ -311,6 +311,101 @@ export class Network {
         return { outputGrid, neuronGrids };
     }
 
+    /**
+     * Predict grid and write results directly into a pre-allocated Float32Array.
+     * This avoids creating intermediate number[] arrays.
+     */
+    predictGridInto(
+        gridInputs: number[][],
+        target: Float32Array,
+    ): void {
+        for (let i = 0; i < gridInputs.length; i++) {
+            target[i] = this.forward(gridInputs[i])[0];
+        }
+    }
+
+    /**
+     * Predict grid + per-neuron activations, writing directly into Float32Arrays.
+     * `outputTarget` receives the output predictions.
+     * `neuronTarget` receives all neuron activations, flattened layer-by-layer.
+     */
+    predictGridWithNeuronsInto(
+        gridInputs: number[][],
+        outputTarget: Float32Array,
+        neuronTarget: Float32Array,
+    ): void {
+        const numLayers = this.weights.length;
+        // Total neurons across all layers
+        let totalNeurons = 0;
+        for (let l = 0; l < numLayers; l++) {
+            totalNeurons += this.weights[l].length;
+        }
+
+        for (let i = 0; i < gridInputs.length; i++) {
+            const output = this.forward(gridInputs[i]);
+            outputTarget[i] = output[0];
+
+            // Write per-neuron activations at offset: neuronIndex * gridLength + gridPosition
+            let neuronIdx = 0;
+            for (let l = 0; l < numLayers; l++) {
+                for (let n = 0; n < this.layerOutputs[l].length; n++) {
+                    neuronTarget[neuronIdx * gridInputs.length + i] = this.layerOutputs[l][n];
+                    neuronIdx++;
+                }
+            }
+        }
+    }
+
+    /**
+     * Pack all weights into a flat Float32Array (row-major, layer by layer).
+     * Returns { buffer, layerSizes } where layerSizes = [inputSize, h1, h2, ..., outputSize].
+     */
+    getWeightsFlat(): { buffer: Float32Array; layerSizes: number[] } {
+        let totalWeights = 0;
+        for (const layer of this.weights) {
+            for (const neuron of layer) {
+                totalWeights += neuron.length;
+            }
+        }
+        const buffer = new Float32Array(totalWeights);
+        let offset = 0;
+        for (const layer of this.weights) {
+            for (const neuron of layer) {
+                buffer.set(neuron, offset);
+                offset += neuron.length;
+            }
+        }
+        return { buffer, layerSizes: [...this.layerSizes] };
+    }
+
+    /**
+     * Pack all biases into a flat Float32Array (layer by layer).
+     */
+    getBiasesFlat(): Float32Array {
+        let totalBiases = 0;
+        for (const layer of this.biases) {
+            totalBiases += layer.length;
+        }
+        const buffer = new Float32Array(totalBiases);
+        let offset = 0;
+        for (const layer of this.biases) {
+            buffer.set(layer, offset);
+            offset += layer.length;
+        }
+        return buffer;
+    }
+
+    /**
+     * Count total neurons across all hidden + output layers.
+     */
+    getTotalNeuronCount(): number {
+        let count = 0;
+        for (const layer of this.weights) {
+            count += layer.length;
+        }
+        return count;
+    }
+
 
     /** Evaluate loss+accuracy on a dataset. */
     evaluate(

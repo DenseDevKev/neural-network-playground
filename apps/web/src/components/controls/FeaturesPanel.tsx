@@ -1,9 +1,10 @@
 // ── Features Panel ──
+import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { ALL_FEATURES } from '@nn-playground/engine';
 import type { FeatureFlags } from '@nn-playground/engine';
 
-export function FeaturesPanel() {
+export const FeaturesPanel = memo(function FeaturesPanel() {
     const features = usePlaygroundStore((s) => s.features);
     const store = usePlaygroundStore;
 
@@ -25,4 +26,4 @@ export function FeaturesPanel() {
             </div>
         </div>
     );
-}
+});

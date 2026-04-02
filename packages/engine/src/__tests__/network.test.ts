@@ -101,10 +101,8 @@ describe('Network forward pass', () => {
     it('linear output activation can produce values outside [0,1]', () => {
         const net = new Network(makeConfig({ outputActivation: 'linear' }));
         // With xavier-init weights, some inputs may produce values outside [0,1]
-        let outsideRange = false;
         for (let i = 0; i < 50; i++) {
-            const out = net.forward([i * 0.1 - 2.5, i * 0.1 - 2.5]);
-            if (out[0] < 0 || out[0] > 1) outsideRange = true;
+            net.forward([i * 0.1 - 2.5, i * 0.1 - 2.5]);
         }
         // May or may not be outside range, but output should be a valid number
         const out = net.forward([1, 1]);
@@ -285,5 +283,115 @@ describe('buildGridInputs', () => {
         for (const inp of inputs) {
             expect(inp).toHaveLength(2); // x and y features
         }
+    });
+});
+
+describe('predictGridInto', () => {
+    it('writes identical results to predictGrid', () => {
+        const net = new Network(makeConfig());
+        const active = getActiveFeatures(defaultFeatureFlags());
+        const gridInputs = buildGridInputs(10, active);
+
+        const expected = net.predictGrid(gridInputs);
+        const target = new Float32Array(gridInputs.length);
+        net.predictGridInto(gridInputs, target);
+
+        for (let i = 0; i < expected.length; i++) {
+            expect(target[i]).toBeCloseTo(expected[i], 5);
+        }
+    });
+});
+
+describe('predictGridWithNeuronsInto', () => {
+    it('produces results consistent with predictGridWithNeurons', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3, 2] }));
+        const active = getActiveFeatures(defaultFeatureFlags());
+        const gridInputs = buildGridInputs(5, active);
+        const gridLen = gridInputs.length; // 25
+
+        // Original method
+        const { outputGrid, neuronGrids } = net.predictGridWithNeurons(gridInputs);
+
+        // New typed-array method
+        const totalNeurons = net.getTotalNeuronCount();
+        const outputTarget = new Float32Array(gridLen);
+        const neuronTarget = new Float32Array(totalNeurons * gridLen);
+        net.predictGridWithNeuronsInto(gridInputs, outputTarget, neuronTarget);
+
+        // Compare output grids
+        for (let i = 0; i < outputGrid.length; i++) {
+            expect(outputTarget[i]).toBeCloseTo(outputGrid[i], 5);
+        }
+
+        // Compare neuron grids
+        for (let n = 0; n < neuronGrids.length; n++) {
+            for (let g = 0; g < gridLen; g++) {
+                expect(neuronTarget[n * gridLen + g]).toBeCloseTo(neuronGrids[n][g], 5);
+            }
+        }
+    });
+});
+
+describe('getWeightsFlat / getBiasesFlat', () => {
+    it('flat weights contain all values from nested weights', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [4, 3] }));
+        const nested = net.getWeights();
+        const { buffer, layerSizes } = net.getWeightsFlat();
+
+        expect(layerSizes).toEqual([2, 4, 3, 1]);
+
+        // Count expected total
+        let expectedTotal = 0;
+        for (const layer of nested) {
+            for (const neuron of layer) {
+                expectedTotal += neuron.length;
+            }
+        }
+        expect(buffer.length).toBe(expectedTotal);
+
+        // Verify values match
+        let idx = 0;
+        for (const layer of nested) {
+            for (const neuron of layer) {
+                for (const w of neuron) {
+                    expect(buffer[idx]).toBeCloseTo(w, 5);
+                    idx++;
+                }
+            }
+        }
+    });
+
+    it('flat biases contain all values from nested biases', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [4, 3] }));
+        const nested = net.getBiases();
+        const flat = net.getBiasesFlat();
+
+        let expectedTotal = 0;
+        for (const layer of nested) {
+            expectedTotal += layer.length;
+        }
+        expect(flat.length).toBe(expectedTotal);
+
+        let idx = 0;
+        for (const layer of nested) {
+            for (const b of layer) {
+                expect(flat[idx]).toBeCloseTo(b, 5);
+                idx++;
+            }
+        }
+    });
+});
+
+describe('getTotalNeuronCount', () => {
+    it('returns correct total for single hidden layer', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [4] }));
+        // 4 hidden + 1 output = 5
+        expect(net.getTotalNeuronCount()).toBe(5);
+    });
+
+    it('returns correct total for multi-layer network', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [8, 6, 4] }));
+        // 8 + 6 + 4 + 1 = 19
+        expect(net.getTotalNeuronCount()).toBe(19);
     });
 });

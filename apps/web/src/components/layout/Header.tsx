@@ -1,8 +1,9 @@
 // ── Header Component ──
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { memo } from 'react';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 
-export function Header() {
-    const snapshot = usePlaygroundStore((s) => s.snapshot);
+export const Header = memo(function Header() {
+    const snapshot = useTrainingStore((s) => s.snapshot);
 
     const epoch = snapshot?.epoch ?? 0;
     const trainLoss = snapshot?.trainLoss ?? 0;
@@ -47,4 +48,4 @@ export function Header() {
             </div>
         </header>
     );
-}
+});

@@ -1,12 +1,18 @@
 // ── Hyperparameter Panel ──
+import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { LEARNING_RATES, REGULARIZATION_RATES, BATCH_SIZES } from '@nn-playground/shared';
 import { LOSS_LABELS } from '@nn-playground/engine';
 import type { LossType, OptimizerType, RegularizationType } from '@nn-playground/engine';
 
-export function HyperparamPanel() {
-    const training = usePlaygroundStore((s) => s.training);
-    const store = usePlaygroundStore;
+export const HyperparamPanel = memo(function HyperparamPanel() {
+    // Granular selectors — only re-render when the specific field changes
+    const learningRate = usePlaygroundStore((s) => s.training.learningRate);
+    const lossType = usePlaygroundStore((s) => s.training.lossType);
+    const optimizer = usePlaygroundStore((s) => s.training.optimizer);
+    const batchSize = usePlaygroundStore((s) => s.training.batchSize);
+    const regularization = usePlaygroundStore((s) => s.training.regularization);
+    const regularizationRate = usePlaygroundStore((s) => s.training.regularizationRate);
 
     return (
         <div className="panel">
@@ -17,8 +23,8 @@ export function HyperparamPanel() {
                 <span className="control-label">Learning rate</span>
                 <select
                     className="select"
-                    value={training.learningRate}
-                    onChange={(e) => store.getState().setLearningRate(Number(e.target.value))}
+                    value={learningRate}
+                    onChange={(e) => usePlaygroundStore.getState().setLearningRate(Number(e.target.value))}
                 >
                     {LEARNING_RATES.map((lr) => (
                         <option key={lr} value={lr}>{lr}</option>
@@ -31,8 +37,8 @@ export function HyperparamPanel() {
                 <span className="control-label">Loss</span>
                 <select
                     className="select"
-                    value={training.lossType}
-                    onChange={(e) => store.getState().setLossType(e.target.value as LossType)}
+                    value={lossType}
+                    onChange={(e) => usePlaygroundStore.getState().setLossType(e.target.value as LossType)}
                 >
                     {(Object.keys(LOSS_LABELS) as LossType[]).map((l) => (
                         <option key={l} value={l}>{LOSS_LABELS[l]}</option>
@@ -45,8 +51,8 @@ export function HyperparamPanel() {
                 <span className="control-label">Optimizer</span>
                 <select
                     className="select"
-                    value={training.optimizer}
-                    onChange={(e) => store.getState().setOptimizer(e.target.value as OptimizerType)}
+                    value={optimizer}
+                    onChange={(e) => usePlaygroundStore.getState().setOptimizer(e.target.value as OptimizerType)}
                 >
                     <option value="sgd">SGD</option>
                     <option value="sgdMomentum">SGD + Momentum</option>
@@ -59,8 +65,8 @@ export function HyperparamPanel() {
                 <span className="control-label">Batch size</span>
                 <select
                     className="select"
-                    value={training.batchSize}
-                    onChange={(e) => store.getState().setBatchSize(Number(e.target.value))}
+                    value={batchSize}
+                    onChange={(e) => usePlaygroundStore.getState().setBatchSize(Number(e.target.value))}
                 >
                     {BATCH_SIZES.map((bs) => (
                         <option key={bs} value={bs}>{bs}</option>
@@ -73,8 +79,8 @@ export function HyperparamPanel() {
                 <span className="control-label">Regularization</span>
                 <select
                     className="select"
-                    value={training.regularization}
-                    onChange={(e) => store.getState().setRegularization(e.target.value as RegularizationType)}
+                    value={regularization}
+                    onChange={(e) => usePlaygroundStore.getState().setRegularization(e.target.value as RegularizationType)}
                 >
                     <option value="none">None</option>
                     <option value="l1">L1</option>
@@ -83,13 +89,13 @@ export function HyperparamPanel() {
             </div>
 
             {/* Regularization rate */}
-            {training.regularization !== 'none' && (
+            {regularization !== 'none' && (
                 <div className="control-row">
                     <span className="control-label">Reg. rate</span>
                     <select
                         className="select"
-                        value={training.regularizationRate}
-                        onChange={(e) => store.getState().setRegularizationRate(Number(e.target.value))}
+                        value={regularizationRate}
+                        onChange={(e) => usePlaygroundStore.getState().setRegularizationRate(Number(e.target.value))}
                     >
                         {REGULARIZATION_RATES.map((r) => (
                             <option key={r} value={r}>{r}</option>
@@ -99,4 +105,4 @@ export function HyperparamPanel() {
             )}
         </div>
     );
-}
+});
