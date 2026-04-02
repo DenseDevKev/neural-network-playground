@@ -29,14 +29,27 @@ const state = {
 };
 
 // ---------- Data generation ----------
-function rand(min, max) { return Math.random() * (max - min) + min; }
+const _cryptoBuffer = new Uint32Array(1);
+/**
+ * Generates a cryptographically secure random float between 0 and 1.
+ * Falls back to Math.random() if crypto API is not available.
+ */
+function secureRandom() {
+  if (window.crypto && window.crypto.getRandomValues) {
+    window.crypto.getRandomValues(_cryptoBuffer);
+    return _cryptoBuffer[0] / (0xffffffff + 1);
+  }
+  return Math.random();
+}
+
+function rand(min, max) { return secureRandom() * (max - min) + min; }
 
 function genCircle(pointsPerClass, noise) {
   const innerRadius = 0.3;
   const outerRadius = 0.8;
   const X = []; const y = [];
   for (let i = 0; i < pointsPerClass; i++) {
-    const a = rand(0, 2 * Math.PI); const r = innerRadius * Math.sqrt(Math.random()) + rand(-noise, noise);
+    const a = rand(0, 2 * Math.PI); const r = innerRadius * Math.sqrt(secureRandom()) + rand(-noise, noise);
     X.push([r * Math.cos(a), r * Math.sin(a)]); y.push(0);
   }
   for (let i = 0; i < pointsPerClass; i++) {
@@ -70,7 +83,7 @@ function genXor(pointsPerClass, noise) {
   const per = Math.ceil(pointsPerClass / 2);
   for (const [cx, cy, lab] of clusters) {
     for (let i = 0; i < per; i++) {
-      const u1 = Math.random(); const u2 = Math.random();
+      const u1 = secureRandom(); const u2 = secureRandom();
       const rr = r * Math.sqrt(-2 * Math.log(u1)) * (1 + rand(-noise, noise));
       const th = 2 * Math.PI * u2;
       X.push([cx + rr * Math.cos(th), cy + rr * Math.sin(th)]); y.push(lab);
@@ -85,7 +98,7 @@ function genGaussian(pointsPerClass, noise) {
   const per = Math.ceil(pointsPerClass / 2);
   for (const [cx, cy, lab] of clusters) {
     for (let i = 0; i < per; i++) {
-      const u1 = Math.random(); const u2 = Math.random();
+      const u1 = secureRandom(); const u2 = secureRandom();
       const rr = 0.4 * Math.sqrt(-2 * Math.log(u1)) * (1 + rand(-noise, noise));
       const th = 2 * Math.PI * u2;
       X.push([cx + rr * Math.cos(th), cy + rr * Math.sin(th)]); y.push(lab);
