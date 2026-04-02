@@ -99,10 +99,13 @@ export class Network {
             const preActs: number[] = [];
             const outputs: number[] = [];
 
-            for (let n = 0; n < this.weights[l].length; n++) {
-                let sum = this.biases[l][n];
-                for (let w = 0; w < this.weights[l][n].length; w++) {
-                    sum += this.weights[l][n][w] * current[w];
+            const layerWeights = this.weights[l];
+            const layerBiases = this.biases[l];
+            for (let n = 0; n < layerWeights.length; n++) {
+                let sum = layerBiases[n];
+                const neuronWeights = layerWeights[n];
+                for (let w = 0, len = neuronWeights.length; w < len; w++) {
+                    sum += neuronWeights[w] * current[w];
                 }
                 preActs.push(sum);
                 outputs.push(activation.f(sum));
