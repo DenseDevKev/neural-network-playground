@@ -132,11 +132,18 @@ export class Network {
         // Backpropagate through layers
         for (let l = numLayers - 1; l >= 0; l--) {
             const prevOutput = l > 0 ? this.layerOutputs[l - 1] : this.input;
+            const layerWeights = this.weights[l];
+            const layerWeightGrads = this.weightGrads[l];
+            const layerBiasGrads = this.biasGrads[l];
 
             for (let n = 0; n < deltas.length; n++) {
-                this.biasGrads[l][n] += deltas[n];
-                for (let w = 0; w < this.weights[l][n].length; w++) {
-                    this.weightGrads[l][n][w] += deltas[n] * prevOutput[w];
+                const delta = deltas[n];
+                layerBiasGrads[n] += delta;
+
+                const neuronWeights = layerWeights[n];
+                const neuronWeightGrads = layerWeightGrads[n];
+                for (let w = 0; w < neuronWeights.length; w++) {
+                    neuronWeightGrads[w] += delta * prevOutput[w];
                 }
             }
 
@@ -144,8 +151,10 @@ export class Network {
                 const act = getActivation(this.config.activation);
                 const newDeltas: number[] = new Array(this.layerSizes[l]).fill(0);
                 for (let n = 0; n < deltas.length; n++) {
-                    for (let w = 0; w < this.weights[l][n].length; w++) {
-                        newDeltas[w] += deltas[n] * this.weights[l][n][w];
+                    const delta = deltas[n];
+                    const neuronWeights = layerWeights[n];
+                    for (let w = 0; w < neuronWeights.length; w++) {
+                        newDeltas[w] += delta * neuronWeights[w];
                     }
                 }
                 deltas = newDeltas.map((d, i) =>
