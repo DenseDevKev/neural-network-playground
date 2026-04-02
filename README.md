@@ -107,3 +107,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 ## 📄 License
 
 [Apache 2.0](LICENSE) — inspired by [TensorFlow Playground](https://github.com/tensorflow/playground) by Daniel Smilkov & Shan Carter.
+# neural-network-playground
