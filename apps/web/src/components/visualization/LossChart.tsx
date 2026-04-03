@@ -13,6 +13,9 @@ const CHART_W = 400;
 const CHART_H = 140;
 const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 
+const Y_AXIS_PADDED_MAX_MULTIPLIER = 1.1;
+const Y_AXIS_REDRAW_THRESHOLD_MULTIPLIER = 1.05;
+
 type ChartTab = 'loss' | 'accuracy';
 type HistoryPoint = { trainLoss: number; testLoss: number; trainAccuracy?: number; testAccuracy?: number };
 
@@ -182,7 +185,7 @@ function computeYMax(history: HistoryPoint[], tab: ChartTab): number {
         if (p.trainLoss > maxLoss) maxLoss = p.trainLoss;
         if (p.testLoss > maxLoss) maxLoss = p.testLoss;
     }
-    return Math.max(maxLoss * 1.1, 0.01);
+    return Math.max(maxLoss * Y_AXIS_PADDED_MAX_MULTIPLIER, 0.01);
 }
 
 // ── Grid / line / legend helpers (unchanged) ─────────────────────────────────
@@ -306,7 +309,7 @@ export const LossChart = memo(function LossChart() {
             for (let i = lastDrawnIndexRef.current; i < len; i++) {
                 const p = history[i];
                 const maxThis = Math.max(p.trainLoss, p.testLoss);
-                if (maxThis * 1.1 > currentYMax * 1.05) {
+                if (maxThis * Y_AXIS_PADDED_MAX_MULTIPLIER > currentYMax * Y_AXIS_REDRAW_THRESHOLD_MULTIPLIER) {
                     // Y-axis needs to grow — recompute full yMax and force full redraw
                     currentYMax = computeYMax(history, 'loss');
                     needFullRedraw = true;
