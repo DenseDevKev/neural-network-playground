@@ -5,6 +5,7 @@ import { useState, useMemo, useCallback, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { generatePseudocode, generateNumPy, generateTFJS } from '@nn-playground/shared';
+import { Tooltip } from '../common/Tooltip.tsx';
 
 type CodeTab = 'pseudocode' | 'numpy' | 'tfjs';
 
@@ -17,7 +18,6 @@ const TABS: { id: CodeTab; label: string }[] = [
 export const CodeExportPanel = memo(function CodeExportPanel() {
     const [activeTab, setActiveTab] = useState<CodeTab>('pseudocode');
     const [copied, setCopied] = useState(false);
-    const [expanded, setExpanded] = useState(false);
 
     const network = usePlaygroundStore((s) => s.network);
     const training = usePlaygroundStore((s) => s.training);
@@ -47,30 +47,8 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         });
     }, [code]);
 
-    if (!expanded) {
-        return (
-            <div className="panel">
-                <div
-                    className="panel__title"
-                    style={{ cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => setExpanded(true)}
-                >
-                    Code Export ▸
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="panel code-export-panel">
-            <div
-                className="panel__title"
-                style={{ cursor: 'pointer', userSelect: 'none' }}
-                onClick={() => setExpanded(false)}
-            >
-                Code Export ▾
-            </div>
-
+        <div className="code-export-panel">
             <div className="code-export__tabs">
                 {TABS.map((tab) => (
                     <button
@@ -87,13 +65,15 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
                 <pre className="code-export__code">{code}</pre>
             </div>
 
-            <button
-                className="btn btn--ghost btn--sm"
-                style={{ marginTop: 6, width: '100%' }}
-                onClick={handleCopy}
-            >
-                {copied ? '✓ Copied!' : '📋 Copy Code'}
-            </button>
+            <Tooltip content="Copy the generated code to your clipboard" block>
+                <button
+                    className="btn btn--ghost btn--sm"
+                    style={{ marginTop: 6, width: '100%' }}
+                    onClick={handleCopy}
+                >
+                    {copied ? '✓ Copied!' : '📋 Copy Code'}
+                </button>
+            </Tooltip>
         </div>
     );
 });

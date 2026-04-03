@@ -29,6 +29,7 @@ export function useTraining(): TrainingHook {
     // All refs first (stable hook order)
     const initializedRef = useRef(false);
     const prevConfigRef = useRef<string>('');
+    const prevConfigSyncNonceRef = useRef(0);
     const stepsPerFrameRef = useRef(5);
     const isPlayingRef = useRef(false);
 
@@ -41,6 +42,7 @@ export function useTraining(): TrainingHook {
 
     // Runtime selectors (from training store — volatile)
     const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
+    const configSyncNonce = useTrainingStore((s) => s.configSyncNonce);
 
     // Keep ref in sync so streaming commands use current speed.
     useEffect(() => {
@@ -57,6 +59,7 @@ export function useTraining(): TrainingHook {
             const ts = useTrainingStore.getState();
 
             if (msg.type === 'snapshot') {
+                ts.clearWorkerError();
                 // Apply snapshot scalars to training store
                 ts.setSnapshot({
                     step: msg.scalars.step,
@@ -86,6 +89,9 @@ export function useTraining(): TrainingHook {
                 } else if (msg.status === 'running') {
                     ts.setStatus('running');
                 }
+            } else if (msg.type === 'error') {
+                ts.setWorkerError(msg.message);
+                ts.setStatus('paused');
             }
         });
 
@@ -147,8 +153,11 @@ export function useTraining(): TrainingHook {
     useEffect(() => {
         if (!initializedRef.current) return;
         const configStr = JSON.stringify({ network, training, data, features });
-        if (configStr === prevConfigRef.current) return;
+        const isRetry = configSyncNonce !== prevConfigSyncNonceRef.current;
+        if (!isRetry && configStr === prevConfigRef.current) return;
+        const previousConfigStr = prevConfigRef.current;
         prevConfigRef.current = configStr;
+        prevConfigSyncNonceRef.current = configSyncNonce;
 
         const sync = async () => {
             // Stop streaming before config change
@@ -161,30 +170,36 @@ export function useTraining(): TrainingHook {
             const api = getWorkerApi();
             const ps = usePlaygroundStore.getState();
             const ts = useTrainingStore.getState();
-            newRun(); // Invalidate any in-flight snapshots
-            const config = ps.getConfig();
-            const snap = await api.updateConfig(
-                config.network,
-                config.training,
-                config.data,
-                config.features,
-                true,
-            );
-            ts.setSnapshot(snap);
-            ts.resetHistory();
-            if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
+            try {
+                newRun(); // Invalidate any in-flight snapshots
+                const config = ps.getConfig();
+                const snap = await api.updateConfig(
+                    config.network,
+                    config.training,
+                    config.data,
+                    config.features,
+                    true,
+                );
+                ts.setSnapshot(snap);
+                ts.resetHistory();
+                if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
 
-            // Update points reactively
-            const trainPts = await api.getTrainPoints();
-            const testPts = await api.getTestPoints();
-            ts.setTrainPoints(trainPts);
-            ts.setTestPoints(testPts);
+                // Update points reactively
+                const trainPts = await api.getTrainPoints();
+                const testPts = await api.getTestPoints();
+                ts.setTrainPoints(trainPts);
+                ts.setTestPoints(testPts);
 
-            ps.syncToUrl();
+                ps.syncToUrl();
+                ts.finishConfigChange();
+            } catch (error) {
+                prevConfigRef.current = previousConfigStr;
+                ts.failConfigChange(error instanceof Error ? error.message : 'Failed to update configuration');
+            }
         };
         sync();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [network, training, data, features]);
+    }, [network, training, data, features, configSyncNonce]);
 
     // Sync demand changes to worker
     useEffect(() => {

@@ -3,7 +3,8 @@
 
 import { useCallback, useRef, useState, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
-import { exportConfigJson, importConfigJson } from '@nn-playground/shared';
+import { exportConfigJson, validateImportedConfig } from '@nn-playground/shared';
+import { Tooltip } from '../common/Tooltip.tsx';
 
 interface ConfigPanelProps {
     onReset: () => void;
@@ -43,28 +44,41 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
             const file = e.target.files?.[0];
             if (!file) return;
 
+            if (file.size > 1024 * 1024) {
+                setFeedback('Config file must be smaller than 1MB');
+                setTimeout(() => setFeedback(null), 2000);
+                e.target.value = '';
+                return;
+            }
+
             const reader = new FileReader();
             reader.onload = (ev) => {
                 const text = ev.target?.result as string;
-                const config = importConfigJson(text);
-                if (config) {
+                let validation;
+                try {
+                    validation = validateImportedConfig(JSON.parse(text));
+                } catch {
+                    validation = { config: null, error: 'Invalid JSON file' };
+                }
+
+                if (validation.config) {
                     const store = usePlaygroundStore.getState();
                     store.applyPreset({
                         id: 'imported',
                         title: 'Imported Config',
                         description: '',
                         config: {
-                            data: config.data,
-                            network: config.network,
-                            features: config.features,
-                            training: config.training,
-                            ui: config.ui,
+                            data: validation.config.data,
+                            network: validation.config.network,
+                            features: validation.config.features,
+                            training: validation.config.training,
+                            ui: validation.config.ui,
                         },
                     });
                     onReset();
                     setFeedback('Imported!');
                 } else {
-                    setFeedback('Invalid config');
+                    setFeedback(validation.error ?? 'Invalid config');
                 }
                 setTimeout(() => setFeedback(null), 2000);
             };
@@ -76,18 +90,23 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
     );
 
     return (
-        <div className="panel">
-            <div className="panel__title">Config</div>
+        <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button className="btn btn--ghost btn--sm" onClick={handleExport}>
-                    ↓ Export JSON
-                </button>
-                <button className="btn btn--ghost btn--sm" onClick={handleImport}>
-                    ↑ Import JSON
-                </button>
-                <button className="btn btn--ghost btn--sm" onClick={handleCopyUrl}>
-                    🔗 Copy URL
-                </button>
+                <Tooltip content="Download the current playground configuration as JSON">
+                    <button className="btn btn--ghost btn--sm" onClick={handleExport}>
+                        ↓ Export JSON
+                    </button>
+                </Tooltip>
+                <Tooltip content="Import a previously saved JSON configuration file">
+                    <button className="btn btn--ghost btn--sm" onClick={handleImport}>
+                        ↑ Import JSON
+                    </button>
+                </Tooltip>
+                <Tooltip content="Copy a shareable URL for the current configuration">
+                    <button className="btn btn--ghost btn--sm" onClick={handleCopyUrl}>
+                        🔗 Copy URL
+                    </button>
+                </Tooltip>
             </div>
             {feedback && (
                 <div className="config-feedback">{feedback}</div>

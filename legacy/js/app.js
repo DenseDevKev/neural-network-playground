@@ -29,19 +29,12 @@ const state = {
 };
 
 // ---------- Data generation ----------
-const _cryptoBuffer = new Uint32Array(1);
-/**
- * Generates a cryptographically secure random float between 0 and 1.
- * Falls back to Math.random() if crypto API is not available.
- */
-function secureRandom() {
-  if (window.crypto && window.crypto.getRandomValues) {
-    window.crypto.getRandomValues(_cryptoBuffer);
-    return _cryptoBuffer[0] / (0xffffffff + 1);
-  }
-  return Math.random();
-}
 
+function secureRandom() {
+  const array = new Uint32Array(1);
+  window.crypto.getRandomValues(array);
+  return array[0] / (0xFFFFFFFF + 1);
+}
 function rand(min, max) { return secureRandom() * (max - min) + min; }
 
 function genCircle(pointsPerClass, noise) {
