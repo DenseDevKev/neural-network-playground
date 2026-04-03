@@ -1,14 +1,13 @@
 // ── Advanced Inspection Panel ──
 // Displays per-layer gradient magnitudes, activation stats, and weight distributions.
 
-import { useMemo, useState, memo } from 'react';
+import { useMemo, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 
 export const InspectionPanel = memo(function InspectionPanel() {
     const snapshot = useTrainingStore((s) => s.snapshot);
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
-    const [expanded, setExpanded] = useState(false);
 
     const layerStats = snapshot?.layerStats;
 
@@ -21,30 +20,8 @@ export const InspectionPanel = memo(function InspectionPanel() {
         return names;
     }, [hiddenLayers]);
 
-    if (!expanded) {
-        return (
-            <div className="panel">
-                <div
-                    className="panel__title"
-                    style={{ cursor: 'pointer', userSelect: 'none' }}
-                    onClick={() => setExpanded(true)}
-                >
-                    Inspection ▸
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="panel inspection-panel">
-            <div
-                className="panel__title"
-                style={{ cursor: 'pointer', userSelect: 'none' }}
-                onClick={() => setExpanded(false)}
-            >
-                Inspection ▾
-            </div>
-
+        <div className="inspection-panel">
             {!layerStats || layerStats.length === 0 ? (
                 <div className="inspection__empty">Train the model to see stats</div>
             ) : (

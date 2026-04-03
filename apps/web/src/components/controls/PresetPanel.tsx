@@ -1,9 +1,10 @@
 // ── Preset Panel ──
-// Dropdown to quickly apply curated experiment presets.
+// Card grid to quickly apply curated experiment presets.
 
 import { useState, useCallback, memo } from 'react';
-import { PRESETS } from '@nn-playground/shared';
+import { PRESETS, type Preset } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { PresetCard } from './PresetCard.tsx';
 
 interface PresetPanelProps {
     onReset: () => void;
@@ -12,47 +13,29 @@ interface PresetPanelProps {
 export const PresetPanel = memo(function PresetPanel({ onReset }: PresetPanelProps) {
     const applyPreset = usePlaygroundStore((s) => s.applyPreset);
     const [selectedId, setSelectedId] = useState('');
-    const selectedPreset = PRESETS.find((p) => p.id === selectedId);
 
-    const handleChange = useCallback(
-        (e: React.ChangeEvent<HTMLSelectElement>) => {
-            const id = e.target.value;
-            setSelectedId(id);
-            const preset = PRESETS.find((p) => p.id === id);
-            if (preset) {
-                applyPreset(preset);
-                onReset();
-            }
+    const handleSelect = useCallback(
+        (preset: Preset) => {
+            setSelectedId(preset.id);
+            applyPreset(preset);
+            onReset();
         },
         [applyPreset, onReset],
     );
 
     return (
-        <div className="panel preset-panel">
-            <div className="panel__title">Presets</div>
-            <div className="preset-select-wrapper">
-                <select
-                    className="select"
-                    style={{ width: '100%' }}
-                    value={selectedId}
-                    onChange={handleChange}
-                >
-                    <option value="">— Select a preset —</option>
-                    {PRESETS.map((p) => (
-                        <option key={p.id} value={p.id}>
-                            {p.title}
-                        </option>
-                    ))}
-                </select>
+        <div>
+            <div className="preset-grid" role="list" aria-label="Available presets">
+                {PRESETS.map((preset) => (
+                    <div key={preset.id} role="listitem">
+                        <PresetCard
+                            preset={preset}
+                            isSelected={selectedId === preset.id}
+                            onSelect={handleSelect}
+                        />
+                    </div>
+                ))}
             </div>
-            {selectedPreset && (
-                <>
-                    <div className="preset-description">{selectedPreset.description}</div>
-                    {selectedPreset.learningGoal && (
-                        <div className="preset-goal">💡 {selectedPreset.learningGoal}</div>
-                    )}
-                </>
-            )}
         </div>
     );
 });
