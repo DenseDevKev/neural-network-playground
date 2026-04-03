@@ -1,42 +1,69 @@
 // ── Network Configuration Panel ──
 import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { ACTIVATION_LABELS } from '@nn-playground/engine';
 import type { ActivationType } from '@nn-playground/engine';
 import { MAX_HIDDEN_LAYERS } from '@nn-playground/shared';
+import { LoadingState } from '../common/LoadingState.tsx';
+import { Tooltip } from '../common/Tooltip.tsx';
 
 const ACTIVATIONS: ActivationType[] = ['relu', 'tanh', 'sigmoid', 'linear', 'leakyRelu', 'elu', 'swish', 'softplus'];
 
 export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const activation = usePlaygroundStore((s) => s.network.activation);
+    const isLoading = useTrainingStore((s) => s.networkConfigLoading);
+    const configError = useTrainingStore((s) => s.configError);
+    const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const store = usePlaygroundStore;
 
+    const beginNetworkChange = () => useTrainingStore.getState().beginConfigChange('network');
+    const retryNetworkChange = () => useTrainingStore.getState().retryConfigSync();
+
     return (
-        <div className="panel">
-            <div className="panel__title">Network</div>
+        <div>
+            <LoadingState isLoading={isLoading} inline message="Initializing network..." />
+            {configError && configErrorSource === 'network' && (
+                <div className="config-feedback config-feedback--error" role="alert">
+                    <span>{configError}</span>
+                    <button className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
+                        Retry
+                    </button>
+                </div>
+            )}
 
             {/* Hidden layers +/- */}
             <div className="control-row" style={{ marginBottom: 8 }}>
                 <span className="control-label">Hidden Layers</span>
                 <div className="layer-controls">
-                    <button
-                        className="btn btn--ghost btn--icon btn--sm"
-                        onClick={() => store.getState().removeLayer()}
-                        disabled={hiddenLayers.length === 0}
-                        aria-label="Remove hidden layer"
-                    >
-                        −
-                    </button>
+                    <Tooltip content="Remove the last hidden layer">
+                        <button
+                            className="btn btn--ghost btn--icon btn--sm"
+                            onClick={() => {
+                                beginNetworkChange();
+                                store.getState().removeLayer();
+                            }}
+                            disabled={hiddenLayers.length === 0}
+                            aria-label="Remove hidden layer"
+                        >
+                            −
+                        </button>
+                    </Tooltip>
                     <span className="layer-controls__count">{hiddenLayers.length}</span>
-                    <button
-                        className="btn btn--ghost btn--icon btn--sm"
-                        onClick={() => store.getState().addLayer()}
-                        disabled={hiddenLayers.length >= MAX_HIDDEN_LAYERS}
-                        aria-label="Add hidden layer"
-                    >
-                        +
-                    </button>
+                    <Tooltip content="Add another hidden layer">
+                        <button
+                            className="btn btn--ghost btn--icon btn--sm"
+                            onClick={() => {
+                                beginNetworkChange();
+                                store.getState().addLayer();
+                            }}
+                            disabled={hiddenLayers.length >= MAX_HIDDEN_LAYERS}
+                            aria-label="Add hidden layer"
+                        >
+                            +
+                        </button>
+                    </Tooltip>
                 </div>
             </div>
 
@@ -49,26 +76,36 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                         min="1"
                         max="16"
                         value={count}
-                        onChange={(e) => store.getState().setNeuronsInLayer(idx, Number(e.target.value))}
+                        onChange={(e) => {
+                            beginNetworkChange();
+                            store.getState().setNeuronsInLayer(idx, Number(e.target.value));
+                        }}
                         aria-label={`Neurons in layer ${idx + 1}`}
                         style={{ flex: 1 }}
                     />
-                    <span className="neuron-badge">{count}</span>
+                    <Tooltip content={`${count} neurons in layer ${idx + 1}`}>
+                        <span className="neuron-badge">{count}</span>
+                    </Tooltip>
                 </div>
             ))}
 
             {/* Activation */}
             <div className="control-row" style={{ marginTop: 8 }}>
                 <span className="control-label">Activation</span>
-                <select
-                    className="select"
-                    value={activation}
-                    onChange={(e) => store.getState().setActivation(e.target.value as ActivationType)}
-                >
-                    {ACTIVATIONS.map((a) => (
-                        <option key={a} value={a}>{ACTIVATION_LABELS[a]}</option>
-                    ))}
-                </select>
+                <Tooltip content="Choose the activation function for hidden layers">
+                    <select
+                        className="select"
+                        value={activation}
+                        onChange={(e) => {
+                            beginNetworkChange();
+                            store.getState().setActivation(e.target.value as ActivationType);
+                        }}
+                    >
+                        {ACTIVATIONS.map((a) => (
+                            <option key={a} value={a}>{ACTIVATION_LABELS[a]}</option>
+                        ))}
+                    </select>
+                </Tooltip>
             </div>
         </div>
     );

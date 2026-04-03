@@ -2,6 +2,7 @@
 import { memo } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
+import { Tooltip } from '../common/Tooltip.tsx';
 
 interface Props {
     training: TrainingHook;
@@ -25,51 +26,66 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
     return (
         <div className="training-bar">
             <div className="training-bar__controls">
-                <button
-                    className={`btn btn--play ${isRunning ? 'running' : ''}`}
-                    onClick={isRunning ? training.pause : training.play}
-                    aria-label={isRunning ? 'Pause training' : 'Start training'}
-                    title={isRunning ? 'Pause (Space)' : 'Play (Space)'}
-                >
-                    {isRunning ? '⏸' : '▶'}
-                </button>
-                <button
-                    className="btn btn--ghost"
-                    onClick={training.step}
-                    aria-label="Run one training step"
-                    title="Step (→)"
-                >
-                    Step
-                </button>
-                <button
-                    className="btn btn--ghost"
-                    onClick={training.reset}
-                    aria-label="Reset model and data"
-                    title="Reset (R)"
-                >
-                    Reset
-                </button>
+                <Tooltip content={isRunning ? 'Pause training' : 'Start training'} shortcut="Space">
+                    <button
+                        className={`btn btn--play btn--control ${isRunning ? 'running' : ''}`}
+                        onClick={isRunning ? training.pause : training.play}
+                        aria-label={isRunning ? 'Pause training' : 'Start training'}
+                    >
+                        <span className="btn__icon" aria-hidden="true">{isRunning ? '⏸' : '▶'}</span>
+                        <span className="btn__label">{isRunning ? 'Pause' : 'Play'}</span>
+                        <span className="btn__shortcut">Space</span>
+                    </button>
+                </Tooltip>
+                <Tooltip content="Run one training step" shortcut="→">
+                    <button
+                        className="btn btn--ghost btn--control"
+                        onClick={training.step}
+                        aria-label="Run one training step"
+                    >
+                        <span className="btn__icon" aria-hidden="true">→</span>
+                        <span className="btn__label">Step</span>
+                        <span className="btn__shortcut">→</span>
+                    </button>
+                </Tooltip>
+                <Tooltip content="Reset model and regenerate data" shortcut="R">
+                    <button
+                        className="btn btn--ghost btn--control"
+                        onClick={training.reset}
+                        aria-label="Reset model and data"
+                    >
+                        <span className="btn__icon" aria-hidden="true">↺</span>
+                        <span className="btn__label">Reset</span>
+                        <span className="btn__shortcut">R</span>
+                    </button>
+                </Tooltip>
             </div>
 
-            {/* Speed selector */}
             <div className="training-bar__speed" aria-label="Training speed">
+                <span className="training-bar__speed-label">Speed:</span>
                 {SPEED_OPTIONS.map((opt) => (
-                    <button
-                        key={opt.value}
-                        className={`speed-btn ${stepsPerFrame === opt.value ? 'active' : ''}`}
-                        onClick={() => setStepsPerFrame(opt.value)}
-                        title={`${opt.value} steps per frame`}
-                        aria-pressed={stepsPerFrame === opt.value}
-                    >
-                        {opt.label}
-                    </button>
+                    <Tooltip key={opt.value} content={`${opt.value} steps per frame`}>
+                        <button
+                            className={`speed-btn ${stepsPerFrame === opt.value ? 'active' : ''}`}
+                            onClick={() => setStepsPerFrame(opt.value)}
+                            aria-pressed={stepsPerFrame === opt.value}
+                        >
+                            {opt.label}
+                        </button>
+                    </Tooltip>
                 ))}
             </div>
 
             <div className="training-bar__info">
+                {isRunning && (
+                    <span className="training-status">
+                        <span className="training-status__dot" aria-hidden="true" />
+                        Training...
+                    </span>
+                )}
                 {snapshot && (
                     <>
-                        <span>Step {snapshot.step}</span>
+                        <span>Step {snapshot.step.toLocaleString()}</span>
                         <span>Epoch {snapshot.epoch}</span>
                     </>
                 )}

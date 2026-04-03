@@ -16,6 +16,7 @@ export {
     decodeUrlState,
     exportConfigJson,
     importConfigJson,
+    validateImportedConfig,
 } from './serialization.js';
 export {
     DEFAULT_SEED,

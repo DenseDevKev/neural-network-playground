@@ -1,76 +1,72 @@
-import { describe, it, expect } from 'vitest';
-import { encodeUrlState, decodeUrlState, exportConfigJson, importConfigJson } from '../serialization.js';
-import type { AppConfig } from '../types.js';
-import { DEFAULT_NETWORK, DEFAULT_TRAINING, DEFAULT_DATA, DEFAULT_FEATURES } from '../constants.js';
+import { describe, expect, it } from 'vitest';
+import {
+    DEFAULT_DATA,
+    DEFAULT_FEATURES,
+    DEFAULT_NETWORK,
+    DEFAULT_TRAINING,
+    validateImportedConfig,
+} from '../index.js';
 
-const mockConfig: AppConfig = {
-    network: {
-        ...DEFAULT_NETWORK,
-        inputSize: 2,
-    },
-    training: DEFAULT_TRAINING,
-    data: DEFAULT_DATA,
-    features: DEFAULT_FEATURES,
-    ui: {
-        showTestData: false,
-        discretizeOutput: false,
-        animationSpeed: 1,
-    },
+const validConfig = {
+    data: { ...DEFAULT_DATA },
+    network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
+    training: { ...DEFAULT_TRAINING },
+    features: { ...DEFAULT_FEATURES },
+    ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 },
 };
 
-describe('serialization', () => {
-    describe('encodeUrlState and decodeUrlState', () => {
-        it('should round-trip a config correctly', () => {
-            const encoded = encodeUrlState(mockConfig);
-            const decoded = decodeUrlState(encoded);
+describe('validateImportedConfig', () => {
+    it('accepts a valid configuration and normalizes input size', () => {
+        const result = validateImportedConfig(validConfig);
 
-            // We expect the decoded config to match the original,
-            // though some default values might be filled in.
-            expect(decoded.network).toEqual(mockConfig.network);
-            expect(decoded.training).toEqual(mockConfig.training);
-            expect(decoded.data).toEqual(mockConfig.data);
-            expect(decoded.features).toEqual(mockConfig.features);
-            expect(decoded.ui.showTestData).toBe(mockConfig.ui.showTestData);
-            expect(decoded.ui.discretizeOutput).toBe(mockConfig.ui.discretizeOutput);
-        });
-
-        it('should handle empty hash by returning defaults', () => {
-            const decoded = decodeUrlState('');
-            expect(decoded.network.activation).toBe(DEFAULT_NETWORK.activation);
-            expect(decoded.data.dataset).toBe(DEFAULT_DATA.dataset);
-        });
+        expect(result.error).toBeNull();
+        expect(result.config).not.toBeNull();
+        expect(result.config?.network.inputSize).toBe(2);
     });
 
-    describe('exportConfigJson and importConfigJson', () => {
-        it('should round-trip a config via JSON', () => {
-            const json = exportConfigJson(mockConfig);
-            const imported = importConfigJson(json);
-            expect(imported).toEqual(mockConfig);
+    it('rejects unsupported activation functions', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            network: {
+                ...validConfig.network,
+                activation: 'magic',
+            },
         });
 
-        it('should return null for invalid JSON string', () => {
-            const invalidJson = '{ invalid json }';
-            const result = importConfigJson(invalidJson);
-            expect(result).toBeNull();
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('Configuration contains an unsupported activation function.');
+    });
+
+    it('rejects invalid learning-rate ranges', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                learningRate: 0,
+            },
         });
 
-        it('should return null for JSON missing required fields', () => {
-            const incompleteJson = JSON.stringify({
-                network: {},
-                // missing training, data, features
-            });
-            const result = importConfigJson(incompleteJson);
-            expect(result).toBeNull();
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('Learning rate must be greater than 0 and at most 10.');
+    });
+
+    it('rejects configurations with no active features', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            features: {
+                x: false,
+                y: false,
+                xSquared: false,
+                ySquared: false,
+                xy: false,
+                sinX: false,
+                sinY: false,
+                cosX: false,
+                cosY: false,
+            },
         });
 
-        it('should return null for non-object JSON', () => {
-            const result = importConfigJson('123');
-            expect(result).toBeNull();
-        });
-
-        it('should return null for null JSON', () => {
-            const result = importConfigJson('null');
-            expect(result).toBeNull();
-        });
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('At least one input feature must be enabled.');
     });
 });

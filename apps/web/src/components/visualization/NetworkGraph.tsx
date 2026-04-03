@@ -160,16 +160,17 @@ const NetworkEdges = memo(function NetworkEdges({
                         const weight = weights?.[layerIdx - 1]?.[nodeIdx]?.[prevIdx] ?? 0;
                         const key = `e-${layerIdx}-${nodeIdx}-${prevIdx}`;
                         const isHovered = hoveredEdge === key;
+                        const cpX = (node.x - prevNode.x) * 0.45;
+                        const pathD = `M ${prevNode.x},${prevNode.y} C ${prevNode.x + cpX},${prevNode.y} ${node.x - cpX},${node.y} ${node.x},${node.y}`;
+
                         return (
                             <g key={key}>
                                 {/* Wide transparent hit area */}
-                                <line
-                                    x1={prevNode.x}
-                                    y1={prevNode.y}
-                                    x2={node.x}
-                                    y2={node.y}
+                                <path
+                                    d={pathD}
                                     stroke="transparent"
-                                    strokeWidth={10}
+                                    strokeWidth={12}
+                                    fill="none"
                                     style={{ cursor: 'pointer' }}
                                     onMouseEnter={(e) => {
                                         const rect = (e.target as SVGElement).closest('svg')!.getBoundingClientRect();
@@ -178,16 +179,27 @@ const NetworkEdges = memo(function NetworkEdges({
                                     onMouseLeave={onEdgeLeave}
                                 />
                                 {/* Visible edge */}
-                                <line
-                                    x1={prevNode.x}
-                                    y1={prevNode.y}
-                                    x2={node.x}
-                                    y2={node.y}
+                                <path
+                                    d={pathD}
+                                    fill="none"
                                     stroke={edgeColor(weight)}
                                     strokeWidth={isHovered ? edgeWidth(weight) * 2 : edgeWidth(weight)}
                                     opacity={isHovered ? 1 : 0.7}
-                                    style={{ transition: 'stroke-width 100ms, opacity 100ms', pointerEvents: 'none' }}
+                                    style={{ transition: 'stroke-width 200ms ease, opacity 200ms ease', pointerEvents: 'none' }}
                                 />
+                                {/* Flow animation */}
+                                {Math.abs(weight) > 0.05 && (
+                                    <path
+                                        d={pathD}
+                                        fill="none"
+                                        stroke={weight > 0 ? 'rgba(249, 115, 22, 0.8)' : 'rgba(59, 130, 246, 0.8)'}
+                                        strokeWidth={1.5}
+                                        strokeDasharray="4 12"
+                                        className={weight > 0 ? 'network-flow-anim' : 'network-flow-anim-reverse'}
+                                        opacity={0.4 + Math.min(Math.abs(weight), 2) * 0.25}
+                                        style={{ pointerEvents: 'none' }}
+                                    />
+                                )}
                             </g>
                         );
                     }),
@@ -294,17 +306,19 @@ const NetworkNodes = memo(function NetworkNodes({
                             <circle
                                 cx={node.x}
                                 cy={node.y}
-                                r={NODE_RADIUS + 4}
+                                r={NODE_RADIUS + 6}
                                 fill="none"
                                 stroke={
                                     isOutput
-                                        ? 'rgba(124, 92, 252, 0.3)'
+                                        ? 'rgba(124, 92, 252, 0.5)'
                                         : isInput
-                                            ? 'rgba(0, 229, 195, 0.2)'
+                                            ? 'rgba(0, 229, 195, 0.5)'
                                             : nodeColor(bias)
                                 }
                                 strokeWidth={2}
-                                opacity={0.5}
+                                opacity={0.6}
+                                filter="url(#node-glow)"
+                                className={isInput ? 'node-pulse' : ''}
                             />
                             {/* Node background */}
                             <circle

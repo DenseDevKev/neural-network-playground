@@ -25,6 +25,8 @@ export interface Preset {
     title: string;
     description: string;
     learningGoal?: string;
+    thumbnail?: string;
+    difficulty?: 'beginner' | 'intermediate' | 'advanced';
     config: Partial<AppConfig>;
 }
 
