@@ -60,6 +60,9 @@ interface WorkerState {
     snapshotsSinceLastTestEval: number;
     /** Cached last test metrics to reuse when skipping test evaluation. */
     lastTestMetrics: { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null;
+    /** Pre-allocated buffers for grid predictions. */
+    outputGridBuffer: Float32Array | null;
+    neuronGridsBuffer: Float32Array | null;
     /** MessagePort for streaming snapshot delivery. */
     streamPort: MessagePort | null;
     /** Monotonically increasing run ID — incremented on init/reset/rebuild. */
@@ -95,6 +98,8 @@ const state: WorkerState = {
     demand: { ...DEFAULT_DEMAND },
     snapshotsSinceLastTestEval: 0,
     lastTestMetrics: null,
+    outputGridBuffer: null,
+    neuronGridsBuffer: null,
     streamPort: null,
     runId: 0,
     snapshotId: 0,
@@ -137,6 +142,11 @@ function buildDataAndNetwork(): void {
     state.networkConfig = config;
     state.network = new Network(config, config.seed);
     state.step = 0;
+
+    // Allocate buffers
+    state.outputGridBuffer = new Float32Array(GRID_SIZE * GRID_SIZE);
+    const totalNeurons = state.network.getTotalNeuronCount();
+    state.neuronGridsBuffer = new Float32Array(totalNeurons * GRID_SIZE * GRID_SIZE);
     state.epoch = 0;
 
     // Reset test-eval gating
@@ -198,19 +208,24 @@ function computeSnapshot(): NetworkSnapshot {
     }
 
     // ── Decision boundary grid (demand-gated) ──
-    let outputGrid: number[];
-    let neuronGrids: number[][] | undefined;
+    let outputGrid: number[] | Float32Array;
+    let neuronGrids: number[][] | Float32Array | undefined;
 
-    if (demand.needNeuronGrids) {
+    if (demand.needNeuronGrids && state.outputGridBuffer && state.neuronGridsBuffer) {
         performance.mark('perf:worker:predictGridNeurons:start');
-        const result = state.network.predictGridWithNeurons(state.gridInputs);
+        state.network.predictGridWithNeuronsInto(
+            state.gridInputs,
+            state.outputGridBuffer,
+            state.neuronGridsBuffer,
+        );
         performance.measure('perf:worker:predictGridNeurons', 'perf:worker:predictGridNeurons:start');
-        outputGrid = result.outputGrid;
-        neuronGrids = result.neuronGrids;
-    } else if (demand.needDecisionBoundary) {
+        outputGrid = state.outputGridBuffer;
+        neuronGrids = state.neuronGridsBuffer;
+    } else if (demand.needDecisionBoundary && state.outputGridBuffer) {
         performance.mark('perf:worker:predictGrid:start');
-        outputGrid = state.network.predictGrid(state.gridInputs);
+        state.network.predictGridInto(state.gridInputs, state.outputGridBuffer);
         performance.measure('perf:worker:predictGrid', 'perf:worker:predictGrid:start');
+        outputGrid = state.outputGridBuffer;
     } else {
         outputGrid = [];
     }
@@ -249,22 +264,48 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     // Pack outputGrid
     let outputGrid: Float32Array | undefined;
     if (snap.outputGrid && snap.outputGrid.length > 0) {
-        outputGrid = new Float32Array(snap.outputGrid);
+        if (snap.outputGrid instanceof Float32Array) {
+            outputGrid = snap.outputGrid;
+            // Since we transfer the buffer, we must null out the reference in state
+            // and re-allocate it for the next snapshot.
+            state.outputGridBuffer = null;
+        } else {
+            outputGrid = new Float32Array(snap.outputGrid);
+        }
         transferables.push(outputGrid.buffer);
+    }
+
+    // Re-allocate outputGridBuffer if it was transferred
+    if (state.outputGridBuffer === null) {
+        state.outputGridBuffer = new Float32Array(GRID_SIZE * GRID_SIZE);
     }
 
     // Pack neuronGrids (concatenated into one flat array)
     let neuronGrids: Float32Array | undefined;
     let neuronGridLayout: { count: number; gridSize: number } | undefined;
     if (snap.neuronGrids && snap.neuronGrids.length > 0) {
-        const count = snap.neuronGrids.length;
-        const totalSize = count * gridSize * gridSize;
-        neuronGrids = new Float32Array(totalSize);
-        for (let n = 0; n < count; n++) {
-            neuronGrids.set(snap.neuronGrids[n], n * gridSize * gridSize);
+        if (snap.neuronGrids instanceof Float32Array) {
+            neuronGrids = snap.neuronGrids;
+            const totalNeurons = state.network!.getTotalNeuronCount();
+            neuronGridLayout = { count: totalNeurons, gridSize };
+            // Transfer and null out
+            state.neuronGridsBuffer = null;
+        } else {
+            const count = snap.neuronGrids.length;
+            const totalSize = count * gridSize * gridSize;
+            neuronGrids = new Float32Array(totalSize);
+            for (let n = 0; n < count; n++) {
+                neuronGrids.set(snap.neuronGrids[n], n * gridSize * gridSize);
+            }
+            neuronGridLayout = { count, gridSize };
         }
-        neuronGridLayout = { count, gridSize };
         transferables.push(neuronGrids.buffer);
+    }
+
+    // Re-allocate neuronGridsBuffer if it was transferred
+    if (state.neuronGridsBuffer === null && state.network) {
+        const totalNeurons = state.network.getTotalNeuronCount();
+        state.neuronGridsBuffer = new Float32Array(totalNeurons * GRID_SIZE * GRID_SIZE);
     }
 
     // Pack weights
