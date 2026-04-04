@@ -4,6 +4,13 @@
 import type { DataPoint, DataSplit, DatasetType } from './types.js';
 import { PRNG } from './prng.js';
 
+
+const BASE_NOISE_SCALE = 0.01;
+const SMALL_NOISE_SCALE = 0.005;
+const MEDIUM_NOISE_SCALE = 0.008;
+const REGRESSION_NOISE_SCALE = 0.02;
+const SPIRAL_NOISE_SCALE = 0.04;
+
 const DEFAULT_NUM_SAMPLES = 300;
 
 /** Generate a full dataset and split into train/test. */
@@ -50,16 +57,16 @@ function genCircle(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[
         const r0 = rng.range(0, radius * 0.5);
         const a0 = rng.range(0, 2 * Math.PI);
         points.push({
-            x: r0 * Math.cos(a0) + rng.gaussian(0, noise * 0.01),
-            y: r0 * Math.sin(a0) + rng.gaussian(0, noise * 0.01),
+            x: r0 * Math.cos(a0) + rng.gaussian(0, noise * BASE_NOISE_SCALE),
+            y: r0 * Math.sin(a0) + rng.gaussian(0, noise * BASE_NOISE_SCALE),
             label: 0,
         });
         // Outer ring (label 1)
         const r1 = rng.range(radius * 0.7, radius);
         const a1 = rng.range(0, 2 * Math.PI);
         points.push({
-            x: r1 * Math.cos(a1) + rng.gaussian(0, noise * 0.01),
-            y: r1 * Math.sin(a1) + rng.gaussian(0, noise * 0.01),
+            x: r1 * Math.cos(a1) + rng.gaussian(0, noise * BASE_NOISE_SCALE),
+            y: r1 * Math.sin(a1) + rng.gaussian(0, noise * BASE_NOISE_SCALE),
             label: 1,
         });
     }
@@ -70,22 +77,22 @@ function genXor(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[] {
     const points: DataPoint[] = [];
     for (let i = 0; i < pointsPerClass; i++) {
         // Class 0: top-left and bottom-right
-        const x0 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
-        const y0 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
+        const x0 = rng.range(-1, 0) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
+        const y0 = rng.range(0, 1) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
         points.push({ x: x0, y: y0, label: 0 });
 
-        const x1 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
-        const y1 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
+        const x1 = rng.range(0, 1) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
+        const y1 = rng.range(-1, 0) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
         points.push({ x: x1, y: y1, label: 0 });
     }
     for (let i = 0; i < pointsPerClass; i++) {
         // Class 1: top-right and bottom-left
-        const x0 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
-        const y0 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
+        const x0 = rng.range(0, 1) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
+        const y0 = rng.range(0, 1) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
         points.push({ x: x0, y: y0, label: 1 });
 
-        const x1 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
-        const y1 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
+        const x1 = rng.range(-1, 0) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
+        const y1 = rng.range(-1, 0) + rng.gaussian(0, noise * BASE_NOISE_SCALE);
         points.push({ x: x1, y: y1, label: 1 });
     }
     return points;
@@ -93,7 +100,7 @@ function genXor(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[] {
 
 function genGauss(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[] {
     const points: DataPoint[] = [];
-    const scale = 0.3 + noise * 0.005;
+    const scale = 0.3 + noise * SMALL_NOISE_SCALE;
     for (let i = 0; i < pointsPerClass; i++) {
         points.push({
             x: rng.gaussian(-0.3, scale),
@@ -114,7 +121,7 @@ function genSpiral(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[
     for (let i = 0; i < pointsPerClass; i++) {
         for (let cls = 0; cls < 2; cls++) {
             const r = (i / pointsPerClass) * 0.8;
-            const t = (cls * Math.PI) + (i / pointsPerClass) * 3 * Math.PI + rng.gaussian(0, noise * 0.04);
+            const t = (cls * Math.PI) + (i / pointsPerClass) * 3 * Math.PI + rng.gaussian(0, noise * SPIRAL_NOISE_SCALE);
             points.push({
                 x: r * Math.sin(t),
                 y: r * Math.cos(t),
@@ -131,15 +138,15 @@ function genMoons(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[]
         // Upper moon (label 0)
         const angle0 = Math.PI * (i / pointsPerClass);
         points.push({
-            x: Math.cos(angle0) * 0.5 + rng.gaussian(0, noise * 0.01),
-            y: Math.sin(angle0) * 0.5 + rng.gaussian(0, noise * 0.01),
+            x: Math.cos(angle0) * 0.5 + rng.gaussian(0, noise * BASE_NOISE_SCALE),
+            y: Math.sin(angle0) * 0.5 + rng.gaussian(0, noise * BASE_NOISE_SCALE),
             label: 0,
         });
         // Lower moon (label 1)
         const angle1 = Math.PI * (i / pointsPerClass);
         points.push({
-            x: 0.5 - Math.cos(angle1) * 0.5 + rng.gaussian(0, noise * 0.01),
-            y: -Math.sin(angle1) * 0.5 + 0.3 + rng.gaussian(0, noise * 0.01),
+            x: 0.5 - Math.cos(angle1) * 0.5 + rng.gaussian(0, noise * BASE_NOISE_SCALE),
+            y: -Math.sin(angle1) * 0.5 + 0.3 + rng.gaussian(0, noise * BASE_NOISE_SCALE),
             label: 1,
         });
     }
@@ -150,8 +157,8 @@ function genCheckerboard(pointsPerClass: number, noise: number, rng: PRNG): Data
     const points: DataPoint[] = [];
     const n = pointsPerClass * 2;
     for (let i = 0; i < n; i++) {
-        const x = rng.range(-1, 1) + rng.gaussian(0, noise * 0.005);
-        const y = rng.range(-1, 1) + rng.gaussian(0, noise * 0.005);
+        const x = rng.range(-1, 1) + rng.gaussian(0, noise * SMALL_NOISE_SCALE);
+        const y = rng.range(-1, 1) + rng.gaussian(0, noise * SMALL_NOISE_SCALE);
         // 2×2 checkerboard
         const cx = x >= 0 ? 1 : 0;
         const cy = y >= 0 ? 1 : 0;
@@ -173,8 +180,8 @@ function genRings(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[]
             const r = rng.range(rMin, rMax);
             const angle = rng.range(0, 2 * Math.PI);
             points.push({
-                x: r * Math.cos(angle) + rng.gaussian(0, noise * 0.008),
-                y: r * Math.sin(angle) + rng.gaussian(0, noise * 0.008),
+                x: r * Math.cos(angle) + rng.gaussian(0, noise * MEDIUM_NOISE_SCALE),
+                y: r * Math.sin(angle) + rng.gaussian(0, noise * MEDIUM_NOISE_SCALE),
                 label,
             });
         }
@@ -186,8 +193,8 @@ function genHeart(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[]
     const points: DataPoint[] = [];
     const n = pointsPerClass * 2;
     for (let i = 0; i < n; i++) {
-        const x = rng.range(-1, 1) + rng.gaussian(0, noise * 0.005);
-        const y = rng.range(-1, 1) + rng.gaussian(0, noise * 0.005);
+        const x = rng.range(-1, 1) + rng.gaussian(0, noise * SMALL_NOISE_SCALE);
+        const y = rng.range(-1, 1) + rng.gaussian(0, noise * SMALL_NOISE_SCALE);
         // Heart curve boundary: (x² + y² - 1)³ - x²y³ < 0
         const x2 = x * x;
         const y2 = y * y;
@@ -209,7 +216,7 @@ function genRegPlane(n: number, noise: number, rng: PRNG): DataPoint[] {
         points.push({
             x,
             y,
-            label: x + y + rng.gaussian(0, noise * 0.02),
+            label: x + y + rng.gaussian(0, noise * REGRESSION_NOISE_SCALE),
         });
     }
     return points;
@@ -226,7 +233,7 @@ function genRegGauss(n: number, noise: number, rng: PRNG): DataPoint[] {
         points.push({
             x,
             y,
-            label: v + rng.gaussian(0, noise * 0.02),
+            label: v + rng.gaussian(0, noise * REGRESSION_NOISE_SCALE),
         });
     }
     return points;
