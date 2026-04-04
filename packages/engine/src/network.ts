@@ -302,7 +302,12 @@ export class Network {
     predictGrid(
         gridInputs: number[][],
     ): number[] {
-        return gridInputs.map((inp) => this.forward(inp)[0]);
+        const len = gridInputs.length;
+        const res = new Array(len);
+        for (let i = 0; i < len; i++) {
+            res[i] = this.forward(gridInputs[i])[0];
+        }
+        return res;
     }
 
     /**
