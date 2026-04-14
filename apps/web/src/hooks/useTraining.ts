@@ -12,10 +12,18 @@ import {
     startRenderLoop,
     stopRenderLoop,
     onSnapshot,
-    newRun,
+    newRunTo,
+    terminateWorker,
 } from '../worker/workerBridge.ts';
-import { updateFrameBuffer } from '../worker/frameBuffer.ts';
-import type { WorkerToMainMessage } from '@nn-playground/shared';
+import {
+    flattenBiases,
+    flattenNeuronGrids,
+    flattenWeights,
+    getFrameVersion,
+    updateFrameBuffer,
+} from '../worker/frameBuffer.ts';
+import type { NetworkSnapshot } from '@nn-playground/engine';
+import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
 
 
 export interface TrainingHook {
@@ -23,6 +31,78 @@ export interface TrainingHook {
     pause: () => void;
     step: () => void;
     reset: () => void;
+}
+
+function getTotalNeuronCount(layerSizes: number[]): number {
+    let total = 0;
+    for (let i = 1; i < layerSizes.length; i++) {
+        total += layerSizes[i];
+    }
+    return total;
+}
+
+function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): number {
+    const outputGrid = snapshot.outputGrid.length > 0
+        ? (snapshot.outputGrid instanceof Float32Array ? snapshot.outputGrid : new Float32Array(snapshot.outputGrid))
+        : null;
+    const { buffer: weights, layerSizes } = flattenWeights(snapshot.weights);
+    const biases = flattenBiases(snapshot.biases);
+
+    let neuronGrids: Float32Array | null = null;
+    let neuronGridLayout: { count: number; gridSize: number } | null = null;
+    if (snapshot.neuronGrids && snapshot.neuronGrids.length > 0) {
+        if (snapshot.neuronGrids instanceof Float32Array) {
+            neuronGrids = snapshot.neuronGrids;
+            neuronGridLayout = {
+                count: getTotalNeuronCount(layerSizes),
+                gridSize: snapshot.gridSize,
+            };
+        } else {
+            const flattened = flattenNeuronGrids(snapshot.neuronGrids, snapshot.gridSize);
+            neuronGrids = flattened.buffer;
+            neuronGridLayout = flattened.layout;
+        }
+    }
+
+    return updateFrameBuffer({
+        outputGrid,
+        gridSize: snapshot.gridSize,
+        neuronGrids,
+        neuronGridLayout,
+        weights,
+        biases,
+        weightLayout: { layerSizes },
+        layerStats: snapshot.layerStats ?? null,
+        confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
+    });
+}
+
+function createStreamSnapshot(
+    msg: WorkerSnapshotMessage,
+    previousSnapshot: NetworkSnapshot | null,
+): NetworkSnapshot {
+    return {
+        step: msg.scalars.step,
+        epoch: msg.scalars.epoch,
+        trainLoss: msg.scalars.trainLoss,
+        testLoss: msg.scalars.testLoss,
+        trainMetrics: {
+            loss: msg.scalars.trainLoss,
+            accuracy: msg.scalars.trainAccuracy,
+        },
+        testMetrics: {
+            loss: msg.scalars.testLoss,
+            accuracy: msg.scalars.testAccuracy,
+            confusionMatrix: msg.confusionMatrix,
+        },
+        weights: previousSnapshot?.weights ?? [],
+        biases: previousSnapshot?.biases ?? [],
+        outputGrid: previousSnapshot?.outputGrid ?? [],
+        gridSize: msg.scalars.gridSize,
+        neuronGrids: previousSnapshot?.neuronGrids,
+        layerStats: previousSnapshot?.layerStats,
+        historyPoint: msg.historyPoint,
+    };
 }
 
 export function useTraining(): TrainingHook {
@@ -60,28 +140,8 @@ export function useTraining(): TrainingHook {
 
             if (msg.type === 'snapshot') {
                 ts.clearWorkerError();
-                // Apply snapshot scalars to training store
-                ts.setSnapshot({
-                    step: msg.scalars.step,
-                    epoch: msg.scalars.epoch,
-                    trainLoss: msg.scalars.trainLoss,
-                    testLoss: msg.scalars.testLoss,
-                    trainMetrics: {
-                        loss: msg.scalars.trainLoss,
-                        accuracy: msg.scalars.trainAccuracy,
-                    },
-                    testMetrics: {
-                        loss: msg.scalars.testLoss,
-                        accuracy: msg.scalars.testAccuracy,
-                        confusionMatrix: msg.confusionMatrix,
-                    },
-                    // Placeholders — real data lives in frameBuffer
-                    weights: [],
-                    biases: [],
-                    outputGrid: [],
-                    gridSize: msg.scalars.gridSize,
-                    historyPoint: msg.historyPoint,
-                } as any);
+                ts.setSnapshot(createStreamSnapshot(msg, ts.snapshot));
+                ts.setFrameVersion(getFrameVersion());
                 if (msg.historyPoint) ts.addHistoryPoint(msg.historyPoint);
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused' || msg.status === 'idle') {
@@ -105,23 +165,17 @@ export function useTraining(): TrainingHook {
             const ps = usePlaygroundStore.getState();
             const ts = useTrainingStore.getState();
             const config = ps.getConfig();
-            const snap = await api.initialize(
+            const result = await api.initialize(
                 config.network,
                 config.training,
                 config.data,
                 config.features,
             );
-            ts.setSnapshot(snap);
+            ts.setSnapshot(result.snapshot);
             ts.resetHistory();
-            if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
-
-            // Populate frame buffer from initial snapshot
-            updateFrameBuffer({
-                outputGrid: snap.outputGrid ? new Float32Array(snap.outputGrid) : null,
-                gridSize: snap.gridSize,
-                weights: null,
-                biases: null,
-            });
+            if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
+            ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+            newRunTo(result.runId);
 
             // Store points reactively so UI renders immediately
             const trainPts = await api.getTrainPoints();
@@ -171,18 +225,20 @@ export function useTraining(): TrainingHook {
             const ps = usePlaygroundStore.getState();
             const ts = useTrainingStore.getState();
             try {
-                newRun(); // Invalidate any in-flight snapshots
                 const config = ps.getConfig();
-                const snap = await api.updateConfig(
+                const result = await api.updateConfig(
                     config.network,
                     config.training,
                     config.data,
                     config.features,
-                    true,
+                    false,
                 );
-                ts.setSnapshot(snap);
+                // Sync to worker's runId AFTER updateConfig returns
+                newRunTo(result.runId);
+                ts.setSnapshot(result.snapshot);
                 ts.resetHistory();
-                if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
+                if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
+                ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
 
                 // Update points reactively
                 const trainPts = await api.getTrainPoints();
@@ -229,6 +285,7 @@ export function useTraining(): TrainingHook {
         const snap = await api.step(1);
         const ts = useTrainingStore.getState();
         ts.setSnapshot(snap);
+        ts.setFrameVersion(syncSnapshotToFrameBuffer(snap));
         if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
     }, [pause]);
 
@@ -238,13 +295,14 @@ export function useTraining(): TrainingHook {
             stopRenderLoop();
             isPlayingRef.current = false;
         }
-        newRun(); // Invalidate in-flight snapshots
         const api = getWorkerApi();
-        const snap = await api.reset();
+        const result = await api.reset();
+        newRunTo(result.runId);
         const ts = useTrainingStore.getState();
-        ts.setSnapshot(snap);
+        ts.setSnapshot(result.snapshot);
         ts.resetHistory();
-        if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
+        if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
+        ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
         ts.setStatus('idle');
 
         // Refresh points
@@ -258,8 +316,7 @@ export function useTraining(): TrainingHook {
     useEffect(() => {
         return () => {
             isPlayingRef.current = false;
-            postStreamCommand({ type: 'stopTraining' });
-            stopRenderLoop();
+            terminateWorker();
         };
     }, []);
 

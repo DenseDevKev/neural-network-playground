@@ -50,6 +50,7 @@ const VALID_WEIGHT_INITS = new Set<WeightInitType>(['xavier', 'he', 'uniform', '
 const VALID_LOSSES = new Set<LossType>(['mse', 'crossEntropy', 'huber']);
 const VALID_OPTIMIZERS = new Set<OptimizerType>(['sgd', 'sgdMomentum', 'adam']);
 const VALID_REGULARIZATION = new Set<RegularizationType>(['none', 'l1', 'l2']);
+const VALID_PROBLEM_TYPES = new Set<DataConfig['problemType']>(['classification', 'regression']);
 
 export interface ImportedConfigValidationResult {
     config: AppConfig | null;
@@ -109,8 +110,8 @@ export function encodeUrlState(config: AppConfig): string {
 export function decodeUrlState(hash: string): AppConfig {
     const p = new URLSearchParams(hash.replace(/^#/, ''));
 
-    const featureBits = p.get('f') || '110000000';
-    const features: FeatureFlags = {
+    const featureBits = (p.get('f') || '110000000').padEnd(9, '0');
+    let features: FeatureFlags = {
         x: featureBits[0] === '1',
         y: featureBits[1] === '1',
         xSquared: featureBits[2] === '1',
@@ -122,16 +123,25 @@ export function decodeUrlState(hash: string): AppConfig {
         cosY: featureBits[8] === '1',
     };
 
+    if (countActiveFeatures(features) === 0) {
+        features = { ...DEFAULT_FEATURES };
+    }
+
     const hiddenLayersStr = p.get('hl');
     const hiddenLayers = hiddenLayersStr
-        ? hiddenLayersStr.split(',').map(Number).filter((n: number) => !isNaN(n) && n > 0)
+        ? hiddenLayersStr
+            .split(',')
+            .map(Number)
+            .filter((n: number) => !isNaN(n) && n > 0)
+            .slice(0, MAX_HIDDEN_LAYERS)
+            .map((n) => Math.min(MAX_NEURONS_PER_LAYER, n))
         : [...DEFAULT_NETWORK.hiddenLayers];
 
     const inputSize = countActiveFeatures(features);
 
     const data: DataConfig = {
-        dataset: (p.get('d') as DatasetType) || DEFAULT_DATA.dataset,
-        problemType: (p.get('pt') as 'classification' | 'regression') || DEFAULT_DATA.problemType,
+        dataset: getValidValue(p.get('d'), VALID_DATASETS, DEFAULT_DATA.dataset),
+        problemType: getValidValue(p.get('pt'), VALID_PROBLEM_TYPES, DEFAULT_DATA.problemType),
         trainTestRatio: parseNum(p.get('r'), DEFAULT_DATA.trainTestRatio),
         noise: parseNum(p.get('n'), DEFAULT_DATA.noise),
         numSamples: parseNum(p.get('ns'), DEFAULT_DATA.numSamples),
@@ -141,10 +151,10 @@ export function decodeUrlState(hash: string): AppConfig {
     const training: TrainingConfig = {
         learningRate: parseNum(p.get('lr'), DEFAULT_TRAINING.learningRate),
         batchSize: parseNum(p.get('bs'), DEFAULT_TRAINING.batchSize),
-        lossType: (p.get('l') as TrainingConfig['lossType']) || DEFAULT_TRAINING.lossType,
-        optimizer: (p.get('o') as TrainingConfig['optimizer']) || DEFAULT_TRAINING.optimizer,
+        lossType: getValidValue(p.get('l'), VALID_LOSSES, DEFAULT_TRAINING.lossType),
+        optimizer: getValidValue(p.get('o'), VALID_OPTIMIZERS, DEFAULT_TRAINING.optimizer),
         momentum: DEFAULT_TRAINING.momentum,
-        regularization: (p.get('rg') as TrainingConfig['regularization']) || DEFAULT_TRAINING.regularization,
+        regularization: getValidValue(p.get('rg'), VALID_REGULARIZATION, DEFAULT_TRAINING.regularization),
         regularizationRate: parseNum(p.get('rr'), DEFAULT_TRAINING.regularizationRate),
         gradientClip: null,
     };
@@ -160,9 +170,9 @@ export function decodeUrlState(hash: string): AppConfig {
             inputSize,
             hiddenLayers,
             outputSize: 1,
-            activation: (p.get('a') as any) || DEFAULT_NETWORK.activation,
-            outputActivation: (p.get('oa') as any) || DEFAULT_NETWORK.outputActivation,
-            weightInit: (p.get('wi') as any) || DEFAULT_NETWORK.weightInit,
+            activation: getValidValue(p.get('a'), VALID_ACTIVATIONS, DEFAULT_NETWORK.activation),
+            outputActivation: getValidValue(p.get('oa'), VALID_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
+            weightInit: getValidValue(p.get('wi'), VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
             seed: parseNum(p.get('ws'), DEFAULT_NETWORK.seed),
         },
         training,
@@ -170,6 +180,10 @@ export function decodeUrlState(hash: string): AppConfig {
         features,
         ui,
     };
+}
+
+function getValidValue<T extends string>(value: string | null, validValues: Set<T>, fallback: T): T {
+    return value != null && validValues.has(value as T) ? (value as T) : fallback;
 }
 
 function parseNum(val: string | null, fallback: number): number {

@@ -4,6 +4,7 @@ import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
+    decodeUrlState,
     validateImportedConfig,
 } from '../index.js';
 
@@ -68,5 +69,27 @@ describe('validateImportedConfig', () => {
 
         expect(result.config).toBeNull();
         expect(result.error).toBe('At least one input feature must be enabled.');
+    });
+});
+
+describe('decodeUrlState', () => {
+    it('falls back to defaults for unsupported enum-like URL values', () => {
+        const decoded = decodeUrlState('d=invalid&pt=broken&a=magic&oa=wild&wi=bad&l=nope&o=fast&rg=ghost');
+
+        expect(decoded.data.dataset).toBe(DEFAULT_DATA.dataset);
+        expect(decoded.data.problemType).toBe(DEFAULT_DATA.problemType);
+        expect(decoded.network.activation).toBe(DEFAULT_NETWORK.activation);
+        expect(decoded.network.outputActivation).toBe(DEFAULT_NETWORK.outputActivation);
+        expect(decoded.network.weightInit).toBe(DEFAULT_NETWORK.weightInit);
+        expect(decoded.training.lossType).toBe(DEFAULT_TRAINING.lossType);
+        expect(decoded.training.optimizer).toBe(DEFAULT_TRAINING.optimizer);
+        expect(decoded.training.regularization).toBe(DEFAULT_TRAINING.regularization);
+    });
+
+    it('restores default features when the URL disables every feature', () => {
+        const decoded = decodeUrlState('f=000000000');
+
+        expect(decoded.features).toEqual(DEFAULT_FEATURES);
+        expect(decoded.network.inputSize).toBe(2);
     });
 });

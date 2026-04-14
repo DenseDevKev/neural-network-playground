@@ -148,7 +148,7 @@ export interface NetworkSnapshot {
     testMetrics: Metrics;
 
     /** Flattened prediction grid for decision boundary heatmap. */
-    outputGrid: number[] | Float32Array;
+    outputGrid: ArrayLike<number>;
     gridSize: number; // width/height of the square grid
 
     /** Per-neuron heatmap grids (optional, on-demand). */

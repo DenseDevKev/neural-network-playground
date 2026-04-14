@@ -73,6 +73,8 @@ interface WorkerState {
     stepsPerFrame: number;
     /** Timer ID for the internal training loop. */
     trainLoopTimer: ReturnType<typeof setTimeout> | null;
+    /** Training history for getHistory() API. */
+    history: HistoryPoint[];
 }
 
 const state: WorkerState = {
@@ -105,6 +107,7 @@ const state: WorkerState = {
     snapshotId: 0,
     stepsPerFrame: 5,
     trainLoopTimer: null,
+    history: [],
 };
 
 
@@ -245,6 +248,11 @@ function computeSnapshot(): NetworkSnapshot {
 
     if (demand.needLayerStats) {
         snap.layerStats = state.network.getLayerStats();
+    }
+
+    // Add history point to worker history
+    if (snap.historyPoint) {
+        state.history.push(snap.historyPoint);
     }
 
     performance.measure('perf:worker:snapshot', 'perf:worker:snapshot:start');
@@ -388,18 +396,20 @@ function trainOneStep(): void {
 // ── Internal training loop (worker-driven) ──
 
 function trainTick(): void {
-    if (!state.running || !state.streamPort) return;
+    if (!state.running) return;
 
-    performance.mark('perf:worker:trainStep:start');
-    for (let i = 0; i < state.stepsPerFrame; i++) {
-        trainOneStep();
+    if (state.streamPort) {
+        performance.mark('perf:worker:trainStep:start');
+        for (let i = 0; i < state.stepsPerFrame; i++) {
+            trainOneStep();
+        }
+        performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
+
+        // Compute snapshot and stream it to the main thread
+        const snap = computeSnapshot();
+        const { message, transferables } = packSnapshotMessage(snap);
+        state.streamPort.postMessage(message, transferables);
     }
-    performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
-
-    // Compute snapshot and stream it to the main thread
-    const snap = computeSnapshot();
-    const { message, transferables } = packSnapshotMessage(snap);
-    state.streamPort.postMessage(message, transferables);
 
     // Schedule next tick (yield to allow message processing)
     if (state.running) {
@@ -468,15 +478,16 @@ const workerApi = {
         trainingConfig: TrainingConfig,
         dataConfig: DataConfig,
         features: FeatureFlags,
-    ): NetworkSnapshot {
+    ): { snapshot: NetworkSnapshot; runId: number } {
         stopInternalLoop();
         state.networkConfig = { ...networkConfig };
         state.trainingConfig = { ...trainingConfig };
         state.dataConfig = { ...dataConfig };
         state.features = { ...features };
         state.running = false;
+        state.history = [];
         buildDataAndNetwork();
-        return computeSnapshot();
+        return { snapshot: computeSnapshot(), runId: state.runId };
     },
 
     updateConfig(
@@ -485,7 +496,7 @@ const workerApi = {
         dataConfig: DataConfig,
         features: FeatureFlags,
         rebuild: boolean,
-    ): NetworkSnapshot {
+    ): { snapshot: NetworkSnapshot; runId: number } {
         const needsRebuild = rebuild ||
             JSON.stringify(state.networkConfig) !== JSON.stringify(networkConfig) ||
             JSON.stringify(state.dataConfig) !== JSON.stringify(dataConfig) ||
@@ -499,10 +510,11 @@ const workerApi = {
         if (needsRebuild) {
             stopInternalLoop();
             state.running = false;
+            state.history = [];
             buildDataAndNetwork();
         }
 
-        return computeSnapshot();
+        return { snapshot: computeSnapshot(), runId: state.runId };
     },
 
     step(iterations: number = 1): NetworkSnapshot {
@@ -512,14 +524,19 @@ const workerApi = {
         return computeSnapshot();
     },
 
-    reset(): NetworkSnapshot {
+    reset(): { snapshot: NetworkSnapshot; runId: number } {
         stopInternalLoop();
+        state.history = [];
         buildDataAndNetwork();
-        return computeSnapshot();
+        return { snapshot: computeSnapshot(), runId: state.runId };
     },
 
     getSnapshot(): NetworkSnapshot {
         return computeSnapshot();
+    },
+
+    getHistory(): HistoryPoint[] {
+        return state.history;
     },
 
     getTrainPoints(): DataPoint[] {
@@ -547,9 +564,10 @@ const workerApi = {
     /** Accept a MessagePort from the main thread for streaming. */
     setStreamPort(port: MessagePort): void {
         state.streamPort = port;
-        port.onmessage = (event: MessageEvent<MainToWorkerCommand>) => {
+        port.addEventListener('message', (event: MessageEvent<MainToWorkerCommand>) => {
             handleStreamCommand(event.data);
-        };
+        });
+        port.start();
     },
 
     // Legacy: Run continuous training — called in a loop from main thread

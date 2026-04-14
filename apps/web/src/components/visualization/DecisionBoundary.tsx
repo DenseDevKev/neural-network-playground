@@ -7,6 +7,7 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { writeGridToImageData, HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
 import type { DataPoint } from '@nn-playground/engine';
 import { EmptyState } from '../common/EmptyState.tsx';
+import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 
 // ── Constants ──
 const BG_COLOR = '#151822';
@@ -124,6 +125,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     const lastGridSizeRef = useRef(0);
 
     const snapshot = useTrainingStore((s) => s.snapshot);
+    const frameVersion = useTrainingStore((s) => s.frameVersion);
 
     // Track container size for responsive canvas
     const [canvasSize, setCanvasSize] = useState(320);
@@ -180,8 +182,9 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         ctx.fillRect(0, 0, logicalW, logicalH);
 
         // Draw heatmap when grid data exists
-        const grid = snapshot?.outputGrid;
-        const gridSize = snapshot?.gridSize ?? 0;
+        const frameBuffer = getFrameBuffer();
+        const grid = frameBuffer.outputGrid ?? snapshot?.outputGrid;
+        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : snapshot?.gridSize ?? 0;
 
         if (grid && gridSize > 0) {
             // Allocate / reuse offscreen canvas + ImageData
@@ -212,7 +215,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         if (showTestData && testPoints.length > 0) {
             drawPoints(ctx, testPoints, logicalW, logicalH, true);
         }
-    }, [snapshot, trainPoints, testPoints, showTestData, discretize, canvasSize]);
+    }, [snapshot, frameVersion, trainPoints, testPoints, showTestData, discretize, canvasSize]);
 
     // Schedule repaint via rAF whenever inputs change
     useEffect(() => {

@@ -17,6 +17,7 @@ export interface TrainingStore {
     status: TrainingStatus;
     snapshot: NetworkSnapshot | null;
     history: HistoryPoint[];
+    frameVersion: number;
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     /** Steps of training to run per animation frame. */
@@ -34,6 +35,7 @@ export interface TrainingStore {
     setSnapshot: (snap: NetworkSnapshot) => void;
     addHistoryPoint: (point: HistoryPoint) => void;
     resetHistory: () => void;
+    setFrameVersion: (version: number) => void;
     setTrainPoints: (pts: DataPoint[]) => void;
     setTestPoints: (pts: DataPoint[]) => void;
     setStepsPerFrame: (n: number) => void;
@@ -49,6 +51,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     status: 'idle',
     snapshot: null,
     history: [],
+    frameVersion: 0,
     trainPoints: [],
     testPoints: [],
     stepsPerFrame: 5,
@@ -72,7 +75,8 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         }
         return { history: next };
     }),
-    resetHistory: () => set({ history: [], snapshot: null }),
+    resetHistory: () => set({ history: [] }),
+    setFrameVersion: (frameVersion) => set({ frameVersion }),
     setTrainPoints: (trainPoints) => set({ trainPoints }),
     setTestPoints: (testPoints) => set({ testPoints }),
     setStepsPerFrame: (n) => set({ stepsPerFrame: Math.max(1, Math.min(100, n)) }),

@@ -6,6 +6,8 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { generatePseudocode, generateNumPy, generateTFJS } from '@nn-playground/shared';
 import { Tooltip } from '../common/Tooltip.tsx';
+import { getFrameBuffer, unflattenBiases, unflattenWeights } from '../../worker/frameBuffer.ts';
+import { useTimedState } from '../../hooks/useTimedState.ts';
 
 type CodeTab = 'pseudocode' | 'numpy' | 'tfjs';
 
@@ -17,12 +19,28 @@ const TABS: { id: CodeTab; label: string }[] = [
 
 export const CodeExportPanel = memo(function CodeExportPanel() {
     const [activeTab, setActiveTab] = useState<CodeTab>('pseudocode');
-    const [copied, setCopied] = useState(false);
+    const [copied, setCopied] = useTimedState(false, 2000);
 
     const network = usePlaygroundStore((s) => s.network);
     const training = usePlaygroundStore((s) => s.training);
     const features = usePlaygroundStore((s) => s.features);
     const snapshot = useTrainingStore((s) => s.snapshot);
+    const frameVersion = useTrainingStore((s) => s.frameVersion);
+
+    const exportSnapshot = useMemo(() => {
+        if (!snapshot) return null;
+
+        const frameBuffer = getFrameBuffer();
+        if (frameBuffer.weights && frameBuffer.biases && frameBuffer.weightLayout) {
+            return {
+                ...snapshot,
+                weights: unflattenWeights(frameBuffer.weights, frameBuffer.weightLayout.layerSizes),
+                biases: unflattenBiases(frameBuffer.biases, frameBuffer.weightLayout.layerSizes),
+            };
+        }
+
+        return snapshot;
+    }, [snapshot, frameVersion]);
 
     const code = useMemo(() => {
         const config = {
@@ -32,18 +50,17 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         };
         switch (activeTab) {
             case 'pseudocode':
-                return generatePseudocode(config, training, features, snapshot);
+                return generatePseudocode(config, training, features, exportSnapshot);
             case 'numpy':
-                return generateNumPy(config, training, features, snapshot);
+                return generateNumPy(config, training, features, exportSnapshot);
             case 'tfjs':
-                return generateTFJS(config, training, features, snapshot);
+                return generateTFJS(config, training, features, exportSnapshot);
         }
-    }, [activeTab, network, training, features, snapshot]);
+    }, [activeTab, network, training, features, exportSnapshot]);
 
     const handleCopy = useCallback(() => {
         navigator.clipboard.writeText(code).then(() => {
             setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
         });
     }, [code]);
 

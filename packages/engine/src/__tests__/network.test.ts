@@ -261,6 +261,16 @@ describe('Network snapshot', () => {
         expect(snap.historyPoint).toBeDefined();
     });
 
+    it('does not mutate training history when creating a snapshot', () => {
+        const net = new Network(makeConfig());
+
+        expect(net.getHistory()).toHaveLength(0);
+
+        net.getSnapshot(1, 0, { loss: 0.1 }, { loss: 0.2 }, [], 0);
+
+        expect(net.getHistory()).toHaveLength(0);
+    });
+
     it('snapshot weights are copies (not references)', () => {
         const net = new Network(makeConfig());
         const snap = net.getSnapshot(0, 0, { loss: 0 }, { loss: 0 }, [], 0);

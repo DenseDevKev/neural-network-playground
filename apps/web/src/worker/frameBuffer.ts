@@ -75,6 +75,71 @@ export function resetFrameBuffer(): void {
     };
 }
 
+export function flattenWeights(
+    weights: number[][][],
+): { buffer: Float32Array; layerSizes: number[] } {
+    if (weights.length === 0) {
+        return {
+            buffer: new Float32Array(0),
+            layerSizes: [],
+        };
+    }
+
+    let totalWeights = 0;
+    const layerSizes = [weights[0][0]?.length ?? 0];
+
+    for (const layer of weights) {
+        layerSizes.push(layer.length);
+        for (const neuron of layer) {
+            totalWeights += neuron.length;
+        }
+    }
+
+    const buffer = new Float32Array(totalWeights);
+    let offset = 0;
+    for (const layer of weights) {
+        for (const neuron of layer) {
+            buffer.set(neuron, offset);
+            offset += neuron.length;
+        }
+    }
+
+    return { buffer, layerSizes };
+}
+
+export function flattenBiases(biases: number[][]): Float32Array {
+    let totalBiases = 0;
+    for (const layer of biases) {
+        totalBiases += layer.length;
+    }
+
+    const buffer = new Float32Array(totalBiases);
+    let offset = 0;
+    for (const layer of biases) {
+        buffer.set(layer, offset);
+        offset += layer.length;
+    }
+
+    return buffer;
+}
+
+export function flattenNeuronGrids(
+    neuronGrids: number[][],
+    gridSize: number,
+): { buffer: Float32Array; layout: { count: number; gridSize: number } } {
+    const count = neuronGrids.length;
+    const buffer = new Float32Array(count * gridSize * gridSize);
+
+    for (let i = 0; i < count; i++) {
+        buffer.set(neuronGrids[i], i * gridSize * gridSize);
+    }
+
+    return {
+        buffer,
+        layout: { count, gridSize },
+    };
+}
+
 /**
  * Helper: Reconstruct nested weight arrays from a flat Float32Array + layout.
  * Returns weights[layer][neuron][prevNeuron].

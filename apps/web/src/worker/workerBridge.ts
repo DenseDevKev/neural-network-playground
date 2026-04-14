@@ -60,14 +60,15 @@ export async function setupStreamChannel(): Promise<void> {
     await api.setStreamPort(Comlink.transfer(channel.port2, [channel.port2]));
 
     // Listen for streamed messages on port1
-    _streamPort.onmessage = (event: MessageEvent<WorkerToMainMessage>) => {
+    _streamPort.addEventListener('message', (event: MessageEvent<WorkerToMainMessage>) => {
         handleWorkerMessage(event.data);
-    };
+    });
+    _streamPort.start();
 }
 
 // ── Message Handling ──
 
-function handleWorkerMessage(msg: WorkerToMainMessage): void {
+function handleWorkerMessage(msg: WorkerToMainMessage): void { 
     // Drop messages from stale runs
     if (msg.runId < _currentRunId) return;
 
@@ -87,6 +88,8 @@ function handleWorkerMessage(msg: WorkerToMainMessage): void {
 // ── rAF Render Loop ──
 
 function rafLoop(): void {
+    if (_rafId === null) return; // Stopped
+
     if (_pendingSnapshot) {
         const msg = _pendingSnapshot;
         _pendingSnapshot = null;
@@ -176,6 +179,15 @@ export function newRun(): number {
 }
 
 /**
+ * Set the run ID to a specific value (used to sync with worker's runId).
+ */
+export function newRunTo(targetRunId: number): void {
+    _currentRunId = targetRunId;
+    _latestSnapshotId = -1;
+    _pendingSnapshot = null;
+}
+
+/**
  * Get the current run ID.
  */
 export function getCurrentRunId(): number {
@@ -208,5 +220,9 @@ export function terminateWorker(): void {
         _worker = null;
         _comlinkApi = null;
     }
+    _currentRunId = 0;
+    _latestSnapshotId = -1;
+    _pendingSnapshot = null;
+    _onSnapshot = null;
     resetFrameBuffer();
 }

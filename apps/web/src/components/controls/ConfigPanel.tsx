@@ -1,10 +1,11 @@
 // ── Config Import/Export Panel ──
 // Allows users to save and restore playground configurations as JSON.
 
-import { useCallback, useRef, useState, memo } from 'react';
+import { useCallback, useRef, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { exportConfigJson, validateImportedConfig } from '@nn-playground/shared';
 import { Tooltip } from '../common/Tooltip.tsx';
+import { useTimedState } from '../../hooks/useTimedState.ts';
 
 interface ConfigPanelProps {
     onReset: () => void;
@@ -12,7 +13,7 @@ interface ConfigPanelProps {
 
 export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [feedback, setFeedback] = useState<string | null>(null);
+    const [feedback, setFeedback] = useTimedState<string | null>(null, 2000);
 
     const handleExport = useCallback(() => {
         const config = usePlaygroundStore.getState().getConfig();
@@ -25,13 +26,11 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
         a.click();
         URL.revokeObjectURL(url);
         setFeedback('Exported!');
-        setTimeout(() => setFeedback(null), 2000);
     }, []);
 
     const handleCopyUrl = useCallback(() => {
         navigator.clipboard.writeText(window.location.href).then(() => {
             setFeedback('URL copied!');
-            setTimeout(() => setFeedback(null), 2000);
         });
     }, []);
 
@@ -46,7 +45,6 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
 
             if (file.size > 1024 * 1024) {
                 setFeedback('Config file must be smaller than 1MB');
-                setTimeout(() => setFeedback(null), 2000);
                 e.target.value = '';
                 return;
             }
@@ -80,7 +78,6 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                 } else {
                     setFeedback(validation.error ?? 'Invalid config');
                 }
-                setTimeout(() => setFeedback(null), 2000);
             };
             reader.readAsText(file);
             // Reset so same file can be re-imported

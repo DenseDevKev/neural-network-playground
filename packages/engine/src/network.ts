@@ -488,7 +488,7 @@ export class Network {
         epoch: number,
         trainMetrics: Metrics,
         testMetrics: Metrics,
-        outputGrid: number[],
+        outputGrid: ArrayLike<number>,
         gridSize: number,
     ): NetworkSnapshot {
         const historyPoint: HistoryPoint = {
@@ -498,8 +498,6 @@ export class Network {
             trainAccuracy: trainMetrics.accuracy,
             testAccuracy: testMetrics.accuracy,
         };
-
-        this.history.push(historyPoint);
 
         return {
             step,

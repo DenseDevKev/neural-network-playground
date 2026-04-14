@@ -12,6 +12,7 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { getActiveFeatures } from '@nn-playground/engine';
 import { GRID_SIZE, writeNormalizedHeatmap } from '@nn-playground/shared';
+import { extractNeuronGrid, getFrameBuffer, unflattenBiases, unflattenWeights } from '../../worker/frameBuffer.ts';
 
 const NODE_RADIUS = 14;
 const LAYER_GAP = 120;
@@ -84,7 +85,7 @@ function getScaledCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingCon
  * Generate a data URL from a flat grid of neuron activations.
  * Uses shared blue–dark–orange color scale and persistent canvases.
  */
-function neuronGridToDataUrl(grid: number[], gridSize: number): string {
+function neuronGridToDataUrl(grid: ArrayLike<number>, gridSize: number): string {
     const { canvas: sourceCanvas, ctx: sourceCtx, imageData } = getSourceCanvas(gridSize);
 
     writeNormalizedHeatmap(grid, imageData, 220);
@@ -396,6 +397,7 @@ export function NetworkGraph() {
     const features = usePlaygroundStore((s) => s.features);
     const activation = usePlaygroundStore((s) => s.network.activation);
     const snapshot = useTrainingStore((s) => s.snapshot);
+    const frameVersion = useTrainingStore((s) => s.frameVersion);
 
     const [tooltip, setTooltip] = useState<TooltipData | null>(null);
     const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
@@ -431,14 +433,42 @@ export function NetworkGraph() {
         });
     }, [layers]);
 
+    const weights = useMemo(() => {
+        const frameBuffer = getFrameBuffer();
+        if (frameBuffer.weights && frameBuffer.weightLayout) {
+            return unflattenWeights(frameBuffer.weights, frameBuffer.weightLayout.layerSizes);
+        }
+        return snapshot?.weights ?? null;
+    }, [frameVersion, snapshot?.weights]);
+
+    const biases = useMemo(() => {
+        const frameBuffer = getFrameBuffer();
+        if (frameBuffer.biases && frameBuffer.weightLayout) {
+            return unflattenBiases(frameBuffer.biases, frameBuffer.weightLayout.layerSizes);
+        }
+        return snapshot?.biases ?? null;
+    }, [frameVersion, snapshot?.biases]);
+
     // Compute mini heatmap data URLs for each non-input neuron
     const neuronHeatmapUrls = useMemo(() => {
+        const frameBuffer = getFrameBuffer();
+        if (frameBuffer.neuronGrids && frameBuffer.neuronGridLayout) {
+            const { count, gridSize } = frameBuffer.neuronGridLayout;
+            return Array.from({ length: count }, (_, idx) =>
+                neuronGridToDataUrl(extractNeuronGrid(frameBuffer.neuronGrids!, idx, gridSize * gridSize), gridSize),
+            );
+        }
         if (!snapshot?.neuronGrids) return null;
         const gridSize = snapshot.gridSize ?? GRID_SIZE;
-        return snapshot.neuronGrids.map((grid) =>
-            neuronGridToDataUrl(grid, gridSize),
-        );
-    }, [snapshot?.neuronGrids, snapshot?.gridSize]);
+        const snapshotNeuronGrids = snapshot.neuronGrids;
+        if (snapshotNeuronGrids instanceof Float32Array) {
+            const count = layers.slice(1).reduce((sum, size) => sum + size, 0);
+            return Array.from({ length: count }, (_, idx) =>
+                neuronGridToDataUrl(extractNeuronGrid(snapshotNeuronGrids, idx, gridSize * gridSize), gridSize),
+            );
+        }
+        return snapshotNeuronGrids.map((grid) => neuronGridToDataUrl(grid, gridSize));
+    }, [frameVersion, layers, snapshot?.neuronGrids, snapshot?.gridSize]);
 
     // ── Stable handlers (no deps — all data flows in via arguments or closure over setters) ──
 
@@ -494,7 +524,7 @@ export function NetworkGraph() {
                 {/* Edges — re-renders on weight change or hoveredEdge change */}
                 <NetworkEdges
                     nodePositions={nodePositions}
-                    weights={snapshot?.weights ?? null}
+                    weights={weights}
                     hoveredEdge={hoveredEdge}
                     onEdgeEnter={handleEdgeEnter}
                     onEdgeLeave={handleEdgeLeave}
@@ -504,7 +534,7 @@ export function NetworkGraph() {
                 <NetworkNodes
                     nodePositions={nodePositions}
                     layers={layers}
-                    biases={snapshot?.biases ?? null}
+                    biases={biases}
                     neuronHeatmapUrls={neuronHeatmapUrls}
                     activeFeatures={activeFeatures}
                     activation={activation}

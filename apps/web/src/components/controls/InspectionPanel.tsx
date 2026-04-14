@@ -4,12 +4,17 @@
 import { useMemo, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 
 export const InspectionPanel = memo(function InspectionPanel() {
     const snapshot = useTrainingStore((s) => s.snapshot);
+    const frameVersion = useTrainingStore((s) => s.frameVersion);
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
 
-    const layerStats = snapshot?.layerStats;
+    const layerStats = useMemo(
+        () => getFrameBuffer().layerStats ?? snapshot?.layerStats,
+        [frameVersion, snapshot?.layerStats],
+    );
 
     const layerNames = useMemo(() => {
         const names: string[] = [];
