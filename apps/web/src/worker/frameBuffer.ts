@@ -124,7 +124,7 @@ export function flattenBiases(biases: number[][]): Float32Array {
 }
 
 export function flattenNeuronGrids(
-    neuronGrids: number[][],
+    neuronGrids: number[][] | Float32Array[],
     gridSize: number,
 ): { buffer: Float32Array; layout: { count: number; gridSize: number } } {
     const count = neuronGrids.length;
