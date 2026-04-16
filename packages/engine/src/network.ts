@@ -126,11 +126,15 @@ export class Network {
 
         // Output layer deltas
         const outputAct = getActivation(this.config.outputActivation);
-        let deltas: number[] = this.layerOutputs[numLayers - 1].map((o, i) => {
+        const outputLayerOutputs = this.layerOutputs[numLayers - 1];
+        const outputLayerPreActs = this.layerPreActs[numLayers - 1];
+        let deltas: number[] = new Array(outputLayerOutputs.length);
+        for (let i = 0, len = outputLayerOutputs.length; i < len; i++) {
+            const o = outputLayerOutputs[i];
             const dLoss = lossFn.dloss(o, target[i]);
-            const dAct = outputAct.df(this.layerPreActs[numLayers - 1][i], o);
-            return dLoss * dAct;
-        });
+            const dAct = outputAct.df(outputLayerPreActs[i], o);
+            deltas[i] = dLoss * dAct;
+        }
 
         // Backpropagate through layers
         for (let l = numLayers - 1; l >= 0; l--) {
