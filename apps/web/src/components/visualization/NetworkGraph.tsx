@@ -7,7 +7,7 @@
 //   NetworkEdges   — edge lines coloured by weight; re-renders on weight change or edge hover
 //   NetworkNodes   — neuron circles with optional heatmaps; re-renders on bias/heatmap change
 
-import { useMemo, useState, useCallback, memo } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { getActiveFeatures } from '@nn-playground/engine';
@@ -15,8 +15,10 @@ import { GRID_SIZE, writeNormalizedHeatmap } from '@nn-playground/shared';
 import { extractNeuronGrid, getFrameBuffer, unflattenBiases, unflattenWeights } from '../../worker/frameBuffer.ts';
 
 const NODE_RADIUS = 14;
-const LAYER_GAP = 120;
-const NODE_GAP = 42;
+const MIN_LAYER_GAP = 120;
+const MIN_NODE_GAP = 42;
+const PAD_X = 60;
+const PAD_Y = 40;
 const HEATMAP_SIZE = 24; // pixels for mini heatmap canvas
 
 interface NodePos {
@@ -410,20 +412,53 @@ export function NetworkGraph() {
     }, [inputSize, hiddenLayers]);
 
     const maxNodes = Math.max(...layers);
-    const svgWidth = layers.length * LAYER_GAP + 60;
-    const svgHeight = Math.max(200, maxNodes * NODE_GAP + 60);
+
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [containerSize, setContainerSize] = useState({ width: 800, height: 400 });
+
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (!entry) return;
+            const { width, height } = entry.contentRect;
+            if (width > 0 && height > 0) {
+                setContainerSize({ width, height });
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, []);
+
+    const { svgWidth, svgHeight, layerGap, nodeGap } = useMemo(() => {
+        const w = Math.max(320, containerSize.width);
+        const h = Math.max(200, containerSize.height);
+        const usableW = Math.max(0, w - PAD_X * 2);
+        const usableH = Math.max(0, h - PAD_Y * 2);
+        const layerGap = layers.length > 1
+            ? Math.max(MIN_LAYER_GAP, usableW / (layers.length - 1))
+            : MIN_LAYER_GAP;
+        const nodeGap = maxNodes > 1
+            ? Math.max(MIN_NODE_GAP, usableH / (maxNodes - 1))
+            : MIN_NODE_GAP;
+        const svgWidth = Math.max(w, layers.length * layerGap + PAD_X * 2);
+        const svgHeight = Math.max(h, maxNodes * nodeGap + PAD_Y * 2);
+        return { svgWidth, svgHeight, layerGap, nodeGap };
+    }, [containerSize, layers, maxNodes]);
 
     const nodePositions = useMemo(() => {
+        const startX = (svgWidth - (layers.length - 1) * layerGap) / 2;
         return layers.map((count, layerIdx) => {
-            const x = 50 + layerIdx * LAYER_GAP;
-            const totalHeight = (count - 1) * NODE_GAP;
+            const x = startX + layerIdx * layerGap;
+            const totalHeight = (count - 1) * nodeGap;
             const startY = svgHeight / 2 - totalHeight / 2;
             return Array.from({ length: count }, (_, nodeIdx) => ({
                 x,
-                y: startY + nodeIdx * NODE_GAP,
+                y: startY + nodeIdx * nodeGap,
             }));
         });
-    }, [layers, svgHeight]);
+    }, [layers, svgWidth, svgHeight, layerGap, nodeGap]);
 
     const layerLabels = useMemo(() => {
         return layers.map((_, idx) => {
@@ -503,11 +538,11 @@ export function NetworkGraph() {
     }, []);
 
     return (
-        <div className="network-graph-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
+        <div ref={containerRef} className="network-graph-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
             <svg
                 viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                 preserveAspectRatio="xMidYMid meet"
-                style={{ width: '100%', height: '100%' }}
+                style={{ width: '100%', height: '100%', display: 'block' }}
                 onMouseLeave={() => { setTooltip(null); setHoveredEdge(null); }}
             >
                 {/* Shared defs (glow filter) */}
