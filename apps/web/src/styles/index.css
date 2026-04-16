@@ -797,7 +797,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .training-bar {
     display: flex;
     align-items: center;
-    gap: var(--space-md);
+    flex-wrap: wrap;
+    gap: var(--space-sm) var(--space-md);
     padding: var(--space-sm) var(--space-md);
     background: var(--bg-surface);
     border-radius: var(--radius-md);
@@ -808,6 +809,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     display: flex;
     align-items: center;
     gap: var(--space-sm);
+    flex-shrink: 0;
 }
 
 .training-bar__info {
@@ -824,7 +826,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
     display: flex;
     align-items: center;
     gap: 6px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
 }
 
 .training-bar__speed-label {
@@ -950,6 +953,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     background: var(--bg-base);
     border: 1px solid var(--border-subtle);
     position: relative;
+    flex-shrink: 0;
 }
 
 .decision-boundary canvas {
@@ -1005,6 +1009,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     border: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
+    flex-shrink: 0;
 }
 
 /* Tab strip */
@@ -1245,11 +1250,18 @@ input[type="range"]::-webkit-slider-thumb:hover {
 /* ── Responsive ── */
 @media (min-width: 860px) and (max-width: 1199px) {
     .sidebar {
-        width: 280px;
+        width: 260px;
     }
 
     .right-panel {
-        width: 340px;
+        width: 320px;
+    }
+}
+
+@media (max-width: 1400px) {
+    /* Hide keyboard shortcut hints to save horizontal space */
+    .btn__shortcut {
+        display: none;
     }
 }
 
