@@ -15,7 +15,7 @@ const TRAIN_RADIUS = 3.5;
 const TEST_RADIUS = 3;
 const POINT_STROKE_DARK = 'rgba(0,0,0,0.5)';
 const POINT_STROKE_LIGHT = '#fff';
-const HEATMAP_ALPHA = 200;
+const HEATMAP_ALPHA = 255;
 
 interface Props {
     trainPoints: DataPoint[];

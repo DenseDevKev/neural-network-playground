@@ -336,6 +336,7 @@ body {
     width: 300px;
     flex-shrink: 0;
     overflow-y: auto;
+    min-height: 0;
     background: var(--bg-surface);
     border-right: 1px solid var(--border-subtle);
     display: flex;
@@ -363,6 +364,7 @@ body {
     border-radius: var(--radius-md);
     padding: var(--space-md);
     border: 1px solid var(--border-subtle);
+    flex-shrink: 0;
 }
 
 .panel--error {
@@ -381,6 +383,7 @@ body {
 .collapsible-panel {
     padding: 0;
     overflow: hidden;
+    flex-shrink: 0;
 }
 
 .panel__header {
@@ -920,6 +923,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     width: 360px;
     flex-shrink: 0;
     overflow-y: auto;
+    min-height: 0;
     background: var(--bg-surface);
     border-left: 1px solid var(--border-subtle);
     padding: var(--space-sm);
@@ -1622,7 +1626,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .preset-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-sm);
 }
 
@@ -1689,6 +1693,9 @@ input[type="range"]::-webkit-slider-thumb:hover {
     font-weight: 700;
     color: var(--text-primary);
     line-height: 1.35;
+    min-width: 0;
+    word-break: normal;
+    overflow-wrap: anywhere;
 }
 
 .preset-card__badge {

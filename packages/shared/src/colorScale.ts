@@ -10,7 +10,7 @@ export type RGB = [number, number, number];
 // These match the CSS theme colors for class 0 (blue) and class 1 (orange).
 export const COLOR_BLUE: RGB = [59, 130, 246];   // #3b82f6
 export const COLOR_ORANGE: RGB = [249, 115, 22]; // #f97316
-export const COLOR_DARK: RGB = [28, 32, 48];     // midpoint for heatmaps
+export const COLOR_DARK: RGB = [60, 64, 84];     // midpoint for heatmaps (lighter than BG so 0.5 is visible)
 
 /** Hex strings for use in CSS / SVG. */
 export const HEX_BLUE = '#3b82f6';
