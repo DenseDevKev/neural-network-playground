@@ -152,7 +152,7 @@ export interface NetworkSnapshot {
     gridSize: number; // width/height of the square grid
 
     /** Per-neuron heatmap grids (optional, on-demand). */
-    neuronGrids?: number[][] | Float32Array;
+    neuronGrids?: number[][] | Float32Array[] | Float32Array;
 
     /** Per-layer statistics for inspection panel. */
     layerStats?: LayerStats[];

@@ -301,9 +301,9 @@ export class Network {
      */
     predictGrid(
         gridInputs: number[][],
-    ): number[] {
+    ): Float32Array {
         const len = gridInputs.length;
-        const res = new Array(len);
+        const res = new Float32Array(len);
         for (let i = 0; i < len; i++) {
             res[i] = this.forward(gridInputs[i])[0];
         }
@@ -317,27 +317,29 @@ export class Network {
      */
     predictGridWithNeurons(
         gridInputs: number[][],
-    ): { outputGrid: number[]; neuronGrids: number[][] } {
+    ): { outputGrid: Float32Array; neuronGrids: Float32Array[] } {
         const numLayers = this.weights.length;
-        // Initialize neuronGrids: one array per [layer][neuron]
-        const neuronGrids: number[][] = [];
+        const gridLen = gridInputs.length;
+
+        // Initialize neuronGrids: one Float32Array per neuron
+        const neuronGrids: Float32Array[] = [];
         for (let l = 0; l < numLayers; l++) {
             for (let n = 0; n < this.weights[l].length; n++) {
-                neuronGrids.push([]);
+                neuronGrids.push(new Float32Array(gridLen));
             }
         }
 
-        const outputGrid: number[] = [];
+        const outputGrid = new Float32Array(gridLen);
 
-        for (const inp of gridInputs) {
-            const output = this.forward(inp);
-            outputGrid.push(output[0]);
+        for (let i = 0; i < gridLen; i++) {
+            const output = this.forward(gridInputs[i]);
+            outputGrid[i] = output[0];
 
             // Collect per-neuron activations
             let idx = 0;
             for (let l = 0; l < numLayers; l++) {
                 for (let n = 0; n < this.layerOutputs[l].length; n++) {
-                    neuronGrids[idx].push(this.layerOutputs[l][n]);
+                    neuronGrids[idx][i] = this.layerOutputs[l][n];
                     idx++;
                 }
             }
