@@ -52,9 +52,9 @@ export const Header = memo(function Header({ training }: HeaderProps) {
     return (
         <header className="header">
             <div className="header__brand">
-                <div className="header__logo">NN</div>
+
                 <h1 className="header__title">
-                    <span>Neural Network</span> Playground
+                    <span>Neural</span> Architect
                 </h1>
             </div>
             <div className="header__metrics">

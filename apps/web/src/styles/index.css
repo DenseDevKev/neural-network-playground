@@ -5,12 +5,12 @@
 /* ── Design Tokens ── */
 :root {
     /* Brand Palette */
-    --color-primary: #7c5cfc;
-    --color-primary-dim: #5a3fd4;
-    --color-primary-glow: rgba(124, 92, 252, 0.25);
-    --color-accent: #00e5c3;
-    --color-accent-dim: #00b89d;
-    --color-accent-glow: rgba(0, 229, 195, 0.2);
+    --color-primary: #81ecff;
+    --color-primary-dim: #00d4ec;
+    --color-primary-glow: rgba(129, 236, 255, 0.25);
+    --color-accent: #bc87fe;
+    --color-accent-dim: #ba85fb;
+    --color-accent-glow: rgba(188, 135, 254, 0.25);
 
     /* Semantic */
     --color-positive: #f97316;
@@ -27,23 +27,23 @@
     --color-loading-glow: rgba(96, 165, 250, 0.2);
 
     /* Surfaces */
-    --bg-base: #0d0f17;
-    --bg-surface: #151822;
-    --bg-elevated: #1c2030;
-    --bg-hover: #232840;
-    --bg-input: #10131c;
+    --bg-base: #0e0e0e;
+    --bg-surface: #131313;
+    --bg-elevated: #1a1a1a;
+    --bg-hover: #262626;
+    --bg-input: #1a1a1a;
     --bg-overlay: rgba(13, 15, 23, 0.95);
 
     /* Text */
-    --text-primary: rgba(255, 255, 255, 0.92);
-    --text-secondary: rgba(255, 255, 255, 0.6);
+    --text-primary: #ffffff;
+    --text-secondary: #adaaaa;
     --text-tertiary: rgba(255, 255, 255, 0.38);
     --text-disabled: rgba(255, 255, 255, 0.2);
     --text-on-accent: #000;
 
     /* Borders */
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-default: rgba(255, 255, 255, 0.12);
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-default: #262626;
     --border-focus: var(--color-primary);
     --border-hover: rgba(124, 92, 252, 0.4);
 
@@ -70,8 +70,8 @@
     --space-xxl: 48px;
 
     /* Typography */
-    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-sans: "Inter", system-ui, sans-serif;
+    --font-mono: "Space Grotesk", monospace;
     --text-xs: 0.7rem;
     --text-sm: 0.8rem;
     --text-base: 0.875rem;
@@ -1966,3 +1966,41 @@ input[type="range"]::-webkit-slider-thumb:hover {
     font-family: var(--font-mono);
 }
 
+
+/* Sidebar toggling */
+.sidebar {
+    transition: width 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar--collapsed {
+    width: 60px;
+}
+
+.sidebar__toggle-container {
+    padding: 10px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.sidebar__toggle {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 1.2rem;
+}
+.sidebar__toggle:hover {
+    color: var(--text-primary);
+}
+
+/* Network Visualization Specifics */
+.network-edge {
+    transition: stroke-width 0.2s, stroke-opacity 0.2s;
+    filter: drop-shadow(0 0 4px var(--color-primary-glow));
+}
+
+.network-node {
+    filter: drop-shadow(0 0 8px var(--color-primary-glow));
+}

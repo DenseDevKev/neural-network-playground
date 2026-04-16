@@ -36,14 +36,14 @@ interface TooltipData {
 
 function nodeColor(value: number): string {
     const abs = Math.min(Math.abs(value), 2) / 2;
-    if (value > 0) return `rgba(249, 115, 22, ${0.3 + abs * 0.7})`;
-    return `rgba(59, 130, 246, ${0.3 + abs * 0.7})`;
+    if (value > 0) return `rgba(129, 236, 255, ${0.4 + abs * 0.6})`;
+    return `rgba(188, 135, 254, ${0.4 + abs * 0.6})`;
 }
 
 function edgeColor(weight: number): string {
     const abs = Math.min(Math.abs(weight), 3) / 3;
-    if (weight > 0) return `rgba(249, 115, 22, ${0.15 + abs * 0.6})`;
-    return `rgba(59, 130, 246, ${0.15 + abs * 0.6})`;
+    if (weight > 0) return `rgba(129, 236, 255, ${0.2 + abs * 0.6})`;
+    return `rgba(188, 135, 254, ${0.2 + abs * 0.6})`;
 }
 
 function edgeWidth(weight: number): number {

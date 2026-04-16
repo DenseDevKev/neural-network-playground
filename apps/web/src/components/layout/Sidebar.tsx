@@ -1,5 +1,5 @@
 // ── Sidebar Component ──
-import { memo } from 'react';
+import { memo, useState } from 'react';
 import { PresetPanel } from '../controls/PresetPanel.tsx';
 import { DataPanel } from '../controls/DataPanel.tsx';
 import { FeaturesPanel } from '../controls/FeaturesPanel.tsx';
@@ -13,11 +13,24 @@ interface SidebarProps {
     onReset: () => void;
 }
 
+
 export const Sidebar = memo(function Sidebar({ onReset }: SidebarProps) {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
+    const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
 
     return (
-        <aside className="sidebar" role="complementary" aria-label="Configuration">
+        <aside className={`sidebar ${isSidebarExpanded ? '' : 'sidebar--collapsed'}`} role="complementary" aria-label="Configuration">
+            <div className="sidebar__toggle-container">
+                <button
+                    className="sidebar__toggle btn btn--icon"
+                    onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+                    aria-label={isSidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+                >
+                    {isSidebarExpanded ? '←' : '→'}
+                </button>
+            </div>
+            <div className="sidebar__content" style={{ display: isSidebarExpanded ? 'block' : 'none' }}>
+
             <CollapsiblePanel title="Presets" className="preset-panel">
                 <PresetPanel onReset={onReset} />
             </CollapsiblePanel>
@@ -36,6 +49,8 @@ export const Sidebar = memo(function Sidebar({ onReset }: SidebarProps) {
             <CollapsiblePanel title="Config" defaultExpanded={false}>
                 <ConfigPanel onReset={onReset} />
             </CollapsiblePanel>
+
+            </div>
         </aside>
     );
 });
