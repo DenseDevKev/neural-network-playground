@@ -6,15 +6,58 @@ import {
     DEFAULT_TRAINING,
     decodeUrlState,
     validateImportedConfig,
+    encodeUrlState,
+    decodeUrlState,
+    exportConfigJson,
+    importConfigJson
 } from '../index.js';
+import type { AppConfig } from '../types.js';
 
-const validConfig = {
+const validConfig: AppConfig = {
     data: { ...DEFAULT_DATA },
     network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
     training: { ...DEFAULT_TRAINING },
     features: { ...DEFAULT_FEATURES },
     ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 },
 };
+
+describe('URL State Serialization', () => {
+    it('round-trips a valid configuration', () => {
+        const encoded = encodeUrlState(validConfig);
+        const decoded = decodeUrlState(encoded);
+
+        // Because encodeUrlState does not serialize the 'noise' default or some other specifics,
+        // we might just need to check if the objects match deeply.
+        expect(decoded).toEqual(validConfig);
+    });
+
+    it('decodes an empty hash to defaults', () => {
+        const decoded = decodeUrlState('');
+
+        expect(decoded.data.dataset).toBe(DEFAULT_DATA.dataset);
+        expect(decoded.network.hiddenLayers).toEqual(DEFAULT_NETWORK.hiddenLayers);
+        expect(decoded.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
+    });
+});
+
+describe('JSON Serialization', () => {
+    it('round-trips a valid configuration', () => {
+        const json = exportConfigJson(validConfig);
+        const imported = importConfigJson(json);
+
+        expect(imported).toEqual(validConfig);
+    });
+
+    it('returns null for invalid JSON string', () => {
+        const imported = importConfigJson('invalid json');
+        expect(imported).toBeNull();
+    });
+
+    it('returns null for structurally invalid JSON object', () => {
+        const imported = importConfigJson(JSON.stringify({ notAConfig: true }));
+        expect(imported).toBeNull();
+    });
+});
 
 describe('validateImportedConfig', () => {
     it('accepts a valid configuration and normalizes input size', () => {
