@@ -50,10 +50,22 @@ export interface TrainingConfig {
     batchSize: number;
     lossType: LossType;
     optimizer: OptimizerType;
+    /** SGD-with-momentum coefficient; ignored for other optimizers. */
     momentum: number;
     regularization: RegularizationType;
     regularizationRate: number;
+    /** Global-norm gradient clip threshold; null disables clipping. */
     gradientClip: number | null;
+    /** Adam first-moment decay. Default 0.9 when omitted. */
+    adamBeta1?: number;
+    /** Adam second-moment decay. Default 0.999 when omitted. */
+    adamBeta2?: number;
+    /** Adam numerical-stability epsilon. Default 1e-8 when omitted. */
+    adamEps?: number;
+    /** Huber loss transition point. Default 1.0 when omitted. */
+    huberDelta?: number;
+    /** Optional learning-rate schedule; omit for constant LR. */
+    lrSchedule?: import('./schedules.js').LRSchedule;
 }
 
 /** Configuration for data generation. */

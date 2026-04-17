@@ -13,6 +13,8 @@ import {
     getActiveFeatures,
     transformDataset,
     countActiveFeatures,
+    isLossCompatible,
+    describeLossIncompatibility,
 } from '@nn-playground/engine';
 import type {
     NetworkConfig,
@@ -28,6 +30,7 @@ import type {
     VisualizationDemand,
     WorkerSnapshotMessage,
     WorkerStatusMessage,
+    WorkerErrorMessage,
     MainToWorkerCommand,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
@@ -46,7 +49,6 @@ interface WorkerState {
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     gridInputs: number[][];
-    step: number;
     epoch: number;
     running: boolean;
     rafId: number | null;
@@ -60,6 +62,8 @@ interface WorkerState {
     snapshotsSinceLastTestEval: number;
     /** Cached last test metrics to reuse when skipping test evaluation. */
     lastTestMetrics: { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null;
+    /** True when the most recent snapshot reused cached test metrics instead of re-evaluating. */
+    testMetricsStale: boolean;
     /** Pre-allocated buffers for grid predictions. */
     outputGridBuffer: Float32Array | null;
     neuronGridsBuffer: Float32Array | null;
@@ -75,6 +79,56 @@ interface WorkerState {
     trainLoopTimer: ReturnType<typeof setTimeout> | null;
     /** Training history for getHistory() API. */
     history: HistoryPoint[];
+    /**
+     * True when a snapshot has been posted to the main thread but has not yet
+     * been acknowledged (applied to the frame buffer). Used for back-pressure:
+     * while an ack is outstanding, the worker keeps training but skips further
+     * postMessage calls so the transferable queue doesn't grow unbounded.
+     */
+    awaitingAck: boolean;
+}
+
+// Helper: reset back-pressure state. Called when the consumer on the other
+// side is being torn down (stop, rebuild) so that a new run starts fresh
+// instead of waiting for an ack that will never arrive.
+function resetAck(): void {
+    state.awaitingAck = false;
+}
+
+/** Validate config compatibility — throws on incompatible loss/activation. */
+function validateConfigs(network: NetworkConfig, training: TrainingConfig): void {
+    if (!isLossCompatible(training.lossType, network.outputActivation)) {
+        throw new Error(describeLossIncompatibility(training.lossType, network.outputActivation));
+    }
+}
+
+/**
+ * Shallow structural equality for our config objects. Assumes values are
+ * primitives or small arrays of primitives (e.g. NetworkConfig.hiddenLayers).
+ * Faster and more robust than JSON.stringify comparison — which is sensitive
+ * to key ordering and mishandles `undefined`.
+ */
+function configsEqual(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (a == null || b == null) return a === b;
+    if (typeof a !== 'object' || typeof b !== 'object') return false;
+    if (Array.isArray(a) || Array.isArray(b)) {
+        if (!Array.isArray(a) || !Array.isArray(b)) return false;
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+            if (a[i] !== b[i]) return false;
+        }
+        return true;
+    }
+    const ao = a as Record<string, unknown>;
+    const bo = b as Record<string, unknown>;
+    const aKeys = Object.keys(ao);
+    const bKeys = Object.keys(bo);
+    if (aKeys.length !== bKeys.length) return false;
+    for (const k of aKeys) {
+        if (!configsEqual(ao[k], bo[k])) return false;
+    }
+    return true;
 }
 
 const state: WorkerState = {
@@ -91,7 +145,6 @@ const state: WorkerState = {
     trainPoints: [],
     testPoints: [],
     gridInputs: [],
-    step: 0,
     epoch: 0,
     running: false,
     rafId: null,
@@ -100,6 +153,7 @@ const state: WorkerState = {
     demand: { ...DEFAULT_DEMAND },
     snapshotsSinceLastTestEval: 0,
     lastTestMetrics: null,
+    testMetricsStale: false,
     outputGridBuffer: null,
     neuronGridsBuffer: null,
     streamPort: null,
@@ -108,6 +162,7 @@ const state: WorkerState = {
     stepsPerFrame: 5,
     trainLoopTimer: null,
     history: [],
+    awaitingAck: false,
 };
 
 
@@ -144,7 +199,6 @@ function buildDataAndNetwork(): void {
     };
     state.networkConfig = config;
     state.network = new Network(config, config.seed);
-    state.step = 0;
 
     // Allocate buffers
     state.outputGridBuffer = new Float32Array(GRID_SIZE * GRID_SIZE);
@@ -160,15 +214,28 @@ function buildDataAndNetwork(): void {
     state.runId++;
     state.snapshotId = 0;
 
+    // New run — drop any stale back-pressure gate.
+    resetAck();
+
     // Initialise shuffle state — seed is offset from data seed to stay independent.
     const n = state.trainInputs.length;
     state.shuffledIndices = Array.from({ length: n }, (_, i) => i);
     state.shufflePrng = new PRNG((state.dataConfig!.seed ?? 42) + 1234);
+    // Shuffle once up front so the very first epoch is not in generator order
+    // (important for datasets whose generators emit class-sorted samples).
+    if (n > 0) {
+        state.shufflePrng.shuffle(state.shuffledIndices);
+    }
 }
 
 // ── Snapshot computation ──
 
-function computeSnapshot(): NetworkSnapshot {
+/**
+ * @param opts.lightweight — when true, skips the deep-copy of weights/biases
+ * into the snapshot. The streaming path transfers flat buffers separately
+ * (see packSnapshotMessage), so nested copies are pure waste there.
+ */
+function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot {
     performance.mark('perf:worker:snapshot:start');
     if (!state.network || !state.trainingConfig || !state.dataConfig) {
         throw new Error('Not initialized');
@@ -179,11 +246,13 @@ function computeSnapshot(): NetworkSnapshot {
     const lossType = state.trainingConfig.lossType;
 
     // ── Train metrics (always computed — cheap, uses cached forward pass) ──
+    const huberDelta = state.trainingConfig.huberDelta;
     const trainMetrics = state.network.evaluate(
         state.trainInputs,
         state.trainTargets,
         lossType,
         problemType,
+        huberDelta,
     );
 
     // ── Test metrics (gated by testEvalInterval) ──
@@ -198,6 +267,7 @@ function computeSnapshot(): NetworkSnapshot {
             state.testTargets,
             lossType,
             problemType,
+            huberDelta,
         );
         state.lastTestMetrics = {
             loss: testMetrics.loss,
@@ -205,9 +275,11 @@ function computeSnapshot(): NetworkSnapshot {
             confusionMatrix: demand.needConfusionMatrix ? testMetrics.confusionMatrix : undefined,
         };
         state.snapshotsSinceLastTestEval = 0;
+        state.testMetricsStale = false;
     } else {
         testMetrics = state.lastTestMetrics!;
         state.snapshotsSinceLastTestEval++;
+        state.testMetricsStale = true;
     }
 
     // ── Decision boundary grid (demand-gated) ──
@@ -234,12 +306,13 @@ function computeSnapshot(): NetworkSnapshot {
     }
 
     const snap = state.network.getSnapshot(
-        state.step,
+        state.network.getStep(),
         state.epoch,
         trainMetrics,
         testMetrics,
         outputGrid,
         GRID_SIZE,
+        { includeParams: !opts.lightweight },
     );
 
     if (neuronGrids) {
@@ -250,13 +323,27 @@ function computeSnapshot(): NetworkSnapshot {
         snap.layerStats = state.network.getLayerStats();
     }
 
-    // Add history point to worker history
-    if (snap.historyPoint) {
-        state.history.push(snap.historyPoint);
-    }
-
     performance.measure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
+}
+
+/**
+ * Maximum number of history points retained in memory. When exceeded, every
+ * other point is dropped (a simple in-place compaction) before pushing the
+ * new one — giving a log-spaced density profile over very long runs.
+ */
+const MAX_HISTORY = 2048;
+
+function pushHistory(point: HistoryPoint | undefined): void {
+    if (!point) return;
+    if (state.history.length >= MAX_HISTORY) {
+        const kept: HistoryPoint[] = [];
+        for (let i = 0; i < state.history.length; i += 2) {
+            kept.push(state.history[i]);
+        }
+        state.history = kept;
+    }
+    state.history.push(point);
 }
 
 /**
@@ -345,6 +432,7 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
             trainAccuracy: snap.trainMetrics?.accuracy,
             testAccuracy: snap.testMetrics?.accuracy,
             gridSize,
+            testMetricsStale: state.testMetricsStale,
         },
         outputGrid,
         neuronGrids,
@@ -370,10 +458,12 @@ function trainOneStep(): void {
     const n = state.trainInputs.length;
     if (n === 0) return;
 
+    // Single source of truth for the step counter: the Network itself.
+    const stepBefore = state.network.getStep();
     const numBatches = Math.ceil(n / bs);
-    const batchSlot = state.step % numBatches;
+    const batchSlot = stepBefore % numBatches;
 
-    if (batchSlot === 0 && state.step > 0 && state.shufflePrng) {
+    if (batchSlot === 0 && stepBefore > 0 && state.shufflePrng) {
         state.shufflePrng.shuffle(state.shuffledIndices);
     }
 
@@ -387,7 +477,6 @@ function trainOneStep(): void {
         state.network.trainBatch(batchInputs, batchTargets, state.trainingConfig);
     }
 
-    state.step++;
     if (batchSlot === numBatches - 1) {
         state.epoch++;
     }
@@ -405,10 +494,38 @@ function trainTick(): void {
         }
         performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
 
-        // Compute snapshot and stream it to the main thread
-        const snap = computeSnapshot();
-        const { message, transferables } = packSnapshotMessage(snap);
-        state.streamPort.postMessage(message, transferables);
+        // Back-pressure: skip snapshot computation + posting while the main
+        // thread hasn't yet applied the previous frame. Training still
+        // progresses; the UI just coalesces to its render rate.
+        if (!state.awaitingAck) {
+            // Compute snapshot and stream it to the main thread. Lightweight
+            // mode skips the nested weight/bias deep-copy — we transfer flat
+            // buffers.
+            const snap = computeSnapshot({ lightweight: true });
+
+            // NaN / divergence guard — stop the loop and notify the UI.
+            // Training with NaN weights is a dead end; keep state readable
+            // for debugging.
+            if (!Number.isFinite(snap.trainLoss)) {
+                stopInternalLoop();
+                const errMsg: WorkerErrorMessage = {
+                    type: 'error',
+                    runId: state.runId,
+                    message:
+                        'Training diverged (non-finite loss). Try a smaller learning rate, ' +
+                        'enable gradient clipping, or reset the network.',
+                };
+                state.streamPort.postMessage(errMsg);
+                return;
+            }
+
+            // Only training paths accumulate history; passive snapshot RPCs do not.
+            pushHistory(snap.historyPoint);
+
+            const { message, transferables } = packSnapshotMessage(snap);
+            state.awaitingAck = true;
+            state.streamPort.postMessage(message, transferables);
+        }
     }
 
     // Schedule next tick (yield to allow message processing)
@@ -418,6 +535,8 @@ function trainTick(): void {
 }
 
 function startInternalLoop(): void {
+    // Clear any stale gate from a previous run — no outstanding ack at start.
+    resetAck();
     state.running = true;
     state.trainLoopTimer = setTimeout(trainTick, 0);
 }
@@ -428,6 +547,9 @@ function stopInternalLoop(): void {
         clearTimeout(state.trainLoopTimer);
         state.trainLoopTimer = null;
     }
+    // Drop the gate — a paused loop must not block a later resume on an ack
+    // for a snapshot we no longer care about.
+    resetAck();
 }
 
 // ── MessageChannel command handler ──
@@ -467,6 +589,12 @@ function handleStreamCommand(cmd: MainToWorkerCommand): void {
         case 'updateSpeed':
             state.stepsPerFrame = cmd.stepsPerFrame;
             break;
+
+        case 'frameAck':
+            // Main thread applied the previous snapshot — free the gate so
+            // the next trainTick is allowed to post again.
+            state.awaitingAck = false;
+            break;
     }
 }
 
@@ -479,6 +607,7 @@ const workerApi = {
         dataConfig: DataConfig,
         features: FeatureFlags,
     ): { snapshot: NetworkSnapshot; runId: number } {
+        validateConfigs(networkConfig, trainingConfig);
         stopInternalLoop();
         state.networkConfig = { ...networkConfig };
         state.trainingConfig = { ...trainingConfig };
@@ -497,10 +626,11 @@ const workerApi = {
         features: FeatureFlags,
         rebuild: boolean,
     ): { snapshot: NetworkSnapshot; runId: number } {
+        validateConfigs(networkConfig, trainingConfig);
         const needsRebuild = rebuild ||
-            JSON.stringify(state.networkConfig) !== JSON.stringify(networkConfig) ||
-            JSON.stringify(state.dataConfig) !== JSON.stringify(dataConfig) ||
-            JSON.stringify(state.features) !== JSON.stringify(features);
+            !configsEqual(state.networkConfig, networkConfig) ||
+            !configsEqual(state.dataConfig, dataConfig) ||
+            !configsEqual(state.features, features);
 
         state.networkConfig = { ...networkConfig };
         state.trainingConfig = { ...trainingConfig };
@@ -521,7 +651,9 @@ const workerApi = {
         for (let i = 0; i < iterations; i++) {
             trainOneStep();
         }
-        return computeSnapshot();
+        const snap = computeSnapshot();
+        pushHistory(snap.historyPoint);
+        return snap;
     },
 
     reset(): { snapshot: NetworkSnapshot; runId: number } {
@@ -577,7 +709,9 @@ const workerApi = {
             trainOneStep();
         }
         performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
-        return computeSnapshot();
+        const snap = computeSnapshot();
+        pushHistory(snap.historyPoint);
+        return snap;
     },
 };
 

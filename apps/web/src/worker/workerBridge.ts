@@ -111,6 +111,12 @@ function rafLoop(): void {
 
         // Notify the subscriber (typically updates useTrainingStore scalars)
         if (_onSnapshot) _onSnapshot(msg);
+
+        // Ack snapshots to release the worker's back-pressure gate. Status/
+        // error messages bypass the gate, so they don't need an ack.
+        if (msg.type === 'snapshot' && _streamPort) {
+            _streamPort.postMessage({ type: 'frameAck' });
+        }
     }
 
     _rafId = requestAnimationFrame(rafLoop);
@@ -150,6 +156,9 @@ export function stopRenderLoop(): void {
             });
         }
         _onSnapshot(msg);
+        if (msg.type === 'snapshot' && _streamPort) {
+            _streamPort.postMessage({ type: 'frameAck' });
+        }
     }
 }
 

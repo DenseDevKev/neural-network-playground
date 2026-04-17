@@ -1,5 +1,5 @@
 // ── Loss functions with output-layer gradients ──
-import type { LossType } from './types.js';
+import type { LossType, ActivationType } from './types.js';
 
 export interface LossFn {
     /** Compute loss for a single sample. */
@@ -26,25 +26,36 @@ const crossEntropy: LossFn = {
     },
 };
 
-const HUBER_DELTA = 1.0;
+export const DEFAULT_HUBER_DELTA = 1.0;
 
-const huber: LossFn = {
-    loss: (p, t) => {
-        const a = Math.abs(p - t);
-        return a <= HUBER_DELTA
-            ? 0.5 * a * a
-            : HUBER_DELTA * (a - 0.5 * HUBER_DELTA);
-    },
-    dloss: (p, t) => {
-        const diff = p - t;
-        const a = Math.abs(diff);
-        return a <= HUBER_DELTA ? diff : HUBER_DELTA * Math.sign(diff);
-    },
-};
+/** Build a Huber loss with a configurable transition point δ. */
+function makeHuber(delta: number): LossFn {
+    return {
+        loss: (p, t) => {
+            const a = Math.abs(p - t);
+            return a <= delta
+                ? 0.5 * a * a
+                : delta * (a - 0.5 * delta);
+        },
+        dloss: (p, t) => {
+            const diff = p - t;
+            const a = Math.abs(diff);
+            return a <= delta ? diff : delta * Math.sign(diff);
+        },
+    };
+}
 
-const LOSSES: Record<LossType, LossFn> = { mse, crossEntropy, huber };
+const DEFAULT_HUBER = makeHuber(DEFAULT_HUBER_DELTA);
+const LOSSES: Record<LossType, LossFn> = { mse, crossEntropy, huber: DEFAULT_HUBER };
 
-export function getLoss(type: LossType): LossFn {
+/**
+ * Resolve a loss type to its function. For Huber, an optional `huberDelta`
+ * produces a delta-configured LossFn; if omitted, the module default is used.
+ */
+export function getLoss(type: LossType, opts?: { huberDelta?: number }): LossFn {
+    if (type === 'huber' && opts?.huberDelta != null && opts.huberDelta !== DEFAULT_HUBER_DELTA) {
+        return makeHuber(opts.huberDelta);
+    }
     return LOSSES[type];
 }
 
@@ -66,3 +77,33 @@ export const LOSS_LABELS: Record<LossType, string> = {
     crossEntropy: 'Cross-Entropy',
     huber: 'Huber',
 };
+
+/**
+ * Output activations that are compatible with each loss. The engine computes
+ * cross-entropy gradients via d/dp = -(t/p) + (1-t)/(1-p), which is only safe
+ * when the predictions are bounded in [0, 1]. Huber and MSE are regression
+ * losses and should be paired with outputs that can represent the target
+ * range (i.e. not sigmoid).
+ */
+const LOSS_COMPATIBLE_ACTIVATIONS: Record<LossType, ReadonlyArray<ActivationType>> = {
+    crossEntropy: ['sigmoid'],
+    mse: ['linear', 'tanh', 'relu', 'leakyRelu', 'elu', 'swish', 'softplus'],
+    huber: ['linear', 'tanh', 'relu', 'leakyRelu', 'elu', 'swish', 'softplus'],
+};
+
+/** Returns true iff the given loss type can be safely combined with the output activation. */
+export function isLossCompatible(lossType: LossType, outputActivation: ActivationType): boolean {
+    return LOSS_COMPATIBLE_ACTIVATIONS[lossType].includes(outputActivation);
+}
+
+/** Human-readable explanation for an incompatible loss/activation pair. */
+export function describeLossIncompatibility(
+    lossType: LossType,
+    outputActivation: ActivationType,
+): string {
+    const allowed = LOSS_COMPATIBLE_ACTIVATIONS[lossType].join(', ');
+    return (
+        `Loss "${LOSS_LABELS[lossType]}" is not compatible with output activation ` +
+        `"${outputActivation}". Compatible activations: ${allowed}.`
+    );
+}

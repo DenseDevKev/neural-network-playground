@@ -51,6 +51,12 @@ export interface SnapshotScalars {
     trainAccuracy?: number;
     testAccuracy?: number;
     gridSize: number;
+    /**
+     * True when the test metrics in this snapshot were reused from a previous
+     * evaluation (i.e. `testEvalInterval` throttled a fresh run). UIs can dim
+     * the test-loss display to hint at the cached value.
+     */
+    testMetricsStale?: boolean;
 }
 
 /** Full snapshot message posted from the worker. */
@@ -113,8 +119,20 @@ export interface UpdateSpeedCommand {
     stepsPerFrame: number;
 }
 
+/**
+ * Sent by the main thread after a streamed snapshot has been applied to the
+ * frame buffer. The worker uses this to back-pressure snapshot posting —
+ * training continues, but new snapshots are only posted once the previous one
+ * has been consumed. This keeps the postMessage queue (and its Transferable
+ * ArrayBuffers) from growing unbounded under load.
+ */
+export interface FrameAckCommand {
+    type: 'frameAck';
+}
+
 export type MainToWorkerCommand =
     | StartTrainingCommand
     | StopTrainingCommand
     | UpdateDemandCommand
-    | UpdateSpeedCommand;
+    | UpdateSpeedCommand
+    | FrameAckCommand;

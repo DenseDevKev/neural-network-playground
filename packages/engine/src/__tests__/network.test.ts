@@ -191,6 +191,63 @@ describe('Network evaluate', () => {
     });
 });
 
+describe('Network gradient clipping (global-norm)', () => {
+    it('clipping a very small norm produces no change vs no clipping', () => {
+        const cfg = makeConfig();
+        const a = new Network(cfg);
+        const b = new Network(cfg);
+        const noClip: TrainingConfig = { ...defaultTraining, gradientClip: null };
+        const largeClip: TrainingConfig = { ...defaultTraining, gradientClip: 100 };
+        a.trainBatch([[0, 0], [1, 1]], [[0], [1]], noClip);
+        b.trainBatch([[0, 0], [1, 1]], [[0], [1]], largeClip);
+        expect(JSON.stringify(a.getWeights())).toBe(JSON.stringify(b.getWeights()));
+    });
+
+    it('very tight clip produces different weights than no clip', () => {
+        const cfg = makeConfig();
+        const a = new Network(cfg);
+        const b = new Network(cfg);
+        const noClip: TrainingConfig = { ...defaultTraining, gradientClip: null };
+        const tightClip: TrainingConfig = { ...defaultTraining, gradientClip: 0.01 };
+        // Train for a few iterations so the clip actually fires.
+        for (let i = 0; i < 5; i++) {
+            a.trainBatch([[0, 0], [1, 1]], [[0], [1]], noClip);
+            b.trainBatch([[0, 0], [1, 1]], [[0], [1]], tightClip);
+        }
+        expect(JSON.stringify(a.getWeights())).not.toBe(JSON.stringify(b.getWeights()));
+    });
+});
+
+describe('Network optimizer routing (biases)', () => {
+    it('biases change when training with Adam', () => {
+        const net = new Network(makeConfig());
+        const initialBiases = JSON.stringify(net.getBiases());
+        const adamTraining: TrainingConfig = { ...defaultTraining, optimizer: 'adam' };
+
+        for (let i = 0; i < 5; i++) {
+            net.trainBatch([[0, 0], [1, 1]], [[0], [1]], adamTraining);
+        }
+        expect(JSON.stringify(net.getBiases())).not.toBe(initialBiases);
+    });
+
+    it('training.momentum is honoured by sgdMomentum', () => {
+        // Train two identical networks, one with momentum 0.9 and one with
+        // momentum 0.0 — they must produce different weights.
+        const config = makeConfig();
+        const netA = new Network(config);
+        const netB = new Network(config);
+
+        const momentumHigh: TrainingConfig = { ...defaultTraining, optimizer: 'sgdMomentum', momentum: 0.9 };
+        const momentumZero: TrainingConfig = { ...defaultTraining, optimizer: 'sgdMomentum', momentum: 0.0 };
+
+        for (let i = 0; i < 20; i++) {
+            netA.trainBatch([[0, 0], [1, 1]], [[0], [1]], momentumHigh);
+            netB.trainBatch([[0, 0], [1, 1]], [[0], [1]], momentumZero);
+        }
+        expect(JSON.stringify(netA.getWeights())).not.toBe(JSON.stringify(netB.getWeights()));
+    });
+});
+
 describe('Network reset', () => {
     it('resets weights to initial state with same seed', () => {
         const config = makeConfig();
@@ -259,16 +316,6 @@ describe('Network snapshot', () => {
         expect(snap.outputGrid).toEqual([0.5, 0.5, 0.5, 0.5]);
         expect(snap.gridSize).toBe(2);
         expect(snap.historyPoint).toBeDefined();
-    });
-
-    it('does not mutate training history when creating a snapshot', () => {
-        const net = new Network(makeConfig());
-
-        expect(net.getHistory()).toHaveLength(0);
-
-        net.getSnapshot(1, 0, { loss: 0.1 }, { loss: 0.2 }, [], 0);
-
-        expect(net.getHistory()).toHaveLength(0);
     });
 
     it('snapshot weights are copies (not references)', () => {

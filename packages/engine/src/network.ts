@@ -12,9 +12,10 @@ import type {
     LayerStats,
 } from './types.js';
 import { getActivation } from './activations.js';
-import { getLoss, batchLoss } from './losses.js';
+import { getLoss } from './losses.js';
 import { getOptimizer, createOptimizerState } from './optimizers.js';
-import type { OptimizerState } from './optimizers.js';
+import type { OptimizerState, OptimizerHyperparams } from './optimizers.js';
+import { computeLearningRate } from './schedules.js';
 import { initWeights, initBiases } from './initialization.js';
 import { transformPoint } from './features.js';
 import type { FeatureSpec } from './features.js';
@@ -43,9 +44,6 @@ export class Network {
     // Optimizer state
     private optState: OptimizerState = [];
     private currentStep = 0;
-
-    // Training history
-    private history: HistoryPoint[] = [];
 
     constructor(config: NetworkConfig, seed?: number) {
         this.config = { ...config };
@@ -120,8 +118,8 @@ export class Network {
     }
 
     /** Backward pass — accumulates gradients. */
-    backward(target: number[], lossType: LossType): void {
-        const lossFn = getLoss(lossType);
+    backward(target: number[], lossType: LossType, huberDelta?: number): void {
+        const lossFn = getLoss(lossType, { huberDelta });
         const numLayers = this.weights.length;
 
         // Output layer deltas
@@ -171,88 +169,138 @@ export class Network {
         }
     }
 
-    /** Apply accumulated gradients using the optimizer. */
+    /**
+     * Apply accumulated gradients using the optimizer.
+     *
+     * Pipeline:
+     *   1. Average gradients in-place by batch size.
+     *   2. Apply global-norm gradient clipping (scales the whole gradient
+     *      vector by `clip / ‖g‖₂` when the norm exceeds `clip`). This
+     *      preserves gradient direction, unlike element-wise clipping.
+     *   3. Apply regularization + optimizer update per parameter.
+     */
     applyGradients(training: TrainingConfig, batchSize: number): void {
         const opt = getOptimizer(training.optimizer);
 
-        // Lazily create optimizer state
+        // Lazily create optimizer state (includes one bias slot per neuron).
         if (this.optState.length === 0 && opt.stateSize > 0) {
             const sizes = this.layerSizes.slice(1);
             const prevSizes = this.layerSizes.slice(0, -1);
             this.optState = createOptimizerState(sizes, prevSizes, opt.stateSize);
         }
 
-        const lr = training.learningRate;
-
+        const lr = computeLearningRate(training.learningRate, this.currentStep, training.lrSchedule);
         const { gradientClip, regularization, regularizationRate } = training;
         const optStateSize = opt.stateSize;
+        const hyper: OptimizerHyperparams = {
+            momentum: training.momentum,
+            beta1: training.adamBeta1,
+            beta2: training.adamBeta2,
+            eps: training.adamEps,
+        };
+        const scratch: number[] = optStateSize > 0 ? new Array(optStateSize).fill(0) : [];
 
+        // ── Pass 1: average gradients in place.
+        const invBatch = 1 / batchSize;
+        for (let l = 0; l < this.weightGrads.length; l++) {
+            const lBiasGrads = this.biasGrads[l];
+            const lWeightGrads = this.weightGrads[l];
+            for (let n = 0; n < lWeightGrads.length; n++) {
+                lBiasGrads[n] *= invBatch;
+                const nGrads = lWeightGrads[n];
+                for (let w = 0; w < nGrads.length; w++) {
+                    nGrads[w] *= invBatch;
+                }
+            }
+        }
+
+        // ── Pass 2: global-norm clipping.
+        if (gradientClip != null && gradientClip > 0) {
+            let sqSum = 0;
+            for (let l = 0; l < this.weightGrads.length; l++) {
+                const lBiasGrads = this.biasGrads[l];
+                const lWeightGrads = this.weightGrads[l];
+                for (let n = 0; n < lWeightGrads.length; n++) {
+                    const bg = lBiasGrads[n];
+                    sqSum += bg * bg;
+                    const nGrads = lWeightGrads[n];
+                    for (let w = 0; w < nGrads.length; w++) {
+                        const g = nGrads[w];
+                        sqSum += g * g;
+                    }
+                }
+            }
+            const norm = Math.sqrt(sqSum);
+            if (norm > gradientClip) {
+                const scale = gradientClip / norm;
+                for (let l = 0; l < this.weightGrads.length; l++) {
+                    const lBiasGrads = this.biasGrads[l];
+                    const lWeightGrads = this.weightGrads[l];
+                    for (let n = 0; n < lWeightGrads.length; n++) {
+                        lBiasGrads[n] *= scale;
+                        const nGrads = lWeightGrads[n];
+                        for (let w = 0; w < nGrads.length; w++) {
+                            nGrads[w] *= scale;
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Pass 3: regularization + optimizer update.
         for (let l = 0; l < this.weights.length; l++) {
             const lWeights = this.weights[l];
             const lBiases = this.biases[l];
             const lBiasGrads = this.biasGrads[l];
             const lWeightGrads = this.weightGrads[l];
             const lOptState = this.optState[l];
+            const fanIn = this.layerSizes[l];
+            const biasStateIdx = fanIn; // bias stored at the "+1" slot
 
             for (let n = 0; n < lWeights.length; n++) {
-                // Bias
-                let bg = lBiasGrads[n] / batchSize;
-                if (gradientClip != null) {
-                    bg = Math.max(-gradientClip, Math.min(gradientClip, bg));
+                // Bias — routed through the optimizer (no regularization on biases).
+                const bg = lBiasGrads[n];
+                if (optStateSize > 0) {
+                    for (let s = 0; s < optStateSize; s++) {
+                        scratch[s] = lOptState[s][n][biasStateIdx];
+                    }
+                    lBiases[n] = opt.update(lBiases[n], bg, lr, scratch, this.currentStep, hyper);
+                    for (let s = 0; s < optStateSize; s++) {
+                        lOptState[s][n][biasStateIdx] = scratch[s];
+                    }
+                } else {
+                    lBiases[n] = opt.update(lBiases[n], bg, lr, scratch, this.currentStep, hyper);
                 }
-                lBiases[n] -= lr * bg;
 
-                // Weights
                 const nWeights = lWeights[n];
                 const nWeightGrads = lWeightGrads[n];
 
                 for (let w = 0; w < nWeights.length; w++) {
-                    let g = nWeightGrads[w] / batchSize;
+                    let g = nWeightGrads[w];
 
-                    // Regularization
+                    // Weight regularization (biases exempted).
                     if (regularization === 'l1') {
                         g += regularizationRate * Math.sign(nWeights[w]);
                     } else if (regularization === 'l2') {
                         g += regularizationRate * nWeights[w];
                     }
 
-                    if (gradientClip != null) {
-                        g = Math.max(-gradientClip, Math.min(gradientClip, g));
-                    }
-
                     if (optStateSize > 0) {
-                        // Specialized for Adam/RMSprop (stateSize 2) or Momentum (stateSize 1)
-                        const paramState: number[] = [];
                         for (let s = 0; s < optStateSize; s++) {
-                            paramState.push(lOptState[s][n][w]);
+                            scratch[s] = lOptState[s][n][w];
                         }
-
-                        nWeights[w] = opt.update(
-                            nWeights[w],
-                            g,
-                            lr,
-                            paramState,
-                            this.currentStep,
-                        );
-
-                        // Write back state
+                        nWeights[w] = opt.update(nWeights[w], g, lr, scratch, this.currentStep, hyper);
                         for (let s = 0; s < optStateSize; s++) {
-                            lOptState[s][n][w] = paramState[s];
+                            lOptState[s][n][w] = scratch[s];
                         }
                     } else {
-                        nWeights[w] = opt.update(
-                            nWeights[w],
-                            g,
-                            lr,
-                            [],
-                            this.currentStep,
-                        );
+                        nWeights[w] = opt.update(nWeights[w], g, lr, scratch, this.currentStep, hyper);
                     }
                 }
             }
         }
 
-        // Reset gradient accumulators
+        // Reset gradient accumulators.
         this.zeroGradients();
         this.currentStep++;
     }
@@ -269,24 +317,30 @@ export class Network {
     }
 
     /**
-     * Train on one mini-batch. Returns the batch loss.
+     * Train on one mini-batch. Returns the mean loss, averaged across all
+     * samples and output units.
      */
     trainBatch(
         inputs: number[][],
         targets: number[][],
         training: TrainingConfig,
     ): number {
-        const lossFn = getLoss(training.lossType);
+        const lossFn = getLoss(training.lossType, { huberDelta: training.huberDelta });
         let totalLoss = 0;
+        let count = 0;
 
         for (let i = 0; i < inputs.length; i++) {
             const output = this.forward(inputs[i]);
-            this.backward(targets[i], training.lossType);
-            totalLoss += lossFn.loss(output[0], targets[i][0]);
+            this.backward(targets[i], training.lossType, training.huberDelta);
+            const tgt = targets[i];
+            for (let o = 0, outLen = output.length; o < outLen; o++) {
+                totalLoss += lossFn.loss(output[o], tgt[o]);
+                count++;
+            }
         }
 
         this.applyGradients(training, inputs.length);
-        return totalLoss / inputs.length;
+        return count > 0 ? totalLoss / count : 0;
     }
 
     /** Predict a single input (no gradient tracking). */
@@ -454,22 +508,35 @@ export class Network {
         targets: number[][],
         lossType: LossType,
         problemType: 'classification' | 'regression',
+        huberDelta?: number,
     ): Metrics {
-        const lossFn = getLoss(lossType);
-        const preds = inputs.map((inp) => this.forward(inp)[0]);
-        const tgts = targets.map((t) => t[0]);
-        const loss = batchLoss(lossFn, preds, tgts);
+        const lossFn = getLoss(lossType, { huberDelta });
+        const predsAll: number[][] = inputs.map((inp) => this.forward(inp).slice());
 
-        if (problemType === 'classification') {
+        // Loss is averaged across (samples × output units).
+        let lossSum = 0;
+        let lossCount = 0;
+        for (let i = 0; i < predsAll.length; i++) {
+            const pred = predsAll[i];
+            const tgt = targets[i];
+            for (let o = 0, outLen = pred.length; o < outLen; o++) {
+                lossSum += lossFn.loss(pred[o], tgt[o]);
+                lossCount++;
+            }
+        }
+        const loss = lossCount > 0 ? lossSum / lossCount : 0;
+
+        // Single-output classification: accuracy + confusion matrix.
+        if (problemType === 'classification' && this.config.outputSize === 1) {
             let correct = 0;
             let tp = 0;
             let tn = 0;
             let fp = 0;
             let fn = 0;
 
-            for (let i = 0; i < preds.length; i++) {
-                const predClass = preds[i] >= 0.5 ? 1 : 0;
-                const tgtClass = tgts[i];
+            for (let i = 0; i < predsAll.length; i++) {
+                const predClass = predsAll[i][0] >= 0.5 ? 1 : 0;
+                const tgtClass = targets[i][0];
 
                 if (predClass === tgtClass) correct++;
 
@@ -480,15 +547,45 @@ export class Network {
             }
             return {
                 loss,
-                accuracy: correct / preds.length,
+                accuracy: predsAll.length > 0 ? correct / predsAll.length : 0,
                 confusionMatrix: { tp, tn, fp, fn },
+            };
+        }
+
+        // Multi-output classification: argmax accuracy (if targets are class indices).
+        if (problemType === 'classification') {
+            let correct = 0;
+            for (let i = 0; i < predsAll.length; i++) {
+                const pred = predsAll[i];
+                let maxIdx = 0;
+                for (let o = 1; o < pred.length; o++) {
+                    if (pred[o] > pred[maxIdx]) maxIdx = o;
+                }
+                const tgt = targets[i];
+                let tgtIdx = 0;
+                for (let o = 1; o < tgt.length; o++) {
+                    if (tgt[o] > tgt[tgtIdx]) tgtIdx = o;
+                }
+                if (maxIdx === tgtIdx) correct++;
+            }
+            return {
+                loss,
+                accuracy: predsAll.length > 0 ? correct / predsAll.length : 0,
             };
         }
 
         return { loss };
     }
 
-    /** Generate a snapshot for the UI to render. */
+    /**
+     * Generate a snapshot for the UI to render.
+     *
+     * By default, weights and biases are deep-copied into the snapshot so that
+     * callers (code export, serialisation, unit tests) can mutate freely.
+     * Pass `includeParams: false` to skip the copies on hot paths; the snapshot
+     * will have empty `weights`/`biases` arrays and the caller is expected to
+     * obtain flat buffers through `getWeightsFlat()` / `getBiasesFlat()`.
+     */
     getSnapshot(
         step: number,
         epoch: number,
@@ -496,7 +593,9 @@ export class Network {
         testMetrics: Metrics,
         outputGrid: ArrayLike<number>,
         gridSize: number,
+        options?: { includeParams?: boolean },
     ): NetworkSnapshot {
+        const includeParams = options?.includeParams ?? true;
         const historyPoint: HistoryPoint = {
             step,
             trainLoss: trainMetrics.loss,
@@ -508,8 +607,10 @@ export class Network {
         return {
             step,
             epoch,
-            weights: this.weights.map((l) => l.map((n) => [...n])),
-            biases: this.biases.map((l) => [...l]),
+            weights: includeParams
+                ? this.weights.map((l) => l.map((n) => [...n]))
+                : [],
+            biases: includeParams ? this.biases.map((l) => [...l]) : [],
             trainLoss: trainMetrics.loss,
             testLoss: testMetrics.loss,
             trainMetrics,
@@ -518,11 +619,6 @@ export class Network {
             gridSize,
             historyPoint,
         };
-    }
-
-    /** Get all stored training history. */
-    getHistory(): HistoryPoint[] {
-        return [...this.history];
     }
 
     /** Get raw weights (for inspection). */
@@ -582,7 +678,7 @@ export class Network {
         return stats;
     }
 
-    /** Reset the network with a new seed, clearing optimizer state and history. */
+    /** Reset the network with a new seed, clearing optimizer state. */
     reset(seed?: number): void {
         const rng = new PRNG(seed ?? this.config.seed);
         for (let l = 0; l < this.weights.length; l++) {
@@ -594,7 +690,6 @@ export class Network {
         this.initGradients();
         this.optState = [];
         this.currentStep = 0;
-        this.history = [];
     }
 
     /** Serialize the network for save/restore. */

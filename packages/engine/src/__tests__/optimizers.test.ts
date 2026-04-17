@@ -43,6 +43,16 @@ describe('SGD with Momentum', () => {
         expect(w2).toBeCloseTo(0.855, 8);
         expect(state[0]).toBeCloseTo(0.95, 8);
     });
+
+    it('honours hyperparams.momentum', () => {
+        const state = [0];
+        // With β=0.5: state = 0.5*0 + 0.5 = 0.5, w = 1 - 0.1*0.5 = 0.95
+        const w1 = sgdM.update(1, 0.5, 0.1, state, 0, { momentum: 0.5 });
+        expect(w1).toBeCloseTo(0.95, 8);
+        // Next step: state = 0.5*0.5 + 0.5 = 0.75, w = 0.95 - 0.1*0.75 = 0.875
+        const w2 = sgdM.update(w1, 0.5, 0.1, state, 1, { momentum: 0.5 });
+        expect(w2).toBeCloseTo(0.875, 8);
+    });
 });
 
 describe('Adam optimizer', () => {

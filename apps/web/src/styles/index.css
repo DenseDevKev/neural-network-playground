@@ -307,6 +307,15 @@ body {
     animation: header-metric-pulse 200ms var(--ease-out);
 }
 
+.header__metric-value--stale {
+    opacity: 0.55;
+}
+
+.header__metric-stale {
+    opacity: 0.55;
+    font-style: italic;
+}
+
 @keyframes header-metric-pulse {
     0% {
         transform: scale(1);

@@ -43,7 +43,7 @@ describe('frameBuffer', () => {
             expect(v2).toBe(v1 + 1);
             expect(getFrameBuffer().gridSize).toBe(20);
 
-            const v3 = updateFrameBuffer({ version: 999 } as any); // version shouldn't be overridable by types, but let's just update something else
+            updateFrameBuffer({ version: 999 } as any); // version shouldn't be overridable by types, but let's just update something else
 
             const v4 = updateFrameBuffer({ layerStats: [] });
             expect(v4).toBe(v2 + 2); // Assuming v3 was +1
@@ -64,18 +64,6 @@ describe('frameBuffer', () => {
                 // layer 1 to 2 (1 neuron * 2 inputs)
                 0.5, 0.6  // output neuron weights
             ]);
-
-            const expected = [
-                // Layer 1 (index 0)
-                [
-                    [0.1, 0.2],
-                    [0.3, 0.4]
-                ],
-                // Layer 2 (index 1)
-                [
-                    [0.5, 0.6]
-                ]
-            ];
 
             const result = unflattenWeights(flatWeights, layerSizes);
 
