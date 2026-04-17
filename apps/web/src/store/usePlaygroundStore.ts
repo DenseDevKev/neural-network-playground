@@ -18,6 +18,7 @@ import {
     countActiveFeatures,
     generateDataset,
     getDefaultProblemType,
+    isLossCompatible,
 } from '@nn-playground/engine';
 import type { UIConfig, AppConfig, VisualizationDemand } from '@nn-playground/shared';
 import type { Preset } from '@nn-playground/shared';
@@ -74,13 +75,40 @@ export interface PlaygroundStore {
     loadFromUrl: () => void;
 }
 
+function getCompatibleOutputActivation(
+    lossType: LossType,
+    currentOutputActivation: ActivationType,
+): ActivationType {
+    if (isLossCompatible(lossType, currentOutputActivation)) {
+        return currentOutputActivation;
+    }
+    return lossType === 'crossEntropy' ? 'sigmoid' : 'linear';
+}
+
+function normalizeLossOutputCompatibility(config: AppConfig): AppConfig {
+    const outputActivation = getCompatibleOutputActivation(
+        config.training.lossType,
+        config.network.outputActivation,
+    );
+    if (outputActivation === config.network.outputActivation) {
+        return config;
+    }
+    return {
+        ...config,
+        network: {
+            ...config.network,
+            outputActivation,
+        },
+    };
+}
+
 function buildInitialState() {
     // Try to load from URL hash
     const hash = window.location.hash.slice(1);
     if (hash) {
         try {
             const config = decodeUrlState(hash);
-            return config;
+            return normalizeLossOutputCompatibility(config);
         } catch {
             // fall through to defaults
         }
@@ -186,6 +214,10 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
 
         setLossType: (lossType) => set((s) => ({
             training: { ...s.training, lossType },
+            network: {
+                ...s.network,
+                outputActivation: getCompatibleOutputActivation(lossType, s.network.outputActivation),
+            },
         })),
 
         setOptimizer: (optimizer) => set((s) => ({
@@ -244,12 +276,13 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
             if (!hash) return;
             try {
                 const config = decodeUrlState(hash);
+                const normalized = normalizeLossOutputCompatibility(config);
                 set({
-                    network: config.network,
-                    training: config.training,
-                    data: config.data,
-                    features: config.features,
-                    ui: config.ui,
+                    network: normalized.network,
+                    training: normalized.training,
+                    data: normalized.data,
+                    features: normalized.features,
+                    ui: normalized.ui,
                 });
             } catch {
                 // ignore invalid hashes
@@ -264,6 +297,15 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
             if (c.features) updates.features = { ...get().features, ...c.features };
             if (c.training) updates.training = { ...get().training, ...c.training };
             if (c.ui) updates.ui = { ...get().ui, ...c.ui };
+            const nextTraining = updates.training ?? get().training;
+            const nextNetwork = updates.network ?? get().network;
+            updates.network = {
+                ...nextNetwork,
+                outputActivation: getCompatibleOutputActivation(
+                    nextTraining.lossType,
+                    nextNetwork.outputActivation,
+                ),
+            };
             set(updates);
             get().syncToUrl();
         },

@@ -1,9 +1,6 @@
 // ── Loss + Accuracy Chart (Canvas) ──
 // Tab-toggled line chart for training/test loss and accuracy history.
 // Accuracy tab is only shown for classification problems.
-//
-// Incremental drawing: each frame only appends new line segments to the canvas.
-// Full redraw is triggered when: tab changes, y-axis scale expands, or history resets.
 
 import { useRef, useEffect, useState, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -16,7 +13,6 @@ const CHART_H = 140;
 const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 
 const Y_AXIS_PADDED_MAX_MULTIPLIER = 1.1;
-const Y_AXIS_REDRAW_THRESHOLD_MULTIPLIER = 1.05;
 
 type ChartTab = 'loss' | 'accuracy';
 type HistoryPoint = { trainLoss: number; testLoss: number; trainAccuracy?: number; testAccuracy?: number };
@@ -98,121 +94,6 @@ function drawChart(
             { color: '#00e5c3', label: 'Train Acc', dashed: false },
             { color: '#7c5cfc', label: 'Test Acc', dashed: true },
         ]);
-    }
-}
-
-// ── Incremental draw: append only new line segments ──────────────────────────
-// Uses the same yMax as the last full redraw (caller guarantees it hasn't changed).
-// Slightly re-draws the last segment from (fromIndex-1) to anchor the new segments,
-// which handles the sub-pixel x-axis shift from appending one more point.
-
-function drawChartIncremental(
-    ctx: CanvasRenderingContext2D,
-    history: HistoryPoint[],
-    fromIndex: number,
-    tab: ChartTab,
-    yMax: number,
-) {
-    if (fromIndex < 1 || fromIndex >= history.length) return;
-
-    const plotW = CHART_W - PADDING.left - PADDING.right;
-    const plotH = CHART_H - PADDING.top - PADDING.bottom;
-    const xMax = history.length - 1;
-    const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
-
-    ctx.lineWidth = 1.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    if (tab === 'loss') {
-        const scaleY = (v: number) => PADDING.top + plotH - (Math.min(v, yMax) / yMax) * plotH;
-        const bottomY = PADDING.top + plotH + 1;
-
-        // Area fill for train loss
-        const gradient = ctx.createLinearGradient(0, PADDING.top, 0, bottomY);
-        gradient.addColorStop(0, 'rgba(0, 229, 195, 0.25)'); // #00e5c3
-        gradient.addColorStop(1, 'rgba(0, 229, 195, 0)');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        // overlap prior segment by 0.5px to suppress vertical seam
-        ctx.moveTo(scaleX(fromIndex - 1) - 0.5, bottomY);
-        ctx.lineTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].trainLoss));
-        for (let i = fromIndex; i < history.length; i++) {
-            ctx.lineTo(scaleX(i), scaleY(history[i].trainLoss));
-        }
-        ctx.lineTo(scaleX(history.length - 1), bottomY);
-        ctx.closePath();
-        ctx.fill();
-
-        // Extend train loss line from the last drawn point
-        ctx.strokeStyle = '#00e5c3';
-        ctx.shadowColor = '#00e5c3';
-        ctx.shadowBlur = 6;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].trainLoss));
-        for (let i = fromIndex; i < history.length; i++) {
-            ctx.lineTo(scaleX(i), scaleY(history[i].trainLoss));
-        }
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Extend test loss line (dashed)
-        ctx.strokeStyle = '#7c5cfc';
-        ctx.setLineDash([4, 3]);
-        ctx.beginPath();
-        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].testLoss));
-        for (let i = fromIndex; i < history.length; i++) {
-            ctx.lineTo(scaleX(i), scaleY(history[i].testLoss));
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
-    } else {
-        // Accuracy tab — y-axis is fixed 0–1, no yMax needed from caller
-        const scaleY = (v: number) => PADDING.top + plotH - Math.min(1, Math.max(0, v)) * plotH;
-        const bottomY = PADDING.top + plotH + 1;
-        const hasAcc = history.some((p) => p.trainAccuracy !== undefined);
-        if (!hasAcc) return;
-
-        // Area fill for train accuracy
-        const gradient = ctx.createLinearGradient(0, PADDING.top, 0, bottomY);
-        gradient.addColorStop(0, 'rgba(0, 229, 195, 0.25)'); // #00e5c3
-        gradient.addColorStop(1, 'rgba(0, 229, 195, 0)');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        // overlap prior segment by 0.5px
-        ctx.moveTo(scaleX(fromIndex - 1) - 0.5, bottomY);
-        ctx.lineTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].trainAccuracy ?? 0));
-        for (let i = fromIndex; i < history.length; i++) {
-            ctx.lineTo(scaleX(i), scaleY(history[i].trainAccuracy ?? 0));
-        }
-        ctx.lineTo(scaleX(history.length - 1), bottomY);
-        ctx.closePath();
-        ctx.fill();
-
-        // Extend train accuracy line
-        ctx.strokeStyle = '#00e5c3';
-        ctx.shadowColor = '#00e5c3';
-        ctx.shadowBlur = 6;
-        ctx.setLineDash([]);
-        ctx.beginPath();
-        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].trainAccuracy ?? 0));
-        for (let i = fromIndex; i < history.length; i++) {
-            ctx.lineTo(scaleX(i), scaleY(history[i].trainAccuracy ?? 0));
-        }
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Extend test accuracy line (dashed)
-        ctx.strokeStyle = '#7c5cfc';
-        ctx.setLineDash([4, 3]);
-        ctx.beginPath();
-        ctx.moveTo(scaleX(fromIndex - 1), scaleY(history[fromIndex - 1].testAccuracy ?? 0));
-        for (let i = fromIndex; i < history.length; i++) {
-            ctx.lineTo(scaleX(i), scaleY(history[i].testAccuracy ?? 0));
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
     }
 }
 
@@ -352,10 +233,7 @@ export const LossChart = memo(function LossChart() {
     const [tab, setTab] = useState<ChartTab>('loss');
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-    // Incremental draw state — track what was already on the canvas
-    const lastDrawnIndexRef = useRef(0);
     const lastYMaxRef = useRef(0);
-    const lastTabRef = useRef<ChartTab>('loss');
 
     // If we switch to regression, snap back to loss tab
     useEffect(() => {
@@ -367,53 +245,21 @@ export const LossChart = memo(function LossChart() {
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-
-        const len = history.length;
-        const tabChanged = tab !== lastTabRef.current;
-        const historyShrank = len < lastDrawnIndexRef.current;
-        const notEnoughData = len <= 1;
-        const justGotEnoughData = len > 1 && lastDrawnIndexRef.current <= 1;
-
-        // Determine if we need a full redraw
-        let needFullRedraw = tabChanged || historyShrank || notEnoughData || justGotEnoughData;
-        let currentYMax = lastYMaxRef.current;
-
         const dpr = window.devicePixelRatio || 1;
         if (canvas.width !== CHART_W * dpr || canvas.height !== CHART_H * dpr) {
             canvas.width = CHART_W * dpr;
             canvas.height = CHART_H * dpr;
-            ctx.scale(dpr, dpr);
-            needFullRedraw = true; // Canvas was cleared when width/height changed
         }
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        if (!needFullRedraw && tab === 'loss') {
-            // Fast path: only check NEW points to see if y-axis must expand.
-            // This avoids O(N) scan every frame when the scale is stable.
-            for (let i = lastDrawnIndexRef.current; i < len; i++) {
-                const p = history[i];
-                const maxThis = Math.max(p.trainLoss, p.testLoss);
-                if (maxThis * Y_AXIS_PADDED_MAX_MULTIPLIER > currentYMax * Y_AXIS_REDRAW_THRESHOLD_MULTIPLIER) {
-                    // Y-axis needs to grow — recompute full yMax and force full redraw
-                    currentYMax = computeYMax(history, 'loss');
-                    needFullRedraw = true;
-                    break;
-                }
-            }
+        // Full redraw each update keeps the chart in sync with the evolving
+        // x-axis scale (which depends on total history length).
+        if (tab === 'loss') {
+            lastYMaxRef.current = computeYMax(history, 'loss');
+        } else {
+            lastYMaxRef.current = 1;
         }
-
-        if (needFullRedraw) {
-            // Recompute yMax from scratch for the full draw
-            if (tab === 'loss') currentYMax = computeYMax(history, 'loss');
-            drawChart(ctx, history, tab);
-            lastDrawnIndexRef.current = len;
-            lastYMaxRef.current = currentYMax;
-            lastTabRef.current = tab;
-        } else if (len > lastDrawnIndexRef.current) {
-            // Incremental: append only the new line segments
-            drawChartIncremental(ctx, history, lastDrawnIndexRef.current, tab, lastYMaxRef.current);
-            lastDrawnIndexRef.current = len;
-        }
-        // else: len === lastDrawnIndex → no new data, skip canvas update entirely
+        drawChart(ctx, history, tab);
     }, [history, tab]);
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {

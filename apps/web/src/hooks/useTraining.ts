@@ -33,6 +33,10 @@ export interface TrainingHook {
     reset: () => void;
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+    return error instanceof Error ? error.message : fallback;
+}
+
 function getTotalNeuronCount(layerSizes: number[]): number {
     let total = 0;
     for (let i = 1; i < layerSizes.length; i++) {
@@ -124,6 +128,55 @@ export function useTraining(): TrainingHook {
     const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
     const configSyncNonce = useTrainingStore((s) => s.configSyncNonce);
 
+    const reportWorkerError = useCallback((error: unknown, fallback: string) => {
+        const ts = useTrainingStore.getState();
+        ts.setWorkerError(getErrorMessage(error, fallback));
+        ts.setStatus('paused');
+        initializedRef.current = false;
+    }, []);
+
+    const initializeWorker = useCallback(async () => {
+        const api = getWorkerApi();
+        const ps = usePlaygroundStore.getState();
+        const ts = useTrainingStore.getState();
+        const config = ps.getConfig();
+        const result = await api.initialize(
+            config.network,
+            config.training,
+            config.data,
+            config.features,
+        );
+        ts.clearWorkerError();
+        ts.setSnapshot(result.snapshot);
+        ts.resetHistory();
+        if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
+        ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+        newRunTo(result.runId);
+
+        // Store points reactively so UI renders immediately
+        const trainPts = await api.getTrainPoints();
+        const testPts = await api.getTestPoints();
+        ts.setTrainPoints(trainPts);
+        ts.setTestPoints(testPts);
+
+        // Set initial config string to prevent duplicate sync
+        const latestState = usePlaygroundStore.getState();
+        prevConfigRef.current = JSON.stringify({
+            network: latestState.network,
+            training: latestState.training,
+            data: latestState.data,
+            features: latestState.features,
+        });
+
+        // Set up MessageChannel for streaming
+        await setupStreamChannel();
+
+        // Send initial demand
+        await api.updateDemand(latestState.demand);
+
+        initializedRef.current = true;
+    }, []);
+
     // Keep ref in sync so streaming commands use current speed.
     useEffect(() => {
         stepsPerFrameRef.current = stepsPerFrame;
@@ -161,48 +214,10 @@ export function useTraining(): TrainingHook {
 
     // Initialize worker on mount
     useEffect(() => {
-        const init = async () => {
-            const api = getWorkerApi();
-            const ps = usePlaygroundStore.getState();
-            const ts = useTrainingStore.getState();
-            const config = ps.getConfig();
-            const result = await api.initialize(
-                config.network,
-                config.training,
-                config.data,
-                config.features,
-            );
-            ts.setSnapshot(result.snapshot);
-            ts.resetHistory();
-            if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-            ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
-            newRunTo(result.runId);
-
-            // Store points reactively so UI renders immediately
-            const trainPts = await api.getTrainPoints();
-            const testPts = await api.getTestPoints();
-            ts.setTrainPoints(trainPts);
-            ts.setTestPoints(testPts);
-
-            // Set initial config string to prevent duplicate sync
-            prevConfigRef.current = JSON.stringify({
-                network: ps.network,
-                training: ps.training,
-                data: ps.data,
-                features: ps.features,
-            });
-
-            // Set up MessageChannel for streaming
-            await setupStreamChannel();
-
-            // Send initial demand
-            await api.updateDemand(usePlaygroundStore.getState().demand);
-
-            initializedRef.current = true;
-        };
-        init();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+        initializeWorker().catch((error) => {
+            reportWorkerError(error, 'Failed to initialize training worker.');
+        });
+    }, [initializeWorker, reportWorkerError]);
 
     // Sync config changes to worker (rebuild when needed)
     useEffect(() => {
@@ -265,11 +280,25 @@ export function useTraining(): TrainingHook {
     }, [demand]);
 
     const play = useCallback(() => {
-        isPlayingRef.current = true;
-        useTrainingStore.getState().setStatus('running');
-        startRenderLoop();
-        postStreamCommand({ type: 'startTraining', stepsPerFrame: stepsPerFrameRef.current });
-    }, []);
+        const startTraining = () => {
+            isPlayingRef.current = true;
+            useTrainingStore.getState().setStatus('running');
+            startRenderLoop();
+            postStreamCommand({ type: 'startTraining', stepsPerFrame: stepsPerFrameRef.current });
+        };
+
+        if (!initializedRef.current) {
+            initializeWorker().catch((error) => {
+                reportWorkerError(error, 'Failed to initialize training worker.');
+            }).then(() => {
+                if (initializedRef.current) {
+                    startTraining();
+                }
+            });
+            return;
+        }
+        startTraining();
+    }, [initializeWorker, reportWorkerError]);
 
     const pause = useCallback(() => {
         isPlayingRef.current = false;
@@ -282,13 +311,20 @@ export function useTraining(): TrainingHook {
         if (isPlayingRef.current) {
             pause();
         }
-        const api = getWorkerApi();
-        const snap = await api.step(1);
-        const ts = useTrainingStore.getState();
-        ts.setSnapshot(snap);
-        ts.setFrameVersion(syncSnapshotToFrameBuffer(snap));
-        if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
-    }, [pause]);
+        try {
+            if (!initializedRef.current) {
+                await initializeWorker();
+            }
+            const api = getWorkerApi();
+            const snap = await api.step(1);
+            const ts = useTrainingStore.getState();
+            ts.setSnapshot(snap);
+            ts.setFrameVersion(syncSnapshotToFrameBuffer(snap));
+            if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
+        } catch (error) {
+            reportWorkerError(error, 'Failed to run a training step.');
+        }
+    }, [initializeWorker, pause, reportWorkerError]);
 
     const reset = useCallback(async () => {
         if (isPlayingRef.current) {
@@ -296,22 +332,31 @@ export function useTraining(): TrainingHook {
             stopRenderLoop();
             isPlayingRef.current = false;
         }
-        const api = getWorkerApi();
-        const result = await api.reset();
-        newRunTo(result.runId);
-        const ts = useTrainingStore.getState();
-        ts.setSnapshot(result.snapshot);
-        ts.resetHistory();
-        if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-        ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
-        ts.setStatus('idle');
+        try {
+            if (!initializedRef.current) {
+                await initializeWorker();
+                useTrainingStore.getState().setStatus('idle');
+                return;
+            }
+            const api = getWorkerApi();
+            const result = await api.reset();
+            newRunTo(result.runId);
+            const ts = useTrainingStore.getState();
+            ts.setSnapshot(result.snapshot);
+            ts.resetHistory();
+            if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
+            ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+            ts.setStatus('idle');
 
-        // Refresh points
-        const trainPts = await api.getTrainPoints();
-        const testPts = await api.getTestPoints();
-        ts.setTrainPoints(trainPts);
-        ts.setTestPoints(testPts);
-    }, []);
+            // Refresh points
+            const trainPts = await api.getTrainPoints();
+            const testPts = await api.getTestPoints();
+            ts.setTrainPoints(trainPts);
+            ts.setTestPoints(testPts);
+        } catch (error) {
+            reportWorkerError(error, 'Failed to reset training.');
+        }
+    }, [initializeWorker, reportWorkerError]);
 
     // Cleanup on unmount
     useEffect(() => {

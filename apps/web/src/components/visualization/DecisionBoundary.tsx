@@ -117,7 +117,6 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const rafRef = useRef<number>(0);
 
     // Off-screen resources (reused between frames)
     const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -217,10 +216,11 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         }
     }, [snapshot, frameVersion, trainPoints, testPoints, showTestData, discretize, canvasSize]);
 
-    // Schedule repaint via rAF whenever inputs change
+    // Paint immediately after React commits the latest frame. Snapshot delivery
+    // is already rAF-gated in workerBridge, so an extra rAF here can keep
+    // canceling the pending paint while training is running.
     useEffect(() => {
-        rafRef.current = requestAnimationFrame(paint);
-        return () => cancelAnimationFrame(rafRef.current);
+        paint();
     }, [paint]);
 
     // ── Early-return AFTER all hooks ──

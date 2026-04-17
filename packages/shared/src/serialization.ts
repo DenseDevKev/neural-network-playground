@@ -20,7 +20,7 @@ import {
     MAX_HIDDEN_LAYERS,
     MAX_NEURONS_PER_LAYER,
 } from './constants.js';
-import { countActiveFeatures } from '@nn-playground/engine';
+import { countActiveFeatures, isLossCompatible } from '@nn-playground/engine';
 
 const VALID_DATASETS = new Set<DatasetType>([
     'circle',
@@ -165,13 +165,18 @@ export function decodeUrlState(hash: string): AppConfig {
         animationSpeed: 1,
     };
 
+    const outputActivation = getCompatibleOutputActivation(
+        training.lossType,
+        getValidValue(p.get('oa'), VALID_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
+    );
+
     return {
         network: {
             inputSize,
             hiddenLayers,
             outputSize: 1,
             activation: getValidValue(p.get('a'), VALID_ACTIVATIONS, DEFAULT_NETWORK.activation),
-            outputActivation: getValidValue(p.get('oa'), VALID_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
+            outputActivation,
             weightInit: getValidValue(p.get('wi'), VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
             seed: parseNum(p.get('ws'), DEFAULT_NETWORK.seed),
         },
@@ -190,6 +195,16 @@ function parseNum(val: string | null, fallback: number): number {
     if (val == null) return fallback;
     const n = Number(val);
     return isNaN(n) ? fallback : n;
+}
+
+function getCompatibleOutputActivation(
+    lossType: LossType,
+    outputActivation: ActivationType,
+): ActivationType {
+    if (isLossCompatible(lossType, outputActivation)) {
+        return outputActivation;
+    }
+    return lossType === 'crossEntropy' ? 'sigmoid' : 'linear';
 }
 
 /** Export full config as a JSON string. */
@@ -316,6 +331,12 @@ export function validateImportedConfig(candidate: unknown): ImportedConfigValida
             animationSpeed: 1,
         };
 
+    const lossType = training.lossType as LossType;
+    const outputActivation = getCompatibleOutputActivation(
+        lossType,
+        network.outputActivation as ActivationType,
+    );
+
     return {
         config: {
             data: {
@@ -331,14 +352,14 @@ export function validateImportedConfig(candidate: unknown): ImportedConfigValida
                 hiddenLayers: [...(network.hiddenLayers as number[])],
                 outputSize: isFiniteNumber(network.outputSize) ? network.outputSize : 1,
                 activation: network.activation as ActivationType,
-                outputActivation: network.outputActivation as ActivationType,
+                outputActivation,
                 weightInit: network.weightInit as WeightInitType,
                 seed: network.seed as number,
             },
             training: {
                 learningRate: training.learningRate as number,
                 batchSize: training.batchSize as number,
-                lossType: training.lossType as LossType,
+                lossType,
                 optimizer: training.optimizer as OptimizerType,
                 momentum: training.momentum as number,
                 regularization: training.regularization as RegularizationType,

@@ -7,7 +7,6 @@ import {
     decodeUrlState,
     validateImportedConfig,
     encodeUrlState,
-    decodeUrlState,
     exportConfigJson,
     importConfigJson
 } from '../index.js';
@@ -134,5 +133,32 @@ describe('decodeUrlState', () => {
 
         expect(decoded.features).toEqual(DEFAULT_FEATURES);
         expect(decoded.network.inputSize).toBe(2);
+    });
+
+    it('normalizes incompatible loss/output pairs from URL state', () => {
+        const decoded = decodeUrlState('l=mse&oa=sigmoid');
+
+        expect(decoded.training.lossType).toBe('mse');
+        expect(decoded.network.outputActivation).toBe('linear');
+    });
+});
+
+describe('compatibility normalization', () => {
+    it('normalizes imported configs with incompatible loss/output pairs', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                lossType: 'mse',
+            },
+            network: {
+                ...validConfig.network,
+                outputActivation: 'sigmoid',
+            },
+        });
+
+        expect(result.error).toBeNull();
+        expect(result.config?.training.lossType).toBe('mse');
+        expect(result.config?.network.outputActivation).toBe('linear');
     });
 });
