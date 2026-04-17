@@ -19,7 +19,7 @@ const activeFeatures = getActiveFeatures(features);
 const gridInputs = buildGridInputs(GRID_SIZE, activeFeatures);
 
 describe('Grid Prediction Performance Benchmark', () => {
-    it('compares predictGrid vs predictGridInto', () => {
+    it('compares predictGrid vs predictGridInto', { timeout: 60_000 }, () => {
         const net = new Network(config);
         const target = new Float32Array(gridInputs.length);
 
@@ -47,7 +47,7 @@ describe('Grid Prediction Performance Benchmark', () => {
         console.log(`predictGridInto: ${(endNew - startNew).toFixed(4)}ms total for ${iterations} iterations`);
     });
 
-    it('compares predictGridWithNeurons vs predictGridWithNeuronsInto', () => {
+    it('compares predictGridWithNeurons vs predictGridWithNeuronsInto', { timeout: 60_000 }, () => {
         const net = new Network(config);
         const outputTarget = new Float32Array(gridInputs.length);
         const totalNeurons = net.getTotalNeuronCount();

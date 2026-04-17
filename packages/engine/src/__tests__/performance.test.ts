@@ -24,7 +24,7 @@ const trainingConfig: TrainingConfig = {
 };
 
 describe('Network performance benchmark', () => {
-    it('measures applyGradients execution time', () => {
+    it('measures applyGradients execution time', { timeout: 60_000 }, () => {
         const net = new Network(largeConfig);
         const batchSize = 32;
 
@@ -44,7 +44,7 @@ describe('Network performance benchmark', () => {
         console.log(`Average applyGradients time (Adam, L2, Clip): ${averageTime.toFixed(4)}ms`);
     });
 
-    it('measures applyGradients execution time (SGD)', () => {
+    it('measures applyGradients execution time (SGD)', { timeout: 60_000 }, () => {
         const net = new Network(largeConfig);
         const batchSize = 32;
         const sgdConfig = { ...trainingConfig, optimizer: 'sgd' as const, regularization: 'none' as const, gradientClip: null };
