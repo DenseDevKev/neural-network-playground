@@ -33,6 +33,7 @@ function useMetricHighlight(value: string) {
 export const Header = memo(function Header({ training }: HeaderProps) {
     const snapshot = useTrainingStore((s) => s.snapshot);
     const status = useTrainingStore((s) => s.status);
+    const testMetricsStale = useTrainingStore((s) => s.testMetricsStale);
 
     const epoch = snapshot?.epoch ?? 0;
     const trainLoss = snapshot?.trainLoss ?? 0;
@@ -71,8 +72,19 @@ export const Header = memo(function Header({ training }: HeaderProps) {
                     </span>
                 </div>
                 <div className="header__metric">
-                    <span className="header__metric-label">Test Loss</span>
-                    <span className={`header__metric-value header__metric-value--test ${testLossHighlighted ? 'header__metric-value--updated' : ''}`}>
+                    <span className="header__metric-label">
+                        Test Loss
+                        {testMetricsStale && (
+                            <span
+                                className="header__metric-stale"
+                                title="Cached test metric — next test-set evaluation is throttled by testEvalInterval"
+                                aria-label="Cached (stale) test metric"
+                            >
+                                {' '}~
+                            </span>
+                        )}
+                    </span>
+                    <span className={`header__metric-value header__metric-value--test ${testLossHighlighted ? 'header__metric-value--updated' : ''} ${testMetricsStale ? 'header__metric-value--stale' : ''}`}>
                         {testLossValue}
                     </span>
                 </div>

@@ -142,6 +142,7 @@ export function useTraining(): TrainingHook {
                 ts.clearWorkerError();
                 ts.setSnapshot(createStreamSnapshot(msg, ts.snapshot));
                 ts.setFrameVersion(getFrameVersion());
+                ts.setTestMetricsStale(msg.scalars.testMetricsStale === true);
                 if (msg.historyPoint) ts.addHistoryPoint(msg.historyPoint);
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused' || msg.status === 'idle') {

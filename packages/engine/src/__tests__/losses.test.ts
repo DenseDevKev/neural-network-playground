@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getLoss, batchLoss } from '../losses.js';
+import { getLoss, batchLoss, isLossCompatible, describeLossIncompatibility } from '../losses.js';
 
 describe('MSE loss', () => {
     const mse = getLoss('mse');
@@ -76,6 +76,43 @@ describe('Huber loss', () => {
 
     it('gradient equals diff for small errors', () => {
         expect(huber.dloss(0.3, 0)).toBeCloseTo(0.3, 8);
+    });
+
+    it('honours custom huberDelta', () => {
+        // With δ=0.5: an error of 1 lies in the linear regime.
+        const custom = getLoss('huber', { huberDelta: 0.5 });
+        expect(custom.dloss(1, 0)).toBeCloseTo(0.5, 8);
+        expect(custom.dloss(-1, 0)).toBeCloseTo(-0.5, 8);
+        // An error of 0.4 lies in the quadratic regime.
+        expect(custom.dloss(0.4, 0)).toBeCloseTo(0.4, 8);
+        // Loss at large error: δ·(a − 0.5·δ) = 0.5·(1 − 0.25) = 0.375
+        expect(custom.loss(1, 0)).toBeCloseTo(0.375, 8);
+    });
+});
+
+describe('loss/activation compatibility', () => {
+    it('cross-entropy is only compatible with sigmoid', () => {
+        expect(isLossCompatible('crossEntropy', 'sigmoid')).toBe(true);
+        expect(isLossCompatible('crossEntropy', 'linear')).toBe(false);
+        expect(isLossCompatible('crossEntropy', 'tanh')).toBe(false);
+    });
+
+    it('MSE and Huber accept unbounded activations', () => {
+        expect(isLossCompatible('mse', 'linear')).toBe(true);
+        expect(isLossCompatible('mse', 'tanh')).toBe(true);
+        expect(isLossCompatible('huber', 'linear')).toBe(true);
+    });
+
+    it('MSE and Huber reject sigmoid', () => {
+        expect(isLossCompatible('mse', 'sigmoid')).toBe(false);
+        expect(isLossCompatible('huber', 'sigmoid')).toBe(false);
+    });
+
+    it('describeLossIncompatibility names both loss and activation', () => {
+        const msg = describeLossIncompatibility('crossEntropy', 'tanh');
+        expect(msg).toContain('Cross-Entropy');
+        expect(msg).toContain('tanh');
+        expect(msg).toContain('sigmoid');
     });
 });
 

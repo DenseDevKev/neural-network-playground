@@ -50,12 +50,12 @@ function edgeWidth(weight: number): number {
     return Math.max(0.5, Math.min(3, Math.abs(weight) * 1.5));
 }
 
-// ── Persistent canvas pool for heatmap generation ──
-// Avoids creating and destroying DOM canvas elements every frame.
+// ── Persistent source canvas for heatmap generation ──
+// One shared upscale-source canvas is reused across all neurons, every frame.
+// Each neuron owns its own display <canvas> inside a <foreignObject>, drawn
+// to via drawImage — no PNG encoding (toDataURL) on the hot path.
 let _sourceCanvas: HTMLCanvasElement | null = null;
 let _sourceCtx: CanvasRenderingContext2D | null = null;
-let _scaledCanvas: HTMLCanvasElement | null = null;
-let _scaledCtx: CanvasRenderingContext2D | null = null;
 let _cachedImageData: ImageData | null = null;
 let _cachedGridSize = 0;
 
@@ -71,35 +71,50 @@ function getSourceCanvas(gridSize: number): { canvas: HTMLCanvasElement; ctx: Ca
     return { canvas: _sourceCanvas, ctx: _sourceCtx, imageData: _cachedImageData! };
 }
 
-function getScaledCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
-    if (!_scaledCanvas || !_scaledCtx) {
-        _scaledCanvas = document.createElement('canvas');
-        _scaledCanvas.width = HEATMAP_SIZE;
-        _scaledCanvas.height = HEATMAP_SIZE;
-        _scaledCtx = _scaledCanvas.getContext('2d')!;
-        _scaledCtx.imageSmoothingEnabled = true;
-        _scaledCtx.imageSmoothingQuality = 'high';
-    }
-    return { canvas: _scaledCanvas, ctx: _scaledCtx };
+// ── HeatmapCanvas ────────────────────────────────────────────────────────────
+// Renders a single neuron's activation grid into a dedicated <canvas> via
+// putImageData + drawImage (no toDataURL). Reuses the module-level source
+// canvas for the upscale step. The canvas is clipped to a circle via CSS
+// border-radius so it fits inside the node.
+
+interface HeatmapCanvasProps {
+    grid: ArrayLike<number>;
+    gridSize: number;
 }
 
-/**
- * Generate a data URL from a flat grid of neuron activations.
- * Uses shared blue–dark–orange color scale and persistent canvases.
- */
-function neuronGridToDataUrl(grid: ArrayLike<number>, gridSize: number): string {
-    const { canvas: sourceCanvas, ctx: sourceCtx, imageData } = getSourceCanvas(gridSize);
+const HeatmapCanvas = memo(function HeatmapCanvas({ grid, gridSize }: HeatmapCanvasProps) {
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-    writeNormalizedHeatmap(grid, imageData, 220);
-    sourceCtx.putImageData(imageData, 0, 0);
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
 
-    // Scale up to HEATMAP_SIZE with smoothing (reused canvas)
-    const { canvas: scaledCanvas, ctx: scaledCtx } = getScaledCanvas();
-    scaledCtx.clearRect(0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
-    scaledCtx.drawImage(sourceCanvas, 0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
+        const src = getSourceCanvas(gridSize);
+        writeNormalizedHeatmap(grid, src.imageData, 220);
+        src.ctx.putImageData(src.imageData, 0, 0);
 
-    return scaledCanvas.toDataURL();
-}
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.clearRect(0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
+        ctx.drawImage(src.canvas, 0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
+    }, [grid, gridSize]);
+
+    return (
+        <canvas
+            ref={canvasRef}
+            width={HEATMAP_SIZE}
+            height={HEATMAP_SIZE}
+            style={{
+                width: '100%',
+                height: '100%',
+                borderRadius: '50%',
+                display: 'block',
+            }}
+        />
+    );
+});
 
 // ── NetworkLabels ─────────────────────────────────────────────────────────────
 // Only re-renders when the network shape (nodePositions / layerLabels) changes.
@@ -216,11 +231,16 @@ const NetworkEdges = memo(function NetworkEdges({
 // Re-renders on bias / heatmap change.
 // Does NOT re-render when edge hover or edge tooltip changes.
 
+interface NeuronGridEntry {
+    grid: ArrayLike<number>;
+    gridSize: number;
+}
+
 interface NetworkNodesProps {
     nodePositions: NodePos[][];
     layers: number[];
     biases: number[][] | null | undefined; // snapshot.biases: number[][] (layer × neuron)
-    neuronHeatmapUrls: string[] | null;
+    neuronGrids: NeuronGridEntry[] | null;
     activeFeatures: { label: string }[];
     activation: string;
     onNodeEnter: (x: number, y: number, text: string[]) => void;
@@ -231,19 +251,19 @@ const NetworkNodes = memo(function NetworkNodes({
     nodePositions,
     layers,
     biases,
-    neuronHeatmapUrls,
+    neuronGrids,
     activeFeatures,
     activation,
     onNodeEnter,
     onNodeLeave,
 }: NetworkNodesProps) {
     /**
-     * Map (layerIdx, nodeIdx) → index into neuronHeatmapUrls.
+     * Map (layerIdx, nodeIdx) → index into neuronGrids.
      * neuronGrids layout: for each hidden layer in order, then output layer,
      * all neurons concatenated.
      */
     function getNeuronGridIndex(layerIdx: number, nodeIdx: number): number | null {
-        if (!neuronHeatmapUrls || layerIdx === 0) return null;
+        if (!neuronGrids || layerIdx === 0) return null;
         let idx = 0;
         for (let l = 1; l < layerIdx; l++) {
             idx += layers[l];
@@ -256,7 +276,7 @@ const NetworkNodes = memo(function NetworkNodes({
             }
         }
         idx += nodeIdx;
-        return idx < neuronHeatmapUrls.length ? idx : null;
+        return idx < neuronGrids.length ? idx : null;
     }
 
     function buildTooltipLines(layerIdx: number, nodeIdx: number): string[] {
@@ -289,7 +309,7 @@ const NetworkNodes = memo(function NetworkNodes({
                     const isInput = layerIdx === 0;
                     const isOutput = layerIdx === layers.length - 1;
                     const heatmapIdx = getNeuronGridIndex(layerIdx, nodeIdx);
-                    const heatmapUrl = heatmapIdx != null ? neuronHeatmapUrls?.[heatmapIdx] : null;
+                    const heatmap = heatmapIdx != null ? neuronGrids?.[heatmapIdx] ?? null : null;
 
                     return (
                         <g
@@ -340,26 +360,19 @@ const NetworkNodes = memo(function NetworkNodes({
                                 className="network-node"
                             />
                             {/* Mini heatmap (for non-input neurons) */}
-                            {!isInput && heatmapUrl && (
-                                <g>
-                                    <defs>
-                                        <clipPath id={`clip-${layerIdx}-${nodeIdx}`}>
-                                            <circle cx={node.x} cy={node.y} r={NODE_RADIUS - 1.5} />
-                                        </clipPath>
-                                    </defs>
-                                    <image
-                                        href={heatmapUrl}
-                                        x={node.x - NODE_RADIUS + 1.5}
-                                        y={node.y - NODE_RADIUS + 1.5}
-                                        width={(NODE_RADIUS - 1.5) * 2}
-                                        height={(NODE_RADIUS - 1.5) * 2}
-                                        clipPath={`url(#clip-${layerIdx}-${nodeIdx})`}
-                                        style={{ pointerEvents: 'none' }}
-                                    />
-                                </g>
+                            {!isInput && heatmap && (
+                                <foreignObject
+                                    x={node.x - NODE_RADIUS + 1.5}
+                                    y={node.y - NODE_RADIUS + 1.5}
+                                    width={(NODE_RADIUS - 1.5) * 2}
+                                    height={(NODE_RADIUS - 1.5) * 2}
+                                    style={{ pointerEvents: 'none' }}
+                                >
+                                    <HeatmapCanvas grid={heatmap.grid} gridSize={heatmap.gridSize} />
+                                </foreignObject>
                             )}
                             {/* Fallback inner value indicator (when no heatmap) */}
-                            {!isInput && !heatmapUrl && (
+                            {!isInput && !heatmap && (
                                 <circle
                                     cx={node.x}
                                     cy={node.y}
@@ -370,7 +383,7 @@ const NetworkNodes = memo(function NetworkNodes({
                                 />
                             )}
                             {/* Border ring on top of heatmap */}
-                            {!isInput && heatmapUrl && (
+                            {!isInput && heatmap && (
                                 <circle
                                     cx={node.x}
                                     cy={node.y}
@@ -484,25 +497,30 @@ export function NetworkGraph() {
         return snapshot?.biases ?? null;
     }, [frameVersion, snapshot?.biases]);
 
-    // Compute mini heatmap data URLs for each non-input neuron
-    const neuronHeatmapUrls = useMemo(() => {
+    // Build per-neuron grid views (no PNG encoding). Each HeatmapCanvas then
+    // paints its grid into a real <canvas> via putImageData + drawImage.
+    const neuronGrids = useMemo<NeuronGridEntry[] | null>(() => {
         const frameBuffer = getFrameBuffer();
         if (frameBuffer.neuronGrids && frameBuffer.neuronGridLayout) {
             const { count, gridSize } = frameBuffer.neuronGridLayout;
-            return Array.from({ length: count }, (_, idx) =>
-                neuronGridToDataUrl(extractNeuronGrid(frameBuffer.neuronGrids!, idx, gridSize * gridSize), gridSize),
-            );
+            const cells = gridSize * gridSize;
+            return Array.from({ length: count }, (_, idx) => ({
+                grid: extractNeuronGrid(frameBuffer.neuronGrids!, idx, cells),
+                gridSize,
+            }));
         }
         if (!snapshot?.neuronGrids) return null;
         const gridSize = snapshot.gridSize ?? GRID_SIZE;
         const snapshotNeuronGrids = snapshot.neuronGrids;
         if (snapshotNeuronGrids instanceof Float32Array) {
             const count = layers.slice(1).reduce((sum, size) => sum + size, 0);
-            return Array.from({ length: count }, (_, idx) =>
-                neuronGridToDataUrl(extractNeuronGrid(snapshotNeuronGrids, idx, gridSize * gridSize), gridSize),
-            );
+            const cells = gridSize * gridSize;
+            return Array.from({ length: count }, (_, idx) => ({
+                grid: extractNeuronGrid(snapshotNeuronGrids, idx, cells),
+                gridSize,
+            }));
         }
-        return snapshotNeuronGrids.map((grid) => neuronGridToDataUrl(grid, gridSize));
+        return snapshotNeuronGrids.map((grid) => ({ grid, gridSize }));
     }, [frameVersion, layers, snapshot?.neuronGrids, snapshot?.gridSize]);
 
     // ── Stable handlers (no deps — all data flows in via arguments or closure over setters) ──
@@ -570,7 +588,7 @@ export function NetworkGraph() {
                     nodePositions={nodePositions}
                     layers={layers}
                     biases={biases}
-                    neuronHeatmapUrls={neuronHeatmapUrls}
+                    neuronGrids={neuronGrids}
                     activeFeatures={activeFeatures}
                     activation={activation}
                     onNodeEnter={handleNodeEnter}

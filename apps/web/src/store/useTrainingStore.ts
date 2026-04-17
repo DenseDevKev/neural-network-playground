@@ -29,6 +29,8 @@ export interface TrainingStore {
     configErrorSource: ConfigChangeSource;
     configSyncNonce: number;
     workerError: string | null;
+    /** True when the most recent streamed snapshot reused cached test metrics. */
+    testMetricsStale: boolean;
 
     // ── Actions ──
     setStatus: (s: TrainingStatus) => void;
@@ -45,6 +47,7 @@ export interface TrainingStore {
     retryConfigSync: () => void;
     setWorkerError: (message: string) => void;
     clearWorkerError: () => void;
+    setTestMetricsStale: (stale: boolean) => void;
 }
 
 export const useTrainingStore = create<TrainingStore>((set) => ({
@@ -62,6 +65,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     configErrorSource: null,
     configSyncNonce: 0,
     workerError: null,
+    testMetricsStale: false,
 
     setStatus: (status) => set({ status }),
     setSnapshot: (snapshot) => set({ snapshot }),
@@ -116,4 +120,5 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     }),
     setWorkerError: (message) => set({ workerError: message }),
     clearWorkerError: () => set({ workerError: null }),
+    setTestMetricsStale: (testMetricsStale) => set({ testMetricsStale }),
 }));
