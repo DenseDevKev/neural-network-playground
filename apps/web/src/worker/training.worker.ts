@@ -95,6 +95,22 @@ function resetAck(): void {
     state.awaitingAck = false;
 }
 
+// Post an error message to the main thread via the stream port. If the port
+// isn't yet set (e.g. module-eval failure before setStreamPort), fall back to
+// console so the error at least appears in devtools.
+function postError(message: string): void {
+    const errMsg: WorkerErrorMessage = {
+        type: 'error',
+        runId: state.runId,
+        message,
+    };
+    if (state.streamPort) {
+        state.streamPort.postMessage(errMsg);
+    } else {
+        console.error('[worker]', message);
+    }
+}
+
 /** Validate config compatibility — throws on incompatible loss/activation. */
 function validateConfigs(network: NetworkConfig, training: TrainingConfig): void {
     if (!isLossCompatible(training.lossType, network.outputActivation)) {
@@ -164,6 +180,19 @@ const state: WorkerState = {
     history: [],
     awaitingAck: false,
 };
+
+// Top-level error backstops — catch anything not handled by the per-function
+// try/catch blocks (e.g. errors thrown during module evaluation or in callbacks
+// we don't own). Both routes through postError so the main thread always sees
+// the failure.
+self.addEventListener('error', (event: ErrorEvent) => {
+    postError(`Unhandled worker error: ${event.message ?? String(event)}`);
+});
+
+self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
+    postError(`Unhandled worker rejection: ${reason}`);
+});
 
 
 
@@ -487,50 +516,51 @@ function trainOneStep(): void {
 function trainTick(): void {
     if (!state.running) return;
 
-    if (state.streamPort) {
-        performance.mark('perf:worker:trainStep:start');
-        for (let i = 0; i < state.stepsPerFrame; i++) {
-            trainOneStep();
-        }
-        performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
+    try {
+        if (state.streamPort) {
+            performance.mark('perf:worker:trainStep:start');
+            for (let i = 0; i < state.stepsPerFrame; i++) {
+                trainOneStep();
+            }
+            performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
 
-        // Back-pressure: skip snapshot computation + posting while the main
-        // thread hasn't yet applied the previous frame. Training still
-        // progresses; the UI just coalesces to its render rate.
-        if (!state.awaitingAck) {
-            // Compute snapshot and stream it to the main thread. Lightweight
-            // mode skips the nested weight/bias deep-copy — we transfer flat
-            // buffers.
-            const snap = computeSnapshot({ lightweight: true });
+            // Back-pressure: skip snapshot computation + posting while the main
+            // thread hasn't yet applied the previous frame. Training still
+            // progresses; the UI just coalesces to its render rate.
+            if (!state.awaitingAck) {
+                // Compute snapshot and stream it to the main thread. Lightweight
+                // mode skips the nested weight/bias deep-copy — we transfer flat
+                // buffers.
+                const snap = computeSnapshot({ lightweight: true });
 
-            // NaN / divergence guard — stop the loop and notify the UI.
-            // Training with NaN weights is a dead end; keep state readable
-            // for debugging.
-            if (!Number.isFinite(snap.trainLoss)) {
-                stopInternalLoop();
-                const errMsg: WorkerErrorMessage = {
-                    type: 'error',
-                    runId: state.runId,
-                    message:
+                // NaN / divergence guard — stop the loop and notify the UI.
+                // Training with NaN weights is a dead end; keep state readable
+                // for debugging.
+                if (!Number.isFinite(snap.trainLoss)) {
+                    stopInternalLoop();
+                    postError(
                         'Training diverged (non-finite loss). Try a smaller learning rate, ' +
                         'enable gradient clipping, or reset the network.',
-                };
-                state.streamPort.postMessage(errMsg);
-                return;
+                    );
+                    return;
+                }
+
+                // Only training paths accumulate history; passive snapshot RPCs do not.
+                pushHistory(snap.historyPoint);
+
+                const { message, transferables } = packSnapshotMessage(snap);
+                state.awaitingAck = true;
+                state.streamPort.postMessage(message, transferables);
             }
-
-            // Only training paths accumulate history; passive snapshot RPCs do not.
-            pushHistory(snap.historyPoint);
-
-            const { message, transferables } = packSnapshotMessage(snap);
-            state.awaitingAck = true;
-            state.streamPort.postMessage(message, transferables);
         }
-    }
 
-    // Schedule next tick (yield to allow message processing)
-    if (state.running) {
-        state.trainLoopTimer = setTimeout(trainTick, 0);
+        // Schedule next tick (yield to allow message processing)
+        if (state.running) {
+            state.trainLoopTimer = setTimeout(trainTick, 0);
+        }
+    } catch (err) {
+        stopInternalLoop();
+        postError(`Training error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
@@ -555,46 +585,50 @@ function stopInternalLoop(): void {
 // ── MessageChannel command handler ──
 
 function handleStreamCommand(cmd: MainToWorkerCommand): void {
-    switch (cmd.type) {
-        case 'startTraining':
-            state.stepsPerFrame = cmd.stepsPerFrame;
-            startInternalLoop();
-            if (state.streamPort) {
-                const statusMsg: WorkerStatusMessage = {
-                    type: 'status',
-                    runId: state.runId,
-                    status: 'running',
-                };
-                state.streamPort.postMessage(statusMsg);
-            }
-            break;
+    try {
+        switch (cmd.type) {
+            case 'startTraining':
+                state.stepsPerFrame = cmd.stepsPerFrame;
+                startInternalLoop();
+                if (state.streamPort) {
+                    const statusMsg: WorkerStatusMessage = {
+                        type: 'status',
+                        runId: state.runId,
+                        status: 'running',
+                    };
+                    state.streamPort.postMessage(statusMsg);
+                }
+                break;
 
-        case 'stopTraining':
-            stopInternalLoop();
-            if (state.streamPort) {
-                const statusMsg: WorkerStatusMessage = {
-                    type: 'status',
-                    runId: state.runId,
-                    status: 'paused',
-                };
-                state.streamPort.postMessage(statusMsg);
-            }
-            break;
+            case 'stopTraining':
+                stopInternalLoop();
+                if (state.streamPort) {
+                    const statusMsg: WorkerStatusMessage = {
+                        type: 'status',
+                        runId: state.runId,
+                        status: 'paused',
+                    };
+                    state.streamPort.postMessage(statusMsg);
+                }
+                break;
 
-        case 'updateDemand':
-            state.demand = { ...cmd.demand };
-            state.snapshotsSinceLastTestEval = cmd.demand.testEvalInterval;
-            break;
+            case 'updateDemand':
+                state.demand = { ...cmd.demand };
+                state.snapshotsSinceLastTestEval = cmd.demand.testEvalInterval;
+                break;
 
-        case 'updateSpeed':
-            state.stepsPerFrame = cmd.stepsPerFrame;
-            break;
+            case 'updateSpeed':
+                state.stepsPerFrame = cmd.stepsPerFrame;
+                break;
 
-        case 'frameAck':
-            // Main thread applied the previous snapshot — free the gate so
-            // the next trainTick is allowed to post again.
-            state.awaitingAck = false;
-            break;
+            case 'frameAck':
+                // Main thread applied the previous snapshot — free the gate so
+                // the next trainTick is allowed to post again.
+                state.awaitingAck = false;
+                break;
+        }
+    } catch (err) {
+        postError(`Command handling error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
