@@ -7,6 +7,7 @@
 import * as Comlink from 'comlink';
 import type { TrainingWorkerApi } from './training.worker.ts';
 import type { WorkerToMainMessage, MainToWorkerCommand } from '@nn-playground/shared';
+import { isWorkerToMainMessage } from '@nn-playground/shared';
 import { updateFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
 
 // ── Singleton state ──
@@ -22,6 +23,15 @@ let _pendingSnapshot: WorkerToMainMessage | null = null;
 type SnapshotCallback = (msg: WorkerToMainMessage) => void;
 let _onSnapshot: SnapshotCallback | null = null;
 
+// Synthesize a WorkerErrorMessage and dispatch it through _onSnapshot so that
+// bridge-level failures (onerror, onmessageerror) surface through the same
+// path as worker-emitted errors.
+function emitWorkerError(message: string): void {
+    if (_onSnapshot) {
+        _onSnapshot({ type: 'error', runId: _currentRunId, message });
+    }
+}
+
 // ── Initialization ──
 
 function ensureWorker(): Worker {
@@ -30,6 +40,12 @@ function ensureWorker(): Worker {
             new URL('./training.worker.ts', import.meta.url),
             { type: 'module' },
         );
+        _worker.onerror = (event: ErrorEvent) => {
+            emitWorkerError(`Worker error: ${event.message ?? 'unknown'}`);
+        };
+        _worker.onmessageerror = () => {
+            emitWorkerError('Worker message deserialization error');
+        };
     }
     return _worker;
 }
@@ -60,17 +76,27 @@ export async function setupStreamChannel(): Promise<void> {
     await api.setStreamPort(Comlink.transfer(channel.port2, [channel.port2]));
 
     // Listen for streamed messages on port1
-    _streamPort.addEventListener('message', (event: MessageEvent<WorkerToMainMessage>) => {
+    _streamPort.addEventListener('message', (event: MessageEvent<unknown>) => {
         handleWorkerMessage(event.data);
     });
+    _streamPort.onmessageerror = () => {
+        emitWorkerError('Stream port message deserialization error');
+    };
     _streamPort.start();
 }
 
 // ── Message Handling ──
 
-function handleWorkerMessage(msg: WorkerToMainMessage): void { 
-    // Drop messages from stale runs
-    if (msg.runId < _currentRunId) return;
+function handleWorkerMessage(msg: unknown): void {
+    // Validate message shape before processing.
+    if (!isWorkerToMainMessage(msg)) {
+        emitWorkerError('Received malformed message from worker: ' + JSON.stringify(msg));
+        return;
+    }
+
+    // Error messages always surface — even from stale runs — so async failures
+    // after a reset are never silently dropped.
+    if (msg.type !== 'error' && msg.runId < _currentRunId) return;
 
     if (msg.type === 'snapshot') {
         // Drop out-of-order snapshots

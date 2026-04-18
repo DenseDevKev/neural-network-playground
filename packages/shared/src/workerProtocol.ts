@@ -136,3 +136,61 @@ export type MainToWorkerCommand =
     | UpdateDemandCommand
     | UpdateSpeedCommand
     | FrameAckCommand;
+
+// ─────────────────────────────────────────────────────────
+// Runtime type guards (hand-rolled, shallow — no zod)
+// ─────────────────────────────────────────────────────────
+
+/**
+ * Shallow runtime guard for messages flowing Worker → Main.
+ * Validates the `type` discriminator and required primitive fields only;
+ * does not recurse into `layerStats` arrays to avoid per-frame overhead.
+ */
+export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
+    if (x === null || typeof x !== 'object') return false;
+    const m = x as Record<string, unknown>;
+    if (typeof m['type'] !== 'string') return false;
+    if (typeof m['runId'] !== 'number') return false;
+    switch (m['type']) {
+        case 'snapshot':
+            return (
+                typeof m['snapshotId'] === 'number' &&
+                m['scalars'] !== null &&
+                typeof m['scalars'] === 'object'
+            );
+        case 'status':
+            return (
+                m['status'] === 'idle' ||
+                m['status'] === 'running' ||
+                m['status'] === 'paused'
+            );
+        case 'error':
+            return typeof m['message'] === 'string';
+        default:
+            return false;
+    }
+}
+
+/**
+ * Shallow runtime guard for commands flowing Main → Worker.
+ * Validates the `type` discriminator and required primitive fields only.
+ */
+export function isMainToWorkerCommand(x: unknown): x is MainToWorkerCommand {
+    if (x === null || typeof x !== 'object') return false;
+    const m = x as Record<string, unknown>;
+    if (typeof m['type'] !== 'string') return false;
+    switch (m['type']) {
+        case 'startTraining':
+            return typeof m['stepsPerFrame'] === 'number';
+        case 'stopTraining':
+            return true;
+        case 'updateDemand':
+            return m['demand'] !== null && typeof m['demand'] === 'object';
+        case 'updateSpeed':
+            return typeof m['stepsPerFrame'] === 'number';
+        case 'frameAck':
+            return true;
+        default:
+            return false;
+    }
+}

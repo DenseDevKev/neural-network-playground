@@ -2,19 +2,28 @@
   "name": "neural-network-playground",
   "version": "2.0.0",
   "private": true,
+  "type": "module",
   "description": "An interactive neural network playground for learning — inspired by TensorFlow Playground",
   "scripts": {
     "dev": "pnpm --filter @nn-playground/web dev",
     "build": "pnpm --filter @nn-playground/web build",
     "test": "pnpm -r test",
     "test:engine": "pnpm --filter @nn-playground/engine test",
-    "lint": "eslint . --ext .ts,.tsx",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "clean": "pnpm -r exec rm -rf dist node_modules"
   },
   "license": "Apache-2.0",
   "engines": {
-    "node": ">=18",
-    "pnpm": ">=8"
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "eslint-plugin-react": "^7.37.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.0.0",
+    "typescript-eslint": "^8.0.0"
   }
 }

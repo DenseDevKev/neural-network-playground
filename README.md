@@ -55,8 +55,8 @@ neural-network-playground/
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v18+
-- [pnpm](https://pnpm.io/) v8+
+- [Node.js](https://nodejs.org/) v20+
+- [pnpm](https://pnpm.io/) v9+
 
 ### Development
 
@@ -83,6 +83,13 @@ pnpm build         # Production build
 pnpm lint          # Lint all files
 pnpm format        # Format with Prettier
 ```
+
+## 🚢 Deployment
+
+The app is a fully static SPA — no backend, no environment variables.
+Push to `main` and GitHub Actions deploys to GitHub Pages automatically.
+For self-hosting or custom base-path configuration, see
+[docs/deployment.md](docs/deployment.md).
 
 ## 🧪 Testing
 
