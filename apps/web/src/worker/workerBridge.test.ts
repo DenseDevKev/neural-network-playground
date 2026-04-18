@@ -10,7 +10,7 @@ vi.mock('comlink', () => ({
         initialize: vi.fn(),
         updateConfig: vi.fn(),
     })),
-    transfer: vi.fn((_val: unknown, _transfers: Transferable[]) => _val),
+    transfer: vi.fn((_val: unknown, _t: Transferable[]) => _val),
 }));
 
 // ── Stub global Worker ──

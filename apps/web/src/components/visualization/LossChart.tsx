@@ -271,7 +271,7 @@ export const LossChart = memo(function LossChart() {
         const chartX = x - PADDING.left;
         
         const xMax = history.length - 1;
-        let index = Math.round((chartX / plotW) * xMax);
+        const index = Math.round((chartX / plotW) * xMax);
         if (index < 0 || index > xMax || x < PADDING.left || x > PADDING.left + plotW) {
             setHoverIndex(null);
         } else {

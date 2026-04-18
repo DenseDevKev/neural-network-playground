@@ -430,11 +430,6 @@ export class Network {
         neuronTarget: Float32Array,
     ): void {
         const numLayers = this.weights.length;
-        // Total neurons across all layers
-        let totalNeurons = 0;
-        for (let l = 0; l < numLayers; l++) {
-            totalNeurons += this.weights[l].length;
-        }
 
         for (let i = 0; i < gridInputs.length; i++) {
             const output = this.forward(gridInputs[i]);

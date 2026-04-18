@@ -31,7 +31,6 @@ import type {
     WorkerSnapshotMessage,
     WorkerStatusMessage,
     WorkerErrorMessage,
-    MainToWorkerCommand,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 
