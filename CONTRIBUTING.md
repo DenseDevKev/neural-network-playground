@@ -4,8 +4,8 @@ Thanks for your interest in contributing! This guide covers setup, workflow, and
 
 ## 📋 Prerequisites
 
-- [Node.js](https://nodejs.org/) v18+
-- [pnpm](https://pnpm.io/) v8+
+- [Node.js](https://nodejs.org/) v20+
+- [pnpm](https://pnpm.io/) v9+
 
 ## 🛠️ Setup
 
@@ -70,6 +70,18 @@ npx vitest run src/__tests__/network.test.ts
 | Zustand over Redux | Simpler API, less boilerplate, better for this scale |
 | pnpm workspaces | Engine is testable in isolation, shared code reused cleanly |
 | No SSR | This is a pure client-side interactive tool |
+
+## 🚀 Releases
+
+Merging to `main` automatically triggers the deployment pipeline:
+
+1. The `.github/workflows/ci.yml` CI workflow runs lint, engine tests, and
+   a production build to confirm the branch is green.
+2. On success, `.github/workflows/deploy.yml` builds `apps/web/dist/` and
+   deploys it to GitHub Pages.
+
+There is no manual release step. If you need to deploy from a fork, see
+[docs/deployment.md](docs/deployment.md) for the fork-and-deploy flow.
 
 ## 🙏 Code of conduct
 
