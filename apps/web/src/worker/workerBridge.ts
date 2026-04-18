@@ -7,6 +7,7 @@
 import * as Comlink from 'comlink';
 import type { TrainingWorkerApi } from './training.worker.ts';
 import type { WorkerToMainMessage, MainToWorkerCommand } from '@nn-playground/shared';
+import { isWorkerToMainMessage } from '@nn-playground/shared';
 import { updateFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
 
 // ── Singleton state ──
@@ -75,7 +76,7 @@ export async function setupStreamChannel(): Promise<void> {
     await api.setStreamPort(Comlink.transfer(channel.port2, [channel.port2]));
 
     // Listen for streamed messages on port1
-    _streamPort.addEventListener('message', (event: MessageEvent<WorkerToMainMessage>) => {
+    _streamPort.addEventListener('message', (event: MessageEvent<unknown>) => {
         handleWorkerMessage(event.data);
     });
     _streamPort.onmessageerror = () => {
@@ -86,7 +87,13 @@ export async function setupStreamChannel(): Promise<void> {
 
 // ── Message Handling ──
 
-function handleWorkerMessage(msg: WorkerToMainMessage): void {
+function handleWorkerMessage(msg: unknown): void {
+    // Validate message shape before processing.
+    if (!isWorkerToMainMessage(msg)) {
+        emitWorkerError('Received malformed message from worker: ' + JSON.stringify(msg));
+        return;
+    }
+
     // Error messages always surface — even from stale runs — so async failures
     // after a reset are never silently dropped.
     if (msg.type !== 'error' && msg.runId < _currentRunId) return;

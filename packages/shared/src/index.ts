@@ -42,6 +42,8 @@ export type {
 } from './types.js';
 export {
     DEFAULT_DEMAND,
+    isWorkerToMainMessage,
+    isMainToWorkerCommand,
 } from './workerProtocol.js';
 export type {
     VisualizationDemand,
@@ -54,5 +56,6 @@ export type {
     StopTrainingCommand,
     UpdateDemandCommand,
     UpdateSpeedCommand,
+    FrameAckCommand,
     MainToWorkerCommand,
 } from './workerProtocol.js';

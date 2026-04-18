@@ -25,7 +25,7 @@ import type {
     DataPoint,
     HistoryPoint,
 } from '@nn-playground/engine';
-import { GRID_SIZE, DEFAULT_DEMAND } from '@nn-playground/shared';
+import { GRID_SIZE, DEFAULT_DEMAND, isMainToWorkerCommand } from '@nn-playground/shared';
 import type {
     VisualizationDemand,
     WorkerSnapshotMessage,
@@ -584,8 +584,12 @@ function stopInternalLoop(): void {
 
 // ── MessageChannel command handler ──
 
-function handleStreamCommand(cmd: MainToWorkerCommand): void {
+function handleStreamCommand(cmd: unknown): void {
     try {
+        if (!isMainToWorkerCommand(cmd)) {
+            postError('Unknown command: ' + JSON.stringify(cmd));
+            return;
+        }
         switch (cmd.type) {
             case 'startTraining':
                 state.stepsPerFrame = cmd.stepsPerFrame;
@@ -730,7 +734,7 @@ const workerApi = {
     /** Accept a MessagePort from the main thread for streaming. */
     setStreamPort(port: MessagePort): void {
         state.streamPort = port;
-        port.addEventListener('message', (event: MessageEvent<MainToWorkerCommand>) => {
+        port.addEventListener('message', (event: MessageEvent<unknown>) => {
             handleStreamCommand(event.data);
         });
         port.start();
