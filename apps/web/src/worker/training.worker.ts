@@ -873,40 +873,39 @@ function trainTick(): void {
     if (!state.running) return;
 
     try {
-        // Always run training steps, even if the stream port hasn't
-        // connected yet. The port only gates snapshot delivery, never
-        // the training loop itself.
-        const tickStart = performance.now();
-        performance.mark('perf:worker:trainStep:start');
+        if (state.streamPort) {
+            const tickStart = performance.now();
+            performance.mark('perf:worker:trainStep:start');
 
-        // Run at least `stepsPerFrame` steps per tick so the UI can
-        // still dial training speed via that knob. Beyond that, keep
-        // stepping until our time budget is exhausted — this soaks up
-        // any headroom left over from the cadence-gated snapshot path
-        // (grid rebuild, train/test eval) which may skip this tick
-        // entirely.
-        const burst = state.stepsPerFrame;
-        for (let i = 0; i < burst; i++) trainOneStep();
-        while (performance.now() - tickStart < TRAIN_TICK_BUDGET_MS) {
-            trainOneStep();
-        }
+            // Run at least `stepsPerFrame` steps per tick so the UI can
+            // still dial training speed via that knob. Beyond that, keep
+            // stepping until our time budget is exhausted — this soaks up
+            // any headroom left over from the cadence-gated snapshot path
+            // (grid rebuild, train/test eval) which may skip this tick
+            // entirely.
+            const burst = state.stepsPerFrame;
+            for (let i = 0; i < burst; i++) trainOneStep();
+            while (performance.now() - tickStart < TRAIN_TICK_BUDGET_MS) {
+                trainOneStep();
+            }
 
-        performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
+            performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
 
-        // Snapshot posting: only attempt when the stream port is
-        // connected. If missing, training still progresses and
-        // snapshots will begin streaming once the port arrives.
-        if (state.streamPort && !state.awaitingAck) {
-            // Gate first so concurrent ticks don't fire while the GPU
-            // pre-fill awaits the device. The ack will land after
-            // postMessage in produceAndPostSnapshot() completes.
-            state.awaitingAck = true;
-            produceAndPostSnapshot().catch((err) => {
-                state.awaitingAck = false;
-                stopInternalLoop();
-                const msg = err instanceof Error ? err.message : String(err);
-                postError(`Training snapshot error: ${msg}`);
-            });
+            // Back-pressure: skip snapshot computation + posting while the main
+            // thread hasn't yet applied the previous frame. Training still
+            // progresses; the UI just coalesces to its render rate.
+            if (!state.awaitingAck) {
+                // Gate first so concurrent ticks don't fire while the GPU
+                // pre-fill awaits the device. The ack will land after
+                // postMessage in produceAndPostSnapshot() completes.
+                state.awaitingAck = true;
+                produceAndPostSnapshot().catch((err) => {
+                    state.awaitingAck = false;
+                    stopInternalLoop();
+                    const msg = err instanceof Error ? err.message : String(err);
+                    postError(`Training snapshot error: ${msg}`);
+                });
+            }
         }
 
         // Yield to the event loop via MessageChannel — much lower latency
