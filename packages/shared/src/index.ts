@@ -45,12 +45,14 @@ export {
     isWorkerToMainMessage,
     isMainToWorkerCommand,
 } from './workerProtocol.js';
+export { structuralEqual } from './structural.js';
 export type {
     VisualizationDemand,
     SnapshotScalars,
     WorkerSnapshotMessage,
     WorkerStatusMessage,
     WorkerErrorMessage,
+    WorkerSharedBuffersMessage,
     WorkerToMainMessage,
     StartTrainingCommand,
     StopTrainingCommand,

@@ -62,17 +62,13 @@ describe('backward gradient check (finite differences)', () => {
 
             // Analytic gradients — run backward once, snapshot the
             // accumulated grads. backward() accumulates, so re-running per
-            // parameter would double-count.
+            // parameter would double-count. We read the grads through the
+            // network's public accessors, which materialise nested views of
+            // the packed Float32Array storage.
             net.forward(input);
             net.backward(target, combo.loss);
-            const internals = net as unknown as {
-                weightGrads: number[][][];
-                biasGrads: number[][];
-            };
-            const analyticWeightGrads = internals.weightGrads.map((layer) =>
-                layer.map((neuron) => neuron.slice()),
-            );
-            const analyticBiasGrads = internals.biasGrads.map((layer) => layer.slice());
+            const analyticWeightGrads = net.getWeightGrads();
+            const analyticBiasGrads = net.getBiasGrads();
 
             const weights = net.getWeights();
             const biases = net.getBiases();
@@ -80,19 +76,20 @@ describe('backward gradient check (finite differences)', () => {
             const eps = 1e-5;
             const tol = 1e-3;
 
-            // Weights
+            // Weights — perturb via setWeight so the change is reflected in
+            // the packed buffer used by forward(); restore after sampling.
             for (let l = 0; l < weights.length; l++) {
                 for (let n = 0; n < weights[l].length; n++) {
                     for (let w = 0; w < weights[l][n].length; w++) {
                         const original = weights[l][n][w];
 
-                        weights[l][n][w] = original + eps;
+                        net.setWeight(l, n, w, original + eps);
                         const lPlus = sampleLoss(net, input, target, combo.loss);
 
-                        weights[l][n][w] = original - eps;
+                        net.setWeight(l, n, w, original - eps);
                         const lMinus = sampleLoss(net, input, target, combo.loss);
 
-                        weights[l][n][w] = original;
+                        net.setWeight(l, n, w, original);
 
                         const numerical = (lPlus - lMinus) / (2 * eps);
                         const analytic = analyticWeightGrads[l][n][w];
@@ -105,18 +102,18 @@ describe('backward gradient check (finite differences)', () => {
                 }
             }
 
-            // Biases
+            // Biases — same pattern via setBias.
             for (let l = 0; l < biases.length; l++) {
                 for (let n = 0; n < biases[l].length; n++) {
                     const original = biases[l][n];
 
-                    biases[l][n] = original + eps;
+                    net.setBias(l, n, original + eps);
                     const lPlus = sampleLoss(net, input, target, combo.loss);
 
-                    biases[l][n] = original - eps;
+                    net.setBias(l, n, original - eps);
                     const lMinus = sampleLoss(net, input, target, combo.loss);
 
-                    biases[l][n] = original;
+                    net.setBias(l, n, original);
 
                     const numerical = (lPlus - lMinus) / (2 * eps);
                     const analytic = analyticBiasGrads[l][n];

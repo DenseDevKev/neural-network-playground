@@ -25,17 +25,30 @@ export interface VisualizationDemand {
     needLayerStats: boolean;
     /** Whether to evaluate the confusion matrix on the test set. */
     needConfusionMatrix: boolean;
-    /** How many training ticks between full test-set evaluations. */
+    /** How many snapshots between full test-set evaluations. */
     testEvalInterval: number;
+    /** How many snapshots between full train-set evaluations. Between these,
+     *  the worker reports a running EMA of the per-step batch loss instead
+     *  of the true dataset loss. */
+    trainEvalInterval: number;
+    /** How many snapshots between decision-boundary / neuron-grid rebuilds.
+     *  Between these, the previously-computed grids are reused. */
+    gridInterval: number;
 }
 
-/** Sensible defaults — everything visible, test eval every 10 ticks. */
+/**
+ * Sensible defaults — everything visible. Test-eval every 10 snapshots,
+ * train-eval every 5, grid every 2. Keeps the common case smooth while
+ * letting power users (or explicit UI toggles) dial the cadence down.
+ */
 export const DEFAULT_DEMAND: VisualizationDemand = {
     needDecisionBoundary: true,
     needNeuronGrids: true,
     needLayerStats: false,     // InspectionPanel starts collapsed
     needConfusionMatrix: true,
     testEvalInterval: 10,
+    trainEvalInterval: 5,
+    gridInterval: 2,
 };
 
 // ─────────────────────────────────────────────────────────
@@ -77,6 +90,18 @@ export interface WorkerSnapshotMessage {
 
     historyPoint: HistoryPoint;
     confusionMatrix?: ConfusionMatrixData;
+
+    /**
+     * When the worker is publishing heavy buffers (outputGrid, neuronGrids,
+     * weights, biases) via the shared-memory fast path, the corresponding
+     * message fields above are omitted and this value is the seqlock counter
+     * the main thread should observe after reading the SAB views. The main
+     * thread retries the read until the seq it observes at the start matches
+     * the seq at the end of the read (standard seqlock). If this field is
+     * absent, heavy buffers are either present inline on this message or
+     * reused from a previous frame (cadence gating).
+     */
+    sharedSeq?: number;
 }
 
 export interface WorkerStatusMessage {
@@ -91,10 +116,39 @@ export interface WorkerErrorMessage {
     message: string;
 }
 
+/**
+ * One-off handshake message sent by the worker whenever it has (re)allocated
+ * its SharedArrayBuffer-backed snapshot buffers — i.e. at init time, after a
+ * reset, and after any network shape change. The main thread installs views
+ * over these SABs into the frame buffer; subsequent snapshot messages carry
+ * only a `sharedSeq` counter, and the main thread reads the latest data
+ * directly out of these permanently-installed views.
+ *
+ * The control buffer layout (Int32Array view over `control`) is:
+ *   [0] seqStart  — incremented by the writer before any data write
+ *   [1] seqEnd    — stored with the same value after the data write
+ *   [2] flags     — bit 0: outputGrid valid, bit 1: neuronGrids valid
+ * Readers read seqEnd, then the data, then seqStart; if they differ the
+ * read observed a concurrent write and must retry.
+ */
+export interface WorkerSharedBuffersMessage {
+    type: 'sharedBuffers';
+    runId: number;
+    /** SAB for [seqStart, seqEnd, flags] control words. */
+    control: SharedArrayBuffer;
+    /** SAB for the decision-boundary grid, Float32Array of gridSize*gridSize. */
+    outputGrid: SharedArrayBuffer;
+    /** SAB for concatenated per-neuron activation grids, Float32Array. */
+    neuronGrids: SharedArrayBuffer;
+    gridSize: number;
+    neuronGridLayout: { count: number; gridSize: number };
+}
+
 export type WorkerToMainMessage =
     | WorkerSnapshotMessage
     | WorkerStatusMessage
-    | WorkerErrorMessage;
+    | WorkerErrorMessage
+    | WorkerSharedBuffersMessage;
 
 // ─────────────────────────────────────────────────────────
 // Main → Worker  (streaming commands via MessageChannel)
@@ -166,6 +220,21 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
             );
         case 'error':
             return typeof m['message'] === 'string';
+        case 'sharedBuffers':
+            // SharedArrayBuffer is a distinct global constructor; fall back to
+            // a truthy-object check in environments that don't expose it
+            // (tests, hosts without cross-origin isolation). We never *send*
+            // this message from such hosts, so accepting the fallback there
+            // only matters for symmetry.
+            return (
+                typeof m['gridSize'] === 'number' &&
+                m['control'] !== null &&
+                typeof m['control'] === 'object' &&
+                m['outputGrid'] !== null &&
+                typeof m['outputGrid'] === 'object' &&
+                m['neuronGrids'] !== null &&
+                typeof m['neuronGrids'] === 'object'
+            );
         default:
             return false;
     }

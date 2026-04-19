@@ -26,3 +26,13 @@ export {
 export type { FeatureSpec } from './features.js';
 export { initWeights, initBiases } from './initialization.js';
 export * from './types.js';
+
+// AS-4 — WebGPU grid predictor (capability-detected fallback to CPU).
+export {
+    WebGPUGridPredictor,
+    flattenGridInputs,
+    exceedsGpuShape,
+    MAX_GPU_WIDTH,
+    MAX_GPU_LAYERS,
+} from './webgpu/predictGridGPU.js';
+export { detectWebGPU, resetWebGPUDetectionCache } from './webgpu/detect.js';

@@ -1,5 +1,12 @@
 // ── Core dense feed-forward network ──
-// Fully transparent: every weight, bias, activation, and gradient is accessible.
+// Packed Float32Array storage for every hot-path buffer (weights, biases,
+// gradients, optimizer moments, activation scratch). All inner loops are
+// plain arithmetic over typed arrays — no nested number[][][] walking, no
+// per-step allocations, no polymorphic function-pointer dispatch over
+// activation/loss/optimizer objects. Behaviour and public API are
+// preserved: the nested accessors (`getWeights`, `getBiases`, `serialize`,
+// `getSnapshot` with `includeParams`) still return `number[][][]` /
+// `number[][]` for callers that expect the legacy shape.
 
 import type {
     NetworkConfig,
@@ -10,16 +17,136 @@ import type {
     Metrics,
     LossType,
     LayerStats,
+    ActivationType,
 } from './types.js';
-import { getActivation } from './activations.js';
 import { getLoss } from './losses.js';
-import { getOptimizer, createOptimizerState } from './optimizers.js';
-import type { OptimizerState, OptimizerHyperparams } from './optimizers.js';
 import { computeLearningRate } from './schedules.js';
-import { initWeights, initBiases } from './initialization.js';
+import { initWeightsInto, initBiasesInto } from './initialization.js';
 import { transformPoint } from './features.js';
 import type { FeatureSpec } from './features.js';
 import { PRNG } from './prng.js';
+
+// ── Activation kernels ──────────────────────────────────────────────────────
+// Each kernel is monomorphic — V8 sees exactly one shape at each call site
+// once the Network constructor has captured the appropriate reference.
+//
+// We store every parameter / gradient / scratch buffer as Float64Array so
+// forward/backward arithmetic matches the legacy float64 semantics. The
+// big wins (packed layout, zero per-step allocations, monomorphic dispatch,
+// fused gradient clip) don't depend on 32-bit storage — they come from
+// getting rid of nested number[] indirection.
+
+type Buf = Float64Array;
+type LayerActFn = (pre: Buf, out: Buf, n: number) => void;
+type LayerDActFn = (delta: Buf, pre: Buf, out: Buf, n: number) => void;
+
+function actRelu(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        const z = pre[i];
+        out[i] = z > 0 ? z : 0;
+    }
+}
+function actTanh(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) out[i] = Math.tanh(pre[i]);
+}
+function actSigmoid(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) out[i] = 1 / (1 + Math.exp(-pre[i]));
+}
+function actLinear(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) out[i] = pre[i];
+}
+function actLeakyRelu(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        const z = pre[i];
+        out[i] = z > 0 ? z : 0.01 * z;
+    }
+}
+function actElu(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        const z = pre[i];
+        out[i] = z >= 0 ? z : Math.exp(z) - 1;
+    }
+}
+function actSwish(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        const z = pre[i];
+        out[i] = z / (1 + Math.exp(-z));
+    }
+}
+function actSoftplus(pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) out[i] = Math.log(1 + Math.exp(pre[i]));
+}
+
+function pickAct(kind: ActivationType): LayerActFn {
+    switch (kind) {
+        case 'relu': return actRelu;
+        case 'tanh': return actTanh;
+        case 'sigmoid': return actSigmoid;
+        case 'linear': return actLinear;
+        case 'leakyRelu': return actLeakyRelu;
+        case 'elu': return actElu;
+        case 'swish': return actSwish;
+        case 'softplus': return actSoftplus;
+    }
+}
+
+// In-place element-wise multiplication of `delta` by the activation
+// derivative. This mirrors the semantics of activations.ts:
+//   relu/leakyRelu/elu use the output value (and, for elu, the pre-act);
+//   tanh/sigmoid use the output;
+//   swish/softplus need the pre-act to recover the sigmoid factor.
+
+function dActRelu(delta: Buf, _pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) if (out[i] <= 0) delta[i] = 0;
+}
+function dActTanh(delta: Buf, _pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        const o = out[i];
+        delta[i] *= 1 - o * o;
+    }
+}
+function dActSigmoid(delta: Buf, _pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        const o = out[i];
+        delta[i] *= o * (1 - o);
+    }
+}
+function dActLinear(_d: Buf, _p: Buf, _o: Buf, _n: number): void { /* identity */ }
+
+function dActLeakyRelu(delta: Buf, _pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) if (out[i] <= 0) delta[i] *= 0.01;
+}
+function dActElu(delta: Buf, pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        if (pre[i] < 0) delta[i] *= out[i] + 1;
+    }
+}
+function dActSwish(delta: Buf, pre: Buf, out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        const sig = 1 / (1 + Math.exp(-pre[i]));
+        delta[i] *= out[i] + sig * (1 - out[i]);
+    }
+}
+function dActSoftplus(delta: Buf, pre: Buf, _out: Buf, n: number): void {
+    for (let i = 0; i < n; i++) {
+        delta[i] *= 1 / (1 + Math.exp(-pre[i]));
+    }
+}
+
+function pickDAct(kind: ActivationType): LayerDActFn {
+    switch (kind) {
+        case 'relu': return dActRelu;
+        case 'tanh': return dActTanh;
+        case 'sigmoid': return dActSigmoid;
+        case 'linear': return dActLinear;
+        case 'leakyRelu': return dActLeakyRelu;
+        case 'elu': return dActElu;
+        case 'swish': return dActSwish;
+        case 'softplus': return dActSoftplus;
+    }
+}
+
+// ── Network ─────────────────────────────────────────────────────────────────
 
 export class Network {
     readonly config: NetworkConfig;
@@ -27,22 +154,38 @@ export class Network {
     // Layer dimensions: [inputSize, ...hiddenLayers, outputSize]
     private layerSizes: number[];
 
-    // weights[l][n][w] — layer l, neuron n, weight w (from prev layer neuron w)
-    private weights: number[][][];
-    // biases[l][n]
-    private biases: number[][];
+    // Packed weight / bias storage. One Float64Array per layer. Weights are
+    // stored row-major as [fanOut × fanIn]: `weights[l][n * fanIn + w]` is
+    // the weight from previous-layer neuron w into this-layer neuron n.
+    private weights: Float64Array[] = [];
+    private biases: Float64Array[] = [];
 
-    // Forward pass cache
-    private layerOutputs: number[][] = [];  // post-activation
-    private layerPreActs: number[][] = [];  // pre-activation
-    private input: number[] = [];
+    // Gradient accumulators — shaped identically to weights / biases.
+    private weightGrads: Float64Array[] = [];
+    private biasGrads: Float64Array[] = [];
 
-    // Gradient accumulators (accumulated over batch, then averaged)
-    private weightGrads: number[][][] = [];
-    private biasGrads: number[][] = [];
+    // Optimizer state. Allocated lazily on the first applyGradients call
+    // that actually needs it (SGD stays empty, momentum allocates `m*`,
+    // Adam additionally allocates `v*`).
+    private mWeights: Float64Array[] = [];
+    private mBiases: Float64Array[] = [];
+    private vWeights: Float64Array[] = [];
+    private vBiases: Float64Array[] = [];
+    private hasMomentumState = false;
+    private hasAdamState = false;
 
-    // Optimizer state
-    private optState: OptimizerState = [];
+    // Forward-pass scratch — preallocated once, reused every call.
+    private preActs: Float64Array[] = [];
+    private outputs: Float64Array[] = [];
+    private deltas: Float64Array[] = [];
+    private inputScratch: Float64Array;
+
+    // Monomorphic activation references — resolved once at construction.
+    private actFwdHidden: LayerActFn;
+    private actFwdOutput: LayerActFn;
+    private actDHidden: LayerDActFn;
+    private actDOutput: LayerDActFn;
+
     private currentStep = 0;
 
     constructor(config: NetworkConfig, seed?: number) {
@@ -55,334 +198,405 @@ export class Network {
             config.outputSize,
         ];
 
-        // Initialize weights and biases
-        this.weights = [];
-        this.biases = [];
         for (let l = 0; l < this.layerSizes.length - 1; l++) {
             const fanIn = this.layerSizes[l];
             const fanOut = this.layerSizes[l + 1];
-            this.weights.push(initWeights(fanIn, fanOut, config.weightInit, rng));
-            this.biases.push(initBiases(fanOut));
+            const w = new Float64Array(fanOut * fanIn);
+            initWeightsInto(w, fanIn, fanOut, config.weightInit, rng);
+            this.weights.push(w);
+
+            const b = new Float64Array(fanOut);
+            initBiasesInto(b);
+            this.biases.push(b);
+
+            this.weightGrads.push(new Float64Array(fanOut * fanIn));
+            this.biasGrads.push(new Float64Array(fanOut));
+
+            this.preActs.push(new Float64Array(fanOut));
+            this.outputs.push(new Float64Array(fanOut));
+            this.deltas.push(new Float64Array(fanOut));
         }
 
-        this.initGradients();
+        this.inputScratch = new Float64Array(config.inputSize);
+
+        this.actFwdHidden = pickAct(config.activation);
+        this.actFwdOutput = pickAct(config.outputActivation);
+        this.actDHidden = pickDAct(config.activation);
+        this.actDOutput = pickDAct(config.outputActivation);
     }
 
-    private initGradients(): void {
-        this.weightGrads = [];
-        this.biasGrads = [];
-        for (let l = 0; l < this.weights.length; l++) {
-            this.weightGrads.push(
-                this.weights[l].map((row) => new Array(row.length).fill(0)),
-            );
-            this.biasGrads.push(new Array(this.biases[l].length).fill(0));
-        }
-    }
+    // ── Forward ──────────────────────────────────────────────────────────────
 
-    /** Forward pass — returns output layer values. */
-    forward(input: number[]): number[] {
-        this.input = input;
-        this.layerOutputs = [];
-        this.layerPreActs = [];
-
-        let current = input;
+    /**
+     * Zero-copy forward pass. Writes pre-activations / post-activations
+     * into the network's scratch buffers and returns a view of the last
+     * layer's outputs. DO NOT mutate the returned array — it aliases
+     * internal state.
+     */
+    private forwardInto(input: ArrayLike<number>): Float64Array {
         const numLayers = this.weights.length;
+        const scratch = this.inputScratch;
+        const inLen = this.layerSizes[0];
+        for (let i = 0; i < inLen; i++) scratch[i] = input[i];
+
+        let prev: Float64Array = scratch;
+        let prevLen = inLen;
 
         for (let l = 0; l < numLayers; l++) {
-            const isOutput = l === numLayers - 1;
-            const activation = getActivation(
-                isOutput ? this.config.outputActivation : this.config.activation,
-            );
+            const fanOut = this.layerSizes[l + 1];
+            const w = this.weights[l];
+            const b = this.biases[l];
+            const pre = this.preActs[l];
+            const out = this.outputs[l];
 
-            const preActs: number[] = [];
-            const outputs: number[] = [];
-
-            const layerWeights = this.weights[l];
-            const layerBiases = this.biases[l];
-            for (let n = 0; n < layerWeights.length; n++) {
-                let sum = layerBiases[n];
-                const neuronWeights = layerWeights[n];
-                for (let w = 0, len = neuronWeights.length; w < len; w++) {
-                    sum += neuronWeights[w] * current[w];
-                }
-                preActs.push(sum);
-                outputs.push(activation.f(sum));
+            for (let n = 0; n < fanOut; n++) {
+                let sum = b[n];
+                const rowStart = n * prevLen;
+                for (let k = 0; k < prevLen; k++) sum += w[rowStart + k] * prev[k];
+                pre[n] = sum;
             }
 
-            this.layerPreActs.push(preActs);
-            this.layerOutputs.push(outputs);
-            current = outputs;
+            if (l === numLayers - 1) this.actFwdOutput(pre, out, fanOut);
+            else this.actFwdHidden(pre, out, fanOut);
+
+            prev = out;
+            prevLen = fanOut;
         }
 
-        return current;
+        return prev;
     }
 
-    /** Backward pass — accumulates gradients. */
+    /** Forward pass — returns a fresh number[] for the public API. */
+    forward(input: number[]): number[] {
+        const out = this.forwardInto(input);
+        const copy = new Array<number>(out.length);
+        for (let i = 0, n = out.length; i < n; i++) copy[i] = out[i];
+        return copy;
+    }
+
+    // ── Backward ─────────────────────────────────────────────────────────────
+
     backward(target: number[], lossType: LossType, huberDelta?: number): void {
         const lossFn = getLoss(lossType, { huberDelta });
+        const dloss = lossFn.dloss;
         const numLayers = this.weights.length;
+        const outIdx = numLayers - 1;
 
-        // Output layer deltas
-        const outputAct = getActivation(this.config.outputActivation);
-        const outputLayerOutputs = this.layerOutputs[numLayers - 1];
-        const outputLayerPreActs = this.layerPreActs[numLayers - 1];
-        let deltas: number[] = new Array(outputLayerOutputs.length);
-        for (let i = 0, len = outputLayerOutputs.length; i < len; i++) {
-            const o = outputLayerOutputs[i];
-            const dLoss = lossFn.dloss(o, target[i]);
-            const dAct = outputAct.df(outputLayerPreActs[i], o);
-            deltas[i] = dLoss * dAct;
+        // Seed output-layer delta = dloss(output, target).
+        const outputs = this.outputs[outIdx];
+        const outDelta = this.deltas[outIdx];
+        const outLen = outputs.length;
+        for (let i = 0; i < outLen; i++) {
+            outDelta[i] = dloss(outputs[i], target[i]);
         }
+        // Multiply by output activation derivative.
+        this.actDOutput(outDelta, this.preActs[outIdx], outputs, outLen);
 
-        // Backpropagate through layers
-        for (let l = numLayers - 1; l >= 0; l--) {
-            const prevOutput = l > 0 ? this.layerOutputs[l - 1] : this.input;
-            const layerWeights = this.weights[l];
-            const layerWeightGrads = this.weightGrads[l];
-            const layerBiasGrads = this.biasGrads[l];
+        // Walk backwards accumulating weight/bias grads and propagating delta.
+        for (let l = outIdx; l >= 0; l--) {
+            const fanOut = this.layerSizes[l + 1];
+            const fanIn = this.layerSizes[l];
+            const prevOut: Float64Array = l > 0 ? this.outputs[l - 1] : this.inputScratch;
+            const wg = this.weightGrads[l];
+            const bg = this.biasGrads[l];
+            const w = this.weights[l];
+            const dl = this.deltas[l];
 
-            for (let n = 0; n < deltas.length; n++) {
-                const delta = deltas[n];
-                layerBiasGrads[n] += delta;
-
-                const neuronWeights = layerWeights[n];
-                const neuronWeightGrads = layerWeightGrads[n];
-                for (let w = 0; w < neuronWeights.length; w++) {
-                    neuronWeightGrads[w] += delta * prevOutput[w];
-                }
+            // ∂L/∂W[l][n, k] += δ[l][n] · prevOut[k]
+            // ∂L/∂b[l][n]    += δ[l][n]
+            for (let n = 0; n < fanOut; n++) {
+                const d = dl[n];
+                bg[n] += d;
+                const rowStart = n * fanIn;
+                for (let k = 0; k < fanIn; k++) wg[rowStart + k] += d * prevOut[k];
             }
 
             if (l > 0) {
-                const act = getActivation(this.config.activation);
-                const newDeltas: number[] = new Array(this.layerSizes[l]).fill(0);
-                for (let n = 0; n < deltas.length; n++) {
-                    const delta = deltas[n];
-                    const neuronWeights = layerWeights[n];
-                    for (let w = 0; w < neuronWeights.length; w++) {
-                        newDeltas[w] += delta * neuronWeights[w];
-                    }
+                // Propagate: δ[l-1][k] = Σ_n δ[l][n] · w[l][n, k].
+                const prevDelta = this.deltas[l - 1];
+                for (let k = 0; k < fanIn; k++) prevDelta[k] = 0;
+                for (let n = 0; n < fanOut; n++) {
+                    const d = dl[n];
+                    const rowStart = n * fanIn;
+                    for (let k = 0; k < fanIn; k++) prevDelta[k] += d * w[rowStart + k];
                 }
-                deltas = newDeltas.map((d, i) =>
-                    d * act.df(this.layerPreActs[l - 1][i], this.layerOutputs[l - 1][i]),
-                );
+                // Then multiply by the hidden activation derivative in place.
+                this.actDHidden(prevDelta, this.preActs[l - 1], this.outputs[l - 1], fanIn);
             }
         }
     }
 
+    // ── Apply gradients ──────────────────────────────────────────────────────
+
     /**
-     * Apply accumulated gradients using the optimizer.
-     *
-     * Pipeline:
-     *   1. Average gradients in-place by batch size.
-     *   2. Apply global-norm gradient clipping (scales the whole gradient
-     *      vector by `clip / ‖g‖₂` when the norm exceeds `clip`). This
-     *      preserves gradient direction, unlike element-wise clipping.
-     *   3. Apply regularization + optimizer update per parameter.
+     * One-pass average → (optional clip) → optimizer update → zero grads.
+     * Global-norm gradient clipping fuses into the same sweep: the first
+     * pass averages in place and accumulates Σg² simultaneously; if the
+     * norm exceeds the clip, we apply a scale multiplier inside the
+     * optimizer kernel (still one extra pass over params, same as before
+     * but without the extra buffer copies).
      */
     applyGradients(training: TrainingConfig, batchSize: number): void {
-        const opt = getOptimizer(training.optimizer);
-
-        // Lazily create optimizer state (includes one bias slot per neuron).
-        if (this.optState.length === 0 && opt.stateSize > 0) {
-            const sizes = this.layerSizes.slice(1);
-            const prevSizes = this.layerSizes.slice(0, -1);
-            this.optState = createOptimizerState(sizes, prevSizes, opt.stateSize);
-        }
-
         const lr = computeLearningRate(training.learningRate, this.currentStep, training.lrSchedule);
-        const { gradientClip, regularization, regularizationRate } = training;
-        const optStateSize = opt.stateSize;
-        const hyper: OptimizerHyperparams = {
-            momentum: training.momentum,
-            beta1: training.adamBeta1,
-            beta2: training.adamBeta2,
-            eps: training.adamEps,
-        };
-        const scratch: number[] = optStateSize > 0 ? new Array(optStateSize).fill(0) : [];
+        const invB = 1 / batchSize;
 
-        // ── Pass 1: average gradients in place.
-        const invBatch = 1 / batchSize;
+        // Pass 1: average grads, accumulate squared norm.
+        let sqSum = 0;
         for (let l = 0; l < this.weightGrads.length; l++) {
-            const lBiasGrads = this.biasGrads[l];
-            const lWeightGrads = this.weightGrads[l];
-            for (let n = 0; n < lWeightGrads.length; n++) {
-                lBiasGrads[n] *= invBatch;
-                const nGrads = lWeightGrads[n];
-                for (let w = 0; w < nGrads.length; w++) {
-                    nGrads[w] *= invBatch;
-                }
+            const wg = this.weightGrads[l];
+            const bg = this.biasGrads[l];
+            for (let i = 0, n = wg.length; i < n; i++) {
+                const g = wg[i] * invB;
+                wg[i] = g;
+                sqSum += g * g;
+            }
+            for (let i = 0, n = bg.length; i < n; i++) {
+                const g = bg[i] * invB;
+                bg[i] = g;
+                sqSum += g * g;
             }
         }
 
-        // ── Pass 2: global-norm clipping.
-        if (gradientClip != null && gradientClip > 0) {
-            let sqSum = 0;
-            for (let l = 0; l < this.weightGrads.length; l++) {
-                const lBiasGrads = this.biasGrads[l];
-                const lWeightGrads = this.weightGrads[l];
-                for (let n = 0; n < lWeightGrads.length; n++) {
-                    const bg = lBiasGrads[n];
-                    sqSum += bg * bg;
-                    const nGrads = lWeightGrads[n];
-                    for (let w = 0; w < nGrads.length; w++) {
-                        const g = nGrads[w];
-                        sqSum += g * g;
-                    }
-                }
-            }
+        // Resolve global-norm clip scale. `scale === 1` is the common case
+        // and the optimizer kernels strip the multiply when that's true.
+        let scale = 1;
+        const clip = training.gradientClip;
+        if (clip != null && clip > 0) {
             const norm = Math.sqrt(sqSum);
-            if (norm > gradientClip) {
-                const scale = gradientClip / norm;
-                for (let l = 0; l < this.weightGrads.length; l++) {
-                    const lBiasGrads = this.biasGrads[l];
-                    const lWeightGrads = this.weightGrads[l];
-                    for (let n = 0; n < lWeightGrads.length; n++) {
-                        lBiasGrads[n] *= scale;
-                        const nGrads = lWeightGrads[n];
-                        for (let w = 0; w < nGrads.length; w++) {
-                            nGrads[w] *= scale;
-                        }
-                    }
-                }
-            }
+            if (norm > clip) scale = clip / norm;
         }
 
-        // ── Pass 3: regularization + optimizer update.
-        for (let l = 0; l < this.weights.length; l++) {
-            const lWeights = this.weights[l];
-            const lBiases = this.biases[l];
-            const lBiasGrads = this.biasGrads[l];
-            const lWeightGrads = this.weightGrads[l];
-            const lOptState = this.optState[l];
-            const fanIn = this.layerSizes[l];
-            const biasStateIdx = fanIn; // bias stored at the "+1" slot
-
-            for (let n = 0; n < lWeights.length; n++) {
-                // Bias — routed through the optimizer (no regularization on biases).
-                const bg = lBiasGrads[n];
-                if (optStateSize > 0) {
-                    for (let s = 0; s < optStateSize; s++) {
-                        scratch[s] = lOptState[s][n][biasStateIdx];
-                    }
-                    lBiases[n] = opt.update(lBiases[n], bg, lr, scratch, this.currentStep, hyper);
-                    for (let s = 0; s < optStateSize; s++) {
-                        lOptState[s][n][biasStateIdx] = scratch[s];
-                    }
-                } else {
-                    lBiases[n] = opt.update(lBiases[n], bg, lr, scratch, this.currentStep, hyper);
-                }
-
-                const nWeights = lWeights[n];
-                const nWeightGrads = lWeightGrads[n];
-
-                for (let w = 0; w < nWeights.length; w++) {
-                    let g = nWeightGrads[w];
-
-                    // Weight regularization (biases exempted).
-                    if (regularization === 'l1') {
-                        g += regularizationRate * Math.sign(nWeights[w]);
-                    } else if (regularization === 'l2') {
-                        g += regularizationRate * nWeights[w];
-                    }
-
-                    if (optStateSize > 0) {
-                        for (let s = 0; s < optStateSize; s++) {
-                            scratch[s] = lOptState[s][n][w];
-                        }
-                        nWeights[w] = opt.update(nWeights[w], g, lr, scratch, this.currentStep, hyper);
-                        for (let s = 0; s < optStateSize; s++) {
-                            lOptState[s][n][w] = scratch[s];
-                        }
-                    } else {
-                        nWeights[w] = opt.update(nWeights[w], g, lr, scratch, this.currentStep, hyper);
-                    }
-                }
-            }
+        // Pass 2: optimizer update.
+        switch (training.optimizer) {
+            case 'sgd':
+                this.stepSGD(lr, scale, training.regularization, training.regularizationRate);
+                break;
+            case 'sgdMomentum':
+                this.ensureMomentumState();
+                this.stepMomentum(
+                    lr, scale,
+                    training.regularization, training.regularizationRate,
+                    training.momentum ?? 0.9,
+                );
+                break;
+            case 'adam':
+                this.ensureAdamState();
+                this.stepAdam(
+                    lr, scale,
+                    training.regularization, training.regularizationRate,
+                    training.adamBeta1 ?? 0.9,
+                    training.adamBeta2 ?? 0.999,
+                    training.adamEps ?? 1e-8,
+                );
+                break;
         }
 
-        // Reset gradient accumulators.
-        this.zeroGradients();
+        // Zero-fill for the next batch.
+        for (let l = 0; l < this.weightGrads.length; l++) {
+            this.weightGrads[l].fill(0);
+            this.biasGrads[l].fill(0);
+        }
         this.currentStep++;
     }
 
-    private zeroGradients(): void {
-        for (let l = 0; l < this.weightGrads.length; l++) {
-            for (let n = 0; n < this.weightGrads[l].length; n++) {
-                this.biasGrads[l][n] = 0;
-                for (let w = 0; w < this.weightGrads[l][n].length; w++) {
-                    this.weightGrads[l][n][w] = 0;
+    private ensureMomentumState(): void {
+        if (this.hasMomentumState) return;
+        this.mWeights = this.weights.map((w) => new Float64Array(w.length));
+        this.mBiases = this.biases.map((b) => new Float64Array(b.length));
+        this.hasMomentumState = true;
+    }
+
+    private ensureAdamState(): void {
+        if (this.hasAdamState) return;
+        this.ensureMomentumState();
+        this.vWeights = this.weights.map((w) => new Float64Array(w.length));
+        this.vBiases = this.biases.map((b) => new Float64Array(b.length));
+        this.hasAdamState = true;
+    }
+
+    private stepSGD(
+        lr: number,
+        scale: number,
+        reg: 'none' | 'l1' | 'l2',
+        regRate: number,
+    ): void {
+        const scaleUnity = scale === 1;
+        for (let l = 0; l < this.weights.length; l++) {
+            const w = this.weights[l];
+            const b = this.biases[l];
+            const wg = this.weightGrads[l];
+            const bg = this.biasGrads[l];
+            const bn = b.length;
+
+            if (scaleUnity) {
+                for (let i = 0; i < bn; i++) b[i] -= lr * bg[i];
+            } else {
+                for (let i = 0; i < bn; i++) b[i] -= lr * bg[i] * scale;
+            }
+
+            const wn = w.length;
+            if (reg === 'l2') {
+                if (scaleUnity) {
+                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] + regRate * w[i]);
+                } else {
+                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] * scale + regRate * w[i]);
+                }
+            } else if (reg === 'l1') {
+                if (scaleUnity) {
+                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] + regRate * Math.sign(w[i]));
+                } else {
+                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] * scale + regRate * Math.sign(w[i]));
+                }
+            } else {
+                if (scaleUnity) {
+                    for (let i = 0; i < wn; i++) w[i] -= lr * wg[i];
+                } else {
+                    for (let i = 0; i < wn; i++) w[i] -= lr * wg[i] * scale;
                 }
             }
         }
     }
 
-    /**
-     * Train on one mini-batch. Returns the mean loss, averaged across all
-     * samples and output units.
-     */
-    trainBatch(
-        inputs: number[][],
-        targets: number[][],
-        training: TrainingConfig,
-    ): number {
+    private stepMomentum(
+        lr: number,
+        scale: number,
+        reg: 'none' | 'l1' | 'l2',
+        regRate: number,
+        mom: number,
+    ): void {
+        for (let l = 0; l < this.weights.length; l++) {
+            const w = this.weights[l];
+            const b = this.biases[l];
+            const wg = this.weightGrads[l];
+            const bg = this.biasGrads[l];
+            const mw = this.mWeights[l];
+            const mb = this.mBiases[l];
+
+            const bn = b.length;
+            for (let i = 0; i < bn; i++) {
+                const g = bg[i] * scale;
+                const m = mom * mb[i] + g;
+                mb[i] = m;
+                b[i] -= lr * m;
+            }
+
+            const wn = w.length;
+            for (let i = 0; i < wn; i++) {
+                let g = wg[i] * scale;
+                if (reg === 'l2') g += regRate * w[i];
+                else if (reg === 'l1') g += regRate * Math.sign(w[i]);
+                const m = mom * mw[i] + g;
+                mw[i] = m;
+                w[i] -= lr * m;
+            }
+        }
+    }
+
+    private stepAdam(
+        lr: number,
+        scale: number,
+        reg: 'none' | 'l1' | 'l2',
+        regRate: number,
+        beta1: number,
+        beta2: number,
+        eps: number,
+    ): void {
+        // Bias-corrected step counter starts at 1 on the first call
+        // (matches legacy behaviour: `step + 1` inside the old optimizer).
+        const step = this.currentStep + 1;
+        const b1c = 1 - Math.pow(beta1, step);
+        const b2c = 1 - Math.pow(beta2, step);
+        const oneMinusB1 = 1 - beta1;
+        const oneMinusB2 = 1 - beta2;
+
+        for (let l = 0; l < this.weights.length; l++) {
+            const w = this.weights[l];
+            const b = this.biases[l];
+            const wg = this.weightGrads[l];
+            const bg = this.biasGrads[l];
+            const mw = this.mWeights[l];
+            const mb = this.mBiases[l];
+            const vw = this.vWeights[l];
+            const vb = this.vBiases[l];
+
+            const bn = b.length;
+            for (let i = 0; i < bn; i++) {
+                const g = bg[i] * scale;
+                const m = beta1 * mb[i] + oneMinusB1 * g;
+                mb[i] = m;
+                const v = beta2 * vb[i] + oneMinusB2 * g * g;
+                vb[i] = v;
+                const mHat = m / b1c;
+                const vHat = v / b2c;
+                b[i] -= lr * mHat / (Math.sqrt(vHat) + eps);
+            }
+
+            const wn = w.length;
+            for (let i = 0; i < wn; i++) {
+                let g = wg[i] * scale;
+                if (reg === 'l2') g += regRate * w[i];
+                else if (reg === 'l1') g += regRate * Math.sign(w[i]);
+                const m = beta1 * mw[i] + oneMinusB1 * g;
+                mw[i] = m;
+                const v = beta2 * vw[i] + oneMinusB2 * g * g;
+                vw[i] = v;
+                const mHat = m / b1c;
+                const vHat = v / b2c;
+                w[i] -= lr * mHat / (Math.sqrt(vHat) + eps);
+            }
+        }
+    }
+
+    // ── Mini-batch train ─────────────────────────────────────────────────────
+
+    trainBatch(inputs: number[][], targets: number[][], training: TrainingConfig): number {
         const lossFn = getLoss(training.lossType, { huberDelta: training.huberDelta });
+        const lossScalar = lossFn.loss;
         let totalLoss = 0;
         let count = 0;
 
-        for (let i = 0; i < inputs.length; i++) {
-            const output = this.forward(inputs[i]);
-            this.backward(targets[i], training.lossType, training.huberDelta);
-            const tgt = targets[i];
-            for (let o = 0, outLen = output.length; o < outLen; o++) {
-                totalLoss += lossFn.loss(output[o], tgt[o]);
+        for (let s = 0, B = inputs.length; s < B; s++) {
+            const out = this.forwardInto(inputs[s]);
+            const tgt = targets[s];
+            for (let o = 0, n = out.length; o < n; o++) {
+                totalLoss += lossScalar(out[o], tgt[o]);
                 count++;
             }
+            this.backward(tgt, training.lossType, training.huberDelta);
         }
 
         this.applyGradients(training, inputs.length);
         return count > 0 ? totalLoss / count : 0;
     }
 
-    /** Predict a single input (no gradient tracking). */
+    // ── Predict helpers ──────────────────────────────────────────────────────
+
     predict(input: number[]): number[] {
         return this.forward(input);
     }
 
-    /** Predict a batch. */
     predictBatch(inputs: number[][]): number[][] {
         return inputs.map((inp) => this.forward(inp));
     }
 
-    /**
-     * Compute predictions over a regular grid for heatmap rendering.
-     * Returns predictions as a flat array.
-     */
-    predictGrid(
-        gridInputs: number[][],
-    ): Float32Array {
+    predictGrid(gridInputs: number[][]): Float32Array {
         const len = gridInputs.length;
         const res = new Float32Array(len);
         for (let i = 0; i < len; i++) {
-            res[i] = this.forward(gridInputs[i])[0];
+            res[i] = this.forwardInto(gridInputs[i])[0];
         }
         return res;
     }
 
-    /**
-     * Predict grid and collect per-neuron activations for mini heatmaps.
-     * Returns { outputGrid, neuronGrids } where neuronGrids is a flat array
-     * indexed as [layerIndex][neuronIndex] = Float32Array(gridSize * gridSize).
-     */
     predictGridWithNeurons(
         gridInputs: number[][],
     ): { outputGrid: Float32Array; neuronGrids: Float32Array[] } {
         const numLayers = this.weights.length;
         const gridLen = gridInputs.length;
 
-        // Initialize neuronGrids: one Float32Array per neuron
         const neuronGrids: Float32Array[] = [];
         for (let l = 0; l < numLayers; l++) {
-            for (let n = 0; n < this.weights[l].length; n++) {
+            for (let n = 0; n < this.layerSizes[l + 1]; n++) {
                 neuronGrids.push(new Float32Array(gridLen));
             }
         }
@@ -390,14 +604,14 @@ export class Network {
         const outputGrid = new Float32Array(gridLen);
 
         for (let i = 0; i < gridLen; i++) {
-            const output = this.forward(gridInputs[i]);
-            outputGrid[i] = output[0];
+            const out = this.forwardInto(gridInputs[i]);
+            outputGrid[i] = out[0];
 
-            // Collect per-neuron activations
             let idx = 0;
             for (let l = 0; l < numLayers; l++) {
-                for (let n = 0; n < this.layerOutputs[l].length; n++) {
-                    neuronGrids[idx][i] = this.layerOutputs[l][n];
+                const layerOut = this.outputs[l];
+                for (let n = 0, len = layerOut.length; n < len; n++) {
+                    neuronGrids[idx][i] = layerOut[n];
                     idx++;
                 }
             }
@@ -406,98 +620,72 @@ export class Network {
         return { outputGrid, neuronGrids };
     }
 
-    /**
-     * Predict grid and write results directly into a pre-allocated Float32Array.
-     * This avoids creating intermediate number[] arrays.
-     */
-    predictGridInto(
-        gridInputs: number[][],
-        target: Float32Array,
-    ): void {
-        for (let i = 0; i < gridInputs.length; i++) {
-            target[i] = this.forward(gridInputs[i])[0];
+    predictGridInto(gridInputs: number[][], target: Float32Array | Float64Array): void {
+        for (let i = 0, len = gridInputs.length; i < len; i++) {
+            target[i] = this.forwardInto(gridInputs[i])[0];
         }
     }
 
-    /**
-     * Predict grid + per-neuron activations, writing directly into Float32Arrays.
-     * `outputTarget` receives the output predictions.
-     * `neuronTarget` receives all neuron activations, flattened layer-by-layer.
-     */
     predictGridWithNeuronsInto(
         gridInputs: number[][],
-        outputTarget: Float32Array,
-        neuronTarget: Float32Array,
+        outputTarget: Float32Array | Float64Array,
+        neuronTarget: Float32Array | Float64Array,
     ): void {
         const numLayers = this.weights.length;
+        const gridLen = gridInputs.length;
 
-        for (let i = 0; i < gridInputs.length; i++) {
-            const output = this.forward(gridInputs[i]);
-            outputTarget[i] = output[0];
+        for (let i = 0; i < gridLen; i++) {
+            const out = this.forwardInto(gridInputs[i]);
+            outputTarget[i] = out[0];
 
-            // Write per-neuron activations at offset: neuronIndex * gridLength + gridPosition
             let neuronIdx = 0;
             for (let l = 0; l < numLayers; l++) {
-                for (let n = 0; n < this.layerOutputs[l].length; n++) {
-                    neuronTarget[neuronIdx * gridInputs.length + i] = this.layerOutputs[l][n];
+                const layerOut = this.outputs[l];
+                for (let n = 0, len = layerOut.length; n < len; n++) {
+                    neuronTarget[neuronIdx * gridLen + i] = layerOut[n];
                     neuronIdx++;
                 }
             }
         }
     }
 
-    /**
-     * Pack all weights into a flat Float32Array (row-major, layer by layer).
-     * Returns { buffer, layerSizes } where layerSizes = [inputSize, h1, h2, ..., outputSize].
-     */
+    // ── Flat accessors (preferred; zero-copy where possible) ────────────────
+
+    // The wire-format to the main thread stays Float32Array: the UI only
+    // renders 3 decimals of precision, and halving the transferable size
+    // matters more than extra mantissa bits for display-only payloads.
     getWeightsFlat(): { buffer: Float32Array; layerSizes: number[] } {
-        let totalWeights = 0;
-        for (const layer of this.weights) {
-            for (const neuron of layer) {
-                totalWeights += neuron.length;
-            }
-        }
-        const buffer = new Float32Array(totalWeights);
-        let offset = 0;
-        for (const layer of this.weights) {
-            for (const neuron of layer) {
-                buffer.set(neuron, offset);
-                offset += neuron.length;
-            }
+        let total = 0;
+        for (const w of this.weights) total += w.length;
+        const buffer = new Float32Array(total);
+        let off = 0;
+        for (const w of this.weights) {
+            buffer.set(w, off);
+            off += w.length;
         }
         return { buffer, layerSizes: [...this.layerSizes] };
     }
 
-    /**
-     * Pack all biases into a flat Float32Array (layer by layer).
-     */
     getBiasesFlat(): Float32Array {
-        let totalBiases = 0;
-        for (const layer of this.biases) {
-            totalBiases += layer.length;
-        }
-        const buffer = new Float32Array(totalBiases);
-        let offset = 0;
-        for (const layer of this.biases) {
-            buffer.set(layer, offset);
-            offset += layer.length;
+        let total = 0;
+        for (const b of this.biases) total += b.length;
+        const buffer = new Float32Array(total);
+        let off = 0;
+        for (const b of this.biases) {
+            buffer.set(b, off);
+            off += b.length;
         }
         return buffer;
     }
 
-    /**
-     * Count total neurons across all hidden + output layers.
-     */
     getTotalNeuronCount(): number {
         let count = 0;
-        for (const layer of this.weights) {
-            count += layer.length;
-        }
+        for (let l = 0; l < this.weights.length; l++) count += this.layerSizes[l + 1];
         return count;
     }
 
+    // ── Evaluate ─────────────────────────────────────────────────────────────
 
-    /** Evaluate loss+accuracy on a dataset. */
     evaluate(
         inputs: number[][],
         targets: number[][],
@@ -506,57 +694,56 @@ export class Network {
         huberDelta?: number,
     ): Metrics {
         const lossFn = getLoss(lossType, { huberDelta });
-        const predsAll: number[][] = inputs.map((inp) => this.forward(inp).slice());
+        const lossScalar = lossFn.loss;
+        const N = inputs.length;
 
-        // Loss is averaged across (samples × output units).
         let lossSum = 0;
         let lossCount = 0;
-        for (let i = 0; i < predsAll.length; i++) {
-            const pred = predsAll[i];
-            const tgt = targets[i];
-            for (let o = 0, outLen = pred.length; o < outLen; o++) {
-                lossSum += lossFn.loss(pred[o], tgt[o]);
-                lossCount++;
-            }
-        }
-        const loss = lossCount > 0 ? lossSum / lossCount : 0;
 
-        // Single-output classification: accuracy + confusion matrix.
+        // Intentionally route through `this.forward(...)` — NOT the private
+        // `forwardInto` — so that tests can stub `net.forward` via
+        // `vi.spyOn(net, 'forward').mockImplementation(...)` and see the
+        // stub take effect here as well. Train batches bypass this method
+        // entirely via forwardInto, so the extra number[] allocation per
+        // sample here is confined to the (cadence-gated) evaluation path.
         if (problemType === 'classification' && this.config.outputSize === 1) {
             let correct = 0;
-            let tp = 0;
-            let tn = 0;
-            let fp = 0;
-            let fn = 0;
-
-            for (let i = 0; i < predsAll.length; i++) {
-                const predClass = predsAll[i][0] >= 0.5 ? 1 : 0;
-                const tgtClass = targets[i][0];
-
+            let tp = 0, tn = 0, fp = 0, fn = 0;
+            for (let i = 0; i < N; i++) {
+                const pred = this.forward(inputs[i]);
+                const tgt = targets[i];
+                for (let o = 0, outLen = pred.length; o < outLen; o++) {
+                    lossSum += lossScalar(pred[o], tgt[o]);
+                    lossCount++;
+                }
+                const predClass = pred[0] >= 0.5 ? 1 : 0;
+                const tgtClass = tgt[0];
                 if (predClass === tgtClass) correct++;
-
                 if (predClass === 1 && tgtClass === 1) tp++;
                 else if (predClass === 0 && tgtClass === 0) tn++;
                 else if (predClass === 1 && tgtClass === 0) fp++;
                 else if (predClass === 0 && tgtClass === 1) fn++;
             }
             return {
-                loss,
-                accuracy: predsAll.length > 0 ? correct / predsAll.length : 0,
+                loss: lossCount > 0 ? lossSum / lossCount : 0,
+                accuracy: N > 0 ? correct / N : 0,
                 confusionMatrix: { tp, tn, fp, fn },
             };
         }
 
-        // Multi-output classification: argmax accuracy (if targets are class indices).
         if (problemType === 'classification') {
             let correct = 0;
-            for (let i = 0; i < predsAll.length; i++) {
-                const pred = predsAll[i];
+            for (let i = 0; i < N; i++) {
+                const pred = this.forward(inputs[i]);
+                const tgt = targets[i];
+                for (let o = 0, outLen = pred.length; o < outLen; o++) {
+                    lossSum += lossScalar(pred[o], tgt[o]);
+                    lossCount++;
+                }
                 let maxIdx = 0;
                 for (let o = 1; o < pred.length; o++) {
                     if (pred[o] > pred[maxIdx]) maxIdx = o;
                 }
-                const tgt = targets[i];
                 let tgtIdx = 0;
                 for (let o = 1; o < tgt.length; o++) {
                     if (tgt[o] > tgt[tgtIdx]) tgtIdx = o;
@@ -564,23 +751,25 @@ export class Network {
                 if (maxIdx === tgtIdx) correct++;
             }
             return {
-                loss,
-                accuracy: predsAll.length > 0 ? correct / predsAll.length : 0,
+                loss: lossCount > 0 ? lossSum / lossCount : 0,
+                accuracy: N > 0 ? correct / N : 0,
             };
         }
 
-        return { loss };
+        // Regression.
+        for (let i = 0; i < N; i++) {
+            const pred = this.forward(inputs[i]);
+            const tgt = targets[i];
+            for (let o = 0, outLen = pred.length; o < outLen; o++) {
+                lossSum += lossScalar(pred[o], tgt[o]);
+                lossCount++;
+            }
+        }
+        return { loss: lossCount > 0 ? lossSum / lossCount : 0 };
     }
 
-    /**
-     * Generate a snapshot for the UI to render.
-     *
-     * By default, weights and biases are deep-copied into the snapshot so that
-     * callers (code export, serialisation, unit tests) can mutate freely.
-     * Pass `includeParams: false` to skip the copies on hot paths; the snapshot
-     * will have empty `weights`/`biases` arrays and the caller is expected to
-     * obtain flat buffers through `getWeightsFlat()` / `getBiasesFlat()`.
-     */
+    // ── Snapshot / inspection / (de)serialization ───────────────────────────
+
     getSnapshot(
         step: number,
         epoch: number,
@@ -602,10 +791,8 @@ export class Network {
         return {
             step,
             epoch,
-            weights: includeParams
-                ? this.weights.map((l) => l.map((n) => [...n]))
-                : [],
-            biases: includeParams ? this.biases.map((l) => [...l]) : [],
+            weights: includeParams ? this.getWeights() : [],
+            biases: includeParams ? this.getBiases() : [],
             trainLoss: trainMetrics.loss,
             testLoss: testMetrics.loss,
             trainMetrics,
@@ -616,101 +803,182 @@ export class Network {
         };
     }
 
-    /** Get raw weights (for inspection). */
+    /** Nested view of the weights — reconstructed from the packed buffers. */
     getWeights(): number[][][] {
-        return this.weights;
+        const out: number[][][] = [];
+        for (let l = 0; l < this.weights.length; l++) {
+            const fanIn = this.layerSizes[l];
+            const fanOut = this.layerSizes[l + 1];
+            const w = this.weights[l];
+            const layer: number[][] = [];
+            for (let n = 0; n < fanOut; n++) {
+                const row = new Array<number>(fanIn);
+                const rowStart = n * fanIn;
+                for (let k = 0; k < fanIn; k++) row[k] = w[rowStart + k];
+                layer.push(row);
+            }
+            out.push(layer);
+        }
+        return out;
     }
 
-    /** Get raw biases. */
+    /** Nested view of the biases — copied out of the packed buffer. */
     getBiases(): number[][] {
-        return this.biases;
+        const out: number[][] = [];
+        for (const b of this.biases) {
+            const row = new Array<number>(b.length);
+            for (let i = 0; i < b.length; i++) row[i] = b[i];
+            out.push(row);
+        }
+        return out;
     }
 
-    /** Get the current step count. */
     getStep(): number {
         return this.currentStep;
     }
 
-    /** Compute per-layer statistics for the inspection panel. */
+    /** Read a single weight. Useful for tests and gradient checks that need
+     *  to inspect individual parameters without reifying the full nested
+     *  weight array. `layerIdx` indexes the layer-to-layer matrix (0 for
+     *  input→first-hidden, etc.). */
+    getWeight(layerIdx: number, neuronIdx: number, prevIdx: number): number {
+        const fanIn = this.layerSizes[layerIdx];
+        return this.weights[layerIdx][neuronIdx * fanIn + prevIdx];
+    }
+
+    /** Write a single weight in place. The change is visible to the next
+     *  `forward` / `forwardInto` call. Used by finite-difference gradient
+     *  checks that need to perturb one parameter at a time. */
+    setWeight(layerIdx: number, neuronIdx: number, prevIdx: number, value: number): void {
+        const fanIn = this.layerSizes[layerIdx];
+        this.weights[layerIdx][neuronIdx * fanIn + prevIdx] = value;
+    }
+
+    getBias(layerIdx: number, neuronIdx: number): number {
+        return this.biases[layerIdx][neuronIdx];
+    }
+
+    setBias(layerIdx: number, neuronIdx: number, value: number): void {
+        this.biases[layerIdx][neuronIdx] = value;
+    }
+
+    /** Nested view of the current weight gradients. Used by gradient_check
+     *  tests and any external diagnostic that wants to inspect the most
+     *  recent backward pass without touching the packed internals. */
+    getWeightGrads(): number[][][] {
+        const out: number[][][] = [];
+        for (let l = 0; l < this.weightGrads.length; l++) {
+            const fanIn = this.layerSizes[l];
+            const fanOut = this.layerSizes[l + 1];
+            const wg = this.weightGrads[l];
+            const layer: number[][] = [];
+            for (let n = 0; n < fanOut; n++) {
+                const row = new Array<number>(fanIn);
+                const rowStart = n * fanIn;
+                for (let k = 0; k < fanIn; k++) row[k] = wg[rowStart + k];
+                layer.push(row);
+            }
+            out.push(layer);
+        }
+        return out;
+    }
+
+    getBiasGrads(): number[][] {
+        const out: number[][] = [];
+        for (const bg of this.biasGrads) {
+            const row = new Array<number>(bg.length);
+            for (let i = 0; i < bg.length; i++) row[i] = bg[i];
+            out.push(row);
+        }
+        return out;
+    }
+
     getLayerStats(): LayerStats[] {
         const stats: LayerStats[] = [];
         for (let l = 0; l < this.weights.length; l++) {
-            // Mean absolute weight
-            let sumAbsW = 0, countW = 0;
-            for (const neuron of this.weights[l]) {
-                for (const w of neuron) {
-                    sumAbsW += Math.abs(w);
-                    countW++;
-                }
-            }
-            const meanAbsWeight = countW > 0 ? sumAbsW / countW : 0;
+            // Mean |w|
+            let sumAbsW = 0;
+            const w = this.weights[l];
+            for (let i = 0; i < w.length; i++) sumAbsW += Math.abs(w[i]);
+            const meanAbsWeight = w.length > 0 ? sumAbsW / w.length : 0;
 
-            // Mean absolute gradient
-            let sumAbsG = 0, countG = 0;
-            if (this.weightGrads[l]) {
-                for (const neuron of this.weightGrads[l]) {
-                    for (const g of neuron) {
-                        sumAbsG += Math.abs(g);
-                        countG++;
-                    }
-                }
-            }
-            const meanAbsGradient = countG > 0 ? sumAbsG / countG : 0;
+            // Mean |g|
+            let sumAbsG = 0;
+            const wg = this.weightGrads[l];
+            for (let i = 0; i < wg.length; i++) sumAbsG += Math.abs(wg[i]);
+            const meanAbsGradient = wg.length > 0 ? sumAbsG / wg.length : 0;
 
-            // Activation stats (from most recent forward pass)
-            let meanActivation = 0, activationStd = 0;
-            if (this.layerOutputs[l]) {
-                const acts = this.layerOutputs[l];
-                const n = acts.length;
-                meanActivation = acts.reduce((a, b) => a + b, 0) / n;
-                activationStd = Math.sqrt(
-                    acts.reduce((a, b) => a + (b - meanActivation) ** 2, 0) / n,
-                );
+            // Activation stats over the most recent forward pass.
+            const acts = this.outputs[l];
+            const len = acts.length;
+            let sum = 0;
+            for (let i = 0; i < len; i++) sum += acts[i];
+            const meanActivation = len > 0 ? sum / len : 0;
+            let sumSq = 0;
+            for (let i = 0; i < len; i++) {
+                const d = acts[i] - meanActivation;
+                sumSq += d * d;
             }
+            const activationStd = len > 0 ? Math.sqrt(sumSq / len) : 0;
 
             stats.push({ meanActivation, activationStd, meanAbsWeight, meanAbsGradient });
         }
         return stats;
     }
 
-    /** Reset the network with a new seed, clearing optimizer state. */
+    /** Re-initialize weights/biases from the configured seed (or a new one)
+     *  and clear all optimizer state + step counter. */
     reset(seed?: number): void {
         const rng = new PRNG(seed ?? this.config.seed);
         for (let l = 0; l < this.weights.length; l++) {
             const fanIn = this.layerSizes[l];
             const fanOut = this.layerSizes[l + 1];
-            this.weights[l] = initWeights(fanIn, fanOut, this.config.weightInit, rng);
-            this.biases[l] = initBiases(fanOut);
+            initWeightsInto(this.weights[l], fanIn, fanOut, this.config.weightInit, rng);
+            initBiasesInto(this.biases[l]);
+            this.weightGrads[l].fill(0);
+            this.biasGrads[l].fill(0);
         }
-        this.initGradients();
-        this.optState = [];
+        this.hasMomentumState = false;
+        this.hasAdamState = false;
+        this.mWeights = [];
+        this.mBiases = [];
+        this.vWeights = [];
+        this.vBiases = [];
         this.currentStep = 0;
     }
 
-    /** Serialize the network for save/restore. */
     serialize(): SerializedNetwork {
         return {
             config: { ...this.config },
-            weights: this.weights.map((l) => l.map((n) => [...n])),
-            biases: this.biases.map((l) => [...l]),
+            weights: this.getWeights(),
+            biases: this.getBiases(),
         };
     }
 
-    /** Restore a network from serialized data. */
     static deserialize(data: SerializedNetwork): Network {
         const net = new Network(data.config);
-        net.weights = data.weights.map((l) => l.map((n) => [...n]));
-        net.biases = data.biases.map((l) => [...l]);
+        for (let l = 0; l < net.weights.length; l++) {
+            const fanIn = net.layerSizes[l];
+            const fanOut = net.layerSizes[l + 1];
+            const packed = net.weights[l];
+            const layer = data.weights[l];
+            for (let n = 0; n < fanOut; n++) {
+                const row = layer[n];
+                const rowStart = n * fanIn;
+                for (let k = 0; k < fanIn; k++) packed[rowStart + k] = row[k];
+            }
+            const bSrc = data.biases[l];
+            const bDst = net.biases[l];
+            for (let i = 0; i < bDst.length; i++) bDst[i] = bSrc[i];
+        }
         return net;
     }
 }
 
-// ── Utility: build the prediction grid inputs ──
+// ── Utility: build the prediction grid inputs ──────────────────────────────
+// Unchanged from the legacy implementation — still returns number[][] so
+// consumers (including the worker) see the same interface.
 
-/**
- * Generate a regular grid of (x, y) coords in [-1, 1]² and transform
- * them through the active features. Returns feature-transformed inputs.
- */
 export function buildGridInputs(
     gridSize: number,
     activeFeatures: FeatureSpec[],
@@ -719,7 +987,7 @@ export function buildGridInputs(
     for (let gy = 0; gy < gridSize; gy++) {
         for (let gx = 0; gx < gridSize; gx++) {
             const x = -1 + (2 * gx) / (gridSize - 1);
-            const y = 1 - (2 * gy) / (gridSize - 1); // flip y for canvas coords
+            const y = 1 - (2 * gy) / (gridSize - 1);
             inputs.push(transformPoint(x, y, activeFeatures));
         }
     }

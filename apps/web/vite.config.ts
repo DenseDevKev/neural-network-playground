@@ -1,6 +1,17 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Cross-origin isolation headers are required for SharedArrayBuffer to be
+// available to the app (AS-3 snapshot fast path). When the headers are
+// absent, the app still works — the worker falls back to postMessage
+// transferables. Applied to both dev server and preview; production
+// hosting must set these headers separately (GH Pages cannot — SAB path
+// will transparently disable itself there).
+const crossOriginIsolationHeaders = {
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Embedder-Policy': 'require-corp',
+};
+
 export default defineConfig(({ mode }) => ({
     plugins: [react()],
     // Use hash-based routing, so base can be set for GH Pages subdirectory
@@ -10,6 +21,12 @@ export default defineConfig(({ mode }) => ({
     },
     optimizeDeps: {
         include: ['comlink'],
+    },
+    server: {
+        headers: crossOriginIsolationHeaders,
+    },
+    preview: {
+        headers: crossOriginIsolationHeaders,
     },
     build: {
         target: 'es2022',

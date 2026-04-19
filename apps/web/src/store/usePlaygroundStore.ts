@@ -34,6 +34,28 @@ import {
     decodeUrlState,
 } from '@nn-playground/shared';
 
+/**
+ * UI-only renderer feature flags. These do not affect the engine, only how
+ * the React UI draws certain visualizations. Each flag controls a runtime
+ * pick between an optimized implementation and a known-good fallback so a
+ * regression in either renderer can be flipped off without a redeploy.
+ */
+export interface FeaturesUI {
+    /** Use the canvas-based NetworkGraph renderer (AS-5). When false, the
+     *  legacy SVG implementation renders. */
+    canvasNetworkGraph: boolean;
+    /** Use the WebGPU decision-boundary grid predictor (AS-4). When false,
+     *  the worker uses the CPU `Network.predictGridInto` path. Capability
+     *  detection still gates this — flipping it on does not bypass the
+     *  device check. */
+    webgpuGrid: boolean;
+}
+
+const DEFAULT_FEATURES_UI: FeaturesUI = {
+    canvasNetworkGraph: true,
+    webgpuGrid: true,
+};
+
 export interface PlaygroundStore {
     // ── Config ──
     network: NetworkConfig;
@@ -41,6 +63,7 @@ export interface PlaygroundStore {
     data: DataConfig;
     features: FeatureFlags;
     ui: UIConfig;
+    featuresUI: FeaturesUI;
 
     // ── Visualization Demand ──
     demand: VisualizationDemand;
@@ -68,6 +91,7 @@ export interface PlaygroundStore {
     setShowTestData: (show: boolean) => void;
     setDiscretize: (d: boolean) => void;
     setDemand: (demand: VisualizationDemand) => void;
+    setFeatureUI: <K extends keyof FeaturesUI>(key: K, value: FeaturesUI[K]) => void;
     regenerateData: () => void;
     applyPreset: (preset: Preset) => void;
     getConfig: () => AppConfig;
@@ -134,6 +158,10 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         data: initial.data,
         features: initial.features,
         ui: initial.ui,
+        // UI-only renderer toggles. Persisted only in memory — not encoded
+        // into the URL hash, since they describe browser capability not
+        // shared playground state.
+        featuresUI: { ...DEFAULT_FEATURES_UI },
 
         // Visualization demand
         demand: { ...DEFAULT_DEMAND },
@@ -241,6 +269,10 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         })),
 
         setDemand: (demand) => set({ demand }),
+
+        setFeatureUI: (key, value) => set((s) => ({
+            featuresUI: { ...s.featuresUI, [key]: value },
+        })),
 
         regenerateData: () => {
             const s = get();

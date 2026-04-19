@@ -198,3 +198,56 @@ export function extractNeuronGrid(
     const start = neuronIndex * gridLength;
     return neuronGrids.subarray(start, start + gridLength);
 }
+
+// ── Flat-buffer offset helpers ─────────────────────────────────────────────
+// `layerSizes` is [inputSize, h1, ..., outputSize]. Layer index `l` refers
+// to the weight matrix mapping layer l → layer l+1 (so l ranges over
+// 0..layerSizes.length-2). These helpers let UI components read the packed
+// weight / bias Float32Arrays emitted by the worker without unflattening
+// into nested number[][][] arrays on every frame.
+
+/** Start offset (in weights buffer) of the weight row for a given layer. */
+export function layerWeightOffset(layerSizes: number[], layerIdx: number): number {
+    let offset = 0;
+    for (let l = 0; l < layerIdx; l++) {
+        offset += layerSizes[l] * layerSizes[l + 1];
+    }
+    return offset;
+}
+
+/** Read a single weight from the flat buffer.
+ *  `layerIdx` is the *source* layer (weights between layer `layerIdx` and
+ *  `layerIdx + 1`); `neuronIdx` indexes the destination neuron; `prevIdx`
+ *  indexes the source neuron. Matches the Network.getWeightsFlat layout:
+ *  row-major [fanOut × fanIn], one block per layer. */
+export function readWeight(
+    flat: Float32Array,
+    layerSizes: number[],
+    layerIdx: number,
+    neuronIdx: number,
+    prevIdx: number,
+): number {
+    const fanIn = layerSizes[layerIdx];
+    return flat[layerWeightOffset(layerSizes, layerIdx) + neuronIdx * fanIn + prevIdx];
+}
+
+/** Start offset (in biases buffer) of the bias row for a given layer. */
+export function layerBiasOffset(layerSizes: number[], layerIdx: number): number {
+    let offset = 0;
+    for (let l = 1; l <= layerIdx; l++) {
+        offset += layerSizes[l];
+    }
+    return offset;
+}
+
+/** Read a single bias from the flat buffer.
+ *  `layerIdx` is the source layer (weights between `layerIdx` and
+ *  `layerIdx + 1`); the bias lives on the *destination* layer `layerIdx+1`. */
+export function readBias(
+    flat: Float32Array,
+    layerSizes: number[],
+    layerIdx: number,
+    neuronIdx: number,
+): number {
+    return flat[layerBiasOffset(layerSizes, layerIdx) + neuronIdx];
+}

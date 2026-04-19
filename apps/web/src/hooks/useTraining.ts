@@ -24,6 +24,7 @@ import {
 } from '../worker/frameBuffer.ts';
 import type { NetworkSnapshot } from '@nn-playground/engine';
 import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
+import { structuralEqual } from '@nn-playground/shared';
 
 
 export interface TrainingHook {
@@ -112,7 +113,14 @@ function createStreamSnapshot(
 export function useTraining(): TrainingHook {
     // All refs first (stable hook order)
     const initializedRef = useRef(false);
-    const prevConfigRef = useRef<string>('');
+    // Snapshot of the last config objects we successfully sent to the worker.
+    // Kept by reference for structural comparison; not JSON.stringify'd every tick.
+    const prevConfigRef = useRef<{
+        network: unknown;
+        training: unknown;
+        data: unknown;
+        features: unknown;
+    } | null>(null);
     const prevConfigSyncNonceRef = useRef(0);
     const stepsPerFrameRef = useRef(5);
     const isPlayingRef = useRef(false);
@@ -123,6 +131,7 @@ export function useTraining(): TrainingHook {
     const data = usePlaygroundStore((s) => s.data);
     const features = usePlaygroundStore((s) => s.features);
     const demand = usePlaygroundStore((s) => s.demand);
+    const webgpuGrid = usePlaygroundStore((s) => s.featuresUI.webgpuGrid);
 
     // Runtime selectors (from training store — volatile)
     const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
@@ -159,20 +168,30 @@ export function useTraining(): TrainingHook {
         ts.setTrainPoints(trainPts);
         ts.setTestPoints(testPts);
 
-        // Set initial config string to prevent duplicate sync
+        // Record the initial config snapshot to prevent duplicate sync
         const latestState = usePlaygroundStore.getState();
-        prevConfigRef.current = JSON.stringify({
+        prevConfigRef.current = {
             network: latestState.network,
             training: latestState.training,
             data: latestState.data,
             features: latestState.features,
-        });
+        };
 
         // Set up MessageChannel for streaming
         await setupStreamChannel();
 
         // Send initial demand
         await api.updateDemand(latestState.demand);
+
+        // AS-4: tell the worker whether the user has opted in to the
+        // WebGPU grid path. Capability detection still gates this; the
+        // worker silently falls back to CPU when the device isn't
+        // available or the network shape exceeds the shader caps.
+        try {
+            await api.setWebGpuEnabled(usePlaygroundStore.getState().featuresUI.webgpuGrid);
+        } catch {
+            // Older worker bundles won't expose setWebGpuEnabled — ignore.
+        }
 
         initializedRef.current = true;
     }, []);
@@ -222,11 +241,11 @@ export function useTraining(): TrainingHook {
     // Sync config changes to worker (rebuild when needed)
     useEffect(() => {
         if (!initializedRef.current) return;
-        const configStr = JSON.stringify({ network, training, data, features });
+        const nextSnapshot = { network, training, data, features };
         const isRetry = configSyncNonce !== prevConfigSyncNonceRef.current;
-        if (!isRetry && configStr === prevConfigRef.current) return;
-        const previousConfigStr = prevConfigRef.current;
-        prevConfigRef.current = configStr;
+        if (!isRetry && prevConfigRef.current && structuralEqual(nextSnapshot, prevConfigRef.current)) return;
+        const previousConfigSnapshot = prevConfigRef.current;
+        prevConfigRef.current = nextSnapshot;
         prevConfigSyncNonceRef.current = configSyncNonce;
 
         const sync = async () => {
@@ -265,7 +284,7 @@ export function useTraining(): TrainingHook {
                 ps.syncToUrl();
                 ts.finishConfigChange();
             } catch (error) {
-                prevConfigRef.current = previousConfigStr;
+                prevConfigRef.current = previousConfigSnapshot;
                 ts.failConfigChange(error instanceof Error ? error.message : 'Failed to update configuration');
             }
         };
@@ -278,6 +297,21 @@ export function useTraining(): TrainingHook {
         if (!initializedRef.current) return;
         postStreamCommand({ type: 'updateDemand', demand });
     }, [demand]);
+
+    // AS-4: live-toggle the WebGPU grid path when the user flips the
+    // featuresUI flag. Disabling immediately disposes the GPU predictor
+    // (frees device memory); enabling lets the next snapshot lazily
+    // re-allocate.
+    useEffect(() => {
+        if (!initializedRef.current) return;
+        const api = getWorkerApi();
+        api.setWebGpuEnabled(webgpuGrid).catch(() => {
+            // Ignore — capability detection inside the worker handles
+            // any per-device fallback. A toggle that doesn't reach the
+            // worker just means the next snapshot still uses whatever
+            // path the worker last knew about.
+        });
+    }, [webgpuGrid]);
 
     const play = useCallback(() => {
         const startTraining = () => {

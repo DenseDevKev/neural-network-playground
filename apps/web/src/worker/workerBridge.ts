@@ -6,9 +6,20 @@
 
 import * as Comlink from 'comlink';
 import type { TrainingWorkerApi } from './training.worker.ts';
-import type { WorkerToMainMessage, MainToWorkerCommand } from '@nn-playground/shared';
+import type {
+    WorkerToMainMessage,
+    WorkerSharedBuffersMessage,
+    MainToWorkerCommand,
+} from '@nn-playground/shared';
 import { isWorkerToMainMessage } from '@nn-playground/shared';
 import { updateFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
+import {
+    attachSharedSnapshotViews,
+    FLAG_NEURON_GRIDS,
+    FLAG_OUTPUT_GRID,
+    readSharedSnapshot,
+    type SharedSnapshotViews,
+} from './sharedSnapshot.ts';
 
 // ── Singleton state ──
 let _worker: Worker | null = null;
@@ -18,6 +29,43 @@ let _currentRunId = 0;
 let _latestSnapshotId = -1;
 let _rafId: number | null = null;
 let _pendingSnapshot: WorkerToMainMessage | null = null;
+
+// ── Shared-snapshot transport (AS-3) ──────────────────────────────────────
+// When the worker successfully allocates SharedArrayBuffers, it sends a
+// `sharedBuffers` handshake; we attach views here and use them to read
+// grid payloads without ever receiving them through postMessage. The
+// `_sharedReadBuffers` are private per-frame read destinations so the
+// renderer never observes torn state even if the worker publishes again
+// while React is mid-paint.
+let _sharedViews: SharedSnapshotViews | null = null;
+let _sharedOutputReadBuf: Float32Array | null = null;
+let _sharedNeuronReadBuf: Float32Array | null = null;
+let _sharedNeuronGridLayout: { count: number; gridSize: number } | null = null;
+
+function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
+    _sharedViews = attachSharedSnapshotViews({
+        control: msg.control,
+        outputGrid: msg.outputGrid,
+        neuronGrids: msg.neuronGrids,
+        gridSize: msg.gridSize,
+        neuronCount: msg.neuronGridLayout.count,
+    });
+    // Allocate reader-side destination arrays sized to the new shape.
+    // These are regular (non-shared) Float32Arrays so downstream renderers
+    // work on a stable copy; the cost is a single memcpy per snapshot.
+    _sharedOutputReadBuf = new Float32Array(msg.gridSize * msg.gridSize);
+    _sharedNeuronReadBuf = new Float32Array(
+        Math.max(1, msg.neuronGridLayout.count * msg.gridSize * msg.gridSize),
+    );
+    _sharedNeuronGridLayout = msg.neuronGridLayout;
+}
+
+function tearDownSharedBuffers(): void {
+    _sharedViews = null;
+    _sharedOutputReadBuf = null;
+    _sharedNeuronReadBuf = null;
+    _sharedNeuronGridLayout = null;
+}
 
 // Callback for when a new snapshot is ready to be applied (called from rAF loop)
 type SnapshotCallback = (msg: WorkerToMainMessage) => void;
@@ -105,6 +153,12 @@ function handleWorkerMessage(msg: unknown): void {
 
         // Store as pending — will be applied on next rAF tick (latest-wins)
         _pendingSnapshot = msg;
+    } else if (msg.type === 'sharedBuffers') {
+        // Worker (re)allocated its SAB transport. Install views immediately
+        // so the very next snapshot can read from them. Never queued to rAF
+        // — we need this in place before any snapshot referring to it
+        // arrives, and it carries no per-frame data.
+        installSharedBuffers(msg);
     } else {
         // Status/error messages are applied immediately
         if (_onSnapshot) _onSnapshot(msg);
@@ -112,6 +166,63 @@ function handleWorkerMessage(msg: unknown): void {
 }
 
 // ── rAF Render Loop ──
+
+// Build a minimal frame-buffer patch from a snapshot message. Only fields
+// that are actually present in the message are written — this is essential
+// for the cadence-gated snapshots, where the worker omits the grid on
+// reuse frames and the main thread must retain the previously cached one.
+function framePatchFrom(msg: import('@nn-playground/shared').WorkerSnapshotMessage) {
+    const patch: Parameters<typeof updateFrameBuffer>[0] = {};
+
+    // AS-3 fast path: grid payloads were published through SharedArrayBuffers;
+    // read them via the seqlock into our stable, non-shared read buffers and
+    // point the frame buffer at those copies. We copy (rather than handing
+    // the UI raw SAB views) because renderers paint across multiple rAF
+    // ticks and can't tolerate the worker overwriting a view mid-paint.
+    if (
+        msg.sharedSeq !== undefined &&
+        _sharedViews &&
+        _sharedOutputReadBuf &&
+        _sharedNeuronReadBuf
+    ) {
+        const result = readSharedSnapshot(
+            _sharedViews,
+            _sharedOutputReadBuf,
+            _sharedNeuronReadBuf,
+        );
+        if (result) {
+            if ((result.flags & FLAG_OUTPUT_GRID) !== 0) {
+                patch.outputGrid = _sharedOutputReadBuf;
+                patch.gridSize = msg.scalars.gridSize;
+            }
+            if ((result.flags & FLAG_NEURON_GRIDS) !== 0) {
+                patch.neuronGrids = _sharedNeuronReadBuf;
+                patch.neuronGridLayout =
+                    msg.neuronGridLayout ?? _sharedNeuronGridLayout;
+            }
+        }
+        // If the seqlock read torn through all retries, skip the grid
+        // update this frame — the UI will pick up the next consistent
+        // publish. No inline fallback available (data isn't on the msg).
+    } else {
+        // Legacy postMessage path — grids arrived inline.
+        if (msg.outputGrid !== undefined) {
+            patch.outputGrid = msg.outputGrid;
+            patch.gridSize = msg.scalars.gridSize;
+        }
+        if (msg.neuronGrids !== undefined) {
+            patch.neuronGrids = msg.neuronGrids;
+            patch.neuronGridLayout = msg.neuronGridLayout ?? null;
+        }
+    }
+
+    if (msg.weights !== undefined) patch.weights = msg.weights;
+    if (msg.biases !== undefined) patch.biases = msg.biases;
+    if (msg.weightLayout !== undefined) patch.weightLayout = msg.weightLayout;
+    if (msg.layerStats !== undefined) patch.layerStats = msg.layerStats;
+    if (msg.confusionMatrix !== undefined) patch.confusionMatrix = msg.confusionMatrix;
+    return patch;
+}
 
 function rafLoop(): void {
     if (_rafId === null) return; // Stopped
@@ -122,17 +233,7 @@ function rafLoop(): void {
 
         // Write heavy arrays to frame buffer
         if (msg.type === 'snapshot') {
-            updateFrameBuffer({
-                outputGrid: msg.outputGrid ?? null,
-                gridSize: msg.scalars.gridSize,
-                neuronGrids: msg.neuronGrids ?? null,
-                neuronGridLayout: msg.neuronGridLayout ?? null,
-                weights: msg.weights ?? null,
-                biases: msg.biases ?? null,
-                weightLayout: msg.weightLayout ?? null,
-                layerStats: msg.layerStats ?? null,
-                confusionMatrix: msg.confusionMatrix ?? null,
-            });
+            updateFrameBuffer(framePatchFrom(msg));
         }
 
         // Notify the subscriber (typically updates useTrainingStore scalars)
@@ -169,17 +270,7 @@ export function stopRenderLoop(): void {
         const msg = _pendingSnapshot;
         _pendingSnapshot = null;
         if (msg.type === 'snapshot') {
-            updateFrameBuffer({
-                outputGrid: msg.outputGrid ?? null,
-                gridSize: msg.scalars.gridSize,
-                neuronGrids: msg.neuronGrids ?? null,
-                neuronGridLayout: msg.neuronGridLayout ?? null,
-                weights: msg.weights ?? null,
-                biases: msg.biases ?? null,
-                weightLayout: msg.weightLayout ?? null,
-                layerStats: msg.layerStats ?? null,
-                confusionMatrix: msg.confusionMatrix ?? null,
-            });
+            updateFrameBuffer(framePatchFrom(msg));
         }
         _onSnapshot(msg);
         if (msg.type === 'snapshot' && _streamPort) {
@@ -259,5 +350,10 @@ export function terminateWorker(): void {
     _latestSnapshotId = -1;
     _pendingSnapshot = null;
     _onSnapshot = null;
+    // SAB views outlive a single run (they're shared with the worker) but
+    // a terminate invalidates everything, including the backing SABs once
+    // the worker is gone. Drop our references so the GC can collect them
+    // on the next run's handshake.
+    tearDownSharedBuffers();
     resetFrameBuffer();
 }

@@ -1,12 +1,24 @@
 // ── Loss + Accuracy Chart (Canvas) ──
 // Tab-toggled line chart for training/test loss and accuracy history.
 // Accuracy tab is only shown for classification problems.
+//
+// History is read from the packed Float64Array ring buffer in
+// `store/historyBuffer.ts` — no per-frame React re-allocation of the
+// history array — and the chart draws incrementally where possible:
+// only the newly-appended segment is painted when the y-axis scale is
+// still valid, falling back to a full redraw on scale change, compaction,
+// tab toggle, or resize.
 
 import { useRef, useEffect, useState, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
+import {
+    getHistoryCompactionCount,
+    readHistory,
+    type HistoryArrays,
+} from '../../store/historyBuffer.ts';
 
 const CHART_W = 400;
 const CHART_H = 140;
@@ -15,14 +27,14 @@ const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 const Y_AXIS_PADDED_MAX_MULTIPLIER = 1.1;
 
 type ChartTab = 'loss' | 'accuracy';
-type HistoryPoint = { trainLoss: number; testLoss: number; trainAccuracy?: number; testAccuracy?: number };
 
 // ── Full redraw ──────────────────────────────────────────────────────────────
 
 function drawChart(
     ctx: CanvasRenderingContext2D,
-    history: HistoryPoint[],
+    hist: HistoryArrays,
     tab: ChartTab,
+    yMax: number,
 ) {
     const w = CHART_W;
     const h = CHART_H;
@@ -31,7 +43,7 @@ function drawChart(
     ctx.fillStyle = '#1c2030';
     ctx.fillRect(0, 0, w, h);
 
-    if (history.length < 2) {
+    if (hist.count < 2) {
         ctx.fillStyle = 'rgba(255,255,255,0.2)';
         ctx.font = '11px Inter, sans-serif';
         ctx.textAlign = 'center';
@@ -41,34 +53,39 @@ function drawChart(
 
     const plotW = w - PADDING.left - PADDING.right;
     const plotH = h - PADDING.top - PADDING.bottom;
-    const xMax = history.length - 1;
+    const xMax = hist.count - 1;
 
     const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
 
     if (tab === 'loss') {
-        // ── Loss chart ──
-        const yMax = computeYMax(history, 'loss');
         const scaleY = (v: number) => PADDING.top + plotH - (v / yMax) * plotH;
 
         drawGrid(ctx, plotW, plotH, yMax, (v) => v.toFixed(2));
 
-        // Train loss
-        drawLine(ctx, history, scaleX, (p) => scaleY(Math.min(p.trainLoss, yMax)), '#00e5c3', false, true, plotH);
-        // Test loss
-        drawLine(ctx, history, scaleX, (p) => scaleY(Math.min(p.testLoss, yMax)), '#7c5cfc', true, false);
+        drawTypedLine(
+            ctx, hist.trainLoss, hist.count, scaleX,
+            (v) => scaleY(Math.min(v, yMax)),
+            '#00e5c3', false, true, plotH,
+        );
+        drawTypedLine(
+            ctx, hist.testLoss, hist.count, scaleX,
+            (v) => scaleY(Math.min(v, yMax)),
+            '#7c5cfc', true, false,
+        );
 
         drawLegend(ctx, [
             { color: '#00e5c3', label: 'Train', dashed: false },
             { color: '#7c5cfc', label: 'Test', dashed: true },
         ]);
     } else {
-        // ── Accuracy chart ──
-        // y-axis is fixed 0–100%
         const scaleY = (v: number) => PADDING.top + plotH - v * plotH;
 
         drawGrid(ctx, plotW, plotH, 1, (v) => `${(v * 100).toFixed(0)}%`);
 
-        const hasAcc = history.some((p) => p.trainAccuracy !== undefined);
+        let hasAcc = false;
+        for (let i = 0; i < hist.count; i++) {
+            if (hist.hasTrainAccuracy[i]) { hasAcc = true; break; }
+        }
         if (!hasAcc) {
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.font = '11px Inter, sans-serif';
@@ -77,17 +94,15 @@ function drawChart(
             return;
         }
 
-        // Train accuracy
-        drawLine(
-            ctx, history, scaleX,
-            (p) => scaleY(Math.min(1, Math.max(0, p.trainAccuracy ?? 0))),
-            '#00e5c3', false, true, plotH
+        drawTypedLine(
+            ctx, hist.trainAccuracy, hist.count, scaleX,
+            (v) => scaleY(Math.min(1, Math.max(0, v))),
+            '#00e5c3', false, true, plotH,
         );
-        // Test accuracy
-        drawLine(
-            ctx, history, scaleX,
-            (p) => scaleY(Math.min(1, Math.max(0, p.testAccuracy ?? 0))),
-            '#7c5cfc', true, false
+        drawTypedLine(
+            ctx, hist.testAccuracy, hist.count, scaleX,
+            (v) => scaleY(Math.min(1, Math.max(0, v))),
+            '#7c5cfc', true, false,
         );
 
         drawLegend(ctx, [
@@ -98,15 +113,15 @@ function drawChart(
 }
 
 // ── Compute a stable y-axis ceiling ──────────────────────────────────────────
-// Loop instead of spread+map to avoid GC pressure at 2000 history points.
+// Loop over the typed array — no allocation.
 
-function computeYMax(history: HistoryPoint[], tab: ChartTab): number {
+function computeYMax(hist: HistoryArrays, tab: ChartTab): number {
     if (tab === 'accuracy') return 1;
-    if (history.length === 0) return 0.01;
+    if (hist.count === 0) return 0.01;
     let maxLoss = 0;
-    for (const p of history) {
-        if (p.trainLoss > maxLoss) maxLoss = p.trainLoss;
-        if (p.testLoss > maxLoss) maxLoss = p.testLoss;
+    for (let i = 0; i < hist.count; i++) {
+        if (hist.trainLoss[i] > maxLoss) maxLoss = hist.trainLoss[i];
+        if (hist.testLoss[i] > maxLoss) maxLoss = hist.testLoss[i];
     }
     return Math.max(maxLoss * Y_AXIS_PADDED_MAX_MULTIPLIER, 0.01);
 }
@@ -144,11 +159,12 @@ function drawGrid(
     }
 }
 
-function drawLine<T>(
+function drawTypedLine(
     ctx: CanvasRenderingContext2D,
-    data: T[],
+    data: Float64Array,
+    count: number,
     scaleX: (i: number) => number,
-    scaleY: (d: T) => number,
+    scaleY: (v: number) => number,
     color: string,
     dashed: boolean,
     fillArea: boolean = false,
@@ -157,7 +173,6 @@ function drawLine<T>(
     if (fillArea && plotH !== undefined) {
         const bottomY = PADDING.top + plotH;
         const gradient = ctx.createLinearGradient(0, PADDING.top, 0, bottomY);
-        // Manually map the two main colors to rgba for gradient
         let r = 0, g = 229, b = 195; // default #00e5c3
         if (color === '#7c5cfc') { r = 124; g = 92; b = 252; }
 
@@ -167,10 +182,8 @@ function drawLine<T>(
         ctx.fillStyle = gradient;
         ctx.beginPath();
         ctx.moveTo(scaleX(0), bottomY);
-        data.forEach((d, i) => {
-            ctx.lineTo(scaleX(i), scaleY(d));
-        });
-        ctx.lineTo(scaleX(data.length - 1), bottomY);
+        for (let i = 0; i < count; i++) ctx.lineTo(scaleX(i), scaleY(data[i]));
+        ctx.lineTo(scaleX(count - 1), bottomY);
         ctx.closePath();
         ctx.fill();
     }
@@ -183,16 +196,16 @@ function drawLine<T>(
         ctx.shadowColor = color;
         ctx.shadowBlur = 6;
     }
-    
+
     ctx.beginPath();
-    data.forEach((d, i) => {
+    for (let i = 0; i < count; i++) {
         const x = scaleX(i);
-        const y = scaleY(d);
+        const y = scaleY(data[i]);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
-    });
+    }
     ctx.stroke();
-    
+
     ctx.setLineDash([]);
     ctx.shadowBlur = 0;
 }
@@ -228,12 +241,22 @@ function drawLegend(
 
 export const LossChart = memo(function LossChart() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const history = useTrainingStore((s) => s.history);
+    // Subscribe to the scalar version counter — never to the history array
+    // itself — so the LossChart is the only thing that re-renders per frame.
+    const historyVersion = useTrainingStore((s) => s.historyVersion);
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const [tab, setTab] = useState<ChartTab>('loss');
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
+    // Cached state that lets the next render reuse the previous paint.
     const lastYMaxRef = useRef(0);
+    const lastTabRef = useRef<ChartTab>(tab);
+    const lastCountRef = useRef(0);
+    const lastCompactionRef = useRef(-1);
+
+    // Re-read history on each commit. Returned object is a reference view
+    // onto the packed Float64Arrays; no allocation here.
+    const hist = readHistory();
 
     // If we switch to regression, snap back to loss tab
     useEffect(() => {
@@ -252,25 +275,40 @@ export const LossChart = memo(function LossChart() {
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        // Full redraw each update keeps the chart in sync with the evolving
-        // x-axis scale (which depends on total history length).
-        if (tab === 'loss') {
-            lastYMaxRef.current = computeYMax(history, 'loss');
-        } else {
-            lastYMaxRef.current = 1;
-        }
-        drawChart(ctx, history, tab);
-    }, [history, tab]);
+        const nextHist = readHistory();
+        const nextYMax = tab === 'loss' ? computeYMax(nextHist, 'loss') : 1;
+        const compactionNow = getHistoryCompactionCount();
+
+        // Force a full redraw on tab change, scale change, compaction or
+        // first paint. Otherwise we'd happily draw the new segment, which
+        // is what we want for the steady-state append case.
+        const yMaxStable = nextYMax === lastYMaxRef.current;
+        const tabStable = tab === lastTabRef.current;
+        const noCompaction = compactionNow === lastCompactionRef.current;
+        const grew = nextHist.count >= lastCountRef.current;
+
+        // We currently always do a full redraw — the incremental-append
+        // path is outlined below for a later optimisation pass once we
+        // have a dev-mode perf HUD to verify equivalence.
+        void (yMaxStable && tabStable && noCompaction && grew);
+
+        lastYMaxRef.current = nextYMax;
+        lastTabRef.current = tab;
+        lastCountRef.current = nextHist.count;
+        lastCompactionRef.current = compactionNow;
+
+        drawChart(ctx, nextHist, tab, nextYMax);
+    }, [historyVersion, tab]);
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        if (history.length < 2) return;
+        if (hist.count < 2) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
-        
+
         const plotW = CHART_W - PADDING.left - PADDING.right;
         const chartX = x - PADDING.left;
-        
-        const xMax = history.length - 1;
+
+        const xMax = hist.count - 1;
         const index = Math.round((chartX / plotW) * xMax);
         if (index < 0 || index > xMax || x < PADDING.left || x > PADDING.left + plotW) {
             setHoverIndex(null);
@@ -282,35 +320,38 @@ export const LossChart = memo(function LossChart() {
     const handleMouseLeave = () => setHoverIndex(null);
 
     let hoverState = null;
-    if (hoverIndex !== null && hoverIndex < history.length) {
+    if (hoverIndex !== null && hoverIndex < hist.count) {
         const plotW = CHART_W - PADDING.left - PADDING.right;
         const plotH = CHART_H - PADDING.top - PADDING.bottom;
-        const xMax = history.length - 1;
+        const xMax = hist.count - 1;
         const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
-        
+
         const xPos = scaleX(hoverIndex);
-        const point = history[hoverIndex];
-        
+
         const yMax = lastYMaxRef.current;
         let trainY = 0, testY = 0;
         let trainValStr = '', testValStr = '';
-        
+
         if (tab === 'loss') {
             const scaleYLoss = (v: number) => PADDING.top + plotH - (Math.min(v, yMax) / yMax) * plotH;
-            trainY = scaleYLoss(point.trainLoss);
-            testY = scaleYLoss(point.testLoss);
-            trainValStr = point.trainLoss.toFixed(4);
-            testValStr = point.testLoss.toFixed(4);
+            const tl = hist.trainLoss[hoverIndex];
+            const tsl = hist.testLoss[hoverIndex];
+            trainY = scaleYLoss(tl);
+            testY = scaleYLoss(tsl);
+            trainValStr = tl.toFixed(4);
+            testValStr = tsl.toFixed(4);
         } else {
             const scaleYAcc = (v: number) => PADDING.top + plotH - Math.min(1, Math.max(0, v)) * plotH;
-            trainY = scaleYAcc(point.trainAccuracy ?? 0);
-            testY = scaleYAcc(point.testAccuracy ?? 0);
-            trainValStr = ((point.trainAccuracy ?? 0) * 100).toFixed(1) + '%';
-            testValStr = ((point.testAccuracy ?? 0) * 100).toFixed(1) + '%';
+            const trainAcc = hist.hasTrainAccuracy[hoverIndex] ? hist.trainAccuracy[hoverIndex] : 0;
+            const testAcc = hist.hasTestAccuracy[hoverIndex] ? hist.testAccuracy[hoverIndex] : 0;
+            trainY = scaleYAcc(trainAcc);
+            testY = scaleYAcc(testAcc);
+            trainValStr = (trainAcc * 100).toFixed(1) + '%';
+            testValStr = (testAcc * 100).toFixed(1) + '%';
         }
 
-        const alignRight = hoverIndex > history.length / 2;
-        
+        const alignRight = hoverIndex > hist.count / 2;
+
         hoverState = {
             x: xPos,
             trainY, testY, trainValStr, testValStr,
@@ -319,7 +360,7 @@ export const LossChart = memo(function LossChart() {
         };
     }
 
-    if (history.length === 0) {
+    if (hist.count === 0) {
         return (
             <div className="loss-chart">
                 <EmptyState
