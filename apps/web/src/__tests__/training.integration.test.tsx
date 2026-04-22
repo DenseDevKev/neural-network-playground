@@ -7,6 +7,7 @@ import { act, render, screen, fireEvent } from '@testing-library/react';
 import App from '../App';
 import { useTrainingStore } from '../store/useTrainingStore';
 import { usePlaygroundStore } from '../store/usePlaygroundStore';
+import { useLayoutStore } from '../store/useLayoutStore';
 import { resetFrameBuffer } from '../worker/frameBuffer';
 import {
     DEFAULT_DATA,
@@ -73,12 +74,30 @@ vi.mock('../components/layout/Header.tsx', () => ({
         </header>
     ),
 }));
-vi.mock('../components/layout/Sidebar.tsx', () => ({
-    Sidebar: () => <aside>Sidebar</aside>,
+vi.mock('../components/layout/RegionShell.tsx', () => ({
+    DockShell:  () => <section aria-label="Dock workspace">Workspace</section>,
+    GridShell:  () => <section aria-label="Grid workspace">Workspace</section>,
+    SplitShell: () => <section aria-label="Split workspace">Workspace</section>,
 }));
 vi.mock('../components/layout/MainArea.tsx', () => ({
-    MainArea: () => <main id="main-content" tabIndex={-1}>Main</main>,
+    MainArea:        () => <main id="main-content" tabIndex={-1}>Main</main>,
+    CanvasContent:   () => <div>Canvas</div>,
+    BoundaryContent: () => <div>Boundary</div>,
+    LossContent:     () => <div>Loss</div>,
+    ConfusionContent:() => <div>Confusion</div>,
+    InspectContent:  () => <div>Inspect</div>,
+    CodeContent:     () => <div>Code</div>,
 }));
+vi.mock('../components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
+vi.mock('../components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
+vi.mock('../components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
+vi.mock('../components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
+vi.mock('../components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: () => <div>Features</div> }));
+vi.mock('../components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
+vi.mock('../components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel: () => <div>Hyperparams</div> }));
+vi.mock('../components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
+vi.mock('../components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
+vi.mock('../components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));
 
 describe('Training integration', () => {
     beforeEach(() => {
@@ -97,6 +116,8 @@ describe('Training integration', () => {
         fakeWorkerApi.getTestPoints.mockResolvedValue([]);
 
         resetFrameBuffer();
+
+        useLayoutStore.setState({ layout: 'dock', phase: 'build', activeTabLeft: 'data', activeTabRight: 'boundary' });
 
         usePlaygroundStore.setState({
             data: { ...DEFAULT_DATA },
@@ -231,6 +252,8 @@ describe('Dataset switching scenario', () => {
         fakeStartRenderLoop = vi.fn();
         fakeStopRenderLoop = vi.fn();
         fakeNewRunTo = vi.fn();
+
+        useLayoutStore.setState({ layout: 'dock', phase: 'build', activeTabLeft: 'data', activeTabRight: 'boundary' });
 
         fakeWorkerApi.initialize.mockResolvedValue({ snapshot: fakeSnapshot, runId: 1 });
         fakeWorkerApi.updateConfig.mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 });

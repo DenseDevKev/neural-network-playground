@@ -1,11 +1,14 @@
-// ── Sidebar Component ──
-import { lazy, memo, useState } from 'react';
+// ── Sidebar ── left-column wrapper using Panel primitives
+// Used in legacy/fallback layout paths. In Dock layout, RegionShell
+// renders the left tab pane directly without this wrapper.
+
+import { lazy, memo, Suspense } from 'react';
+import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { PresetPanel } from '../controls/PresetPanel.tsx';
 import { DataPanel } from '../controls/DataPanel.tsx';
 import { FeaturesPanel } from '../controls/FeaturesPanel.tsx';
 import { NetworkConfigPanel } from '../controls/NetworkConfigPanel.tsx';
-import { CollapsiblePanel } from '../common/CollapsiblePanel.tsx';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { Panel } from '../common/Panel.tsx';
 import { LoadingState } from '../common/LoadingState.tsx';
 
 interface SidebarProps {
@@ -13,64 +16,53 @@ interface SidebarProps {
 }
 
 const HyperparamPanel = lazy(() =>
-    import('../controls/HyperparamPanel.tsx').then((module) => ({ default: module.HyperparamPanel })),
+    import('../controls/HyperparamPanel.tsx').then((m) => ({ default: m.HyperparamPanel })),
 );
-
 const ConfigPanel = lazy(() =>
-    import('../controls/ConfigPanel.tsx').then((module) => ({ default: module.ConfigPanel })),
+    import('../controls/ConfigPanel.tsx').then((m) => ({ default: m.ConfigPanel })),
 );
 
-function InlinePanelFallback({ message }: { message: string }) {
-    return <LoadingState isLoading inline message={message} />;
+function Fallback({ msg }: { msg: string }) {
+    return <LoadingState isLoading inline message={msg} />;
 }
 
 export const Sidebar = memo(function Sidebar({ onReset }: SidebarProps) {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
-    const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
 
     return (
-        <aside className={`sidebar ${isSidebarExpanded ? '' : 'sidebar--collapsed'}`} role="complementary" aria-label="Configuration">
-            <div className="sidebar__toggle-container">
-                <button
-                    className="sidebar__toggle btn btn--icon"
-                    onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
-                    aria-label={isSidebarExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
-                >
-                    {isSidebarExpanded ? '←' : '→'}
-                </button>
-            </div>
-            <div className="sidebar__content" style={{ display: isSidebarExpanded ? 'block' : 'none' }}>
-
-            <CollapsiblePanel title="Presets" className="preset-panel">
+        <aside
+            className="sidebar"
+            role="complementary"
+            aria-label="Configuration"
+            style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, overflowY: 'auto' }}
+        >
+            <Panel title="Presets" phase="build">
                 <PresetPanel onReset={onReset} />
-            </CollapsiblePanel>
-            <CollapsiblePanel title="Data">
-                <DataPanel onReset={onReset} />
-            </CollapsiblePanel>
-            <CollapsiblePanel title="Features">
-                <FeaturesPanel />
-            </CollapsiblePanel>
-            <CollapsiblePanel title="Network" badge={hiddenLayers.length}>
-                <NetworkConfigPanel />
-            </CollapsiblePanel>
-            <CollapsiblePanel
-                title="Hyperparameters"
-                defaultExpanded={false}
-                lazyMount
-                fallback={<InlinePanelFallback message="Loading hyperparameters..." />}
-            >
-                <HyperparamPanel />
-            </CollapsiblePanel>
-            <CollapsiblePanel
-                title="Config"
-                defaultExpanded={false}
-                lazyMount
-                fallback={<InlinePanelFallback message="Loading config tools..." />}
-            >
-                <ConfigPanel onReset={onReset} />
-            </CollapsiblePanel>
+            </Panel>
 
-            </div>
+            <Panel title="Data" phase="build">
+                <DataPanel onReset={onReset} />
+            </Panel>
+
+            <Panel title="Features" phase="build">
+                <FeaturesPanel />
+            </Panel>
+
+            <Panel title={`Network${hiddenLayers.length ? ` (${hiddenLayers.length})` : ''}`} phase="build">
+                <NetworkConfigPanel />
+            </Panel>
+
+            <Suspense fallback={<Fallback msg="Loading hyperparameters…" />}>
+                <Panel title="Hyperparameters" phase="both">
+                    <HyperparamPanel />
+                </Panel>
+            </Suspense>
+
+            <Suspense fallback={<Fallback msg="Loading config…" />}>
+                <Panel title="Config" phase="both">
+                    <ConfigPanel onReset={onReset} />
+                </Panel>
+            </Suspense>
         </aside>
     );
 });

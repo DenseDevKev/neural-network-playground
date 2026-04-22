@@ -3,6 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Header } from './Header';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 
 function createTrainingMock(): Pick<TrainingHook, 'play' | 'pause'> {
@@ -21,6 +22,12 @@ describe('Header', () => {
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,
+        });
+        useLayoutStore.setState({
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'boundary',
         });
     });
 
@@ -60,5 +67,41 @@ describe('Header', () => {
 
         await user.click(screen.getByRole('button', { name: 'Pause training' }));
         expect(training.pause).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the layout picker with dock, grid, and split options', () => {
+        render(<Header training={createTrainingMock()} />);
+
+        const picker = screen.getByRole('group', { name: 'Layout variant' });
+        expect(picker).toBeInTheDocument();
+
+        expect(screen.getByRole('button', { name: 'dock' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'grid' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument();
+    });
+
+    it('updates the layout store when a layout option is clicked', async () => {
+        const user = userEvent.setup();
+        render(<Header training={createTrainingMock()} />);
+
+        await user.click(screen.getByRole('button', { name: 'grid' }));
+        expect(useLayoutStore.getState().layout).toBe('grid');
+
+        await user.click(screen.getByRole('button', { name: 'split' }));
+        expect(useLayoutStore.getState().layout).toBe('split');
+    });
+
+    it('renders the phase switch with build and run options', () => {
+        render(<Header training={createTrainingMock()} />);
+
+        const phaseGroup = screen.getByRole('group', { name: 'Workspace phase' });
+        expect(phaseGroup).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Build' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument();
+    });
+
+    it('shows the NN·FORGE brand name', () => {
+        render(<Header training={createTrainingMock()} />);
+        expect(screen.getByText('NN·FORGE')).toBeInTheDocument();
     });
 });
