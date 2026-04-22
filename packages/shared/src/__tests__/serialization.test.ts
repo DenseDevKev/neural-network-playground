@@ -17,7 +17,7 @@ const validConfig: AppConfig = {
     network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
     training: { ...DEFAULT_TRAINING },
     features: { ...DEFAULT_FEATURES },
-    ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 },
+    ui: { showTestData: false, discretizeOutput: false },
 };
 
 describe('URL State Serialization', () => {

@@ -33,9 +33,10 @@ describe('UI integration flows', () => {
             network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
             features: { ...DEFAULT_FEATURES },
             training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 },
+            ui: { showTestData: false, discretizeOutput: false },
         });
 
+        useTrainingStore.getState().resetHistory();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: {
@@ -51,7 +52,6 @@ describe('UI integration flows', () => {
                 gridSize: 40,
                 historyPoint: { step: 0, trainLoss: 0.5, testLoss: 0.6 },
             } as any,
-            history: [],
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,

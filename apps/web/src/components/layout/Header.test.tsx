@@ -14,10 +14,10 @@ function createTrainingMock(): Pick<TrainingHook, 'play' | 'pause'> {
 
 describe('Header', () => {
     beforeEach(() => {
+        useTrainingStore.getState().resetHistory();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: null,
-            history: [],
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,

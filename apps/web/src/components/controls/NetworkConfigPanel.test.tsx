@@ -15,10 +15,10 @@ describe('NetworkConfigPanel loading feedback', () => {
             },
         }));
 
+        useTrainingStore.getState().resetHistory();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: null,
-            history: [],
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,

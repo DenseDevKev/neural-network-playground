@@ -48,12 +48,21 @@ describe('LossChart', () => {
             },
         }));
 
-        useTrainingStore.setState({
-            history: [
-                { step: 0, trainLoss: 0.8, testLoss: 0.9, trainAccuracy: 0.5, testAccuracy: 0.45 },
-                { step: 1, trainLoss: 0.7, testLoss: 0.8, trainAccuracy: 0.55, testAccuracy: 0.5 },
-            ],
-        } as Partial<ReturnType<typeof useTrainingStore.getState>>);
+        useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().addHistoryPoint({
+            step: 0,
+            trainLoss: 0.8,
+            testLoss: 0.9,
+            trainAccuracy: 0.5,
+            testAccuracy: 0.45,
+        });
+        useTrainingStore.getState().addHistoryPoint({
+            step: 1,
+            trainLoss: 0.7,
+            testLoss: 0.8,
+            trainAccuracy: 0.55,
+            testAccuracy: 0.5,
+        });
     });
 
     it('fully redraws when new history points stream in', () => {
@@ -63,12 +72,13 @@ describe('LossChart', () => {
         expect(initialPaints).toBeGreaterThan(0);
 
         act(() => {
-            useTrainingStore.setState((state) => ({
-                history: [
-                    ...state.history,
-                    { step: 2, trainLoss: 0.6, testLoss: 0.72, trainAccuracy: 0.6, testAccuracy: 0.54 },
-                ],
-            }));
+            useTrainingStore.getState().addHistoryPoint({
+                step: 2,
+                trainLoss: 0.6,
+                testLoss: 0.72,
+                trainAccuracy: 0.6,
+                testAccuracy: 0.54,
+            });
         });
 
         expect(fillRect.mock.calls.length).toBeGreaterThan(initialPaints);

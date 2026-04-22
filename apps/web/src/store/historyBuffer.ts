@@ -2,10 +2,9 @@
 // Module-level typed arrays holding the per-step loss/accuracy trace.
 //
 // Previously the history lived as `HistoryPoint[]` inside the Zustand
-// training store. Every append allocated a fresh array (`[...s.history,
-// point]`) and triggered every subscriber, which meant the LossChart
-// re-rendered end-to-end on every training frame — the dominant paint
-// cost at long runs.
+// training store. Every append allocated a fresh array and triggered
+// every subscriber, which meant the LossChart re-rendered end-to-end on
+// every training frame — the dominant paint cost at long runs.
 //
 // The buffer is a monotonically growing series with an in-place halving
 // step when it hits the capacity ceiling; same log-spaced density profile
@@ -37,16 +36,6 @@ let _version = 0;
 // the last version bump was a pure append (draw incremental segment) or a
 // structural rewrite (force full redraw).
 let _compactionCount = 0;
-
-/** Number of valid entries currently stored (0..HISTORY_CAPACITY). */
-export function getHistoryCount(): number {
-    return _count;
-}
-
-/** Monotonic version counter — bumped on append, reset, compact. */
-export function getHistoryVersion(): number {
-    return _version;
-}
 
 /** Monotonic counter of compaction events. Consumers that do incremental
  *  drawing should invalidate their cached offset if this advances. */
@@ -117,41 +106,6 @@ export function resetHistoryBuffer(): number {
     return _version;
 }
 
-/** Replace the buffer contents wholesale. Used by tests that seeded the
- *  old `history: HistoryPoint[]` directly. */
-export function seedHistory(points: HistoryPoint[]): number {
-    _count = 0;
-    for (const p of points) {
-        if (_count >= HISTORY_CAPACITY) break;
-        appendHistoryPointRaw(p);
-    }
-    _version++;
-    _compactionCount++;
-    return _version;
-}
-
-function appendHistoryPointRaw(point: HistoryPoint): void {
-    const i = _count;
-    _step[i] = point.step;
-    _trainLoss[i] = point.trainLoss;
-    _testLoss[i] = point.testLoss;
-    if (point.trainAccuracy !== undefined) {
-        _trainAccuracy[i] = point.trainAccuracy;
-        _hasTrainAcc[i] = 1;
-    } else {
-        _trainAccuracy[i] = 0;
-        _hasTrainAcc[i] = 0;
-    }
-    if (point.testAccuracy !== undefined) {
-        _testAccuracy[i] = point.testAccuracy;
-        _hasTestAcc[i] = 1;
-    } else {
-        _testAccuracy[i] = 0;
-        _hasTestAcc[i] = 0;
-    }
-    _count++;
-}
-
 /** In-place halving: keep every other point. Matches the old store's
  *  log-spaced density behaviour once the array crossed 2000 points. */
 function compact(): void {
@@ -168,19 +122,4 @@ function compact(): void {
     }
     _count = kept;
     _compactionCount++;
-}
-
-/** Reallocate internal buffers. Exported only so tests can reset module
- *  state between runs; no production code should call this. */
-export function __resetHistoryBufferForTests(): void {
-    _step = new Float64Array(HISTORY_CAPACITY);
-    _trainLoss = new Float64Array(HISTORY_CAPACITY);
-    _testLoss = new Float64Array(HISTORY_CAPACITY);
-    _trainAccuracy = new Float64Array(HISTORY_CAPACITY);
-    _testAccuracy = new Float64Array(HISTORY_CAPACITY);
-    _hasTrainAcc = new Uint8Array(HISTORY_CAPACITY);
-    _hasTestAcc = new Uint8Array(HISTORY_CAPACITY);
-    _count = 0;
-    _version = 0;
-    _compactionCount = 0;
 }

@@ -14,7 +14,7 @@ describe('usePlaygroundStore compatibility guards', () => {
             training: { ...DEFAULT_TRAINING },
             data: { ...DEFAULT_DATA },
             features: { ...DEFAULT_FEATURES },
-            ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 },
+            ui: { showTestData: false, discretizeOutput: false },
         });
     });
 

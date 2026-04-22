@@ -128,8 +128,6 @@ interface WorkerState {
     stepsPerFrame: number;
     /** Timer ID for the internal training loop. */
     trainLoopTimer: ReturnType<typeof setTimeout> | null;
-    /** Training history for getHistory() API. */
-    history: HistoryPoint[];
     /**
      * True when a snapshot has been posted to the main thread but has not yet
      * been acknowledged (applied to the frame buffer). Used for back-pressure:
@@ -235,7 +233,6 @@ const state: WorkerState = {
     snapshotId: 0,
     stepsPerFrame: 5,
     trainLoopTimer: null,
-    history: [],
     awaitingAck: false,
 };
 
@@ -606,25 +603,6 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
 }
 
 /**
- * Maximum number of history points retained in memory. When exceeded, every
- * other point is dropped (a simple in-place compaction) before pushing the
- * new one — giving a log-spaced density profile over very long runs.
- */
-const MAX_HISTORY = 2048;
-
-function pushHistory(point: HistoryPoint | undefined): void {
-    if (!point) return;
-    if (state.history.length >= MAX_HISTORY) {
-        const kept: HistoryPoint[] = [];
-        for (let i = 0; i < state.history.length; i += 2) {
-            kept.push(state.history[i]);
-        }
-        state.history = kept;
-    }
-    state.history.push(point);
-}
-
-/**
  * Pack a NetworkSnapshot into a WorkerSnapshotMessage with Transferable Float32Arrays.
  * Returns { message, transferables }.
  */
@@ -862,9 +840,6 @@ async function produceAndPostSnapshot(): Promise<void> {
         return;
     }
 
-    // Only training paths accumulate history; passive snapshot RPCs do not.
-    pushHistory(snap.historyPoint);
-
     const { message, transferables } = packSnapshotMessage(snap);
     state.streamPort.postMessage(message, transferables);
 }
@@ -1018,7 +993,6 @@ const workerApi = {
         state.dataConfig = { ...dataConfig };
         state.features = { ...features };
         state.running = false;
-        state.history = [];
         buildDataAndNetwork();
         return { snapshot: computeSnapshot(), runId: state.runId };
     },
@@ -1044,7 +1018,6 @@ const workerApi = {
         if (needsRebuild) {
             stopInternalLoop();
             state.running = false;
-            state.history = [];
             buildDataAndNetwork();
         }
 
@@ -1055,24 +1028,17 @@ const workerApi = {
         for (let i = 0; i < iterations; i++) {
             trainOneStep();
         }
-        const snap = computeSnapshot();
-        pushHistory(snap.historyPoint);
-        return snap;
+        return computeSnapshot();
     },
 
     reset(): { snapshot: NetworkSnapshot; runId: number } {
         stopInternalLoop();
-        state.history = [];
         buildDataAndNetwork();
         return { snapshot: computeSnapshot(), runId: state.runId };
     },
 
     getSnapshot(): NetworkSnapshot {
         return computeSnapshot();
-    },
-
-    getHistory(): HistoryPoint[] {
-        return state.history;
     },
 
     getTrainPoints(): DataPoint[] {
@@ -1140,9 +1106,7 @@ const workerApi = {
             trainOneStep();
         }
         performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
-        const snap = computeSnapshot();
-        pushHistory(snap.historyPoint);
-        return snap;
+        return computeSnapshot();
     },
 };
 

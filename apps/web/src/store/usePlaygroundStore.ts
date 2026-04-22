@@ -91,7 +91,6 @@ export interface PlaygroundStore {
     setShowTestData: (show: boolean) => void;
     setDiscretize: (d: boolean) => void;
     setDemand: (demand: VisualizationDemand) => void;
-    setFeatureUI: <K extends keyof FeaturesUI>(key: K, value: FeaturesUI[K]) => void;
     regenerateData: () => void;
     applyPreset: (preset: Preset) => void;
     getConfig: () => AppConfig;
@@ -144,7 +143,7 @@ function buildInitialState() {
         training: { ...DEFAULT_TRAINING },
         data: { ...DEFAULT_DATA },
         features: { ...DEFAULT_FEATURES },
-        ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 } as UIConfig,
+        ui: { showTestData: false, discretizeOutput: false } as UIConfig,
     };
 }
 
@@ -269,10 +268,6 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         })),
 
         setDemand: (demand) => set({ demand }),
-
-        setFeatureUI: (key, value) => set((s) => ({
-            featuresUI: { ...s.featuresUI, [key]: value },
-        })),
 
         regenerateData: () => {
             const s = get();

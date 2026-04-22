@@ -39,7 +39,6 @@ neural-network-playground/
 │   │   ├── optimizers.ts
 │   │   └── __tests__/    # 144+ unit tests
 │   └── shared/           # Shared utilities (presets, URL state, code export)
-└── legacy/               # Original implementation (preserved)
 ```
 
 ### Key design decisions
@@ -114,4 +113,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 ## 📄 License
 
 [Apache 2.0](LICENSE) — inspired by [TensorFlow Playground](https://github.com/tensorflow/playground) by Daniel Smilkov & Shan Carter.
-# neural-network-playground

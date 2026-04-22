@@ -162,7 +162,6 @@ export function decodeUrlState(hash: string): AppConfig {
     const ui: UIConfig = {
         showTestData: p.get('st') === '1',
         discretizeOutput: p.get('do') === '1',
-        animationSpeed: 1,
     };
 
     const outputActivation = getCompatibleOutputActivation(
@@ -323,12 +322,10 @@ export function validateImportedConfig(candidate: unknown): ImportedConfigValida
         ? {
             showTestData: Boolean(ui.showTestData),
             discretizeOutput: Boolean(ui.discretizeOutput),
-            animationSpeed: isFiniteNumber(ui.animationSpeed) ? ui.animationSpeed : 1,
         }
         : {
             showTestData: false,
             discretizeOutput: false,
-            animationSpeed: 1,
         };
 
     const lossType = training.lossType as LossType;

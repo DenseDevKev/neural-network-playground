@@ -73,6 +73,23 @@ describe('Sidebar collapsible panel flow', () => {
         await user.click(hyperparameters);
 
         expect(hyperparameters).toHaveAttribute('aria-expanded', 'true');
+        expect(await screen.findByText('Learning rate')).toBeInTheDocument();
+    });
+
+    it('loads config tools when the config panel is expanded', async () => {
+        const user = userEvent.setup();
+
+        render(<Sidebar onReset={vi.fn()} />);
+
+        const config = getPanelToggle(/Config/);
+
+        expect(config).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByRole('button', { name: /Export JSON/ })).not.toBeInTheDocument();
+
+        await user.click(config);
+
+        expect(config).toHaveAttribute('aria-expanded', 'true');
+        expect(await screen.findByRole('button', { name: /Export JSON/ })).toBeInTheDocument();
     });
 
     it('restores panel collapse state across remounts', async () => {

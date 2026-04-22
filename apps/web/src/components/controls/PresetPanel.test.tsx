@@ -17,7 +17,7 @@ describe('PresetPanel', () => {
             network: { ...DEFAULT_NETWORK, inputSize: 2, seed: DEFAULT_DATA.seed },
             features: { ...DEFAULT_FEATURES },
             training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 },
+            ui: { showTestData: false, discretizeOutput: false },
         });
     });
 

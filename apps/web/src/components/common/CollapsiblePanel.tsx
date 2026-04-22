@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Tooltip } from './Tooltip.tsx';
 
 interface CollapsiblePanelProps {
@@ -8,10 +8,34 @@ interface CollapsiblePanelProps {
     badge?: string | number;
     className?: string;
     tooltipContent?: string;
+    lazyMount?: boolean;
+    fallback?: React.ReactNode;
 }
 
 function getPanelStorageKey(title: string): string {
     return `panel-${title.toLowerCase().replace(/\s+/g, '-')}`;
+}
+
+function readSavedExpandedState(title: string, defaultExpanded: boolean): {
+    isExpanded: boolean;
+    hasInvalidSavedState: boolean;
+} {
+    try {
+        const savedState = window.localStorage.getItem(getPanelStorageKey(title));
+        if (savedState === 'true') {
+            return { isExpanded: true, hasInvalidSavedState: false };
+        }
+        if (savedState === 'false') {
+            return { isExpanded: false, hasInvalidSavedState: false };
+        }
+        if (savedState !== null) {
+            return { isExpanded: defaultExpanded, hasInvalidSavedState: true };
+        }
+    } catch {
+        // Ignore localStorage read failures and fall back to defaults.
+    }
+
+    return { isExpanded: defaultExpanded, hasInvalidSavedState: false };
 }
 
 export function CollapsiblePanel({
@@ -21,10 +45,18 @@ export function CollapsiblePanel({
     badge,
     className,
     tooltipContent,
+    lazyMount = false,
+    fallback = null,
 }: CollapsiblePanelProps) {
-    const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+    const initialStateRef = useRef(readSavedExpandedState(title, defaultExpanded));
+    const [isExpanded, setIsExpanded] = useState(initialStateRef.current.isExpanded);
+    const [hasMountedContent, setHasMountedContent] = useState(
+        !lazyMount || initialStateRef.current.isExpanded,
+    );
     const [announcement, setAnnouncement] = useState('');
-    const [contentHeight, setContentHeight] = useState(defaultExpanded ? 'none' : '0px');
+    const [contentHeight, setContentHeight] = useState(
+        initialStateRef.current.isExpanded ? 'none' : '0px',
+    );
     const contentRef = useRef<HTMLDivElement>(null);
     const contentId = useId();
     const titleId = useId();
@@ -32,20 +64,22 @@ export function CollapsiblePanel({
     const measurementIdRef = useRef<string | null>(null);
 
     useEffect(() => {
+        if (!initialStateRef.current.hasInvalidSavedState) {
+            return;
+        }
+
         try {
-            const storageKey = getPanelStorageKey(title);
-            const savedState = window.localStorage.getItem(storageKey);
-            if (savedState === 'true') {
-                setIsExpanded(true);
-            } else if (savedState === 'false') {
-                setIsExpanded(false);
-            } else if (savedState !== null) {
-                window.localStorage.removeItem(storageKey);
-            }
+            window.localStorage.removeItem(getPanelStorageKey(title));
         } catch {
-            // Ignore localStorage read failures and fall back to defaults.
+            // Ignore localStorage write failures and continue with in-memory state.
         }
     }, [title]);
+
+    useEffect(() => {
+        if (isExpanded) {
+            setHasMountedContent(true);
+        }
+    }, [isExpanded]);
 
     useEffect(() => {
         const contentNode = contentRef.current;
@@ -142,7 +176,7 @@ export function CollapsiblePanel({
                 }}
             >
                 <div ref={contentRef} className="panel__content-inner">
-                    {children}
+                    {hasMountedContent ? <Suspense fallback={fallback}>{children}</Suspense> : null}
                 </div>
             </div>
             <span className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</span>

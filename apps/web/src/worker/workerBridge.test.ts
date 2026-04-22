@@ -1,7 +1,7 @@
 // ── workerBridge Error-Path Tests ──
 // Exercises onerror / onmessageerror handlers and stale-run error passthrough.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Stub out Comlink before importing workerBridge ──
 vi.mock('comlink', () => ({
@@ -134,6 +134,9 @@ describe('workerBridge error paths', () => {
             (call: unknown[]) => call[0] === 'message',
         );
         expect(listenerCall).toBeTruthy();
+        if (!listenerCall) {
+            throw new Error('Expected stream port message listener to be registered');
+        }
         const listener = listenerCall[1] as (event: MessageEvent) => void;
 
         // Stale error (runId=5 < _currentRunId=10) must surface
@@ -150,6 +153,10 @@ describe('workerBridge error paths', () => {
         const listenerCall = (fakePort1.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
             (call: unknown[]) => call[0] === 'message',
         );
+        expect(listenerCall).toBeTruthy();
+        if (!listenerCall) {
+            throw new Error('Expected stream port message listener to be registered');
+        }
         const listener = listenerCall[1] as (event: MessageEvent) => void;
 
         listener({

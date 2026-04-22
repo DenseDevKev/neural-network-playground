@@ -1,12 +1,10 @@
 // ── MainArea Component ──
-import { memo } from 'react';
+import { lazy, memo } from 'react';
 import { TrainingControls } from '../controls/TrainingControls.tsx';
 import { NetworkGraph } from '../visualization/NetworkGraph.tsx';
 import { DecisionBoundary } from '../visualization/DecisionBoundary.tsx';
 import { LossChart } from '../visualization/LossChart.tsx';
 import { ConfusionMatrix } from '../visualization/ConfusionMatrix.tsx';
-import { CodeExportPanel } from '../controls/CodeExportPanel.tsx';
-import { InspectionPanel } from '../controls/InspectionPanel.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -14,9 +12,22 @@ import { HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
 import { CollapsiblePanel } from '../common/CollapsiblePanel.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { ErrorBoundary } from '../common/ErrorBoundary.tsx';
+import { LoadingState } from '../common/LoadingState.tsx';
 
 interface MainAreaProps {
     training: TrainingHook;
+}
+
+const InspectionPanel = lazy(() =>
+    import('../controls/InspectionPanel.tsx').then((module) => ({ default: module.InspectionPanel })),
+);
+
+const CodeExportPanel = lazy(() =>
+    import('../controls/CodeExportPanel.tsx').then((module) => ({ default: module.CodeExportPanel })),
+);
+
+function InlinePanelFallback({ message }: { message: string }) {
+    return <LoadingState isLoading inline message={message} />;
 }
 
 export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
@@ -102,10 +113,22 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                                 </label>
                             </Tooltip>
                         </CollapsiblePanel>
-                        <CollapsiblePanel title="Inspection" defaultExpanded={false} className="inspection-panel">
+                        <CollapsiblePanel
+                            title="Inspection"
+                            defaultExpanded={false}
+                            className="inspection-panel"
+                            lazyMount
+                            fallback={<InlinePanelFallback message="Loading inspection..." />}
+                        >
                             <InspectionPanel />
                         </CollapsiblePanel>
-                        <CollapsiblePanel title="Code Export" defaultExpanded={false} className="code-export-panel">
+                        <CollapsiblePanel
+                            title="Code Export"
+                            defaultExpanded={false}
+                            className="code-export-panel"
+                            lazyMount
+                            fallback={<InlinePanelFallback message="Loading code export..." />}
+                        >
                             <CodeExportPanel />
                         </CollapsiblePanel>
                     </>

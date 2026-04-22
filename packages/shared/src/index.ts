@@ -38,7 +38,6 @@ export type {
     AppConfig,
     Preset,
     TrainingStatus,
-    PlaygroundState,
 } from './types.js';
 export {
     DEFAULT_DEMAND,

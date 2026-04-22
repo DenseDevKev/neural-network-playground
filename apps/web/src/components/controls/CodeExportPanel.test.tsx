@@ -37,13 +37,13 @@ describe('CodeExportPanel', () => {
             network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed, hiddenLayers: [2] },
             features: { ...DEFAULT_FEATURES },
             training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false, animationSpeed: 1 },
+            ui: { showTestData: false, discretizeOutput: false },
         });
 
+        useTrainingStore.getState().resetHistory();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: fakeSnapshot as any,
-            history: [],
             frameVersion: 0,
             trainPoints: [],
             testPoints: [],

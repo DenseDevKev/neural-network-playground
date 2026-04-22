@@ -70,6 +70,63 @@ describe('CollapsiblePanel', () => {
         expect(screen.getByRole('button', { name: /Network/ })).toHaveAttribute('aria-expanded', 'false');
     });
 
+    it('does not mount lazy content until the panel is expanded', async () => {
+        const user = userEvent.setup();
+        let renderCount = 0;
+
+        function LazyChild() {
+            renderCount++;
+            return <div>Lazy panel content</div>;
+        }
+
+        render(
+            <CollapsiblePanel title="Config" defaultExpanded={false} lazyMount>
+                <LazyChild />
+            </CollapsiblePanel>,
+        );
+
+        expect(renderCount).toBe(0);
+        expect(screen.queryByText('Lazy panel content')).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: /Config/ }));
+
+        expect(screen.getByText('Lazy panel content')).toBeInTheDocument();
+        expect(renderCount).toBe(1);
+    });
+
+    it('keeps lazy content mounted after collapsing again', async () => {
+        const user = userEvent.setup();
+
+        render(
+            <CollapsiblePanel title="Code Export" defaultExpanded={false} lazyMount>
+                <div>Code tools</div>
+            </CollapsiblePanel>,
+        );
+
+        const toggle = screen.getByRole('button', { name: /Code Export/ });
+
+        await user.click(toggle);
+        expect(screen.getByText('Code tools')).toBeInTheDocument();
+
+        await user.click(toggle);
+
+        expect(toggle).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.getByText('Code tools')).toBeInTheDocument();
+    });
+
+    it('mounts lazy content immediately when localStorage restores an expanded panel', () => {
+        window.localStorage.setItem('panel-inspection', 'true');
+
+        render(
+            <CollapsiblePanel title="Inspection" defaultExpanded={false} lazyMount>
+                <div>Inspection tools</div>
+            </CollapsiblePanel>,
+        );
+
+        expect(screen.getByRole('button', { name: /Inspection/ })).toHaveAttribute('aria-expanded', 'true');
+        expect(screen.getByText('Inspection tools')).toBeInTheDocument();
+    });
+
     it('clears invalid localStorage state on mount', () => {
         window.localStorage.setItem('panel-network', 'invalid');
 

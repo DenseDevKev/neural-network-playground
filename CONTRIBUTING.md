@@ -23,7 +23,6 @@ pnpm dev
 | `apps/web/` | React + Vite frontend |
 | `packages/engine/` | Pure TypeScript neural network engine (zero DOM deps) |
 | `packages/shared/` | Shared utilities (presets, URL serialization, code export) |
-| `legacy/` | Original implementation (reference only) |
 
 ## 🔄 Development workflow
 

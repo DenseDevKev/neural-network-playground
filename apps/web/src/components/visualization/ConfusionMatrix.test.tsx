@@ -16,10 +16,10 @@ function setProblemType(problemType: 'classification' | 'regression') {
 describe('ConfusionMatrix', () => {
   beforeEach(() => {
     setProblemType('classification');
+    useTrainingStore.getState().resetHistory();
     useTrainingStore.setState({
       status: 'idle',
       snapshot: null,
-      history: [],
       trainPoints: [],
       testPoints: [],
       stepsPerFrame: 5,
