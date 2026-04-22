@@ -1,86 +1,85 @@
 // ── Root App Component ──
-import { useEffect, useRef, useCallback, useState } from 'react';
+// Wires the three RegionShell layout variants (Dock / Grid / Split).
+// Layout selection lives in useLayoutStore (persisted to localStorage).
+// Each shell receives typed content props — adding a new panel means
+// adding it to the relevant content map, not editing any layout code.
+
+import { useEffect, useRef, useCallback } from 'react';
+import { useLayoutStore } from './store/useLayoutStore.ts';
+import { useTrainingStore } from './store/useTrainingStore.ts';
+import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
+import { useTraining } from './hooks/useTraining.ts';
 import { Header } from './components/layout/Header.tsx';
-import { Sidebar } from './components/layout/Sidebar.tsx';
-import { MainArea } from './components/layout/MainArea.tsx';
+import { Panel } from './components/common/Panel.tsx';
+import {
+    DockShell,
+    GridShell,
+    SplitShell,
+} from './components/layout/RegionShell.tsx';
+import {
+    CanvasContent,
+    BoundaryContent,
+    LossContent,
+    ConfusionContent,
+    InspectContent,
+    CodeContent,
+} from './components/layout/MainArea.tsx';
+import { TrainingControls } from './components/controls/TrainingControls.tsx';
+import { NetworkGraph } from './components/visualization/NetworkGraph.tsx';
+import { PresetPanel } from './components/controls/PresetPanel.tsx';
+import { DataPanel } from './components/controls/DataPanel.tsx';
+import { FeaturesPanel } from './components/controls/FeaturesPanel.tsx';
+import { NetworkConfigPanel } from './components/controls/NetworkConfigPanel.tsx';
+import { HyperparamPanel } from './components/controls/HyperparamPanel.tsx';
+import { ConfigPanel } from './components/controls/ConfigPanel.tsx';
+import { InspectionPanel } from './components/controls/InspectionPanel.tsx';
 import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
-import { useTraining } from './hooks/useTraining.ts';
-import { useTrainingStore } from './store/useTrainingStore.ts';
+import { CodeExportPanel } from './components/controls/CodeExportPanel.tsx';
 
 export default function App() {
     const training = useTraining();
-    const status = useTrainingStore((s) => s.status);
-    const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
+    const layout   = useLayoutStore((s) => s.layout);
+    const status   = useTrainingStore((s) => s.status);
+    const dataConfigLoading    = useTrainingStore((s) => s.dataConfigLoading);
     const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
-    const configError = useTrainingStore((s) => s.configError);
-    const configErrorSource = useTrainingStore((s) => s.configErrorSource);
-    const workerError = useTrainingStore((s) => s.workerError);
-    const [viewport, setViewport] = useState<'mobile' | 'tablet' | 'desktop' | 'wide'>(() => {
-        if (window.innerWidth < 540) return 'mobile';
-        if (window.innerWidth < 860) return 'tablet';
-        if (window.innerWidth < 1200) return 'desktop';
-        return 'wide';
-    });
+    const configError          = useTrainingStore((s) => s.configError);
+    const configErrorSource    = useTrainingStore((s) => s.configErrorSource);
+    const workerError          = useTrainingStore((s) => s.workerError);
 
-    // Stable ref so the keydown handler never goes stale between renders.
+    // Stable refs so keyboard handler never goes stale
     const trainingRef = useRef(training);
-    const statusRef = useRef(status);
+    const statusRef   = useRef(status);
     useEffect(() => { trainingRef.current = training; }, [training]);
-    useEffect(() => { statusRef.current = status; }, [status]);
+    useEffect(() => { statusRef.current   = status;   }, [status]);
 
+    const stableReset = useCallback(() => trainingRef.current.reset(), []);
+
+    // Performance observer (dev only)
     useEffect(() => {
-        if (!import.meta.env.DEV || typeof PerformanceObserver === 'undefined') {
-            return;
-        }
-
-        const observer = new PerformanceObserver((list) => {
-            for (const entry of list.getEntriesByType('measure')) {
-                if (entry.duration > 16) {
-                    console.warn(`[perf] Slow interaction: ${entry.name} (${entry.duration.toFixed(2)}ms)`);
-                }
+        if (!import.meta.env.DEV || typeof PerformanceObserver === 'undefined') return;
+        const obs = new PerformanceObserver((list) => {
+            for (const e of list.getEntriesByType('measure')) {
+                if (e.duration > 16)
+                    console.warn(`[perf] Slow interaction: ${e.name} (${e.duration.toFixed(2)}ms)`);
             }
         });
-
-        observer.observe({ entryTypes: ['measure'] });
-        return () => observer.disconnect();
-    }, []);
-
-    useEffect(() => {
-        const updateViewport = () => {
-            if (window.innerWidth < 540) {
-                setViewport('mobile');
-            } else if (window.innerWidth < 860) {
-                setViewport('tablet');
-            } else if (window.innerWidth < 1200) {
-                setViewport('desktop');
-            } else {
-                setViewport('wide');
-            }
-        };
-
-        window.addEventListener('resize', updateViewport);
-        return () => window.removeEventListener('resize', updateViewport);
+        obs.observe({ entryTypes: ['measure'] });
+        return () => obs.disconnect();
     }, []);
 
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
-            // Don't intercept when user is typing in a form element
-            if (
-                e.target instanceof HTMLInputElement ||
+            if (e.target instanceof HTMLInputElement ||
                 e.target instanceof HTMLSelectElement ||
-                e.target instanceof HTMLTextAreaElement
-            ) return;
-
+                e.target instanceof HTMLTextAreaElement) return;
             if (e.code === 'Space') {
                 e.preventDefault();
-                if (statusRef.current === 'running') {
-                    trainingRef.current.pause();
-                } else {
-                    trainingRef.current.play();
-                }
+                statusRef.current === 'running'
+                    ? trainingRef.current.pause()
+                    : trainingRef.current.play();
             } else if (e.code === 'ArrowRight') {
                 e.preventDefault();
                 trainingRef.current.step();
@@ -89,17 +88,73 @@ export default function App() {
                 trainingRef.current.reset();
             }
         };
-
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, []); // empty deps — handler reads always-current refs
-    // Stable callback for Sidebar — delegates to the always-current ref
-    // so React.memo on Sidebar actually prevents re-renders.
-    const stableReset = useCallback(() => trainingRef.current.reset(), []);
+    }, []);
+
+    // ── Content maps ──────────────────────────────────────────────────────
+    const leftTabContent = {
+        presets:     <PresetPanel onReset={stableReset} />,
+        data:        <DataPanel onReset={stableReset} />,
+        features:    <FeaturesPanel />,
+        network:     <NetworkConfigPanel />,
+        hyperparams: <HyperparamPanel />,
+        config:      <ConfigPanel onReset={stableReset} />,
+    };
+
+    const rightTabContent = {
+        boundary:   <BoundaryContent />,
+        loss:       <LossContent />,
+        confusion:  <ConfusionContent />,
+        inspection: <InspectContent />,
+        code:       <CodeContent />,
+    };
+
+    const transport = <TrainingControls training={training} />;
+
+    const canvasPanel = (
+        <Panel title="Network Topology" phase="build" fill>
+            <div className="network-graph-wrapper" style={{ flex: 1, height: '100%', minHeight: 200, borderRadius: 'var(--radius-sm)' }}>
+                <NetworkGraph />
+            </div>
+        </Panel>
+    );
+
+    const boundaryPanel = (
+        <Panel title="Decision Boundary" phase="run" fill>
+            <BoundaryContent />
+        </Panel>
+    );
+
+    const lossPanel = (
+        <Panel title="Loss / Accuracy" phase="run" fill>
+            <LossContent />
+        </Panel>
+    );
+
+    const confusionPanel = (
+        <Panel title="Confusion Matrix" phase="run">
+            <ConfusionContent />
+        </Panel>
+    );
+
+    const inspectPanel = (
+        <Panel title="Layer Inspection" phase="run" fill>
+            <InspectContent />
+        </Panel>
+    );
+
+    const configPanels = (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+            <Panel title="Data" phase="build"><DataPanel onReset={stableReset} /></Panel>
+            <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
+        </div>
+    );
 
     return (
-        <div className={`app-shell app-shell--${viewport}`} data-viewport={viewport}>
+        <div className="forge-shell">
             <a className="skip-link" href="#main-content">Skip to main content</a>
+
             <AccessibilityAnnouncer
                 status={status}
                 dataConfigLoading={dataConfigLoading}
@@ -107,7 +162,8 @@ export default function App() {
                 configError={configError}
                 configErrorSource={configErrorSource}
             />
-            <Header training={training} />
+
+            {/* Worker crash overlay */}
             {workerError && (
                 <div className="error-overlay" role="alertdialog" aria-modal="true">
                     <div className="error-overlay__content">
@@ -115,43 +171,129 @@ export default function App() {
                             icon="⚠"
                             title="Worker connection lost"
                             description={`${workerError} Refresh the page to restart the playground.`}
-                            action={{
-                                label: 'Refresh page',
-                                onClick: () => window.location.reload(),
-                            }}
+                            action={{ label: 'Refresh page', onClick: () => window.location.reload() }}
                         />
                     </div>
                 </div>
             )}
-            <div className="main-layout">
-                <ErrorBoundary
-                    title="Controls unavailable"
-                    description="The configuration sidebar hit an error."
-                    actionLabel="Reload controls"
-                    onRetry={stableReset}
-                >
-                    <Sidebar onReset={stableReset} />
-                </ErrorBoundary>
-                <ErrorBoundary
-                    title="Workspace unavailable"
-                    description="The main playground area failed to render."
-                    actionLabel="Reload workspace"
-                    onRetry={stableReset}
-                >
-                    <MainArea training={training} />
+
+            {/* Top bar */}
+            <ErrorBoundary title="Header unavailable" description="Header render failed." actionLabel="Reload" onRetry={stableReset}>
+                <Header training={training} />
+            </ErrorBoundary>
+
+            {/* Workspace */}
+            <div className="forge-workspace" id="main-content" tabIndex={-1}>
+                <ErrorBoundary title="Workspace unavailable" description="Layout shell failed." actionLabel="Reload" onRetry={stableReset}>
+                    {layout === 'dock' && (
+                        <DockShell
+                            leftTabContent={leftTabContent}
+                            rightTabContent={rightTabContent}
+                            canvasContent={canvasPanel}
+                            transportContent={transport}
+                        />
+                    )}
+
+                    {layout === 'grid' && (
+                        <GridShell
+                            topologyContent={canvasPanel}
+                            boundaryContent={boundaryPanel}
+                            configContent={configPanels}
+                            lossContent={lossPanel}
+                            confusionContent={confusionPanel}
+                            inspectContent={inspectPanel}
+                            transportContent={transport}
+                        />
+                    )}
+
+                    {layout === 'split' && (
+                        <SplitShell
+                            buildLeft={
+                                <>
+                                    <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
+                                    <Panel title="Data" phase="build"><DataPanel onReset={stableReset} /></Panel>
+                                </>
+                            }
+                            buildCenter={
+                                <Panel title="Network Topology" phase="build" fill>
+                                    <div className="network-graph-wrapper" style={{ flex: 1, height: '100%', minHeight: 280 }}>
+                                        <NetworkGraph />
+                                    </div>
+                                </Panel>
+                            }
+                            buildRight={
+                                <>
+                                    <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
+                                    <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+                                </>
+                            }
+                            runLeft={
+                                <>
+                                    <Panel title="Network Topology" phase="build" fill>
+                                        <div className="network-graph-wrapper" style={{ height: 240 }}>
+                                            <NetworkGraph />
+                                        </div>
+                                    </Panel>
+                                    <Panel title="Layer Inspection" phase="run">
+                                        <InspectionPanel />
+                                    </Panel>
+                                </>
+                            }
+                            runCenter={
+                                <>
+                                    <Panel title="Decision Boundary" phase="run"><BoundaryContent /></Panel>
+                                    <Panel title="Loss / Accuracy" phase="run"><LossContent /></Panel>
+                                </>
+                            }
+                            runRight={
+                                <>
+                                    <Panel title="Confusion Matrix" phase="run"><ConfusionContent /></Panel>
+                                    <Panel title="Code Export" phase="both"><CodeExportPanel /></Panel>
+                                </>
+                            }
+                            transportContent={transport}
+                        />
+                    )}
                 </ErrorBoundary>
             </div>
-            <footer className="footer">
+
+            {/* Status bar */}
+            <StatusBar />
+        </div>
+    );
+}
+
+function StatusBar() {
+    const status   = useTrainingStore((s) => s.status);
+    const layout   = useLayoutStore((s) => s.layout);
+    const phase    = useLayoutStore((s) => s.phase);
+    const dataset  = usePlaygroundStore((s) => s.data.dataset);
+    const hl       = usePlaygroundStore((s) => s.network.hiddenLayers);
+    const snapshot = useTrainingStore((s) => s.snapshot);
+
+    return (
+        <div className="forge-statusbar" role="status" aria-label="Status bar">
+            <span>
+                <span className="forge-statusbar__accent">●</span>{' '}
+                {status.toUpperCase()}
+            </span>
+            <span>LAYOUT: <span className="forge-statusbar__accent">{layout}</span></span>
+            <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
+            <span>DATA: {dataset}</span>
+            <span>ARCH: [{hl.join(', ')}]</span>
+            <span className="forge-statusbar__spacer" />
+            <span>step {(snapshot?.step ?? 0).toLocaleString()}</span>
+            <span>
                 Inspired by{' '}
                 <a
                     href="https://playground.tensorflow.org"
                     target="_blank"
                     rel="noopener noreferrer"
+                    style={{ color: 'var(--color-primary)', textDecoration: 'none' }}
                 >
                     TensorFlow Playground
-                </a>{' '}
-                by Daniel Smilkov &amp; Shan Carter
-            </footer>
+                </a>
+            </span>
         </div>
     );
 }

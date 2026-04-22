@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MainArea } from './MainArea.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -37,10 +36,6 @@ vi.mock('../common/ErrorBoundary.tsx', () => ({
     ErrorBoundary: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-vi.mock('../common/Tooltip.tsx', () => ({
-    Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
 function createTrainingMock(): TrainingHook {
     return {
         play: vi.fn(),
@@ -50,34 +45,8 @@ function createTrainingMock(): TrainingHook {
     };
 }
 
-function getPanelToggle(label: RegExp): HTMLButtonElement {
-    const matches = screen.getAllByRole('button', { name: label });
-    const panelToggle = matches.find((button) => button.classList.contains('panel__header'));
-    if (!panelToggle) {
-        throw new Error(`Panel toggle not found for label: ${label.toString()}`);
-    }
-    return panelToggle as HTMLButtonElement;
-}
-
-describe('MainArea lazy panels', () => {
+describe('MainArea right-panel content', () => {
     beforeEach(() => {
-        const store = new Map<string, string>();
-        Object.defineProperty(window, 'localStorage', {
-            configurable: true,
-            value: {
-                getItem: (key: string) => store.get(key) ?? null,
-                setItem: (key: string, value: string) => {
-                    store.set(key, value);
-                },
-                removeItem: (key: string) => {
-                    store.delete(key);
-                },
-                clear: () => {
-                    store.clear();
-                },
-            },
-        });
-
         usePlaygroundStore.setState({
             data: { ...DEFAULT_DATA },
             network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed, hiddenLayers: [2] },
@@ -117,20 +86,20 @@ describe('MainArea lazy panels', () => {
         });
     });
 
-    it('loads code export tools when the code export panel is expanded', async () => {
-        const user = userEvent.setup();
-
+    it('renders code export tools in the right panel without requiring a toggle', async () => {
         render(<MainArea training={createTrainingMock()} />);
 
-        const codeExport = getPanelToggle(/Code Export/);
-
-        expect(codeExport).toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('button', { name: 'Pseudocode' })).not.toBeInTheDocument();
-
-        await user.click(codeExport);
-
-        expect(codeExport).toHaveAttribute('aria-expanded', 'true');
+        // Code Export panel is always visible — no collapse needed
         expect(await screen.findByRole('button', { name: 'Pseudocode' })).toBeInTheDocument();
         expect(document.querySelector('.code-export__code')?.textContent).toBeTruthy();
+    });
+
+    it('renders all main visualization sections', () => {
+        render(<MainArea training={createTrainingMock()} />);
+
+        expect(screen.getByText('Decision boundary')).toBeInTheDocument();
+        expect(screen.getByText('Loss chart')).toBeInTheDocument();
+        expect(screen.getByText('Confusion matrix')).toBeInTheDocument();
+        expect(screen.getByText('Training controls')).toBeInTheDocument();
     });
 });

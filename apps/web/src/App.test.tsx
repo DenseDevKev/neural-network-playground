@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import App from './App';
 import { useTrainingStore } from './store/useTrainingStore.ts';
+import { useLayoutStore } from './store/useLayoutStore.ts';
 
 const trainingMock = {
     play: vi.fn(),
@@ -19,13 +20,31 @@ vi.mock('./components/layout/Header.tsx', () => ({
     Header: () => <header>Header</header>,
 }));
 
-vi.mock('./components/layout/Sidebar.tsx', () => ({
-    Sidebar: () => <aside>Sidebar</aside>,
+vi.mock('./components/layout/RegionShell.tsx', () => ({
+    DockShell:  () => <section aria-label="Dock workspace">Workspace</section>,
+    GridShell:  () => <section aria-label="Grid workspace">Workspace</section>,
+    SplitShell: () => <section aria-label="Split workspace">Workspace</section>,
 }));
 
 vi.mock('./components/layout/MainArea.tsx', () => ({
-    MainArea: () => <main id="main-content" tabIndex={-1}>Main content</main>,
+    CanvasContent:   () => <div>Canvas</div>,
+    BoundaryContent: () => <div>Boundary</div>,
+    LossContent:     () => <div>Loss</div>,
+    ConfusionContent:() => <div>Confusion</div>,
+    InspectContent:  () => <div>Inspect</div>,
+    CodeContent:     () => <div>Code</div>,
 }));
+
+vi.mock('./components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
+vi.mock('./components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
+vi.mock('./components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
+vi.mock('./components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
+vi.mock('./components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: () => <div>Features</div> }));
+vi.mock('./components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
+vi.mock('./components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel: () => <div>Hyperparams</div> }));
+vi.mock('./components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
+vi.mock('./components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
+vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));
 
 describe('App accessibility shell', () => {
     beforeEach(() => {
@@ -41,24 +60,24 @@ describe('App accessibility shell', () => {
             configError: null,
             configErrorSource: null,
             workerError: null,
+            snapshot: null,
         });
 
-        Object.defineProperty(window, 'innerWidth', {
-            writable: true,
-            configurable: true,
-            value: 1200,
+        useLayoutStore.setState({
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'boundary',
         });
     });
 
     it('renders a skip link to the main content', () => {
         render(<App />);
-
         expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute('href', '#main-content');
     });
 
     it('has no obvious accessibility violations in the shell', async () => {
         const { container } = render(<App />);
-
         const results = await axe(container);
         expect(results.violations).toHaveLength(0);
     });
@@ -102,28 +121,23 @@ describe('App accessibility shell', () => {
         expect(trainingMock.reset).not.toHaveBeenCalled();
     });
 
-    it('tracks responsive viewport transitions across breakpoints', () => {
+    it('renders forge-shell with status bar', () => {
         const { container } = render(<App />);
+        expect(container.querySelector('.forge-shell')).toBeTruthy();
+        expect(screen.getByRole('status', { name: 'Status bar' })).toBeInTheDocument();
+    });
 
-        const shell = container.querySelector('.app-shell');
-        expect(shell).toHaveAttribute('data-viewport', 'wide');
-
-        act(() => {
-            window.innerWidth = 1000;
-            window.dispatchEvent(new Event('resize'));
-        });
-        expect(shell).toHaveAttribute('data-viewport', 'desktop');
+    it('switches layout variants through the store', () => {
+        render(<App />);
 
         act(() => {
-            window.innerWidth = 700;
-            window.dispatchEvent(new Event('resize'));
+            useLayoutStore.getState().setLayout('grid');
         });
-        expect(shell).toHaveAttribute('data-viewport', 'tablet');
+        expect(useLayoutStore.getState().layout).toBe('grid');
 
         act(() => {
-            window.innerWidth = 320;
-            window.dispatchEvent(new Event('resize'));
+            useLayoutStore.getState().setLayout('split');
         });
-        expect(shell).toHaveAttribute('data-viewport', 'mobile');
+        expect(useLayoutStore.getState().layout).toBe('split');
     });
 });
