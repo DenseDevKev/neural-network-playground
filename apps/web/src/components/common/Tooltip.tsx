@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
 
 interface TooltipProps {
@@ -65,7 +65,7 @@ export function Tooltip({
   const timeoutRef = useRef<number | undefined>(undefined);
   const triggerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const tooltipId = useRef(`tooltip-${Math.random().toString(36).substr(2, 9)}`);
+  const generatedId = useId();
   const measurementIdRef = useRef<string | null>(null);
 
   const updateTooltip = useCallback(() => {
@@ -87,7 +87,7 @@ export function Tooltip({
 
   const show = useCallback(() => {
     if (import.meta.env.DEV && typeof performance !== 'undefined') {
-      const measurementId = `tooltip-show:${tooltipId.current}:${performance.now()}`;
+      const measurementId = `tooltip-show:${generatedId}:${performance.now()}`;
       measurementIdRef.current = measurementId;
       performance.mark(`${measurementId}:start`);
     }
@@ -159,7 +159,7 @@ export function Tooltip({
             hide();
           }
         }}
-        aria-describedby={isVisible ? tooltipId.current : undefined}
+        aria-describedby={isVisible ? generatedId : undefined}
         style={{ display: block ? 'block' : 'inline-block' }}
       >
         {children}
@@ -167,7 +167,7 @@ export function Tooltip({
       {createPortal(
         <div
           ref={tooltipRef}
-          id={tooltipId.current}
+          id={generatedId}
           className="tooltip"
           role="tooltip"
           style={{
