@@ -11,6 +11,8 @@ export default [
         ignores: [
             '**/dist/',
             '**/node_modules/',
+            'legacy/',
+            'conductor/',
         ],
         linterOptions: {
             // Don't error on eslint-disable comments that may become "unused"

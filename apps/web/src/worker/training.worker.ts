@@ -165,6 +165,7 @@ function postSharedBuffersHandshake(): void {
     state.streamPort.postMessage(handshake);
 }
 
+
 // Post an error message to the main thread via the stream port. If the port
 // isn't yet set (e.g. module-eval failure before setStreamPort), fall back to
 // console so the error at least appears in devtools.
