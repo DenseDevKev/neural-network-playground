@@ -94,4 +94,27 @@ describe('useLayoutStore', () => {
         expect(freshStore.getState().activeTabLeft).toBe('features');
         expect(freshStore.getState().activeTabRight).toBe('loss');
     });
+
+    it('sanitizes invalid persisted layout state on rehydrate', async () => {
+        window.localStorage.setItem(
+            LAYOUT_STORAGE_KEY,
+            JSON.stringify({
+                state: {
+                    layout: 'wide-open',
+                    phase: 'debug',
+                    activeTabLeft: 'missing',
+                    activeTabRight: 'also-missing',
+                },
+                version: 0,
+            }),
+        );
+
+        const freshStore = createLayoutStore();
+        await Promise.resolve(freshStore.persist.rehydrate());
+
+        expect(freshStore.getState().layout).toBe('dock');
+        expect(freshStore.getState().phase).toBe('build');
+        expect(freshStore.getState().activeTabLeft).toBe('data');
+        expect(freshStore.getState().activeTabRight).toBe('boundary');
+    });
 });

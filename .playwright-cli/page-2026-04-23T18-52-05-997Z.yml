@@ -1,0 +1,216 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - status [ref=e5]
+  - banner [ref=e6]:
+    - generic [ref=e9]: NN·FORGE
+    - group "Workspace phase" [ref=e536]:
+      - button "Build" [ref=e537] [cursor=pointer]:
+        - generic [ref=e539]: Build
+      - button "Run" [active] [pressed] [ref=e540] [cursor=pointer]:
+        - generic [ref=e542]: Run
+    - status "Training metrics" [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]: Epoch
+        - generic [ref=e14]: "0000"
+      - generic [ref=e15]:
+        - generic [ref=e16]: Train Loss
+        - generic [ref=e17]: "0.6926"
+      - generic [ref=e18]:
+        - generic [ref=e19]: Test Loss
+        - generic [ref=e20]: "0.6918"
+      - generic [ref=e164]:
+        - generic [ref=e165]: Accuracy
+        - generic [ref=e166]: 48.7%
+    - generic [ref=e21]:
+      - group "Layout variant" [ref=e22]:
+        - button "dock" [ref=e23] [cursor=pointer]
+        - button "grid" [ref=e24] [cursor=pointer]
+        - button "split" [pressed] [ref=e25] [cursor=pointer]
+      - button "Start training" [ref=e26] [cursor=pointer]: ▶
+  - generic [ref=e543]:
+    - generic [ref=e544]:
+      - generic [ref=e545]: ▶ Run phase — observe training
+      - generic [ref=e546]: ← Switch to Build to edit architecture
+    - generic [ref=e547]:
+      - generic [ref=e548]:
+        - generic [ref=e549]:
+          - generic [ref=e550]:
+            - generic [ref=e552]: Network Topology
+            - generic [ref=e553]: build
+          - generic [ref=e806]:
+            - img [ref=e807]
+            - paragraph [ref=e808]: "Neural network: 2 inputs, 2 hidden layers of 4, 4 neurons, 1 output. Activation: tanh."
+        - generic [ref=e623]:
+          - generic [ref=e624]:
+            - generic [ref=e626]: Layer Inspection
+            - generic [ref=e627]: run
+          - generic [ref=e810]: Train the model to see stats
+      - generic [ref=e666]:
+        - generic [ref=e667]:
+          - generic [ref=e668]:
+            - generic [ref=e670]: Decision Boundary
+            - generic [ref=e671]: run
+          - generic [ref=e672]:
+            - generic [ref=e811]:
+              - generic "Decision boundary visualization showing the neural network's classification regions" [ref=e812]
+              - generic:
+                - generic:
+                  - generic: Negative
+                - generic:
+                  - generic: Positive
+            - generic [ref=e813]:
+              - generic [ref=e814]: Class 0 / Negative
+              - generic [ref=e816]: Class 1 / Positive
+            - generic [ref=e818]:
+              - generic [ref=e819] [cursor=pointer]:
+                - checkbox "Show test data" [ref=e820]
+                - text: Show test data
+              - generic [ref=e821] [cursor=pointer]:
+                - checkbox "Discretize output" [ref=e822]
+                - text: Discretize output
+        - generic [ref=e678]:
+          - generic [ref=e679]:
+            - generic [ref=e681]: Loss / Accuracy
+            - generic [ref=e682]: run
+          - generic [ref=e823]:
+            - generic [ref=e824]:
+              - button "Loss" [pressed] [ref=e826] [cursor=pointer]
+              - button "Accuracy" [ref=e828] [cursor=pointer]
+            - generic "Loss over training steps" [ref=e830]
+      - generic [ref=e707]:
+        - generic [ref=e708]:
+          - generic [ref=e709]:
+            - generic [ref=e711]: Confusion Matrix
+            - generic [ref=e712]: run
+          - generic [ref=e831]:
+            - generic [ref=e832]: Confusion Matrix (Test Set)
+            - generic [ref=e833]:
+              - generic [ref=e834]: Predicted
+              - generic [ref=e835]:
+                - generic [ref=e836]: Actual
+                - generic [ref=e837]:
+                  - generic [ref=e839]: Pred 0
+                  - generic [ref=e840]: Pred 1
+                  - generic [ref=e841]: Total
+                  - generic [ref=e842]: Actual 0
+                  - generic "TN cell" [ref=e843]:
+                    - generic [ref=e844]: "33"
+                    - generic [ref=e845]: 22.0%
+                    - generic [ref=e846]: TN
+                  - generic "FP cell" [ref=e847]:
+                    - generic [ref=e848]: "34"
+                    - generic [ref=e849]: 22.7%
+                    - generic [ref=e850]: FP
+                  - generic [ref=e851]: "67"
+                  - generic [ref=e852]: Actual 1
+                  - generic "FN cell" [ref=e853]:
+                    - generic [ref=e854]: "38"
+                    - generic [ref=e855]: 25.3%
+                    - generic [ref=e856]: FN
+                  - generic "TP cell" [ref=e857]:
+                    - generic [ref=e858]: "45"
+                    - generic [ref=e859]: 30.0%
+                    - generic [ref=e860]: TP
+                  - generic [ref=e861]: "83"
+                  - generic [ref=e862]: Total
+                  - generic [ref=e863]: "71"
+                  - generic [ref=e864]: "79"
+                  - generic [ref=e865]: "150"
+              - generic [ref=e866]:
+                - generic [ref=e867]:
+                  - generic [ref=e868]: Accuracy
+                  - generic [ref=e869]: 52.0%
+                - generic [ref=e870]:
+                  - generic [ref=e871]: Precision
+                  - generic [ref=e872]: 57.0%
+                - generic [ref=e873]:
+                  - generic [ref=e874]: Recall
+                  - generic [ref=e875]: 54.2%
+        - generic [ref=e734]:
+          - generic [ref=e737]: Hyperparameters
+          - generic [ref=e739]:
+            - generic [ref=e740]:
+              - generic [ref=e741]: Learning rate
+              - combobox [ref=e743] [cursor=pointer]:
+                - option "0.00001"
+                - option "0.0001"
+                - option "0.001"
+                - option "0.003"
+                - option "0.01"
+                - option "0.03" [selected]
+                - option "0.1"
+                - option "0.3"
+                - option "1"
+                - option "3"
+                - option "10"
+            - generic [ref=e744]:
+              - generic [ref=e745]: Loss
+              - combobox [ref=e747] [cursor=pointer]:
+                - option "MSE (Squared)"
+                - option "Cross-Entropy" [selected]
+                - option "Huber"
+            - generic [ref=e748]:
+              - generic [ref=e749]: Optimizer
+              - combobox [ref=e751] [cursor=pointer]:
+                - option "SGD" [selected]
+                - option "SGD + Momentum"
+                - option "Adam"
+            - generic [ref=e752]:
+              - generic [ref=e753]: Batch size
+              - combobox [ref=e755] [cursor=pointer]:
+                - option "1"
+                - option "2"
+                - option "4"
+                - option "8"
+                - option "10" [selected]
+                - option "16"
+                - option "32"
+                - option "64"
+            - generic [ref=e756]:
+              - generic [ref=e757]: Regularization
+              - combobox [ref=e759] [cursor=pointer]:
+                - option "None" [selected]
+                - option "L1"
+                - option "L2"
+        - generic [ref=e760]:
+          - generic [ref=e763]: Code Export
+          - generic [ref=e876]:
+            - generic [ref=e877]:
+              - button "Pseudocode" [ref=e878] [cursor=pointer]
+              - button "NumPy" [ref=e879] [cursor=pointer]
+              - button "TF.js" [ref=e880] [cursor=pointer]
+            - generic [ref=e882]: "# Neural Network — Pseudocode # Architecture: 2 → 4 → 4 → 1 INPUT features = [x, y] # 2 features LAYER hidden_1: neurons = 4 activation = Tanh FOR each neuron i: z[i] = bias[i] + SUM(w[i][j] * input[j] for j in prev_layer) output[i] = Tanh(z[i]) LAYER hidden_2: neurons = 4 activation = Tanh FOR each neuron i: z[i] = bias[i] + SUM(w[i][j] * input[j] for j in prev_layer) output[i] = Tanh(z[i]) LAYER output: neurons = 1 activation = Sigmoid prediction = Sigmoid(bias + SUM(w[j] * hidden[j])) TRAINING: loss = Cross-Entropy optimizer = SGD learning_rate = 0.03 batch_size = 10 # Trained weights (step 0): # Layer 1: 4 neurons × 2 inputs # neuron 0: bias=0.0000 weights=[-0.5520, -0.1576] # neuron 1: bias=0.0000 weights=[-1.0633, -0.6587] # neuron 2: bias=0.0000 weights=[-0.3057, 0.7093] # neuron 3: bias=0.0000 weights=[-0.1550, -1.0403] # Layer 2: 4 neurons × 4 inputs # neuron 0: bias=0.0000 weights=[-0.3330, -1.6395, 0.2826, 0.5017] # neuron 1: bias=0.0000 weights=[0.7522, 0.1920, 0.5550, 0.5151] # neuron 2: bias=0.0000 weights=[0.2171, -0.7182, 1.2154, -0.4443] # neuron 3: bias=0.0000 weights=[-0.5110, -0.2923, 0.2457, 0.1652] # Layer 3: 1 neurons × 4 inputs # neuron 0: bias=0.0000 weights=[-0.2677, -0.7730, -0.1941, 0.2083]"
+            - button "📋 Copy Code" [ref=e884] [cursor=pointer]
+    - generic [ref=e774]:
+      - generic [ref=e775]:
+        - button "Start training" [ref=e777] [cursor=pointer]:
+          - generic [ref=e778]: ▶
+          - generic [ref=e779]: Play
+        - button "Run one training step" [ref=e781] [cursor=pointer]:
+          - generic [ref=e782]: →
+          - generic [ref=e783]: Step
+        - button "Reset model and data" [ref=e785] [cursor=pointer]:
+          - generic [ref=e786]: ↺
+          - generic [ref=e787]: Reset
+      - generic "Training speed" [ref=e788]:
+        - generic [ref=e789]: "Speed:"
+        - button "1×" [ref=e791] [cursor=pointer]
+        - button "5×" [pressed] [ref=e793] [cursor=pointer]
+        - button "10×" [ref=e795] [cursor=pointer]
+        - button "25×" [ref=e797] [cursor=pointer]
+        - button "50×" [ref=e799] [cursor=pointer]
+      - generic [ref=e800]:
+        - generic [ref=e801]: Step 0
+        - generic [ref=e802]: Epoch 0
+  - status "Status bar" [ref=e156]:
+    - generic [ref=e157]: ● IDLE
+    - generic [ref=e158]: "LAYOUT: split"
+    - generic [ref=e803]: "PHASE: run"
+    - generic [ref=e159]: "DATA: circle"
+    - generic [ref=e160]: "ARCH: [4, 4]"
+    - generic [ref=e161]: step 0
+    - generic [ref=e162]:
+      - text: Inspired by
+      - link "TensorFlow Playground" [ref=e163] [cursor=pointer]:
+        - /url: https://playground.tensorflow.org

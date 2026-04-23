@@ -16,6 +16,18 @@ export type PhaseMode = 'build' | 'run';
 export type LeftTabId = 'presets' | 'data' | 'features' | 'network' | 'hyperparams' | 'config';
 export type RightTabId = 'boundary' | 'loss' | 'confusion' | 'inspection' | 'code';
 
+const DEFAULT_LAYOUT_STATE = {
+    layout: 'dock' as LayoutVariant,
+    phase: 'build' as PhaseMode,
+    activeTabLeft: 'data' as LeftTabId,
+    activeTabRight: 'boundary' as RightTabId,
+};
+
+const VALID_LAYOUTS: readonly LayoutVariant[] = ['dock', 'grid', 'split'];
+const VALID_PHASES: readonly PhaseMode[] = ['build', 'run'];
+const VALID_LEFT_TABS: readonly LeftTabId[] = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'];
+const VALID_RIGHT_TABS: readonly RightTabId[] = ['boundary', 'loss', 'confusion', 'inspection', 'code'];
+
 export interface LayoutStore {
     layout: LayoutVariant;
     phase: PhaseMode;
@@ -28,21 +40,48 @@ export interface LayoutStore {
     setActiveTabRight: (tab: RightTabId) => void;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function isOneOf<T extends string>(value: unknown, options: readonly T[]): value is T {
+    return typeof value === 'string' && options.includes(value as T);
+}
+
+function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STATE {
+    const state = isRecord(value) && isRecord(value.state) ? value.state : value;
+    if (!isRecord(state)) return { ...DEFAULT_LAYOUT_STATE };
+
+    return {
+        layout: isOneOf(state.layout, VALID_LAYOUTS) ? state.layout : DEFAULT_LAYOUT_STATE.layout,
+        phase: isOneOf(state.phase, VALID_PHASES) ? state.phase : DEFAULT_LAYOUT_STATE.phase,
+        activeTabLeft: isOneOf(state.activeTabLeft, VALID_LEFT_TABS)
+            ? state.activeTabLeft
+            : DEFAULT_LAYOUT_STATE.activeTabLeft,
+        activeTabRight: isOneOf(state.activeTabRight, VALID_RIGHT_TABS)
+            ? state.activeTabRight
+            : DEFAULT_LAYOUT_STATE.activeTabRight,
+    };
+}
+
 export function createLayoutStore() {
     return createStore<LayoutStore>()(
         persist(
             (set) => ({
-                layout: 'dock',
-                phase: 'build',
-                activeTabLeft: 'data',
-                activeTabRight: 'boundary',
+                ...DEFAULT_LAYOUT_STATE,
 
                 setLayout: (layout) => set({ layout }),
                 setPhase: (phase) => set({ phase }),
                 setActiveTabLeft: (activeTabLeft) => set({ activeTabLeft }),
                 setActiveTabRight: (activeTabRight) => set({ activeTabRight }),
             }),
-            { name: LAYOUT_STORAGE_KEY },
+            {
+                name: LAYOUT_STORAGE_KEY,
+                merge: (persistedState, currentState) => ({
+                    ...currentState,
+                    ...sanitizePersistedLayoutState(persistedState),
+                }),
+            },
         ),
     );
 }

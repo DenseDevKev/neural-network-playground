@@ -57,6 +57,10 @@ export interface ImportedConfigValidationResult {
     error: string | null;
 }
 
+export interface NormalizeAppConfigOptions {
+    mode?: 'strict' | 'lenient';
+}
+
 /**
  * Encode app config into a URL hash string.
  * Uses short keys for compactness.
@@ -169,7 +173,7 @@ export function decodeUrlState(hash: string): AppConfig {
         getValidValue(p.get('oa'), VALID_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
     );
 
-    return {
+    const candidate: AppConfig = {
         network: {
             inputSize,
             hiddenLayers,
@@ -184,6 +188,8 @@ export function decodeUrlState(hash: string): AppConfig {
         features,
         ui,
     };
+
+    return normalizeAppConfig(candidate, { mode: 'lenient' }).config ?? fallbackConfig();
 }
 
 function getValidValue<T extends string>(value: string | null, validValues: Set<T>, fallback: T): T {
@@ -219,6 +225,53 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isStrict(options?: NormalizeAppConfigOptions): boolean {
+    return options?.mode !== 'lenient';
+}
+
+function fallbackConfig(): AppConfig {
+    const features = { ...DEFAULT_FEATURES };
+    return {
+        data: { ...DEFAULT_DATA },
+        network: {
+            ...DEFAULT_NETWORK,
+            inputSize: countActiveFeatures(features),
+            outputSize: 1,
+        },
+        training: { ...DEFAULT_TRAINING },
+        features,
+        ui: { showTestData: false, discretizeOutput: false },
+    };
+}
+
+function strictNumber(
+    value: unknown,
+    predicate: (n: number) => boolean,
+    error: string,
+): { value: number | null; error: string | null } {
+    if (!isFiniteNumber(value) || !predicate(value)) {
+        return { value: null, error };
+    }
+    return { value, error: null };
+}
+
+function lenientNumber(
+    value: unknown,
+    fallback: number,
+    min: number,
+    max: number,
+    opts: { exclusive?: boolean; integer?: boolean } = {},
+): number {
+    if (!isFiniteNumber(value)) return fallback;
+    if (opts.exclusive && (value <= min || value >= max)) return fallback;
+    if (!opts.exclusive && value < min) return fallback;
+
+    const clamped = opts.exclusive
+        ? value
+        : Math.min(max, value);
+    return opts.integer ? Math.trunc(clamped) : clamped;
+}
+
 function validateFeatureFlags(value: unknown): value is FeatureFlags {
     if (!isRecord(value)) return false;
 
@@ -226,96 +279,116 @@ function validateFeatureFlags(value: unknown): value is FeatureFlags {
     return keys.every((key) => typeof value[key] === 'boolean');
 }
 
-export function validateImportedConfig(candidate: unknown): ImportedConfigValidationResult {
+export function normalizeAppConfig(
+    candidate: unknown,
+    options: NormalizeAppConfigOptions = {},
+): ImportedConfigValidationResult {
+    const strict = isStrict(options);
+    const defaults = fallbackConfig();
+
     if (!isRecord(candidate)) {
-        return { config: null, error: 'Configuration must be a JSON object.' };
+        return strict
+            ? { config: null, error: 'Configuration must be a JSON object.' }
+            : { config: defaults, error: null };
     }
 
     const { network, training, data, features, ui } = candidate;
 
     if (!isRecord(network) || !isRecord(training) || !isRecord(data) || !validateFeatureFlags(features)) {
-        return { config: null, error: 'Configuration is missing required sections.' };
+        return strict
+            ? { config: null, error: 'Configuration is missing required sections.' }
+            : { config: defaults, error: null };
     }
 
-    if (!VALID_DATASETS.has(data.dataset as DatasetType)) {
+    if (strict && !VALID_DATASETS.has(data.dataset as DatasetType)) {
         return { config: null, error: 'Configuration contains an unsupported dataset.' };
     }
 
-    if (data.problemType !== 'classification' && data.problemType !== 'regression') {
+    if (strict && data.problemType !== 'classification' && data.problemType !== 'regression') {
         return { config: null, error: 'Configuration contains an unsupported problem type.' };
     }
 
-    if (!isFiniteNumber(data.trainTestRatio) || data.trainTestRatio <= 0 || data.trainTestRatio >= 1) {
+    if (strict && (!isFiniteNumber(data.trainTestRatio) || data.trainTestRatio <= 0 || data.trainTestRatio >= 1)) {
         return { config: null, error: 'Train/test ratio must be between 0 and 1.' };
     }
 
-    if (!isFiniteNumber(data.noise) || data.noise < 0 || data.noise > 100) {
+    if (strict && (!isFiniteNumber(data.noise) || data.noise < 0 || data.noise > 100)) {
         return { config: null, error: 'Noise must be between 0 and 100.' };
     }
 
-    if (!isFiniteNumber(data.numSamples) || data.numSamples < 1 || data.numSamples > 10000) {
+    if (strict && (!isFiniteNumber(data.numSamples) || !Number.isInteger(data.numSamples) || data.numSamples < 1 || data.numSamples > 10000)) {
         return { config: null, error: 'Sample count must be between 1 and 10000.' };
     }
 
-    if (!isFiniteNumber(data.seed)) {
+    if (strict && !isFiniteNumber(data.seed)) {
         return { config: null, error: 'Data seed must be a valid number.' };
     }
 
     if (!Array.isArray(network.hiddenLayers) || network.hiddenLayers.length > MAX_HIDDEN_LAYERS) {
-        return { config: null, error: 'Hidden layer configuration is invalid.' };
+        if (strict) {
+            return { config: null, error: 'Hidden layer configuration is invalid.' };
+        }
     }
 
-    if (network.hiddenLayers.some((value) => !isFiniteNumber(value) || value < 1 || value > MAX_NEURONS_PER_LAYER)) {
+    const hiddenLayerCandidates = Array.isArray(network.hiddenLayers) ? network.hiddenLayers : defaults.network.hiddenLayers;
+    if (strict && hiddenLayerCandidates.some((value) => (
+        !isFiniteNumber(value) ||
+        !Number.isInteger(value) ||
+        value < 1 ||
+        value > MAX_NEURONS_PER_LAYER
+    ))) {
         return { config: null, error: 'Hidden layer sizes must be between 1 and 32.' };
     }
 
-    if (!VALID_ACTIVATIONS.has(network.activation as ActivationType) || !VALID_ACTIVATIONS.has(network.outputActivation as ActivationType)) {
+    if (strict && (!VALID_ACTIVATIONS.has(network.activation as ActivationType) || !VALID_ACTIVATIONS.has(network.outputActivation as ActivationType))) {
         return { config: null, error: 'Configuration contains an unsupported activation function.' };
     }
 
-    if (!VALID_WEIGHT_INITS.has(network.weightInit as WeightInitType)) {
+    if (strict && !VALID_WEIGHT_INITS.has(network.weightInit as WeightInitType)) {
         return { config: null, error: 'Configuration contains an unsupported weight initialization method.' };
     }
 
-    if (!isFiniteNumber(network.seed)) {
+    if (strict && !isFiniteNumber(network.seed)) {
         return { config: null, error: 'Network seed must be a valid number.' };
     }
 
-    if (!VALID_LOSSES.has(training.lossType as LossType)) {
+    if (strict && !VALID_LOSSES.has(training.lossType as LossType)) {
         return { config: null, error: 'Configuration contains an unsupported loss function.' };
     }
 
-    if (!VALID_OPTIMIZERS.has(training.optimizer as OptimizerType)) {
+    if (strict && !VALID_OPTIMIZERS.has(training.optimizer as OptimizerType)) {
         return { config: null, error: 'Configuration contains an unsupported optimizer.' };
     }
 
-    if (!VALID_REGULARIZATION.has(training.regularization as RegularizationType)) {
+    if (strict && !VALID_REGULARIZATION.has(training.regularization as RegularizationType)) {
         return { config: null, error: 'Configuration contains an unsupported regularization mode.' };
     }
 
-    if (!isFiniteNumber(training.learningRate) || training.learningRate <= 0 || training.learningRate > 10) {
+    if (strict && (!isFiniteNumber(training.learningRate) || training.learningRate <= 0 || training.learningRate > 10)) {
         return { config: null, error: 'Learning rate must be greater than 0 and at most 10.' };
     }
 
-    if (!isFiniteNumber(training.batchSize) || training.batchSize < 1 || training.batchSize > 512) {
+    if (strict && (!isFiniteNumber(training.batchSize) || !Number.isInteger(training.batchSize) || training.batchSize < 1 || training.batchSize > 512)) {
         return { config: null, error: 'Batch size must be between 1 and 512.' };
     }
 
-    if (!isFiniteNumber(training.momentum) || training.momentum < 0 || training.momentum > 1) {
+    if (strict && (!isFiniteNumber(training.momentum) || training.momentum < 0 || training.momentum > 1)) {
         return { config: null, error: 'Momentum must be between 0 and 1.' };
     }
 
-    if (!isFiniteNumber(training.regularizationRate) || training.regularizationRate < 0 || training.regularizationRate > 1) {
+    if (strict && (!isFiniteNumber(training.regularizationRate) || training.regularizationRate < 0 || training.regularizationRate > 1)) {
         return { config: null, error: 'Regularization rate must be between 0 and 1.' };
     }
 
-    if (training.gradientClip !== null && (!isFiniteNumber(training.gradientClip) || training.gradientClip <= 0)) {
+    if (strict && training.gradientClip !== null && (!isFiniteNumber(training.gradientClip) || training.gradientClip <= 0)) {
         return { config: null, error: 'Gradient clip must be null or a positive number.' };
     }
 
     const inputSize = countActiveFeatures(features);
     if (inputSize === 0) {
-        return { config: null, error: 'At least one input feature must be enabled.' };
+        return strict
+            ? { config: null, error: 'At least one input feature must be enabled.' }
+            : { config: defaults, error: null };
     }
 
     const normalizedUi: UIConfig = isRecord(ui)
@@ -328,46 +401,91 @@ export function validateImportedConfig(candidate: unknown): ImportedConfigValida
             discretizeOutput: false,
         };
 
-    const lossType = training.lossType as LossType;
+    const hiddenLayers = hiddenLayerCandidates
+        .filter((value): value is number => isFiniteNumber(value) && value > 0)
+        .slice(0, MAX_HIDDEN_LAYERS)
+        .map((value) => Math.min(MAX_NEURONS_PER_LAYER, Math.trunc(value)));
+
+    const lossType = getValidValue(training.lossType as string | null, VALID_LOSSES, DEFAULT_TRAINING.lossType);
     const outputActivation = getCompatibleOutputActivation(
         lossType,
-        network.outputActivation as ActivationType,
+        getValidValue(network.outputActivation as string | null, VALID_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
     );
+
+    const gradientClip = training.gradientClip === null || training.gradientClip === undefined
+        ? null
+        : strict
+            ? training.gradientClip as number
+            : isFiniteNumber(training.gradientClip) && training.gradientClip > 0
+                ? training.gradientClip
+                : DEFAULT_TRAINING.gradientClip;
+
+    const safeData = strict
+        ? {
+            trainTestRatio: strictNumber(data.trainTestRatio, (n) => n > 0 && n < 1, 'Train/test ratio must be between 0 and 1.').value!,
+            noise: strictNumber(data.noise, (n) => n >= 0 && n <= 100, 'Noise must be between 0 and 100.').value!,
+            numSamples: strictNumber(data.numSamples, (n) => Number.isInteger(n) && n >= 1 && n <= 10000, 'Sample count must be between 1 and 10000.').value!,
+            seed: data.seed as number,
+        }
+        : {
+            trainTestRatio: lenientNumber(data.trainTestRatio, DEFAULT_DATA.trainTestRatio, 0, 1, { exclusive: true }),
+            noise: lenientNumber(data.noise, DEFAULT_DATA.noise, 0, 100),
+            numSamples: lenientNumber(data.numSamples, DEFAULT_DATA.numSamples, 1, 10000, { integer: true }),
+            seed: isFiniteNumber(data.seed) ? data.seed : DEFAULT_DATA.seed,
+        };
+
+    const safeTraining = strict
+        ? {
+            learningRate: training.learningRate as number,
+            batchSize: strictNumber(training.batchSize, (n) => Number.isInteger(n) && n >= 1 && n <= 512, 'Batch size must be between 1 and 512.').value!,
+            momentum: training.momentum as number,
+            regularizationRate: training.regularizationRate as number,
+        }
+        : {
+            learningRate: lenientNumber(training.learningRate, DEFAULT_TRAINING.learningRate, 0, 10),
+            batchSize: lenientNumber(training.batchSize, DEFAULT_TRAINING.batchSize, 1, 512, { integer: true }),
+            momentum: lenientNumber(training.momentum, DEFAULT_TRAINING.momentum, 0, 1),
+            regularizationRate: lenientNumber(training.regularizationRate, DEFAULT_TRAINING.regularizationRate, 0, 1),
+        };
 
     return {
         config: {
             data: {
-                dataset: data.dataset as DatasetType,
-                problemType: data.problemType as DataConfig['problemType'],
-                trainTestRatio: data.trainTestRatio as number,
-                noise: data.noise as number,
-                numSamples: data.numSamples as number,
-                seed: data.seed as number,
+                dataset: getValidValue(data.dataset as string | null, VALID_DATASETS, DEFAULT_DATA.dataset),
+                problemType: getValidValue(data.problemType as string | null, VALID_PROBLEM_TYPES, DEFAULT_DATA.problemType),
+                trainTestRatio: safeData.trainTestRatio,
+                noise: safeData.noise,
+                numSamples: safeData.numSamples,
+                seed: safeData.seed,
             },
             network: {
                 inputSize,
-                hiddenLayers: [...(network.hiddenLayers as number[])],
+                hiddenLayers,
                 outputSize: isFiniteNumber(network.outputSize) ? network.outputSize : 1,
-                activation: network.activation as ActivationType,
+                activation: getValidValue(network.activation as string | null, VALID_ACTIVATIONS, DEFAULT_NETWORK.activation),
                 outputActivation,
-                weightInit: network.weightInit as WeightInitType,
-                seed: network.seed as number,
+                weightInit: getValidValue(network.weightInit as string | null, VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
+                seed: isFiniteNumber(network.seed) ? network.seed : DEFAULT_NETWORK.seed,
             },
             training: {
-                learningRate: training.learningRate as number,
-                batchSize: training.batchSize as number,
+                learningRate: safeTraining.learningRate,
+                batchSize: safeTraining.batchSize,
                 lossType,
-                optimizer: training.optimizer as OptimizerType,
-                momentum: training.momentum as number,
-                regularization: training.regularization as RegularizationType,
-                regularizationRate: training.regularizationRate as number,
-                gradientClip: training.gradientClip as number | null,
+                optimizer: getValidValue(training.optimizer as string | null, VALID_OPTIMIZERS, DEFAULT_TRAINING.optimizer),
+                momentum: safeTraining.momentum,
+                regularization: getValidValue(training.regularization as string | null, VALID_REGULARIZATION, DEFAULT_TRAINING.regularization),
+                regularizationRate: safeTraining.regularizationRate,
+                gradientClip,
             },
             features,
             ui: normalizedUi,
         },
         error: null,
     };
+}
+
+export function validateImportedConfig(candidate: unknown): ImportedConfigValidationResult {
+    return normalizeAppConfig(candidate, { mode: 'strict' });
 }
 
 /** Import config from JSON string. Returns null if invalid. */

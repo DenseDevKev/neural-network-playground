@@ -32,6 +32,7 @@ import {
     MAX_NEURONS_PER_LAYER,
     encodeUrlState,
     decodeUrlState,
+    normalizeAppConfig,
 } from '@nn-playground/shared';
 
 /**
@@ -318,22 +319,22 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
 
         applyPreset: (preset: Preset) => {
             const c = preset.config;
-            const updates: Partial<PlaygroundStore> = {};
-            if (c.data) updates.data = { ...get().data, ...c.data };
-            if (c.network) updates.network = { ...get().network, ...c.network };
-            if (c.features) updates.features = { ...get().features, ...c.features };
-            if (c.training) updates.training = { ...get().training, ...c.training };
-            if (c.ui) updates.ui = { ...get().ui, ...c.ui };
-            const nextTraining = updates.training ?? get().training;
-            const nextNetwork = updates.network ?? get().network;
-            updates.network = {
-                ...nextNetwork,
-                outputActivation: getCompatibleOutputActivation(
-                    nextTraining.lossType,
-                    nextNetwork.outputActivation,
-                ),
-            };
-            set(updates);
+            const current = get().getConfig();
+            const result = normalizeAppConfig({
+                data: c.data ? { ...current.data, ...c.data } : current.data,
+                network: c.network ? { ...current.network, ...c.network } : current.network,
+                features: c.features ? { ...current.features, ...c.features } : current.features,
+                training: c.training ? { ...current.training, ...c.training } : current.training,
+                ui: c.ui ? { ...current.ui, ...c.ui } : current.ui,
+            }, { mode: 'lenient' });
+            const normalized = normalizeLossOutputCompatibility(result.config ?? current);
+            set({
+                network: normalized.network,
+                training: normalized.training,
+                data: normalized.data,
+                features: normalized.features,
+                ui: normalized.ui,
+            });
             get().syncToUrl();
         },
     };

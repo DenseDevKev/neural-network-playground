@@ -6,6 +6,7 @@ import {
     DEFAULT_TRAINING,
     decodeUrlState,
     validateImportedConfig,
+    normalizeAppConfig,
     encodeUrlState,
     exportConfigJson,
     importConfigJson
@@ -141,6 +142,21 @@ describe('decodeUrlState', () => {
         expect(decoded.training.lossType).toBe('mse');
         expect(decoded.network.outputActivation).toBe('linear');
     });
+
+    it('keeps malicious numeric URL values within safe runtime limits', () => {
+        const decoded = decodeUrlState(
+            'ns=999999999&bs=0&lr=Infinity&r=2&n=-10&s=NaN&ws=Infinity&hl=9999,0,-3,nope',
+        );
+
+        expect(decoded.data.numSamples).toBe(10000);
+        expect(decoded.training.batchSize).toBe(DEFAULT_TRAINING.batchSize);
+        expect(decoded.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
+        expect(decoded.data.trainTestRatio).toBe(DEFAULT_DATA.trainTestRatio);
+        expect(decoded.data.noise).toBe(DEFAULT_DATA.noise);
+        expect(decoded.data.seed).toBe(DEFAULT_DATA.seed);
+        expect(decoded.network.seed).toBe(DEFAULT_NETWORK.seed);
+        expect(decoded.network.hiddenLayers).toEqual([32]);
+    });
 });
 
 describe('compatibility normalization', () => {
@@ -160,5 +176,18 @@ describe('compatibility normalization', () => {
         expect(result.error).toBeNull();
         expect(result.config?.training.lossType).toBe('mse');
         expect(result.config?.network.outputActivation).toBe('linear');
+    });
+
+    it('strictly rejects unsafe imported numeric ranges through the shared normalizer', () => {
+        const result = normalizeAppConfig({
+            ...validConfig,
+            data: {
+                ...validConfig.data,
+                numSamples: 10001,
+            },
+        });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('Sample count must be between 1 and 10000.');
     });
 });

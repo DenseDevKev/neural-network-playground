@@ -47,10 +47,10 @@ describe('TrainingControls', () => {
 
     render(<TrainingControls training={training} />);
 
-    const speed10 = screen.getByRole('button', { name: '10×' });
-    const speed25 = screen.getByRole('button', { name: '25×' });
+    const speed10 = screen.getByRole('button', { name: '10 steps per frame' });
+    const speed25 = screen.getByRole('button', { name: '25 steps per frame' });
 
-    expect(screen.getByText('Speed:')).toBeInTheDocument();
+    expect(screen.getByText('Steps/frame:')).toBeInTheDocument();
     expect(speed10).toHaveClass('active');
     expect(speed25).not.toHaveClass('active');
 

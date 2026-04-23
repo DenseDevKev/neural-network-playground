@@ -2,7 +2,7 @@
 // Owns the engine instance, runs training off the main thread.
 // Hybrid communication:
 //   - Comlink RPC for commands (initialize, updateConfig, reset, step, etc.)
-//   - MessageChannel for high-frequency streamed snapshots during training
+//   - MessagePort commands for high-frequency streamed snapshots during training
 
 import * as Comlink from 'comlink';
 import {
@@ -30,7 +30,7 @@ import type {
     HistoryPoint,
     Metrics,
 } from '@nn-playground/engine';
-import { GRID_SIZE, DEFAULT_DEMAND, isMainToWorkerCommand, structuralEqual } from '@nn-playground/shared';
+import { GRID_SIZE, DEFAULT_DEMAND, isMainToWorkerCommand, structuralEqual, normalizeAppConfig } from '@nn-playground/shared';
 import type {
     VisualizationDemand,
     WorkerSnapshotMessage,
@@ -47,6 +47,7 @@ import {
     publishSharedSnapshot,
     type SharedSnapshotViews,
 } from './sharedSnapshot.ts';
+import { getTrainingStepsForTick, normalizeTrainingSpeed } from './trainingLoop.ts';
 
 interface WorkerState {
     network: Network | null;
@@ -187,6 +188,38 @@ function validateConfigs(network: NetworkConfig, training: TrainingConfig): void
     if (!isLossCompatible(training.lossType, network.outputActivation)) {
         throw new Error(describeLossIncompatibility(training.lossType, network.outputActivation));
     }
+}
+
+function normalizeWorkerConfig(
+    networkConfig: NetworkConfig,
+    trainingConfig: TrainingConfig,
+    dataConfig: DataConfig,
+    features: FeatureFlags,
+): {
+    network: NetworkConfig;
+    training: TrainingConfig;
+    data: DataConfig;
+    features: FeatureFlags;
+} {
+    const result = normalizeAppConfig({
+        network: networkConfig,
+        training: trainingConfig,
+        data: dataConfig,
+        features,
+        ui: { showTestData: false, discretizeOutput: false },
+    });
+
+    if (!result.config) {
+        throw new Error(result.error ?? 'Invalid playground configuration.');
+    }
+
+    validateConfigs(result.config.network, result.config.training);
+    return {
+        network: result.config.network,
+        training: result.config.training,
+        data: result.config.data,
+        features: result.config.features,
+    };
 }
 
 // Structural equality has moved to @nn-playground/shared (`structuralEqual`).
@@ -785,34 +818,15 @@ function trainOneStep(): void {
 
 // ── Internal training loop (worker-driven) ──
 
-// ── Yield scheduler ──────────────────────────────────────────────────────────
-// `setTimeout(trainTick, 0)` sounds like "run ASAP" but browsers clamp nested
-// timers to a minimum of 4 ms. For a dense-network playground that caps the
-// worker at ~250 iterations/second regardless of how small `stepsPerFrame` is,
-// and it adds real latency between the last training step and the next message
-// pump.
-//
-// A self-addressed `MessageChannel` is the idiomatic zero-latency yield:
-// posting to one port wakes the listener on the other in under a millisecond,
-// and the dispatch still falls inside the event loop so command messages
-// (pause, update demand, ack) still get a chance to run between ticks.
-const _yieldChannel = new MessageChannel();
-_yieldChannel.port1.addEventListener('message', () => {
-    if (state.running) trainTick();
-});
-_yieldChannel.port1.start();
+const TRAIN_TICK_INTERVAL_MS = 1000 / 60;
 
 function scheduleNextTick(): void {
-    _yieldChannel.port2.postMessage(null);
+    if (state.trainLoopTimer !== null || !state.running) return;
+    state.trainLoopTimer = setTimeout(() => {
+        state.trainLoopTimer = null;
+        if (state.running) trainTick();
+    }, TRAIN_TICK_INTERVAL_MS);
 }
-
-// Training loop inner budget in milliseconds. Each trainTick runs as many
-// steps as fit in this window (but never fewer than one full
-// `stepsPerFrame` burst) before handing control back to the event loop so
-// that incoming messages — frameAck, updateDemand, stop — get processed
-// promptly. Chosen so that 60Hz-gated UIs stay responsive even when a
-// single forward/backward takes hundreds of microseconds.
-const TRAIN_TICK_BUDGET_MS = 4;
 
 // Snapshot pipeline split out from trainTick so the GPU grid pre-fill
 // (AS-4) can be awaited without forcing the whole tick to be async. The
@@ -850,18 +864,13 @@ function trainTick(): void {
 
     try {
         if (state.streamPort) {
-            const tickStart = performance.now();
             performance.mark('perf:worker:trainStep:start');
 
-            // Run at least `stepsPerFrame` steps per tick so the UI can
-            // still dial training speed via that knob. Beyond that, keep
-            // stepping until our time budget is exhausted — this soaks up
-            // any headroom left over from the cadence-gated snapshot path
-            // (grid rebuild, train/test eval) which may skip this tick
-            // entirely.
-            const burst = state.stepsPerFrame;
-            for (let i = 0; i < burst; i++) trainOneStep();
-            while (performance.now() - tickStart < TRAIN_TICK_BUDGET_MS) {
+            // Keep the selected speed literal: each scheduled tick advances
+            // by a bounded number of steps, then yields so pause/update
+            // commands can be processed before more work starts.
+            const burst = getTrainingStepsForTick(state.stepsPerFrame);
+            for (let i = 0; i < burst && state.running; i++) {
                 trainOneStep();
             }
 
@@ -884,10 +893,6 @@ function trainTick(): void {
             }
         }
 
-        // Yield to the event loop via MessageChannel — much lower latency
-        // than setTimeout(trainTick, 0), which is clamped to 4ms by the
-        // browser. Command messages (pause, updateDemand, frameAck) get
-        // processed in the same microtask drain before we re-enter.
         if (state.running) {
             scheduleNextTick();
         }
@@ -906,9 +911,6 @@ function startInternalLoop(): void {
 
 function stopInternalLoop(): void {
     state.running = false;
-    // No timer to cancel any more — trainTick guards on `state.running` and
-    // bails immediately if it fires after a stop. Any already-posted yield
-    // message ends up as a no-op dispatch.
     if (state.trainLoopTimer !== null) {
         clearTimeout(state.trainLoopTimer);
         state.trainLoopTimer = null;
@@ -928,7 +930,7 @@ function handleStreamCommand(cmd: unknown): void {
         }
         switch (cmd.type) {
             case 'startTraining':
-                state.stepsPerFrame = cmd.stepsPerFrame;
+                state.stepsPerFrame = normalizeTrainingSpeed(cmd.stepsPerFrame);
                 startInternalLoop();
                 if (state.streamPort) {
                     const statusMsg: WorkerStatusMessage = {
@@ -964,7 +966,7 @@ function handleStreamCommand(cmd: unknown): void {
                 break;
 
             case 'updateSpeed':
-                state.stepsPerFrame = cmd.stepsPerFrame;
+                state.stepsPerFrame = normalizeTrainingSpeed(cmd.stepsPerFrame);
                 break;
 
             case 'frameAck':
@@ -987,12 +989,12 @@ const workerApi = {
         dataConfig: DataConfig,
         features: FeatureFlags,
     ): { snapshot: NetworkSnapshot; runId: number } {
-        validateConfigs(networkConfig, trainingConfig);
+        const config = normalizeWorkerConfig(networkConfig, trainingConfig, dataConfig, features);
         stopInternalLoop();
-        state.networkConfig = { ...networkConfig };
-        state.trainingConfig = { ...trainingConfig };
-        state.dataConfig = { ...dataConfig };
-        state.features = { ...features };
+        state.networkConfig = { ...config.network };
+        state.trainingConfig = { ...config.training };
+        state.dataConfig = { ...config.data };
+        state.features = { ...config.features };
         state.running = false;
         buildDataAndNetwork();
         return { snapshot: computeSnapshot(), runId: state.runId };
@@ -1005,16 +1007,16 @@ const workerApi = {
         features: FeatureFlags,
         rebuild: boolean,
     ): { snapshot: NetworkSnapshot; runId: number } {
-        validateConfigs(networkConfig, trainingConfig);
+        const config = normalizeWorkerConfig(networkConfig, trainingConfig, dataConfig, features);
         const needsRebuild = rebuild ||
-            !configsEqual(state.networkConfig, networkConfig) ||
-            !configsEqual(state.dataConfig, dataConfig) ||
-            !configsEqual(state.features, features);
+            !configsEqual(state.networkConfig, config.network) ||
+            !configsEqual(state.dataConfig, config.data) ||
+            !configsEqual(state.features, config.features);
 
-        state.networkConfig = { ...networkConfig };
-        state.trainingConfig = { ...trainingConfig };
-        state.dataConfig = { ...dataConfig };
-        state.features = { ...features };
+        state.networkConfig = { ...config.network };
+        state.trainingConfig = { ...config.training };
+        state.dataConfig = { ...config.data };
+        state.features = { ...config.features };
 
         if (needsRebuild) {
             stopInternalLoop();
@@ -1103,7 +1105,8 @@ const workerApi = {
     // Legacy: Run continuous training — called in a loop from main thread
     trainAndSnapshot(stepsPerFrame: number): NetworkSnapshot {
         performance.mark('perf:worker:trainStep:start');
-        for (let i = 0; i < stepsPerFrame; i++) {
+        const burst = getTrainingStepsForTick(stepsPerFrame);
+        for (let i = 0; i < burst; i++) {
             trainOneStep();
         }
         performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');

@@ -1,0 +1,118 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - status [ref=e5]
+  - banner [ref=e6]:
+    - generic [ref=e9]: NN·FORGE
+    - status "Training metrics" [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]: Epoch
+        - generic [ref=e14]: "0000"
+      - generic [ref=e15]:
+        - generic [ref=e16]: Train Loss
+        - generic [ref=e17]: "0.0000"
+      - generic [ref=e18]:
+        - generic [ref=e19]: Test Loss
+        - generic [ref=e20]: "0.0000"
+    - generic [ref=e21]:
+      - group "Layout variant" [ref=e22]:
+        - button "dock" [pressed] [ref=e23] [cursor=pointer]
+        - button "grid" [ref=e24] [cursor=pointer]
+        - button "split" [ref=e25] [cursor=pointer]
+      - button "Start training" [ref=e26] [cursor=pointer]: ▶
+  - generic [ref=e28]:
+    - navigation "Navigation rail" [ref=e29]:
+      - button "Data" [ref=e30] [cursor=pointer]: ◉
+      - button "Network" [ref=e31] [cursor=pointer]: ⬢
+      - button "Hyperparams" [ref=e32] [cursor=pointer]: λ
+      - button "Config" [ref=e33] [cursor=pointer]: ⚙
+      - button "Presets" [ref=e34] [cursor=pointer]: ★
+    - generic [ref=e35]:
+      - tablist [ref=e36]:
+        - tab "Presets" [ref=e37] [cursor=pointer]: Presets
+        - tab "Data" [selected] [ref=e39] [cursor=pointer]: Data
+        - tab "Features" [ref=e41] [cursor=pointer]: Features
+        - tab "Network" [ref=e43] [cursor=pointer]: Network
+        - tab "Hyperparams" [ref=e45] [cursor=pointer]: Hyperparams
+        - tab "Config" [ref=e47] [cursor=pointer]: Config
+      - generic [ref=e51]:
+        - generic [ref=e52]:
+          - generic [ref=e53]: Problem
+          - generic [ref=e54]:
+            - button "Classification" [ref=e56] [cursor=pointer]
+            - button "Regression" [ref=e58] [cursor=pointer]
+        - generic [ref=e59]:
+          - button "Circle" [pressed] [ref=e61] [cursor=pointer]
+          - button "XOR" [ref=e63] [cursor=pointer]
+          - button "Gaussian" [ref=e65] [cursor=pointer]
+          - button "Spiral" [ref=e67] [cursor=pointer]
+          - button "Moons" [ref=e69] [cursor=pointer]
+          - button "Checker" [ref=e71] [cursor=pointer]
+          - button "Rings" [ref=e73] [cursor=pointer]
+          - button "Heart" [ref=e75] [cursor=pointer]
+        - generic [ref=e76]:
+          - generic [ref=e77]: Train ratio
+          - generic [ref=e78]: 50%
+        - slider "Train/test split percentage" [ref=e80] [cursor=pointer]: "50"
+        - generic [ref=e81]:
+          - generic [ref=e82]: Noise
+          - generic [ref=e83]: "0"
+        - slider "Noise level" [ref=e85] [cursor=pointer]: "0"
+        - button "↻ Regenerate" [ref=e87] [cursor=pointer]
+    - generic [ref=e89]:
+      - generic [ref=e90]:
+        - generic [ref=e92]: Network Topology
+        - generic [ref=e93]: build
+      - generic [ref=e97]:
+        - img [ref=e98]
+        - paragraph [ref=e99]: "Neural network: 2 inputs, 2 hidden layers of 4, 4 neurons, 1 output. Activation: tanh."
+    - generic [ref=e100]:
+      - tablist [ref=e101]:
+        - tab "Boundary" [selected] [ref=e102] [cursor=pointer]: Boundary
+        - tab "Loss" [ref=e104] [cursor=pointer]: Loss
+        - tab "Confusion" [ref=e106] [cursor=pointer]: Confusion
+        - tab "Inspection" [ref=e108] [cursor=pointer]: Inspection
+        - tab "Code" [ref=e110] [cursor=pointer]: Code
+      - generic [ref=e113]:
+        - generic [ref=e115]:
+          - generic [ref=e116]: 🎯
+          - heading "No training data" [level=3] [ref=e117]
+          - paragraph [ref=e118]: Generate data or reset the playground to populate the decision boundary.
+        - generic [ref=e119]:
+          - generic [ref=e120]: Class 0 / Negative
+          - generic [ref=e122]: Class 1 / Positive
+        - generic [ref=e124]:
+          - generic [ref=e125] [cursor=pointer]:
+            - checkbox "Show test data" [ref=e126]
+            - text: Show test data
+          - generic [ref=e127] [cursor=pointer]:
+            - checkbox "Discretize output" [ref=e128]
+            - text: Discretize output
+    - generic [ref=e130]:
+      - generic [ref=e131]:
+        - button "Start training" [ref=e133] [cursor=pointer]:
+          - generic [ref=e134]: ▶
+          - generic [ref=e135]: Play
+        - button "Run one training step" [ref=e137] [cursor=pointer]:
+          - generic [ref=e138]: →
+          - generic [ref=e139]: Step
+        - button "Reset model and data" [ref=e141] [cursor=pointer]:
+          - generic [ref=e142]: ↺
+          - generic [ref=e143]: Reset
+      - generic "Training speed" [ref=e144]:
+        - generic [ref=e145]: "Speed:"
+        - button "1×" [ref=e147] [cursor=pointer]
+        - button "5×" [pressed] [ref=e149] [cursor=pointer]
+        - button "10×" [ref=e151] [cursor=pointer]
+        - button "25×" [ref=e153] [cursor=pointer]
+        - button "50×" [ref=e155] [cursor=pointer]
+  - status "Status bar" [ref=e156]:
+    - generic [ref=e157]: ● IDLE
+    - generic [ref=e158]: "LAYOUT: dock"
+    - generic [ref=e159]: "DATA: circle"
+    - generic [ref=e160]: "ARCH: [4, 4]"
+    - generic [ref=e161]: step 0
+    - generic [ref=e162]:
+      - text: Inspired by
+      - link "TensorFlow Playground" [ref=e163] [cursor=pointer]:
+        - /url: https://playground.tensorflow.org

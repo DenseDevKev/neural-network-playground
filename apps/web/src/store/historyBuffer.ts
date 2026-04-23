@@ -20,15 +20,15 @@ export const HISTORY_CAPACITY = 4096;
 // halving compaction when full. `Float64Array` because our loss values can
 // be very small and we want to avoid float32 denormal slowdowns, while
 // still ditching the HistoryPoint object allocations.
-let _step = new Float64Array(HISTORY_CAPACITY);
-let _trainLoss = new Float64Array(HISTORY_CAPACITY);
-let _testLoss = new Float64Array(HISTORY_CAPACITY);
-let _trainAccuracy = new Float64Array(HISTORY_CAPACITY);
-let _testAccuracy = new Float64Array(HISTORY_CAPACITY);
+const _step = new Float64Array(HISTORY_CAPACITY);
+const _trainLoss = new Float64Array(HISTORY_CAPACITY);
+const _testLoss = new Float64Array(HISTORY_CAPACITY);
+const _trainAccuracy = new Float64Array(HISTORY_CAPACITY);
+const _testAccuracy = new Float64Array(HISTORY_CAPACITY);
 // Which cells in the accuracy arrays hold a real value (vs. the default 0).
 // Kept as Uint8Array so "is defined" queries stay branch-free.
-let _hasTrainAcc = new Uint8Array(HISTORY_CAPACITY);
-let _hasTestAcc = new Uint8Array(HISTORY_CAPACITY);
+const _hasTrainAcc = new Uint8Array(HISTORY_CAPACITY);
+const _hasTestAcc = new Uint8Array(HISTORY_CAPACITY);
 
 let _count = 0;
 let _version = 0;

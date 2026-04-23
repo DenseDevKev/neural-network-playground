@@ -91,9 +91,11 @@ export default function App() {
 
             if (e.code === 'Space') {
                 e.preventDefault();
-                statusRef.current === 'running'
-                    ? trainingRef.current.pause()
-                    : trainingRef.current.play();
+                if (statusRef.current === 'running') {
+                    trainingRef.current.pause();
+                } else {
+                    trainingRef.current.play();
+                }
             } else if (e.code === 'ArrowRight') {
                 e.preventDefault();
                 trainingRef.current.step();

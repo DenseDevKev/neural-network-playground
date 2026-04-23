@@ -1,0 +1,266 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - status [ref=e5]
+  - banner [ref=e6]:
+    - generic [ref=e9]: NN·FORGE
+    - group "Workspace phase" [ref=e536]:
+      - button "Build" [pressed] [ref=e537] [cursor=pointer]:
+        - generic [ref=e539]: Build
+      - button "Run" [ref=e540] [cursor=pointer]:
+        - generic [ref=e542]: Run
+    - status "Training metrics" [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]: Epoch
+        - generic [ref=e14]: "0000"
+      - generic [ref=e15]:
+        - generic [ref=e16]: Train Loss
+        - generic [ref=e17]: "0.6926"
+      - generic [ref=e18]:
+        - generic [ref=e19]: Test Loss
+        - generic [ref=e20]: "0.6918"
+      - generic [ref=e164]:
+        - generic [ref=e165]: Accuracy
+        - generic [ref=e166]: 48.7%
+    - generic [ref=e21]:
+      - group "Layout variant" [ref=e22]:
+        - button "dock" [ref=e23] [cursor=pointer]
+        - button "grid" [ref=e24] [cursor=pointer]
+        - button "split" [active] [pressed] [ref=e25] [cursor=pointer]
+      - button "Start training" [ref=e26] [cursor=pointer]: ▶
+  - generic [ref=e543]:
+    - generic [ref=e544]:
+      - generic [ref=e545]: ◉ Build phase — design your network
+      - generic [ref=e546]: Press ▶ to start training →
+    - generic [ref=e547]:
+      - generic [ref=e548]:
+        - generic [ref=e549]:
+          - generic [ref=e550]:
+            - generic [ref=e552]: Presets
+            - generic [ref=e553]: build
+          - list "Available presets" [ref=e556]:
+            - listitem [ref=e557]:
+              - 'button "Apply preset: Single Neuron Linear Separator" [ref=e559] [cursor=pointer]':
+                - generic [ref=e560]:
+                  - generic [ref=e561]:
+                    - generic [ref=e562]: Single Neuron Linear Separator
+                    - generic [ref=e563]: Beginner
+                  - paragraph [ref=e564]: A single neuron can only learn a linear boundary.
+                  - paragraph [ref=e565]:
+                    - generic [ref=e566]: 💡
+                    - generic [ref=e567]: Understand that a single neuron computes a weighted sum and can only separate linearly.
+            - listitem [ref=e568]:
+              - 'button "Apply preset: XOR Needs Hidden Layers" [ref=e570] [cursor=pointer]':
+                - generic [ref=e571]:
+                  - generic [ref=e572]:
+                    - generic [ref=e573]: XOR Needs Hidden Layers
+                    - generic [ref=e574]: Beginner
+                  - paragraph [ref=e575]: XOR is not linearly separable — you need at least one hidden layer.
+                  - paragraph [ref=e576]:
+                    - generic [ref=e577]: 💡
+                    - generic [ref=e578]: See that hidden layers enable non-linear decision boundaries.
+            - listitem [ref=e579]:
+              - 'button "Apply preset: Circle with One Hidden Layer" [ref=e581] [cursor=pointer]':
+                - generic [ref=e582]:
+                  - generic [ref=e583]:
+                    - generic [ref=e584]: Circle with One Hidden Layer
+                    - generic [ref=e585]: Intermediate
+                  - paragraph [ref=e586]: A simple circle dataset with a single hidden layer.
+                  - paragraph [ref=e587]:
+                    - generic [ref=e588]: 💡
+                    - generic [ref=e589]: One hidden layer with enough neurons can learn a circular boundary.
+            - listitem [ref=e590]:
+              - 'button "Apply preset: Spiral with Deeper Network" [ref=e592] [cursor=pointer]':
+                - generic [ref=e593]:
+                  - generic [ref=e594]:
+                    - generic [ref=e595]: Spiral with Deeper Network
+                    - generic [ref=e596]: Advanced
+                  - paragraph [ref=e597]: The spiral dataset requires a deeper network to learn.
+                  - paragraph [ref=e598]:
+                    - generic [ref=e599]: 💡
+                    - generic [ref=e600]: Deeper networks can learn more complex decision boundaries.
+            - listitem [ref=e601]:
+              - 'button "Apply preset: Regression with No Hidden Layer" [ref=e603] [cursor=pointer]':
+                - generic [ref=e604]:
+                  - generic [ref=e605]:
+                    - generic [ref=e606]: Regression with No Hidden Layer
+                    - generic [ref=e607]: Beginner
+                  - paragraph [ref=e608]: A simple linear regression on a plane surface.
+                  - paragraph [ref=e609]:
+                    - generic [ref=e610]: 💡
+                    - generic [ref=e611]: Linear regression can perfectly fit a plane with no hidden layers.
+            - listitem [ref=e612]:
+              - 'button "Apply preset: Feature Engineering Helps" [ref=e614] [cursor=pointer]':
+                - generic [ref=e615]:
+                  - generic [ref=e616]:
+                    - generic [ref=e617]: Feature Engineering Helps
+                    - generic [ref=e618]: Intermediate
+                  - paragraph [ref=e619]: Adding x² and y² features makes the circle trivially separable.
+                  - paragraph [ref=e620]:
+                    - generic [ref=e621]: 💡
+                    - generic [ref=e622]: Good features can simplify a problem — even without hidden layers.
+        - generic [ref=e623]:
+          - generic [ref=e624]:
+            - generic [ref=e626]: Data
+            - generic [ref=e627]: build
+          - generic [ref=e629]:
+            - generic [ref=e630]:
+              - generic [ref=e631]: Problem
+              - generic [ref=e632]:
+                - button "Classification" [ref=e634] [cursor=pointer]
+                - button "Regression" [ref=e636] [cursor=pointer]
+            - generic [ref=e637]:
+              - button "Circle" [pressed] [ref=e639] [cursor=pointer]
+              - button "XOR" [ref=e641] [cursor=pointer]
+              - button "Gaussian" [ref=e643] [cursor=pointer]
+              - button "Spiral" [ref=e645] [cursor=pointer]
+              - button "Moons" [ref=e647] [cursor=pointer]
+              - button "Checker" [ref=e649] [cursor=pointer]
+              - button "Rings" [ref=e651] [cursor=pointer]
+              - button "Heart" [ref=e653] [cursor=pointer]
+            - generic [ref=e654]:
+              - generic [ref=e655]: Train ratio
+              - generic [ref=e656]: 50%
+            - slider "Train/test split percentage" [ref=e658] [cursor=pointer]: "50"
+            - generic [ref=e659]:
+              - generic [ref=e660]: Noise
+              - generic [ref=e661]: "0"
+            - slider "Noise level" [ref=e663] [cursor=pointer]: "0"
+            - button "↻ Regenerate" [ref=e665] [cursor=pointer]
+      - generic [ref=e666]:
+        - generic [ref=e667]:
+          - generic [ref=e668]:
+            - generic [ref=e670]: Network Topology
+            - generic [ref=e671]: build
+          - generic [ref=e675]:
+            - img [ref=e676]
+            - paragraph [ref=e677]: "Neural network: 2 inputs, 2 hidden layers of 4, 4 neurons, 1 output. Activation: tanh."
+        - generic [ref=e678]:
+          - generic [ref=e679]:
+            - generic [ref=e681]: Network
+            - generic [ref=e682]: build
+          - generic [ref=e684]:
+            - generic [ref=e685]:
+              - generic [ref=e686]: Hidden Layers
+              - generic [ref=e687]:
+                - button "Remove hidden layer" [ref=e689] [cursor=pointer]: −
+                - generic [ref=e690]: "2"
+                - button "Add hidden layer" [ref=e692] [cursor=pointer]: +
+            - generic [ref=e693]:
+              - generic [ref=e694]: Layer 1
+              - slider "Neurons in layer 1" [ref=e695] [cursor=pointer]: "4"
+              - generic [ref=e697] [cursor=pointer]: "4"
+            - generic [ref=e698]:
+              - generic [ref=e699]: Layer 2
+              - slider "Neurons in layer 2" [ref=e700] [cursor=pointer]: "4"
+              - generic [ref=e702] [cursor=pointer]: "4"
+            - generic [ref=e703]:
+              - generic [ref=e704]: Activation
+              - combobox [ref=e706] [cursor=pointer]:
+                - option "ReLU"
+                - option "Tanh" [selected]
+                - option "Sigmoid"
+                - option "Linear"
+                - option "Leaky ReLU"
+                - option "ELU"
+                - option "Swish"
+                - option "Softplus"
+      - generic [ref=e707]:
+        - generic [ref=e708]:
+          - generic [ref=e709]:
+            - generic [ref=e711]: Features
+            - generic [ref=e712]: build
+          - generic [ref=e715]:
+            - button "X₁" [pressed] [ref=e717] [cursor=pointer]
+            - button "X₂" [pressed] [ref=e719] [cursor=pointer]
+            - button "X₁²" [ref=e721] [cursor=pointer]
+            - button "X₂²" [ref=e723] [cursor=pointer]
+            - button "X₁X₂" [ref=e725] [cursor=pointer]
+            - button "sin(X₁)" [ref=e727] [cursor=pointer]
+            - button "sin(X₂)" [ref=e729] [cursor=pointer]
+            - button "cos(X₁)" [ref=e731] [cursor=pointer]
+            - button "cos(X₂)" [ref=e733] [cursor=pointer]
+        - generic [ref=e734]:
+          - generic [ref=e737]: Hyperparameters
+          - generic [ref=e739]:
+            - generic [ref=e740]:
+              - generic [ref=e741]: Learning rate
+              - combobox [ref=e743] [cursor=pointer]:
+                - option "0.00001"
+                - option "0.0001"
+                - option "0.001"
+                - option "0.003"
+                - option "0.01"
+                - option "0.03" [selected]
+                - option "0.1"
+                - option "0.3"
+                - option "1"
+                - option "3"
+                - option "10"
+            - generic [ref=e744]:
+              - generic [ref=e745]: Loss
+              - combobox [ref=e747] [cursor=pointer]:
+                - option "MSE (Squared)"
+                - option "Cross-Entropy" [selected]
+                - option "Huber"
+            - generic [ref=e748]:
+              - generic [ref=e749]: Optimizer
+              - combobox [ref=e751] [cursor=pointer]:
+                - option "SGD" [selected]
+                - option "SGD + Momentum"
+                - option "Adam"
+            - generic [ref=e752]:
+              - generic [ref=e753]: Batch size
+              - combobox [ref=e755] [cursor=pointer]:
+                - option "1"
+                - option "2"
+                - option "4"
+                - option "8"
+                - option "10" [selected]
+                - option "16"
+                - option "32"
+                - option "64"
+            - generic [ref=e756]:
+              - generic [ref=e757]: Regularization
+              - combobox [ref=e759] [cursor=pointer]:
+                - option "None" [selected]
+                - option "L1"
+                - option "L2"
+        - generic [ref=e760]:
+          - generic [ref=e763]: Config
+          - generic [ref=e766]:
+            - button "↓ Export JSON" [ref=e768] [cursor=pointer]
+            - button "↑ Import JSON" [ref=e770] [cursor=pointer]
+            - button "🔗 Copy URL" [ref=e772] [cursor=pointer]
+    - generic [ref=e774]:
+      - generic [ref=e775]:
+        - button "Start training" [ref=e777] [cursor=pointer]:
+          - generic [ref=e778]: ▶
+          - generic [ref=e779]: Play
+        - button "Run one training step" [ref=e781] [cursor=pointer]:
+          - generic [ref=e782]: →
+          - generic [ref=e783]: Step
+        - button "Reset model and data" [ref=e785] [cursor=pointer]:
+          - generic [ref=e786]: ↺
+          - generic [ref=e787]: Reset
+      - generic "Training speed" [ref=e788]:
+        - generic [ref=e789]: "Speed:"
+        - button "1×" [ref=e791] [cursor=pointer]
+        - button "5×" [pressed] [ref=e793] [cursor=pointer]
+        - button "10×" [ref=e795] [cursor=pointer]
+        - button "25×" [ref=e797] [cursor=pointer]
+        - button "50×" [ref=e799] [cursor=pointer]
+      - generic [ref=e800]:
+        - generic [ref=e801]: Step 0
+        - generic [ref=e802]: Epoch 0
+  - status "Status bar" [ref=e156]:
+    - generic [ref=e157]: ● IDLE
+    - generic [ref=e158]: "LAYOUT: split"
+    - generic [ref=e803]: "PHASE: build"
+    - generic [ref=e159]: "DATA: circle"
+    - generic [ref=e160]: "ARCH: [4, 4]"
+    - generic [ref=e161]: step 0
+    - generic [ref=e162]:
+      - text: Inspired by
+      - link "TensorFlow Playground" [ref=e163] [cursor=pointer]:
+        - /url: https://playground.tensorflow.org

@@ -13,6 +13,7 @@ import {
     appendHistoryPoint,
     resetHistoryBuffer,
 } from './historyBuffer.ts';
+import { normalizeTrainingSpeed } from '../worker/trainingLoop.ts';
 
 type ConfigChangeSource = 'data' | 'network' | null;
 
@@ -88,7 +89,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     setFrameVersion: (frameVersion) => set({ frameVersion }),
     setTrainPoints: (trainPoints) => set({ trainPoints }),
     setTestPoints: (testPoints) => set({ testPoints }),
-    setStepsPerFrame: (n) => set({ stepsPerFrame: Math.max(1, Math.min(100, n)) }),
+    setStepsPerFrame: (n) => set({ stepsPerFrame: normalizeTrainingSpeed(n) }),
     beginConfigChange: (source) => set({
         pendingConfigSource: source,
         dataConfigLoading: source === 'data',

@@ -1,0 +1,103 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#main-content"
+  - status [ref=e5]
+  - banner [ref=e6]:
+    - generic [ref=e9]: NN·FORGE
+    - generic [ref=e29]:
+      - group "Layout variant" [ref=e30]:
+        - button "dock" [pressed] [ref=e31] [cursor=pointer]
+        - button "grid" [disabled] [ref=e32]
+        - button "split" [disabled] [ref=e33]
+      - button "Start training" [ref=e34] [cursor=pointer]: ▶
+  - generic [ref=e246]:
+    - navigation "Navigation rail" [ref=e247]:
+      - button "Data" [ref=e248] [cursor=pointer]: ◉
+      - button "Network" [ref=e249] [cursor=pointer]: ⬢
+      - button "Hyperparams" [ref=e250] [cursor=pointer]: λ
+      - button "Config" [ref=e251] [cursor=pointer]: ⚙
+      - button "Presets" [ref=e252] [cursor=pointer]: ★
+    - generic [ref=e253]:
+      - tablist [ref=e254]:
+        - tab "Presets" [ref=e255] [cursor=pointer]: Presets
+        - tab "Data" [selected] [ref=e257] [cursor=pointer]: Data
+        - tab "Features" [ref=e259] [cursor=pointer]: Features
+        - tab "Network" [ref=e261] [cursor=pointer]: Network
+        - tab "Hyperparams" [ref=e263] [cursor=pointer]: Hyperparams
+        - tab "Config" [ref=e265] [cursor=pointer]: Config
+      - generic [ref=e269]:
+        - generic [ref=e270]:
+          - generic [ref=e271]: Problem
+          - generic [ref=e272]:
+            - button "Classification" [ref=e274] [cursor=pointer]
+            - button "Regression" [ref=e276] [cursor=pointer]
+        - generic [ref=e277]:
+          - button "Circle" [pressed] [ref=e279] [cursor=pointer]
+          - button "XOR" [ref=e281] [cursor=pointer]
+          - button "Gaussian" [ref=e283] [cursor=pointer]
+          - button "Spiral" [ref=e285] [cursor=pointer]
+          - button "Moons" [ref=e287] [cursor=pointer]
+          - button "Checker" [ref=e289] [cursor=pointer]
+          - button "Rings" [ref=e291] [cursor=pointer]
+          - button "Heart" [ref=e293] [cursor=pointer]
+        - generic [ref=e294]:
+          - generic [ref=e295]: Train ratio
+          - generic [ref=e296]: 50%
+        - slider "Train/test split percentage" [ref=e298] [cursor=pointer]: "50"
+        - generic [ref=e299]:
+          - generic [ref=e300]: Noise
+          - generic [ref=e301]: "0"
+        - slider "Noise level" [ref=e303] [cursor=pointer]: "0"
+        - button "↻ Regenerate" [ref=e305] [cursor=pointer]
+    - generic [ref=e307]:
+      - generic [ref=e308]:
+        - generic [ref=e310]: Network Topology
+        - generic [ref=e311]: build
+      - generic [ref=e315]:
+        - img [ref=e316]
+        - paragraph [ref=e317]: "Neural network: 2 inputs, 2 hidden layers of 4, 4 neurons, 1 output. Activation: tanh."
+    - generic [ref=e318]:
+      - tablist [ref=e319]:
+        - tab "Boundary" [ref=e320] [cursor=pointer]: Boundary
+        - tab "Loss" [ref=e322] [cursor=pointer]: Loss
+        - tab "Confusion" [ref=e324] [cursor=pointer]: Confusion
+        - tab "Inspection" [ref=e326] [cursor=pointer]: Inspection
+        - tab "Code" [active] [selected] [ref=e328] [cursor=pointer]: Code
+      - generic [ref=e374]:
+        - generic [ref=e375]:
+          - button "Pseudocode" [ref=e376] [cursor=pointer]
+          - button "NumPy" [ref=e377] [cursor=pointer]
+          - button "TF.js" [ref=e378] [cursor=pointer]
+        - generic [ref=e380]: "# Neural Network — Pseudocode # Architecture: 2 → 4 → 4 → 1 INPUT features = [x, y] # 2 features LAYER hidden_1: neurons = 4 activation = Tanh FOR each neuron i: z[i] = bias[i] + SUM(w[i][j] * input[j] for j in prev_layer) output[i] = Tanh(z[i]) LAYER hidden_2: neurons = 4 activation = Tanh FOR each neuron i: z[i] = bias[i] + SUM(w[i][j] * input[j] for j in prev_layer) output[i] = Tanh(z[i]) LAYER output: neurons = 1 activation = Sigmoid prediction = Sigmoid(bias + SUM(w[j] * hidden[j])) TRAINING: loss = Cross-Entropy optimizer = SGD learning_rate = 0.03 batch_size = 10 # Trained weights (step 0): # Layer 1: 4 neurons × 2 inputs # neuron 0: bias=0.0000 weights=[-0.5520, -0.1576] # neuron 1: bias=0.0000 weights=[-1.0633, -0.6587] # neuron 2: bias=0.0000 weights=[-0.3057, 0.7093] # neuron 3: bias=0.0000 weights=[-0.1550, -1.0403] # Layer 2: 4 neurons × 4 inputs # neuron 0: bias=0.0000 weights=[-0.3330, -1.6395, 0.2826, 0.5017] # neuron 1: bias=0.0000 weights=[0.7522, 0.1920, 0.5550, 0.5151] # neuron 2: bias=0.0000 weights=[0.2171, -0.7182, 1.2154, -0.4443] # neuron 3: bias=0.0000 weights=[-0.5110, -0.2923, 0.2457, 0.1652] # Layer 3: 1 neurons × 4 inputs # neuron 0: bias=0.0000 weights=[-0.2677, -0.7730, -0.1941, 0.2083]"
+        - button "📋 Copy Code" [ref=e382] [cursor=pointer]
+    - generic [ref=e345]:
+      - generic [ref=e346]:
+        - button "Start training" [ref=e348] [cursor=pointer]:
+          - generic [ref=e349]: ▶
+          - generic [ref=e350]: Play
+        - button "Run one training step" [ref=e352] [cursor=pointer]:
+          - generic [ref=e353]: →
+          - generic [ref=e354]: Step
+        - button "Reset model and data" [ref=e356] [cursor=pointer]:
+          - generic [ref=e357]: ↺
+          - generic [ref=e358]: Reset
+      - generic "Training speed" [ref=e359]:
+        - generic [ref=e360]: "Speed:"
+        - button "1×" [ref=e362] [cursor=pointer]
+        - button "5×" [pressed] [ref=e364] [cursor=pointer]
+        - button "10×" [ref=e366] [cursor=pointer]
+        - button "25×" [ref=e368] [cursor=pointer]
+        - button "50×" [ref=e370] [cursor=pointer]
+      - generic [ref=e371]:
+        - generic [ref=e372]: Step 0
+        - generic [ref=e373]: Epoch 0
+  - status "Status bar" [ref=e169]:
+    - generic [ref=e170]: ● IDLE
+    - generic [ref=e171]: "LAYOUT: dock"
+    - generic [ref=e173]: "DATA: circle"
+    - generic [ref=e174]: "ARCH: [4, 4]"
+    - generic [ref=e175]: step 0
+    - generic [ref=e176]:
+      - text: Inspired by
+      - link "TensorFlow Playground" [ref=e177] [cursor=pointer]:
+        - /url: https://playground.tensorflow.org

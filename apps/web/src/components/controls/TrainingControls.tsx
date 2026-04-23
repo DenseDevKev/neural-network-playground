@@ -9,11 +9,11 @@ interface Props {
 }
 
 const SPEED_OPTIONS: { value: number; label: string }[] = [
-    { value: 1, label: '1×' },
-    { value: 5, label: '5×' },
-    { value: 10, label: '10×' },
-    { value: 25, label: '25×' },
-    { value: 50, label: '50×' },
+    { value: 1, label: '1' },
+    { value: 5, label: '5' },
+    { value: 10, label: '10' },
+    { value: 25, label: '25' },
+    { value: 50, label: '50' },
 ];
 
 export const TrainingControls = memo(function TrainingControls({ training }: Props) {
@@ -62,18 +62,22 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
             </div>
 
             <div className="training-bar__speed" aria-label="Training speed">
-                <span className="training-bar__speed-label">Speed:</span>
-                {SPEED_OPTIONS.map((opt) => (
-                    <Tooltip key={opt.value} content={`${opt.value} steps per frame`}>
-                        <button
-                            className={`speed-btn ${stepsPerFrame === opt.value ? 'active' : ''}`}
-                            onClick={() => setStepsPerFrame(opt.value)}
-                            aria-pressed={stepsPerFrame === opt.value}
-                        >
-                            {opt.label}
-                        </button>
-                    </Tooltip>
-                ))}
+                <span className="training-bar__speed-label">Steps/frame:</span>
+                {SPEED_OPTIONS.map((opt) => {
+                    const stepLabel = `${opt.value} ${opt.value === 1 ? 'step' : 'steps'} per frame`;
+                    return (
+                        <Tooltip key={opt.value} content={stepLabel}>
+                            <button
+                                className={`speed-btn ${stepsPerFrame === opt.value ? 'active' : ''}`}
+                                onClick={() => setStepsPerFrame(opt.value)}
+                                aria-pressed={stepsPerFrame === opt.value}
+                                aria-label={stepLabel}
+                            >
+                                {opt.label}
+                            </button>
+                        </Tooltip>
+                    );
+                })}
             </div>
 
             <div className="training-bar__info">

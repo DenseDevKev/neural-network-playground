@@ -17,6 +17,7 @@ export {
     exportConfigJson,
     importConfigJson,
     validateImportedConfig,
+    normalizeAppConfig,
 } from './serialization.js';
 export {
     DEFAULT_SEED,
