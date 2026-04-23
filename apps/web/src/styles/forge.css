@@ -185,6 +185,15 @@
     height: 100%;
 }
 
+.forge-dock--compact {
+    grid-template-columns: 40px 1fr;
+    grid-template-rows:
+        minmax(220px, 0.95fr)
+        minmax(260px, 1.1fr)
+        minmax(220px, 0.95fr)
+        auto;
+}
+
 .forge-rail {
     grid-column: 1;
     grid-row: 1 / span 2;
@@ -195,6 +204,10 @@
     align-items: center;
     padding: 8px 0;
     gap: 2px;
+}
+
+.forge-dock--compact .forge-rail {
+    grid-row: 1 / span 4;
 }
 .forge-rail__btn {
     width: 30px;
@@ -263,6 +276,31 @@
     align-items: center;
     gap: var(--space-sm);
     flex-shrink: 0;
+}
+
+.forge-dock--compact .forge-dock__left {
+    grid-column: 2;
+    grid-row: 1;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.forge-dock--compact .forge-dock__center {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.forge-dock--compact .forge-dock__right {
+    grid-column: 2;
+    grid-row: 3;
+    display: flex;
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+}
+
+.forge-dock--compact .forge-dock__bottom {
+    grid-column: 2;
+    grid-row: 4;
 }
 
 /* ─── Tabs (dock panel headers) ─────────────────────────────────── */
@@ -334,7 +372,7 @@
     padding: var(--space-sm);
     display: grid;
     grid-template-columns: repeat(12, 1fr);
-    grid-template-rows: repeat(8, 1fr);
+    grid-template-rows: repeat(8, minmax(0, 1fr)) auto;
     gap: var(--space-sm);
     background:
         linear-gradient(var(--border-subtle) 1px, transparent 1px) 0 0 / 24px 24px,
@@ -534,6 +572,10 @@
                 color var(--duration-fast) var(--ease-out);
 }
 .forge-segmented__opt:hover { color: var(--text-primary); }
+.forge-segmented__opt:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
 .forge-segmented__opt--active {
     background: var(--bg-hover);
     color: var(--text-primary);
@@ -725,22 +767,9 @@
     }
 }
 
-/* Below 900px: collapse dock to 2-col; hide grid/split selectors */
+/* Below 900px: App.tsx switches to runtime compact dock mode */
 @media (max-width: 900px) {
-    .forge-dock {
-        grid-template-columns: 40px 1fr;
-        grid-template-rows: 1fr 1fr auto;
-    }
-    .forge-dock__left  { grid-column: 2; grid-row: 1; border-right: 0; border-bottom: 1px solid var(--border-subtle); }
-    .forge-dock__center { grid-column: 2; grid-row: 2; }
-    .forge-dock__right { display: none; }
-    .forge-dock__bottom { grid-column: 2; }
-
-    /* Suppress grid/split layout picker on small screens */
-    .forge-topbar .forge-segmented { display: none; }
-
     /* Hide topbar metrics on small screens to save space */
     .forge-topbar__metrics { display: none; }
     .forge-topbar__divider { display: none; }
-    .forge-phase { display: none; }
 }

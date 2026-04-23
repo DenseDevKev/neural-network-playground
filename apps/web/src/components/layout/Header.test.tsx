@@ -5,6 +5,7 @@ import { Header } from './Header';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
+import type { LayoutVariant } from '../../store/useLayoutStore.ts';
 
 function createTrainingMock(): Pick<TrainingHook, 'play' | 'pause'> {
     return {
@@ -13,8 +14,27 @@ function createTrainingMock(): Pick<TrainingHook, 'play' | 'pause'> {
     };
 }
 
+function renderHeader({
+    effectiveLayout = 'dock',
+    isCompact = false,
+    training = createTrainingMock(),
+}: {
+    effectiveLayout?: LayoutVariant;
+    isCompact?: boolean;
+    training?: Pick<TrainingHook, 'play' | 'pause'>;
+} = {}) {
+    return render(
+        <Header
+            training={training}
+            effectiveLayout={effectiveLayout}
+            isCompact={isCompact}
+        />,
+    );
+}
+
 describe('Header', () => {
     beforeEach(() => {
+        window.localStorage.clear();
         useTrainingStore.getState().resetHistory();
         useTrainingStore.setState({
             status: 'idle',
@@ -43,7 +63,7 @@ describe('Header', () => {
             } as any,
         });
 
-        render(<Header training={createTrainingMock()} />);
+        renderHeader();
 
         expect(screen.getByText('0012')).toBeInTheDocument();
         expect(screen.getByText('0.1234')).toBeInTheDocument();
@@ -55,7 +75,7 @@ describe('Header', () => {
         const user = userEvent.setup();
         const training = createTrainingMock();
 
-        const { rerender } = render(<Header training={training} />);
+        const { rerender } = renderHeader({ training });
 
         await user.click(screen.getByRole('button', { name: 'Start training' }));
         expect(training.play).toHaveBeenCalledTimes(1);
@@ -63,14 +83,20 @@ describe('Header', () => {
         act(() => {
             useTrainingStore.setState({ status: 'running' });
         });
-        rerender(<Header training={training} />);
+        rerender(
+            <Header
+                training={training}
+                effectiveLayout="dock"
+                isCompact={false}
+            />,
+        );
 
         await user.click(screen.getByRole('button', { name: 'Pause training' }));
         expect(training.pause).toHaveBeenCalledTimes(1);
     });
 
     it('renders the layout picker with dock, grid, and split options', () => {
-        render(<Header training={createTrainingMock()} />);
+        renderHeader();
 
         const picker = screen.getByRole('group', { name: 'Layout variant' });
         expect(picker).toBeInTheDocument();
@@ -80,9 +106,9 @@ describe('Header', () => {
         expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument();
     });
 
-    it('updates the layout store when a layout option is clicked', async () => {
+    it('updates the layout store when a layout option is clicked on desktop', async () => {
         const user = userEvent.setup();
-        render(<Header training={createTrainingMock()} />);
+        renderHeader();
 
         await user.click(screen.getByRole('button', { name: 'grid' }));
         expect(useLayoutStore.getState().layout).toBe('grid');
@@ -91,8 +117,18 @@ describe('Header', () => {
         expect(useLayoutStore.getState().layout).toBe('split');
     });
 
-    it('renders the phase switch with build and run options', () => {
-        render(<Header training={createTrainingMock()} />);
+    it('renders phase controls only for the split layout', () => {
+        const { rerender } = renderHeader({ effectiveLayout: 'dock' });
+
+        expect(screen.queryByRole('group', { name: 'Workspace phase' })).not.toBeInTheDocument();
+
+        rerender(
+            <Header
+                training={createTrainingMock()}
+                effectiveLayout="split"
+                isCompact={false}
+            />,
+        );
 
         const phaseGroup = screen.getByRole('group', { name: 'Workspace phase' });
         expect(phaseGroup).toBeInTheDocument();
@@ -100,8 +136,18 @@ describe('Header', () => {
         expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument();
     });
 
+    it('keeps the layout picker visible in compact mode and disables grid/split', () => {
+        renderHeader({ effectiveLayout: 'dock', isCompact: true });
+
+        expect(screen.getByRole('group', { name: 'Layout variant' })).toBeInTheDocument();
+        expect(screen.queryByRole('group', { name: 'Workspace phase' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'dock' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'grid' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'split' })).toBeDisabled();
+    });
+
     it('shows the NN·FORGE brand name', () => {
-        render(<Header training={createTrainingMock()} />);
+        renderHeader();
         expect(screen.getByText('NN·FORGE')).toBeInTheDocument();
     });
 });

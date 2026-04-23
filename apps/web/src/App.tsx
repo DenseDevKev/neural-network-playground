@@ -4,7 +4,7 @@
 // Each shell receives typed content props — adding a new panel means
 // adding it to the relevant content map, not editing any layout code.
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useLayoutStore } from './store/useLayoutStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
@@ -25,56 +25,70 @@ import {
     CodeContent,
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
-import { NetworkGraph } from './components/visualization/NetworkGraph.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
 import { DataPanel } from './components/controls/DataPanel.tsx';
 import { FeaturesPanel } from './components/controls/FeaturesPanel.tsx';
 import { NetworkConfigPanel } from './components/controls/NetworkConfigPanel.tsx';
 import { HyperparamPanel } from './components/controls/HyperparamPanel.tsx';
 import { ConfigPanel } from './components/controls/ConfigPanel.tsx';
-import { InspectionPanel } from './components/controls/InspectionPanel.tsx';
 import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
-import { CodeExportPanel } from './components/controls/CodeExportPanel.tsx';
+
+const COMPACT_BREAKPOINT = 900;
 
 export default function App() {
     const training = useTraining();
-    const layout   = useLayoutStore((s) => s.layout);
-    const status   = useTrainingStore((s) => s.status);
-    const dataConfigLoading    = useTrainingStore((s) => s.dataConfigLoading);
+    const persistedLayout = useLayoutStore((s) => s.layout);
+    const status = useTrainingStore((s) => s.status);
+    const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
     const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
-    const configError          = useTrainingStore((s) => s.configError);
-    const configErrorSource    = useTrainingStore((s) => s.configErrorSource);
-    const workerError          = useTrainingStore((s) => s.workerError);
+    const configError = useTrainingStore((s) => s.configError);
+    const configErrorSource = useTrainingStore((s) => s.configErrorSource);
+    const workerError = useTrainingStore((s) => s.workerError);
+    const [isCompact, setIsCompact] = useState(() => window.innerWidth < COMPACT_BREAKPOINT);
 
     // Stable refs so keyboard handler never goes stale
     const trainingRef = useRef(training);
-    const statusRef   = useRef(status);
+    const statusRef = useRef(status);
     useEffect(() => { trainingRef.current = training; }, [training]);
-    useEffect(() => { statusRef.current   = status;   }, [status]);
+    useEffect(() => { statusRef.current = status; }, [status]);
 
     const stableReset = useCallback(() => trainingRef.current.reset(), []);
+    const effectiveLayout = isCompact ? 'dock' : persistedLayout;
 
     // Performance observer (dev only)
     useEffect(() => {
         if (!import.meta.env.DEV || typeof PerformanceObserver === 'undefined') return;
         const obs = new PerformanceObserver((list) => {
             for (const e of list.getEntriesByType('measure')) {
-                if (e.duration > 16)
+                if (e.duration > 16) {
                     console.warn(`[perf] Slow interaction: ${e.name} (${e.duration.toFixed(2)}ms)`);
+                }
             }
         });
         obs.observe({ entryTypes: ['measure'] });
         return () => obs.disconnect();
     }, []);
 
+    useEffect(() => {
+        const updateCompactMode = () => {
+            setIsCompact(window.innerWidth < COMPACT_BREAKPOINT);
+        };
+
+        window.addEventListener('resize', updateCompactMode);
+        return () => window.removeEventListener('resize', updateCompactMode);
+    }, []);
+
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
-            if (e.target instanceof HTMLInputElement ||
+            if (
+                e.target instanceof HTMLInputElement ||
                 e.target instanceof HTMLSelectElement ||
-                e.target instanceof HTMLTextAreaElement) return;
+                e.target instanceof HTMLTextAreaElement
+            ) return;
+
             if (e.code === 'Space') {
                 e.preventDefault();
                 statusRef.current === 'running'
@@ -88,34 +102,34 @@ export default function App() {
                 trainingRef.current.reset();
             }
         };
+
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, []);
 
-    // ── Content maps ──────────────────────────────────────────────────────
     const leftTabContent = {
-        presets:     <PresetPanel onReset={stableReset} />,
-        data:        <DataPanel onReset={stableReset} />,
-        features:    <FeaturesPanel />,
-        network:     <NetworkConfigPanel />,
+        presets: <PresetPanel onReset={stableReset} />,
+        data: <DataPanel onReset={stableReset} />,
+        features: <FeaturesPanel />,
+        network: <NetworkConfigPanel />,
         hyperparams: <HyperparamPanel />,
-        config:      <ConfigPanel onReset={stableReset} />,
+        config: <ConfigPanel onReset={stableReset} />,
     };
 
     const rightTabContent = {
-        boundary:   <BoundaryContent />,
-        loss:       <LossContent />,
-        confusion:  <ConfusionContent />,
+        boundary: <BoundaryContent />,
+        loss: <LossContent />,
+        confusion: <ConfusionContent />,
         inspection: <InspectContent />,
-        code:       <CodeContent />,
+        code: <CodeContent />,
     };
 
     const transport = <TrainingControls training={training} />;
 
     const canvasPanel = (
         <Panel title="Network Topology" phase="build" fill>
-            <div className="network-graph-wrapper" style={{ flex: 1, height: '100%', minHeight: 200, borderRadius: 'var(--radius-sm)' }}>
-                <NetworkGraph />
+            <div style={{ display: 'flex', minHeight: 200, height: '100%' }}>
+                <CanvasContent />
             </div>
         </Panel>
     );
@@ -144,10 +158,27 @@ export default function App() {
         </Panel>
     );
 
-    const configPanels = (
+    const codePanel = (
+        <Panel title="Code Export" phase="both">
+            <CodeContent />
+        </Panel>
+    );
+
+    const gridConfigPanels = (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+            <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
             <Panel title="Data" phase="build"><DataPanel onReset={stableReset} /></Panel>
             <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
+            <Panel title="Network" phase="build"><NetworkConfigPanel /></Panel>
+            <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+            <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
+        </div>
+    );
+
+    const gridInspectPanels = (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+            {inspectPanel}
+            {codePanel}
         </div>
     );
 
@@ -177,36 +208,35 @@ export default function App() {
                 </div>
             )}
 
-            {/* Top bar */}
             <ErrorBoundary title="Header unavailable" description="Header render failed." actionLabel="Reload" onRetry={stableReset}>
-                <Header training={training} />
+                <Header training={training} effectiveLayout={effectiveLayout} isCompact={isCompact} />
             </ErrorBoundary>
 
-            {/* Workspace */}
             <div className="forge-workspace" id="main-content" tabIndex={-1}>
                 <ErrorBoundary title="Workspace unavailable" description="Layout shell failed." actionLabel="Reload" onRetry={stableReset}>
-                    {layout === 'dock' && (
+                    {effectiveLayout === 'dock' && (
                         <DockShell
                             leftTabContent={leftTabContent}
                             rightTabContent={rightTabContent}
                             canvasContent={canvasPanel}
                             transportContent={transport}
+                            compact={isCompact}
                         />
                     )}
 
-                    {layout === 'grid' && (
+                    {effectiveLayout === 'grid' && (
                         <GridShell
                             topologyContent={canvasPanel}
                             boundaryContent={boundaryPanel}
-                            configContent={configPanels}
+                            configContent={gridConfigPanels}
                             lossContent={lossPanel}
                             confusionContent={confusionPanel}
-                            inspectContent={inspectPanel}
+                            inspectContent={gridInspectPanels}
                             transportContent={transport}
                         />
                     )}
 
-                    {layout === 'split' && (
+                    {effectiveLayout === 'split' && (
                         <SplitShell
                             buildLeft={
                                 <>
@@ -215,40 +245,43 @@ export default function App() {
                                 </>
                             }
                             buildCenter={
-                                <Panel title="Network Topology" phase="build" fill>
-                                    <div className="network-graph-wrapper" style={{ flex: 1, height: '100%', minHeight: 280 }}>
-                                        <NetworkGraph />
-                                    </div>
-                                </Panel>
+                                <>
+                                    <Panel title="Network Topology" phase="build" fill>
+                                        <div style={{ display: 'flex', minHeight: 280, height: '100%' }}>
+                                            <CanvasContent />
+                                        </div>
+                                    </Panel>
+                                    <Panel title="Network" phase="build"><NetworkConfigPanel /></Panel>
+                                </>
                             }
                             buildRight={
                                 <>
                                     <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
                                     <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+                                    <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                 </>
                             }
                             runLeft={
                                 <>
                                     <Panel title="Network Topology" phase="build" fill>
-                                        <div className="network-graph-wrapper" style={{ height: 240 }}>
-                                            <NetworkGraph />
+                                        <div style={{ display: 'flex', minHeight: 240, height: '100%' }}>
+                                            <CanvasContent />
                                         </div>
                                     </Panel>
-                                    <Panel title="Layer Inspection" phase="run">
-                                        <InspectionPanel />
-                                    </Panel>
+                                    {inspectPanel}
                                 </>
                             }
                             runCenter={
                                 <>
-                                    <Panel title="Decision Boundary" phase="run"><BoundaryContent /></Panel>
-                                    <Panel title="Loss / Accuracy" phase="run"><LossContent /></Panel>
+                                    {boundaryPanel}
+                                    {lossPanel}
                                 </>
                             }
                             runRight={
                                 <>
-                                    <Panel title="Confusion Matrix" phase="run"><ConfusionContent /></Panel>
-                                    <Panel title="Code Export" phase="both"><CodeExportPanel /></Panel>
+                                    {confusionPanel}
+                                    <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+                                    {codePanel}
                                 </>
                             }
                             transportContent={transport}
@@ -257,18 +290,16 @@ export default function App() {
                 </ErrorBoundary>
             </div>
 
-            {/* Status bar */}
-            <StatusBar />
+            <StatusBar effectiveLayout={effectiveLayout} />
         </div>
     );
 }
 
-function StatusBar() {
-    const status   = useTrainingStore((s) => s.status);
-    const layout   = useLayoutStore((s) => s.layout);
-    const phase    = useLayoutStore((s) => s.phase);
-    const dataset  = usePlaygroundStore((s) => s.data.dataset);
-    const hl       = usePlaygroundStore((s) => s.network.hiddenLayers);
+function StatusBar({ effectiveLayout }: { effectiveLayout: 'dock' | 'grid' | 'split' }) {
+    const status = useTrainingStore((s) => s.status);
+    const phase = useLayoutStore((s) => s.phase);
+    const dataset = usePlaygroundStore((s) => s.data.dataset);
+    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const snapshot = useTrainingStore((s) => s.snapshot);
 
     return (
@@ -277,10 +308,12 @@ function StatusBar() {
                 <span className="forge-statusbar__accent">●</span>{' '}
                 {status.toUpperCase()}
             </span>
-            <span>LAYOUT: <span className="forge-statusbar__accent">{layout}</span></span>
-            <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
+            <span>LAYOUT: <span className="forge-statusbar__accent">{effectiveLayout}</span></span>
+            {effectiveLayout === 'split' && (
+                <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
+            )}
             <span>DATA: {dataset}</span>
-            <span>ARCH: [{hl.join(', ')}]</span>
+            <span>ARCH: [{hiddenLayers.join(', ')}]</span>
             <span className="forge-statusbar__spacer" />
             <span>step {(snapshot?.step ?? 0).toLocaleString()}</span>
             <span>

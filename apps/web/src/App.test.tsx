@@ -48,6 +48,7 @@ vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel:
 
 describe('App accessibility shell', () => {
     beforeEach(() => {
+        window.localStorage.clear();
         trainingMock.play.mockReset();
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();

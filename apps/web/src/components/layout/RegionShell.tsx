@@ -61,6 +61,7 @@ interface DockProps {
     rightTabContent: Record<string, ReactNode>;
     canvasContent: ReactNode;
     transportContent: ReactNode;
+    compact?: boolean;
 }
 
 const RAIL_ICONS = [
@@ -71,15 +72,19 @@ const RAIL_ICONS = [
 ] as const;
 
 export const DockShell = memo(function DockShell({
-    leftTabContent, rightTabContent, canvasContent, transportContent,
+    leftTabContent,
+    rightTabContent,
+    canvasContent,
+    transportContent,
+    compact = false,
 }: DockProps) {
-    const activeTabLeft  = useLayoutStore((s) => s.activeTabLeft);
+    const activeTabLeft = useLayoutStore((s) => s.activeTabLeft);
     const activeTabRight = useLayoutStore((s) => s.activeTabRight);
-    const setTabLeft  = useLayoutStore((s) => s.setActiveTabLeft);
+    const setTabLeft = useLayoutStore((s) => s.setActiveTabLeft);
     const setTabRight = useLayoutStore((s) => s.setActiveTabRight);
 
     return (
-        <div className="forge-dock">
+        <div className={`forge-dock ${compact ? 'forge-dock--compact' : ''}`}>
             {/* Icon rail */}
             <nav className="forge-rail" aria-label="Navigation rail">
                 {RAIL_ICONS.map((r) => (
@@ -149,8 +154,13 @@ interface GridProps {
 }
 
 export const GridShell = memo(function GridShell({
-    topologyContent, boundaryContent, configContent, lossContent,
-    confusionContent, inspectContent, transportContent,
+    topologyContent,
+    boundaryContent,
+    configContent,
+    lossContent,
+    confusionContent,
+    inspectContent,
+    transportContent,
 }: GridProps) {
     return (
         <div className="forge-grid">
@@ -183,12 +193,17 @@ interface SplitProps {
 }
 
 export const SplitShell = memo(function SplitShell({
-    buildLeft, buildCenter, buildRight,
-    runLeft, runCenter, runRight,
+    buildLeft,
+    buildCenter,
+    buildRight,
+    runLeft,
+    runCenter,
+    runRight,
     transportContent,
 }: SplitProps) {
-    const phase    = useLayoutStore((s) => s.phase);
-    const isBuild  = phase === 'build';
+    const phase = useLayoutStore((s) => s.phase);
+    const isBuild = phase === 'build';
+
     return (
         <div className="forge-split">
             <div className="forge-split__modebar">
@@ -201,7 +216,7 @@ export const SplitShell = memo(function SplitShell({
                 </span>
             </div>
             <div className="forge-split__cols">
-                <div className="forge-split__col">{isBuild ? buildLeft  : runLeft}</div>
+                <div className="forge-split__col">{isBuild ? buildLeft : runLeft}</div>
                 <div className="forge-split__col">{isBuild ? buildCenter : runCenter}</div>
                 <div className="forge-split__col">{isBuild ? buildRight : runRight}</div>
             </div>

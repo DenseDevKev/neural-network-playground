@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useLayoutStore } from './useLayoutStore.ts';
+import { createLayoutStore, LAYOUT_STORAGE_KEY, useLayoutStore } from './useLayoutStore.ts';
 
 describe('useLayoutStore', () => {
     beforeEach(() => {
+        window.localStorage.clear();
         useLayoutStore.setState({
             layout: 'dock',
             phase: 'build',
@@ -66,21 +67,31 @@ describe('useLayoutStore', () => {
         useLayoutStore.getState().setLayout('grid');
         useLayoutStore.getState().setPhase('run');
 
-        const stored = JSON.parse(window.localStorage.getItem('nn-playground-layout') ?? '{}');
+        const stored = JSON.parse(window.localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}');
         expect(stored.state?.layout).toBe('grid');
         expect(stored.state?.phase).toBe('run');
     });
 
-    it('restores state from localStorage on initialization', () => {
+    it('rehydrates state from localStorage with a fresh store instance', async () => {
         window.localStorage.setItem(
-            'nn-playground-layout',
-            JSON.stringify({ state: { layout: 'split', phase: 'run', activeTabLeft: 'features', activeTabRight: 'loss' }, version: 0 }),
+            LAYOUT_STORAGE_KEY,
+            JSON.stringify({
+                state: {
+                    layout: 'split',
+                    phase: 'run',
+                    activeTabLeft: 'features',
+                    activeTabRight: 'loss',
+                },
+                version: 0,
+            }),
         );
 
-        // Force re-hydration by reading the persisted state
-        const storedRaw = window.localStorage.getItem('nn-playground-layout');
-        const stored = JSON.parse(storedRaw ?? '{}');
-        expect(stored.state.layout).toBe('split');
-        expect(stored.state.phase).toBe('run');
+        const freshStore = createLayoutStore();
+        await Promise.resolve(freshStore.persist.rehydrate());
+
+        expect(freshStore.getState().layout).toBe('split');
+        expect(freshStore.getState().phase).toBe('run');
+        expect(freshStore.getState().activeTabLeft).toBe('features');
+        expect(freshStore.getState().activeTabRight).toBe('loss');
     });
 });

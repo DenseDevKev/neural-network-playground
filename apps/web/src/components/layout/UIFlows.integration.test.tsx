@@ -85,7 +85,7 @@ describe('UI integration flows', () => {
 
         const { container, rerender } = render(
             <>
-                <Header training={trainingMock} />
+                <Header training={trainingMock} effectiveLayout="dock" isCompact={false} />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );
@@ -108,7 +108,7 @@ describe('UI integration flows', () => {
 
         rerender(
             <>
-                <Header training={trainingMock} />
+                <Header training={trainingMock} effectiveLayout="dock" isCompact={false} />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );
