@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { DecisionBoundary } from './DecisionBoundary.tsx';
+import { classifyPointFromGrid } from './DecisionBoundary.tsx';
 import { resetFrameBuffer, updateFrameBuffer, getFrameVersion } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 
@@ -18,11 +19,15 @@ function createMockContext() {
         fillRect: vi.fn(),
         beginPath: vi.fn(),
         moveTo: vi.fn(),
+        lineTo: vi.fn(),
         arc: vi.fn(),
         fill: vi.fn(),
         stroke: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
         clearRect: vi.fn(),
         setTransform: vi.fn(),
+        globalCompositeOperation: 'source-over' as GlobalCompositeOperation,
         imageSmoothingEnabled: false,
         imageSmoothingQuality: 'low' as const,
         fillStyle: '',
@@ -107,5 +112,41 @@ describe('DecisionBoundary', () => {
 
         expect(drawImage).toHaveBeenCalledTimes(2);
         expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
+    it('renders uncertainty and misclassification overlay controls when requested', () => {
+        const { rerender, container } = render(
+            <DecisionBoundary
+                trainPoints={[{ x: 0, y: 0, label: 0 }]}
+                testPoints={[]}
+                showTestData={false}
+                discretize={false}
+                overlayMode="uncertainty"
+            />,
+        );
+
+        expect(container.querySelector('[data-overlay-mode="uncertainty"]')).not.toBeNull();
+
+        rerender(
+            <DecisionBoundary
+                trainPoints={[{ x: 0, y: 0, label: 0 }]}
+                testPoints={[]}
+                showTestData={false}
+                discretize={false}
+                overlayMode="misclassification"
+            />,
+        );
+
+        expect(container.querySelector('[data-overlay-mode="misclassification"]')).not.toBeNull();
+    });
+
+    it('classifies a point from the nearest decision grid cell', () => {
+        const grid = new Float32Array([
+            0.1, 0.8,
+            0.2, 0.9,
+        ]);
+
+        expect(classifyPointFromGrid({ x: -1, y: 1, label: 0 }, grid, 2)).toBe(0);
+        expect(classifyPointFromGrid({ x: 1, y: -1, label: 0 }, grid, 2)).toBe(1);
     });
 });
