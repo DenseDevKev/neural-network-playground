@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Network } from '../network.js';
 import type { NetworkConfig, TrainingConfig } from '../types.js';
 
@@ -23,6 +23,31 @@ const trainingConfig: TrainingConfig = {
     gradientClip: 1.0,
 };
 
+function expectFiniteArray(values: ArrayLike<number>): void {
+    expect(values.length).toBeGreaterThan(0);
+    for (let i = 0; i < values.length; i++) {
+        expect(Number.isFinite(values[i])).toBe(true);
+    }
+}
+
+function expectBenchmarkResult(net: Network, averageTime: number): void {
+    const { buffer: weights, layerSizes } = net.getWeightsFlat();
+    const biases = net.getBiasesFlat();
+    const expectedWeights = 100 * 512 + 512 * 512 + 512 * 512 + 512 * 10;
+    const expectedBiases = 512 + 512 + 512 + 10;
+    const output = net.predict(new Array(largeConfig.inputSize).fill(0.25));
+
+    expect(Number.isFinite(averageTime)).toBe(true);
+    expect(averageTime).toBeGreaterThanOrEqual(0);
+    expect(layerSizes).toEqual([100, 512, 512, 512, 10]);
+    expect(weights).toHaveLength(expectedWeights);
+    expect(biases).toHaveLength(expectedBiases);
+    expect(output).toHaveLength(largeConfig.outputSize);
+    expectFiniteArray(weights);
+    expectFiniteArray(biases);
+    expectFiniteArray(output);
+}
+
 describe('Network performance benchmark', () => {
     it('measures applyGradients execution time', { timeout: 60_000 }, () => {
         const net = new Network(largeConfig);
@@ -42,6 +67,7 @@ describe('Network performance benchmark', () => {
         const averageTime = (end - start) / iterations;
 
         console.log(`Average applyGradients time (Adam, L2, Clip): ${averageTime.toFixed(4)}ms`);
+        expectBenchmarkResult(net, averageTime);
     });
 
     it('measures applyGradients execution time (SGD)', { timeout: 60_000 }, () => {
@@ -63,5 +89,6 @@ describe('Network performance benchmark', () => {
         const averageTime = (end - start) / iterations;
 
         console.log(`Average applyGradients time (SGD): ${averageTime.toFixed(4)}ms`);
+        expectBenchmarkResult(net, averageTime);
     });
 });

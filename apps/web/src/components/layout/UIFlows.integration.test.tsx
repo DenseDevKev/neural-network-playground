@@ -119,22 +119,24 @@ describe('UI integration flows', () => {
 
     it('shows tooltips for interactive controls during hover', () => {
         vi.useFakeTimers();
-        render(<DataPanel onReset={vi.fn()} />);
+        try {
+            render(<DataPanel onReset={vi.fn()} />);
 
-        const xorButton = screen.getByRole('button', { name: 'XOR' });
-        const trigger = xorButton.parentElement;
-        expect(trigger).toBeTruthy();
+            const xorButton = screen.getByRole('button', { name: 'XOR' });
+            const trigger = xorButton.parentElement;
+            expect(trigger).toBeTruthy();
 
-        fireEvent.mouseEnter(trigger!);
-        act(() => {
-            vi.advanceTimersByTime(500);
-        });
+            fireEvent.mouseEnter(trigger!);
+            act(() => {
+                vi.advanceTimersByTime(500);
+            });
 
-        const tooltipId = trigger!.getAttribute('aria-describedby');
-        const tooltip = tooltipId ? document.getElementById(tooltipId) : null;
-        expect(tooltip).toBeInTheDocument();
-        expect(tooltip).toHaveTextContent('Use the XOR dataset');
-
-        vi.useRealTimers();
+            const tooltipId = trigger!.getAttribute('aria-describedby');
+            const tooltip = tooltipId ? document.getElementById(tooltipId) : null;
+            expect(tooltip).toBeInTheDocument();
+            expect(tooltip).toHaveTextContent('Use the XOR dataset');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });

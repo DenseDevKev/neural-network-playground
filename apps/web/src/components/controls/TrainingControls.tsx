@@ -28,6 +28,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
             <div className="training-bar__controls">
                 <Tooltip content={isRunning ? 'Pause training' : 'Start training'} shortcut="Space">
                     <button
+                        type="button"
                         className={`btn btn--play btn--control ${isRunning ? 'running' : ''}`}
                         onClick={isRunning ? training.pause : training.play}
                         aria-label={isRunning ? 'Pause training' : 'Start training'}
@@ -39,6 +40,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                 </Tooltip>
                 <Tooltip content="Run one training step" shortcut="→">
                     <button
+                        type="button"
                         className="btn btn--ghost btn--control"
                         onClick={training.step}
                         aria-label="Run one training step"
@@ -50,6 +52,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                 </Tooltip>
                 <Tooltip content="Reset model and regenerate data" shortcut="R">
                     <button
+                        type="button"
                         className="btn btn--ghost btn--control"
                         onClick={training.reset}
                         aria-label="Reset model and data"
@@ -68,6 +71,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     return (
                         <Tooltip key={opt.value} content={stepLabel}>
                             <button
+                                type="button"
                                 className={`speed-btn ${stepsPerFrame === opt.value ? 'active' : ''}`}
                                 onClick={() => setStepsPerFrame(opt.value)}
                                 aria-pressed={stepsPerFrame === opt.value}

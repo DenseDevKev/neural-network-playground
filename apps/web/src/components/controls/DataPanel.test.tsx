@@ -61,4 +61,16 @@ describe('DataPanel loading feedback', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);
     });
+
+    it('labels the reset action clearly while preserving reset behavior', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+
+        render(<DataPanel onReset={onReset} />);
+
+        await user.click(screen.getByRole('button', { name: /reset model & data/i }));
+
+        expect(onReset).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('button', { name: /regenerate/i })).not.toBeInTheDocument();
+    });
 });

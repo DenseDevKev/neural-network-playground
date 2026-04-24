@@ -26,6 +26,8 @@ export {
     MAX_HIDDEN_LAYERS,
     MAX_NEURONS_PER_LAYER,
     MIN_NEURONS_PER_LAYER,
+    MIN_TRAIN_TEST_RATIO,
+    MAX_TRAIN_TEST_RATIO,
     LEARNING_RATES,
     BATCH_SIZES,
     REGULARIZATION_RATES,
@@ -44,6 +46,7 @@ export {
     DEFAULT_DEMAND,
     isWorkerToMainMessage,
     isMainToWorkerCommand,
+    normalizeVisualizationDemand,
 } from './workerProtocol.js';
 export { structuralEqual } from './structural.js';
 export type {

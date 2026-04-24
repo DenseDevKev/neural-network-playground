@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
     getFrameBuffer,
-    getFrameVersion,
+    getFrameVersions,
     updateFrameBuffer,
     resetFrameBuffer,
     unflattenWeights,
@@ -15,40 +15,76 @@ describe('frameBuffer', () => {
     });
 
     describe('State mutations', () => {
-        it('should have initial version of 1 after reset (or 0 initially, but reset increments)', () => {
-            // Note: resetFrameBuffer increments the version, so we check what it currently is
-            const initialVersion = getFrameVersion();
-            expect(typeof initialVersion).toBe('number');
+        it('should expose numeric versions after reset', () => {
+            const versions = getFrameVersions();
+            expect(typeof versions.frameVersion).toBe('number');
+            expect(typeof versions.outputGridVersion).toBe('number');
+            expect(typeof versions.neuronGridsVersion).toBe('number');
+            expect(typeof versions.paramsVersion).toBe('number');
+            expect(typeof versions.layerStatsVersion).toBe('number');
+            expect(typeof versions.confusionMatrixVersion).toBe('number');
         });
 
-        it('updateFrameBuffer should merge patch and increment version', () => {
-            const initialVersion = getFrameVersion();
-            const patch = { gridSize: 10 };
+        it('updateFrameBuffer({}) should not bump any version', () => {
+            const initialVersions = getFrameVersions();
 
-            const newVersion = updateFrameBuffer(patch);
+            const newVersion = updateFrameBuffer({});
 
-            expect(newVersion).toBe(initialVersion + 1);
-            expect(getFrameVersion()).toBe(initialVersion + 1);
+            expect(newVersion).toBe(initialVersions.frameVersion);
+            expect(getFrameVersions()).toEqual(initialVersions);
+        });
 
+        it('output grid patch should bump only output grid and broad frame versions', () => {
+            const initialVersions = getFrameVersions();
+            const outputGrid = new Float32Array([0, 0.25, 0.75, 1]);
+
+            const newVersion = updateFrameBuffer({ outputGrid, gridSize: 2 });
+
+            expect(newVersion).toBe(initialVersions.frameVersion + 1);
+            expect(getFrameVersions()).toEqual({
+                ...initialVersions,
+                frameVersion: initialVersions.frameVersion + 1,
+                outputGridVersion: initialVersions.outputGridVersion + 1,
+            });
             const buffer = getFrameBuffer();
-            expect(buffer.gridSize).toBe(10);
-            // outputGrid should still be null
-            expect(buffer.outputGrid).toBeNull();
+            expect(buffer.outputGrid).toBe(outputGrid);
+            expect(buffer.gridSize).toBe(2);
         });
 
-        it('updateFrameBuffer should correctly handle multiple updates', () => {
-            const v1 = getFrameVersion();
+        it('weights/params patch should bump only params and broad frame versions', () => {
+            const initialVersions = getFrameVersions();
+            const weights = new Float32Array([0.1, 0.2]);
+            const biases = new Float32Array([0.3]);
 
-            const v2 = updateFrameBuffer({ gridSize: 20 });
-            expect(v2).toBe(v1 + 1);
-            expect(getFrameBuffer().gridSize).toBe(20);
+            const newVersion = updateFrameBuffer({
+                weights,
+                biases,
+                weightLayout: { layerSizes: [2, 1] },
+            });
 
-            updateFrameBuffer({ version: 999 } as any); // version shouldn't be overridable by types, but let's just update something else
+            expect(newVersion).toBe(initialVersions.frameVersion + 1);
+            expect(getFrameVersions()).toEqual({
+                ...initialVersions,
+                frameVersion: initialVersions.frameVersion + 1,
+                paramsVersion: initialVersions.paramsVersion + 1,
+            });
+            expect(getFrameBuffer().weights).toBe(weights);
+            expect(getFrameBuffer().biases).toBe(biases);
+        });
 
-            const v4 = updateFrameBuffer({ layerStats: [] });
-            expect(v4).toBe(v2 + 2); // Assuming v3 was +1
-            expect(getFrameBuffer().gridSize).toBe(20);
-            expect(getFrameBuffer().layerStats).toEqual([]);
+        it('resetFrameBuffer should bump all versions', () => {
+            const initialVersions = getFrameVersions();
+
+            resetFrameBuffer();
+
+            expect(getFrameVersions()).toEqual({
+                frameVersion: initialVersions.frameVersion + 1,
+                outputGridVersion: initialVersions.outputGridVersion + 1,
+                neuronGridsVersion: initialVersions.neuronGridsVersion + 1,
+                paramsVersion: initialVersions.paramsVersion + 1,
+                layerStatsVersion: initialVersions.layerStatsVersion + 1,
+                confusionMatrixVersion: initialVersions.confusionMatrixVersion + 1,
+            });
         });
     });
 

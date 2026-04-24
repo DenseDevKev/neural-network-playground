@@ -6,6 +6,15 @@
 
 import type { LayerStats, ConfusionMatrixData } from '@nn-playground/engine';
 
+export interface FrameVersions {
+    frameVersion: number;
+    outputGridVersion: number;
+    neuronGridsVersion: number;
+    paramsVersion: number;
+    layerStatsVersion: number;
+    confusionMatrixVersion: number;
+}
+
 export interface FrameBuffer {
     // Decision boundary grid (gridSize × gridSize predictions)
     outputGrid: Float32Array | null;
@@ -26,8 +35,13 @@ export interface FrameBuffer {
     // Confusion matrix
     confusionMatrix: ConfusionMatrixData | null;
 
-    // Version counter — incremented on each new snapshot
+    // Version counters — `version` is the legacy broad frame version.
     version: number;
+    outputGridVersion: number;
+    neuronGridsVersion: number;
+    paramsVersion: number;
+    layerStatsVersion: number;
+    confusionMatrixVersion: number;
 }
 
 let _buffer: FrameBuffer = {
@@ -41,6 +55,11 @@ let _buffer: FrameBuffer = {
     layerStats: null,
     confusionMatrix: null,
     version: 0,
+    outputGridVersion: 0,
+    neuronGridsVersion: 0,
+    paramsVersion: 0,
+    layerStatsVersion: 0,
+    confusionMatrixVersion: 0,
 };
 
 /** Get a readonly view of the current frame buffer. */
@@ -53,9 +72,58 @@ export function getFrameVersion(): number {
     return _buffer.version;
 }
 
-/** Update the frame buffer with new data and increment the version counter. */
-export function updateFrameBuffer(patch: Partial<Omit<FrameBuffer, 'version'>>): number {
-    _buffer = { ..._buffer, ...patch, version: _buffer.version + 1 };
+/** Get the current frame buffer versions. */
+export function getFrameVersions(): FrameVersions {
+    return {
+        frameVersion: _buffer.version,
+        outputGridVersion: _buffer.outputGridVersion,
+        neuronGridsVersion: _buffer.neuronGridsVersion,
+        paramsVersion: _buffer.paramsVersion,
+        layerStatsVersion: _buffer.layerStatsVersion,
+        confusionMatrixVersion: _buffer.confusionMatrixVersion,
+    };
+}
+
+type FrameBufferPatch = Partial<Omit<
+    FrameBuffer,
+    | 'version'
+    | 'outputGridVersion'
+    | 'neuronGridsVersion'
+    | 'paramsVersion'
+    | 'layerStatsVersion'
+    | 'confusionMatrixVersion'
+>>;
+
+function hasOwn(patch: FrameBufferPatch, key: keyof FrameBufferPatch): boolean {
+    return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+/** Update the frame buffer with new data and increment affected version counters. */
+export function updateFrameBuffer(patch: FrameBufferPatch): number {
+    const outputGridChanged = hasOwn(patch, 'outputGrid');
+    const neuronGridsChanged =
+        hasOwn(patch, 'neuronGrids') || hasOwn(patch, 'neuronGridLayout');
+    const paramsChanged =
+        hasOwn(patch, 'weights') || hasOwn(patch, 'biases') || hasOwn(patch, 'weightLayout');
+    const layerStatsChanged = hasOwn(patch, 'layerStats');
+    const confusionMatrixChanged = hasOwn(patch, 'confusionMatrix');
+    const anyDomainChanged =
+        outputGridChanged ||
+        neuronGridsChanged ||
+        paramsChanged ||
+        layerStatsChanged ||
+        confusionMatrixChanged;
+
+    _buffer = {
+        ..._buffer,
+        ...patch,
+        version: _buffer.version + (anyDomainChanged ? 1 : 0),
+        outputGridVersion: _buffer.outputGridVersion + (outputGridChanged ? 1 : 0),
+        neuronGridsVersion: _buffer.neuronGridsVersion + (neuronGridsChanged ? 1 : 0),
+        paramsVersion: _buffer.paramsVersion + (paramsChanged ? 1 : 0),
+        layerStatsVersion: _buffer.layerStatsVersion + (layerStatsChanged ? 1 : 0),
+        confusionMatrixVersion: _buffer.confusionMatrixVersion + (confusionMatrixChanged ? 1 : 0),
+    };
     return _buffer.version;
 }
 
@@ -72,6 +140,11 @@ export function resetFrameBuffer(): void {
         layerStats: null,
         confusionMatrix: null,
         version: _buffer.version + 1,
+        outputGridVersion: _buffer.outputGridVersion + 1,
+        neuronGridsVersion: _buffer.neuronGridsVersion + 1,
+        paramsVersion: _buffer.paramsVersion + 1,
+        layerStatsVersion: _buffer.layerStatsVersion + 1,
+        confusionMatrixVersion: _buffer.confusionMatrixVersion + 1,
     };
 }
 

@@ -38,6 +38,38 @@ import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
 
 const COMPACT_BREAKPOINT = 900;
+const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
+
+function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
+    if (!(target instanceof Element)) return false;
+    if (target === document.body || target === document.documentElement) return false;
+
+    let el: Element | null = target;
+    while (el) {
+        if (
+            el instanceof HTMLButtonElement ||
+            el instanceof HTMLInputElement ||
+            el instanceof HTMLSelectElement ||
+            el instanceof HTMLTextAreaElement ||
+            el instanceof HTMLAnchorElement
+        ) {
+            return true;
+        }
+
+        const role = el.getAttribute('role');
+        if (role && SHORTCUT_BLOCKED_ROLES.has(role)) return true;
+
+        const tabIndex = el.getAttribute('tabindex');
+        if (tabIndex !== null && tabIndex !== '-1') return true;
+
+        const contentEditable = el.getAttribute('contenteditable');
+        if (contentEditable !== null && contentEditable.toLowerCase() !== 'false') return true;
+
+        el = el.parentElement;
+    }
+
+    return false;
+}
 
 export default function App() {
     const training = useTraining();
@@ -92,11 +124,7 @@ export default function App() {
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
-            if (
-                e.target instanceof HTMLInputElement ||
-                e.target instanceof HTMLSelectElement ||
-                e.target instanceof HTMLTextAreaElement
-            ) return;
+            if (shouldIgnoreGlobalShortcut(e.target)) return;
 
             if (e.code === 'Space') {
                 e.preventDefault();

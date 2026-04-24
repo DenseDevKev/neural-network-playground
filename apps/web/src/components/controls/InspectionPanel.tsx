@@ -7,14 +7,15 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 
 export const InspectionPanel = memo(function InspectionPanel() {
-    const snapshot = useTrainingStore((s) => s.snapshot);
-    const frameVersion = useTrainingStore((s) => s.frameVersion);
+    const snapshotLayerStats = useTrainingStore((s) => s.snapshot?.layerStats);
+    const layerStatsVersion = useTrainingStore((s) => s.layerStatsVersion);
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
 
-    const layerStats = useMemo(
-        () => getFrameBuffer().layerStats ?? snapshot?.layerStats,
-        [frameVersion, snapshot?.layerStats],
-    );
+    const layerStats = useMemo(() => {
+        // The version selector intentionally drives this mutable frame-buffer read.
+        void layerStatsVersion;
+        return getFrameBuffer().layerStats ?? snapshotLayerStats;
+    }, [layerStatsVersion, snapshotLayerStats]);
 
     const layerNames = useMemo(() => {
         const names: string[] = [];

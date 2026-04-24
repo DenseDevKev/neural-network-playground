@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { HyperparamPanel } from './HyperparamPanel';
+import { FeaturesPanel } from './FeaturesPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
@@ -11,7 +11,7 @@ import {
     DEFAULT_TRAINING,
 } from '@nn-playground/shared';
 
-describe('HyperparamPanel accessibility', () => {
+describe('FeaturesPanel loading feedback', () => {
     beforeEach(() => {
         usePlaygroundStore.setState({
             data: { ...DEFAULT_DATA },
@@ -39,42 +39,55 @@ describe('HyperparamPanel accessibility', () => {
         });
     });
 
-    it('gives each hyperparameter select an accessible name', () => {
-        render(<HyperparamPanel />);
-
-        expect(screen.getByRole('combobox', { name: 'Learning rate' })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Loss' })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Optimizer' })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Batch size' })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Regularization' })).toBeInTheDocument();
-    });
-
-    it('shows the inline loading state when training hyperparameters change', async () => {
+    it('shows the inline loading state when features change', async () => {
         const user = userEvent.setup();
 
-        render(<HyperparamPanel />);
+        render(<FeaturesPanel />);
 
-        await user.selectOptions(screen.getByRole('combobox', { name: 'Learning rate' }), '0.1');
+        await user.click(screen.getByRole('button', { name: 'X₁²' }));
 
-        expect(screen.getByRole('status')).toHaveTextContent('Updating training...');
-        expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
+        expect(screen.getByRole('status')).toHaveTextContent('Updating features...');
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('features');
     });
 
-    it('shows training-specific config errors and allows retrying', async () => {
+    it('shows feature-specific config errors and allows retrying', async () => {
         const user = userEvent.setup();
 
         useTrainingStore.setState({
-            configError: 'Failed to update training',
-            configErrorSource: 'training',
+            configError: 'Failed to update features',
+            configErrorSource: 'features',
         });
 
-        render(<HyperparamPanel />);
+        render(<FeaturesPanel />);
 
-        expect(screen.getByText('Failed to update training')).toBeInTheDocument();
+        expect(screen.getByText('Failed to update features')).toBeInTheDocument();
 
         await user.click(screen.getByRole('button', { name: 'Retry' }));
 
-        expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('features');
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);
+    });
+
+    it('does not start loading when the feature toggle would be rejected', async () => {
+        const user = userEvent.setup();
+
+        usePlaygroundStore.setState((state) => ({
+            features: {
+                ...state.features,
+                x: true,
+                y: false,
+            },
+            network: {
+                ...state.network,
+                inputSize: 1,
+            },
+        }));
+
+        render(<FeaturesPanel />);
+
+        await user.click(screen.getByRole('button', { name: 'X₁' }));
+
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
     });
 });

@@ -1,25 +1,36 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TrainingStatus } from '@nn-playground/shared';
+import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
 
 interface AccessibilityAnnouncerProps {
     status: TrainingStatus;
     dataConfigLoading: boolean;
     networkConfigLoading: boolean;
+    featuresConfigLoading?: boolean;
+    trainingConfigLoading?: boolean;
     configError: string | null;
-    configErrorSource: 'data' | 'network' | null;
+    configErrorSource: ConfigChangeSource;
 }
 
 export function AccessibilityAnnouncer({
     status,
     dataConfigLoading,
     networkConfigLoading,
+    featuresConfigLoading,
+    trainingConfigLoading,
     configError,
     configErrorSource,
 }: AccessibilityAnnouncerProps) {
+    const storeFeaturesConfigLoading = useTrainingStore((s) => s.featuresConfigLoading);
+    const storeTrainingConfigLoading = useTrainingStore((s) => s.trainingConfigLoading);
+    const activeFeaturesConfigLoading = featuresConfigLoading ?? storeFeaturesConfigLoading;
+    const activeTrainingConfigLoading = trainingConfigLoading ?? storeTrainingConfigLoading;
     const [message, setMessage] = useState('');
     const previousStatusRef = useRef(status);
     const previousDataLoadingRef = useRef(dataConfigLoading);
     const previousNetworkLoadingRef = useRef(networkConfigLoading);
+    const previousFeaturesLoadingRef = useRef(activeFeaturesConfigLoading);
+    const previousTrainingLoadingRef = useRef(activeTrainingConfigLoading);
     const previousErrorRef = useRef<string | null>(configError);
 
     useEffect(() => {
@@ -55,8 +66,29 @@ export function AccessibilityAnnouncer({
     }, [networkConfigLoading]);
 
     useEffect(() => {
+        if (activeFeaturesConfigLoading && !previousFeaturesLoadingRef.current) {
+            setMessage('Updating features');
+        }
+
+        previousFeaturesLoadingRef.current = activeFeaturesConfigLoading;
+    }, [activeFeaturesConfigLoading]);
+
+    useEffect(() => {
+        if (activeTrainingConfigLoading && !previousTrainingLoadingRef.current) {
+            setMessage('Updating training');
+        }
+
+        previousTrainingLoadingRef.current = activeTrainingConfigLoading;
+    }, [activeTrainingConfigLoading]);
+
+    useEffect(() => {
         if (configError && configError !== previousErrorRef.current) {
-            const scope = configErrorSource === 'network' ? 'Network' : 'Data';
+            const scope = {
+                data: 'Data',
+                network: 'Network',
+                features: 'Features',
+                training: 'Training',
+            }[configErrorSource ?? 'data'];
             setMessage(`${scope} error: ${configError}`);
         }
 

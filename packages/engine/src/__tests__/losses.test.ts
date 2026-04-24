@@ -88,6 +88,12 @@ describe('Huber loss', () => {
         // Loss at large error: δ·(a − 0.5·δ) = 0.5·(1 − 0.25) = 0.375
         expect(custom.loss(1, 0)).toBeCloseTo(0.375, 8);
     });
+
+    it('rejects invalid huberDelta values', () => {
+        for (const huberDelta of [0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
+            expect(() => getLoss('huber', { huberDelta })).toThrow(RangeError);
+        }
+    });
 });
 
 describe('loss/activation compatibility', () => {

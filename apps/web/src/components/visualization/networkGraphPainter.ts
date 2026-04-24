@@ -122,18 +122,17 @@ export function paintEdges(
 
     const addEdge = (prev: NodePos, node: NodePos, weight: number) => {
         const dx = cpX(prev, node);
-        const path = new Path2D();
+        const abs = Math.abs(weight);
+        const band = abs < 0.5 ? 0 : abs < 1.5 ? 1 : 2;
+        const arr = weight >= 0 ? bandsPos : bandsNeg;
+        const mags = weight >= 0 ? bandMagsPos : bandMagsNeg;
+        const path = arr[band];
         path.moveTo(prev.x, prev.y);
         path.bezierCurveTo(
             prev.x + dx, prev.y,
             node.x - dx, node.y,
             node.x, node.y,
         );
-        const abs = Math.abs(weight);
-        const band = abs < 0.5 ? 0 : abs < 1.5 ? 1 : 2;
-        const arr = weight >= 0 ? bandsPos : bandsNeg;
-        const mags = weight >= 0 ? bandMagsPos : bandMagsNeg;
-        arr[band].addPath(path);
         if (abs > mags[band]) mags[band] = abs;
     };
 
@@ -174,17 +173,17 @@ export function paintEdges(
         const prev = prevLayer?.[hovered.prevIdx];
         const node = layer?.[hovered.nodeIdx];
         if (prev && node) {
-            const path = new Path2D();
             const dx = cpX(prev, node);
-            path.moveTo(prev.x, prev.y);
-            path.bezierCurveTo(
+            ctx.beginPath();
+            ctx.moveTo(prev.x, prev.y);
+            ctx.bezierCurveTo(
                 prev.x + dx, prev.y,
                 node.x - dx, node.y,
                 node.x, node.y,
             );
             ctx.strokeStyle = edgeColor(hovered.weight, true);
             ctx.lineWidth = edgeWidth(hovered.weight, true);
-            ctx.stroke(path);
+            ctx.stroke();
         }
     }
 }

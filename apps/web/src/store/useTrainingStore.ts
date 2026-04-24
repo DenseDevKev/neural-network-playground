@@ -14,8 +14,9 @@ import {
     resetHistoryBuffer,
 } from './historyBuffer.ts';
 import { normalizeTrainingSpeed } from '../worker/trainingLoop.ts';
+import type { FrameVersions } from '../worker/frameBuffer.ts';
 
-type ConfigChangeSource = 'data' | 'network' | null;
+export type ConfigChangeSource = 'data' | 'network' | 'features' | 'training' | null;
 
 export interface TrainingStore {
     // ── Runtime State ──
@@ -24,12 +25,19 @@ export interface TrainingStore {
     /** Monotonic counter — bumped every time `historyBuffer` is mutated. */
     historyVersion: number;
     frameVersion: number;
+    outputGridVersion: number;
+    neuronGridsVersion: number;
+    paramsVersion: number;
+    layerStatsVersion: number;
+    confusionMatrixVersion: number;
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     /** Steps of training to run per animation frame. */
     stepsPerFrame: number;
     dataConfigLoading: boolean;
     networkConfigLoading: boolean;
+    featuresConfigLoading: boolean;
+    trainingConfigLoading: boolean;
     pendingConfigSource: ConfigChangeSource;
     configError: string | null;
     configErrorSource: ConfigChangeSource;
@@ -44,6 +52,7 @@ export interface TrainingStore {
     addHistoryPoint: (point: HistoryPoint) => void;
     resetHistory: () => void;
     setFrameVersion: (version: number) => void;
+    setFrameVersions: (versions: FrameVersions) => void;
     setTrainPoints: (pts: DataPoint[]) => void;
     setTestPoints: (pts: DataPoint[]) => void;
     setStepsPerFrame: (n: number) => void;
@@ -61,11 +70,18 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     snapshot: null,
     historyVersion: 0,
     frameVersion: 0,
+    outputGridVersion: 0,
+    neuronGridsVersion: 0,
+    paramsVersion: 0,
+    layerStatsVersion: 0,
+    confusionMatrixVersion: 0,
     trainPoints: [],
     testPoints: [],
     stepsPerFrame: 5,
     dataConfigLoading: false,
     networkConfigLoading: false,
+    featuresConfigLoading: false,
+    trainingConfigLoading: false,
     pendingConfigSource: null,
     configError: null,
     configErrorSource: null,
@@ -87,6 +103,14 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         set({ historyVersion: version });
     },
     setFrameVersion: (frameVersion) => set({ frameVersion }),
+    setFrameVersions: (versions) => set({
+        frameVersion: versions.frameVersion,
+        outputGridVersion: versions.outputGridVersion,
+        neuronGridsVersion: versions.neuronGridsVersion,
+        paramsVersion: versions.paramsVersion,
+        layerStatsVersion: versions.layerStatsVersion,
+        confusionMatrixVersion: versions.confusionMatrixVersion,
+    }),
     setTrainPoints: (trainPoints) => set({ trainPoints }),
     setTestPoints: (testPoints) => set({ testPoints }),
     setStepsPerFrame: (n) => set({ stepsPerFrame: normalizeTrainingSpeed(n) }),
@@ -94,6 +118,8 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         pendingConfigSource: source,
         dataConfigLoading: source === 'data',
         networkConfigLoading: source === 'network',
+        featuresConfigLoading: source === 'features',
+        trainingConfigLoading: source === 'training',
         configError: null,
         configErrorSource: null,
         workerError: null,
@@ -102,11 +128,15 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         pendingConfigSource: null,
         dataConfigLoading: false,
         networkConfigLoading: false,
+        featuresConfigLoading: false,
+        trainingConfigLoading: false,
     }),
     failConfigChange: (message) => set((state) => ({
         pendingConfigSource: null,
         dataConfigLoading: false,
         networkConfigLoading: false,
+        featuresConfigLoading: false,
+        trainingConfigLoading: false,
         configError: message,
         configErrorSource: state.pendingConfigSource,
     })),
@@ -119,6 +149,8 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
             pendingConfigSource: state.configErrorSource,
             dataConfigLoading: state.configErrorSource === 'data',
             networkConfigLoading: state.configErrorSource === 'network',
+            featuresConfigLoading: state.configErrorSource === 'features',
+            trainingConfigLoading: state.configErrorSource === 'training',
             configError: null,
             configErrorSource: null,
             configSyncNonce: state.configSyncNonce + 1,

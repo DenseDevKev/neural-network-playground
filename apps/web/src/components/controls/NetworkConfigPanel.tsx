@@ -27,7 +27,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
             {configError && configErrorSource === 'network' && (
                 <div className="config-feedback config-feedback--error" role="alert">
                     <span>{configError}</span>
-                    <button className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
                         Retry
                     </button>
                 </div>
@@ -39,6 +39,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                 <div className="layer-controls">
                     <Tooltip content="Remove the last hidden layer">
                         <button
+                            type="button"
                             className="btn btn--ghost btn--icon btn--sm"
                             onClick={() => {
                                 beginNetworkChange();
@@ -53,6 +54,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                     <span className="layer-controls__count">{hiddenLayers.length}</span>
                     <Tooltip content="Add another hidden layer">
                         <button
+                            type="button"
                             className="btn btn--ghost btn--icon btn--sm"
                             onClick={() => {
                                 beginNetworkChange();

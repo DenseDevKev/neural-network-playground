@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import process from 'node:process';
 
 // Cross-origin isolation headers are required for SharedArrayBuffer to be
 // available to the app (AS-3 snapshot fast path). When the headers are
@@ -15,7 +16,7 @@ const crossOriginIsolationHeaders = {
 export default defineConfig(({ mode }) => ({
     plugins: [react()],
     // Use hash-based routing, so base can be set for GH Pages subdirectory
-    base: './',
+    base: process.env.VITE_BASE ?? './',
     worker: {
         format: 'es',
     },

@@ -59,6 +59,7 @@ export const Header = memo(function Header({ training, effectiveLayout, isCompac
             {showPhaseControls && (
                 <div className="forge-phase" role="group" aria-label="Workspace phase">
                     <button
+                        type="button"
                         className={`forge-phase__opt ${phase === 'build' ? 'forge-phase__opt--active' : ''}`}
                         onClick={() => setPhase('build')}
                         aria-pressed={phase === 'build'}
@@ -66,6 +67,7 @@ export const Header = memo(function Header({ training, effectiveLayout, isCompac
                         <i aria-hidden /><span>Build</span>
                     </button>
                     <button
+                        type="button"
                         className={`forge-phase__opt ${phase === 'run' ? 'forge-phase__opt--active' : ''}`}
                         onClick={() => setPhase('run')}
                         aria-pressed={phase === 'run'}
@@ -139,6 +141,7 @@ export const Header = memo(function Header({ training, effectiveLayout, isCompac
                 </div>
 
                 <button
+                    type="button"
                     className={`btn btn--play header__mobile-play ${isRunning ? 'running' : ''}`}
                     onClick={isRunning ? training.pause : training.play}
                     aria-label={isRunning ? 'Pause training' : 'Start training'}

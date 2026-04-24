@@ -67,6 +67,7 @@ function TabStrip({ tabs, active, onSelect, idBase, ariaLabel }: TabStripProps) 
         <div className="forge-tabs" role="tablist" aria-label={ariaLabel} onKeyDown={handleKeyDown}>
             {tabs.map((t) => (
                 <button
+                    type="button"
                     key={t.id}
                     id={`${idBase}-tab-${t.id}`}
                     role="tab"
@@ -118,6 +119,7 @@ export const DockShell = memo(function DockShell({
             <nav className="forge-rail" aria-label="Navigation rail">
                 {RAIL_ICONS.map((r) => (
                     <button
+                        type="button"
                         key={r.id}
                         className={`forge-rail__btn ${activeTabLeft === r.id ? 'forge-rail__btn--active' : ''}`}
                         title={r.label}
@@ -130,6 +132,7 @@ export const DockShell = memo(function DockShell({
                 ))}
                 <span className="forge-rail__spacer" />
                 <button
+                    type="button"
                     className={`forge-rail__btn ${activeTabLeft === 'presets' ? 'forge-rail__btn--active' : ''}`}
                     title="Presets"
                     aria-label="Presets"

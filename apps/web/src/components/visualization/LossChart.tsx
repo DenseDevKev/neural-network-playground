@@ -20,13 +20,33 @@ import {
     type HistoryArrays,
 } from '../../store/historyBuffer.ts';
 
-const CHART_W = 400;
-const CHART_H = 140;
+const DEFAULT_CHART_SIZE = { width: 400, height: 140 };
 const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 
 const Y_AXIS_PADDED_MAX_MULTIPLIER = 1.1;
 
 type ChartTab = 'loss' | 'accuracy';
+type ChartSize = { width: number; height: number };
+
+function normalizeChartSize(width: number, height: number): ChartSize {
+    return {
+        width: width > 0 ? width : DEFAULT_CHART_SIZE.width,
+        height: height > 0 ? height : DEFAULT_CHART_SIZE.height,
+    };
+}
+
+function sameChartSize(a: ChartSize, b: ChartSize): boolean {
+    return a.width === b.width && a.height === b.height;
+}
+
+function getChartGeometry(size: ChartSize) {
+    const width = size.width;
+    const height = size.height;
+    const plotW = Math.max(0, width - PADDING.left - PADDING.right);
+    const plotH = Math.max(0, height - PADDING.top - PADDING.bottom);
+
+    return { width, height, plotW, plotH };
+}
 
 // ── Full redraw ──────────────────────────────────────────────────────────────
 
@@ -35,9 +55,9 @@ function drawChart(
     hist: HistoryArrays,
     tab: ChartTab,
     yMax: number,
+    size: ChartSize,
 ) {
-    const w = CHART_W;
-    const h = CHART_H;
+    const { width: w, height: h, plotW, plotH } = getChartGeometry(size);
 
     // Clear
     ctx.fillStyle = '#1c2030';
@@ -51,8 +71,6 @@ function drawChart(
         return;
     }
 
-    const plotW = w - PADDING.left - PADDING.right;
-    const plotH = h - PADDING.top - PADDING.bottom;
     const xMax = hist.count - 1;
 
     const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
@@ -241,12 +259,14 @@ function drawLegend(
 
 export const LossChart = memo(function LossChart() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const chartFrameRef = useRef<HTMLDivElement>(null);
     // Subscribe to the scalar version counter — never to the history array
     // itself — so the LossChart is the only thing that re-renders per frame.
     const historyVersion = useTrainingStore((s) => s.historyVersion);
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const [tab, setTab] = useState<ChartTab>('loss');
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+    const [chartSize, setChartSize] = useState<ChartSize>(DEFAULT_CHART_SIZE);
 
     // Cached state that lets the next render reuse the previous paint.
     const lastYMaxRef = useRef(0);
@@ -264,14 +284,38 @@ export const LossChart = memo(function LossChart() {
     }, [problemType]);
 
     useEffect(() => {
+        const frame = chartFrameRef.current;
+        if (!frame) return;
+
+        const measureFrame = () => {
+            const rect = frame.getBoundingClientRect();
+            const nextSize = normalizeChartSize(rect.width, rect.height);
+            setChartSize((currentSize) => (
+                sameChartSize(currentSize, nextSize) ? currentSize : nextSize
+            ));
+        };
+
+        measureFrame();
+
+        if (!window.ResizeObserver) return;
+
+        const resizeObserver = new window.ResizeObserver(measureFrame);
+        resizeObserver.observe(frame);
+
+        return () => resizeObserver.disconnect();
+    }, []);
+
+    useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         const dpr = window.devicePixelRatio || 1;
-        if (canvas.width !== CHART_W * dpr || canvas.height !== CHART_H * dpr) {
-            canvas.width = CHART_W * dpr;
-            canvas.height = CHART_H * dpr;
+        const physicalWidth = Math.max(1, Math.round(chartSize.width * dpr));
+        const physicalHeight = Math.max(1, Math.round(chartSize.height * dpr));
+        if (canvas.width !== physicalWidth || canvas.height !== physicalHeight) {
+            canvas.width = physicalWidth;
+            canvas.height = physicalHeight;
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -297,18 +341,28 @@ export const LossChart = memo(function LossChart() {
         lastCountRef.current = nextHist.count;
         lastCompactionRef.current = compactionNow;
 
-        drawChart(ctx, nextHist, tab, nextYMax);
-    }, [historyVersion, tab]);
+        drawChart(ctx, nextHist, tab, nextYMax, chartSize);
+    }, [historyVersion, tab, chartSize]);
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (hist.count < 2) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
+        const measuredSize = normalizeChartSize(rect.width, rect.height);
+        const { plotW } = getChartGeometry(measuredSize);
 
-        const plotW = CHART_W - PADDING.left - PADDING.right;
+        setChartSize((currentSize) => (
+            sameChartSize(currentSize, measuredSize) ? currentSize : measuredSize
+        ));
+
         const chartX = x - PADDING.left;
 
         const xMax = hist.count - 1;
+        if (plotW <= 0) {
+            setHoverIndex(null);
+            return;
+        }
+
         const index = Math.round((chartX / plotW) * xMax);
         if (index < 0 || index > xMax || x < PADDING.left || x > PADDING.left + plotW) {
             setHoverIndex(null);
@@ -321,8 +375,7 @@ export const LossChart = memo(function LossChart() {
 
     let hoverState = null;
     if (hoverIndex !== null && hoverIndex < hist.count) {
-        const plotW = CHART_W - PADDING.left - PADDING.right;
-        const plotH = CHART_H - PADDING.top - PADDING.bottom;
+        const { width: chartWidth, plotW, plotH } = getChartGeometry(chartSize);
         const xMax = hist.count - 1;
         const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
 
@@ -356,6 +409,7 @@ export const LossChart = memo(function LossChart() {
             x: xPos,
             trainY, testY, trainValStr, testValStr,
             alignRight,
+            chartWidth,
             step: hoverIndex,
         };
     }
@@ -377,6 +431,7 @@ export const LossChart = memo(function LossChart() {
             <div className="chart-tabs">
                 <Tooltip content="View train and test loss over time">
                     <button
+                        type="button"
                         className={`chart-tab ${tab === 'loss' ? 'active' : ''}`}
                         onClick={() => setTab('loss')}
                         aria-pressed={tab === 'loss'}
@@ -387,6 +442,7 @@ export const LossChart = memo(function LossChart() {
                 {problemType === 'classification' && (
                     <Tooltip content="View classification accuracy over time">
                         <button
+                            type="button"
                             className={`chart-tab ${tab === 'accuracy' ? 'active' : ''}`}
                             onClick={() => setTab('accuracy')}
                             aria-pressed={tab === 'accuracy'}
@@ -396,10 +452,13 @@ export const LossChart = memo(function LossChart() {
                     </Tooltip>
                 )}
             </div>
-            <div style={{ position: 'relative', width: CHART_W, height: CHART_H }}>
+            <div
+                ref={chartFrameRef}
+                style={{ position: 'relative', width: '100%', height: DEFAULT_CHART_SIZE.height }}
+            >
                 <canvas
                     ref={canvasRef}
-                    style={{ width: CHART_W, height: CHART_H, display: 'block' }}
+                    style={{ width: '100%', height: '100%', display: 'block' }}
                     aria-label={tab === 'loss' ? 'Loss over training steps' : 'Accuracy over training steps'}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
@@ -443,7 +502,7 @@ export const LossChart = memo(function LossChart() {
                             style={{
                                 position: 'absolute',
                                 top: 8,
-                                ...(hoverState.alignRight ? { right: CHART_W - hoverState.x + 8 } : { left: hoverState.x + 8 }),
+                                ...(hoverState.alignRight ? { right: hoverState.chartWidth - hoverState.x + 8 } : { left: hoverState.x + 8 }),
                                 backgroundColor: '#1c2030',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: 4,

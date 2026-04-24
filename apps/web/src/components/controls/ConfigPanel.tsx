@@ -13,7 +13,7 @@ interface ConfigPanelProps {
 
 export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [feedback, setFeedback] = useTimedState<string | null>(null, 2000);
+    const [feedback, setFeedback] = useTimedState<{ message: string; tone: 'status' | 'error' } | null>(null, 2000);
 
     const handleExport = useCallback(() => {
         const config = usePlaygroundStore.getState().getConfig();
@@ -25,14 +25,21 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
         a.download = 'nn-playground-config.json';
         a.click();
         URL.revokeObjectURL(url);
-        setFeedback('Exported!');
-    }, []);
+        setFeedback({ message: 'Exported!', tone: 'status' });
+    }, [setFeedback]);
 
-    const handleCopyUrl = useCallback(() => {
-        navigator.clipboard.writeText(window.location.href).then(() => {
-            setFeedback('URL copied!');
-        });
-    }, []);
+    const handleCopyUrl = useCallback(async () => {
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error('Clipboard API unavailable');
+            }
+
+            await navigator.clipboard.writeText(window.location.href);
+            setFeedback({ message: 'URL copied!', tone: 'status' });
+        } catch {
+            setFeedback({ message: 'Could not copy URL.', tone: 'error' });
+        }
+    }, [setFeedback]);
 
     const handleImport = useCallback(() => {
         fileInputRef.current?.click();
@@ -44,7 +51,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
             if (!file) return;
 
             if (file.size > 1024 * 1024) {
-                setFeedback('Config file must be smaller than 1MB');
+                setFeedback({ message: 'Config file must be smaller than 1MB', tone: 'error' });
                 e.target.value = '';
                 return;
             }
@@ -74,39 +81,44 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                         },
                     });
                     onReset();
-                    setFeedback('Imported!');
+                    setFeedback({ message: 'Imported!', tone: 'status' });
                 } else {
-                    setFeedback(validation.error ?? 'Invalid config');
+                    setFeedback({ message: validation.error ?? 'Invalid config', tone: 'error' });
                 }
             };
             reader.readAsText(file);
             // Reset so same file can be re-imported
             e.target.value = '';
         },
-        [onReset],
+        [onReset, setFeedback],
     );
 
     return (
         <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <Tooltip content="Download the current playground configuration as JSON">
-                    <button className="btn btn--ghost btn--sm" onClick={handleExport}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={handleExport}>
                         ↓ Export JSON
                     </button>
                 </Tooltip>
                 <Tooltip content="Import a previously saved JSON configuration file">
-                    <button className="btn btn--ghost btn--sm" onClick={handleImport}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={handleImport}>
                         ↑ Import JSON
                     </button>
                 </Tooltip>
                 <Tooltip content="Copy a shareable URL for the current configuration">
-                    <button className="btn btn--ghost btn--sm" onClick={handleCopyUrl}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={handleCopyUrl}>
                         🔗 Copy URL
                     </button>
                 </Tooltip>
             </div>
             {feedback && (
-                <div className="config-feedback">{feedback}</div>
+                <div
+                    className={`config-feedback ${feedback.tone === 'error' ? 'config-feedback--error' : ''}`}
+                    role={feedback.tone === 'error' ? 'alert' : 'status'}
+                >
+                    {feedback.message}
+                </div>
             )}
             <input
                 ref={fileInputRef}

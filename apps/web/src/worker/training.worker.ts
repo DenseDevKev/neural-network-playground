@@ -30,7 +30,14 @@ import type {
     HistoryPoint,
     Metrics,
 } from '@nn-playground/engine';
-import { GRID_SIZE, DEFAULT_DEMAND, isMainToWorkerCommand, structuralEqual, normalizeAppConfig } from '@nn-playground/shared';
+import {
+    GRID_SIZE,
+    DEFAULT_DEMAND,
+    isMainToWorkerCommand,
+    normalizeVisualizationDemand,
+    structuralEqual,
+    normalizeAppConfig,
+} from '@nn-playground/shared';
 import type {
     VisualizationDemand,
     WorkerSnapshotMessage,
@@ -386,6 +393,27 @@ function buildDataAndNetwork(): void {
 }
 
 // ── GPU grid prediction (AS-4) ─────────────────────────────────────────────
+export const MAX_WEBGPU_NEURON_READBACK_BYTES = 256 * 1024;
+
+export type WebGpuGridReadbackMode = 'none' | 'outputOnly' | 'withNeurons' | 'cpu';
+
+export function estimateWebGpuNeuronReadbackBytes(neuronCount: number, gridLen: number): number {
+    return Math.max(0, neuronCount) * Math.max(0, gridLen) * Float32Array.BYTES_PER_ELEMENT;
+}
+
+export function selectWebGpuGridReadbackMode(args: {
+    needDecisionBoundary: boolean;
+    needNeuronGrids: boolean;
+    gridLen: number;
+    neuronCount: number;
+}): WebGpuGridReadbackMode {
+    if (!args.needDecisionBoundary && !args.needNeuronGrids) return 'none';
+    if (!args.needNeuronGrids) return 'outputOnly';
+
+    const neuronReadbackBytes = estimateWebGpuNeuronReadbackBytes(args.neuronCount, args.gridLen);
+    return neuronReadbackBytes <= MAX_WEBGPU_NEURON_READBACK_BYTES ? 'withNeurons' : 'cpu';
+}
+
 // Lazily allocate a WebGPUGridPredictor matching the current network shape.
 // The first call after a build (or after the user toggles GPU on) does the
 // async device + pipeline init; subsequent calls return the cached instance.
@@ -448,6 +476,14 @@ async function runGpuGridIfDue(): Promise<void> {
     if (!due) return;
     if (!state.outputGridBuffer || !state.neuronGridsBuffer) return;
 
+    const readbackMode = selectWebGpuGridReadbackMode({
+        needDecisionBoundary: demand.needDecisionBoundary,
+        needNeuronGrids: demand.needNeuronGrids,
+        gridLen: state.gridInputs.length,
+        neuronCount: state.network.getTotalNeuronCount(),
+    });
+    if (readbackMode === 'none' || readbackMode === 'cpu') return;
+
     const predictor = await ensureGpuPredictor();
     if (!predictor) return;
 
@@ -459,7 +495,7 @@ async function runGpuGridIfDue(): Promise<void> {
 
     try {
         performance.mark('perf:worker:predictGridGpu:start');
-        if (demand.needNeuronGrids) {
+        if (readbackMode === 'withNeurons') {
             await predictor.predictGridWithNeuronsInto(
                 state.outputGridBuffer,
                 state.neuronGridsBuffer,
@@ -791,12 +827,16 @@ function trainOneStep(): void {
 
     const startIdx = batchSlot * bs;
     const endIdx = Math.min(startIdx + bs, n);
-    const batchIndices = state.shuffledIndices.slice(startIdx, endIdx);
-    const batchInputs = batchIndices.map((i) => state.trainInputs[i]);
-    const batchTargets = batchIndices.map((i) => state.trainTargets[i]);
 
-    if (batchInputs.length > 0) {
-        const batchLoss = state.network.trainBatch(batchInputs, batchTargets, state.trainingConfig);
+    if (startIdx < endIdx) {
+        const batchLoss = state.network.trainBatchIndexed(
+            state.trainInputs,
+            state.trainTargets,
+            state.shuffledIndices,
+            startIdx,
+            endIdx,
+            state.trainingConfig,
+        );
         // Feed the running EMA of batch loss. This is what the UI line
         // actually follows between full-dataset evaluations.
         if (Number.isFinite(batchLoss)) {
@@ -920,6 +960,17 @@ function stopInternalLoop(): void {
     resetAck();
 }
 
+function applyDemand(demand: VisualizationDemand): void {
+    state.demand = { ...demand };
+    // Force the next snapshot to re-evaluate everything so the UI
+    // immediately reflects the new demand mix, rather than waiting
+    // up to one interval for the counters to roll over.
+    state.snapshotsSinceLastTestEval = demand.testEvalInterval;
+    state.snapshotsSinceLastTrainEval = demand.trainEvalInterval;
+    state.snapshotsSinceLastGrid = demand.gridInterval;
+    state.gridStale = true;
+}
+
 // ── MessageChannel command handler ──
 
 function handleStreamCommand(cmd: unknown): void {
@@ -955,14 +1006,7 @@ function handleStreamCommand(cmd: unknown): void {
                 break;
 
             case 'updateDemand':
-                state.demand = { ...cmd.demand };
-                // Force the next snapshot to re-evaluate everything so the UI
-                // immediately reflects the new demand mix, rather than waiting
-                // up to one interval for the counters to roll over.
-                state.snapshotsSinceLastTestEval = cmd.demand.testEvalInterval;
-                state.snapshotsSinceLastTrainEval = cmd.demand.trainEvalInterval;
-                state.snapshotsSinceLastGrid = cmd.demand.gridInterval;
-                state.gridStale = true;
+                applyDemand(normalizeVisualizationDemand(cmd.demand)!);
                 break;
 
             case 'updateSpeed':
@@ -982,7 +1026,7 @@ function handleStreamCommand(cmd: unknown): void {
 
 // ── Comlink API ──
 
-const workerApi = {
+export const workerApi = {
     initialize(
         networkConfig: NetworkConfig,
         trainingConfig: TrainingConfig,
@@ -1040,10 +1084,6 @@ const workerApi = {
         return { snapshot: computeSnapshot(), runId: state.runId };
     },
 
-    getSnapshot(): NetworkSnapshot {
-        return computeSnapshot();
-    },
-
     getTrainPoints(): DataPoint[] {
         return state.trainPoints;
     },
@@ -1052,23 +1092,13 @@ const workerApi = {
         return state.testPoints;
     },
 
-    setRunning(running: boolean): void {
-        state.running = running;
-    },
-
-    isRunning(): boolean {
-        return state.running;
-    },
-
     /** Update what visual data the UI currently needs. */
     updateDemand(demand: VisualizationDemand): void {
-        state.demand = { ...demand };
-        // Match the streaming-path behaviour: force all counters to "due" so
-        // the next snapshot is fully fresh.
-        state.snapshotsSinceLastTestEval = demand.testEvalInterval;
-        state.snapshotsSinceLastTrainEval = demand.trainEvalInterval;
-        state.snapshotsSinceLastGrid = demand.gridInterval;
-        state.gridStale = true;
+        const normalized = normalizeVisualizationDemand(demand);
+        if (!normalized) {
+            throw new Error('Invalid visualization demand.');
+        }
+        applyDemand(normalized);
     },
 
     /**
@@ -1100,17 +1130,6 @@ const workerApi = {
         // init), deliver the handshake now so the main thread can install
         // its views before the first snapshot arrives.
         postSharedBuffersHandshake();
-    },
-
-    // Legacy: Run continuous training — called in a loop from main thread
-    trainAndSnapshot(stepsPerFrame: number): NetworkSnapshot {
-        performance.mark('perf:worker:trainStep:start');
-        const burst = getTrainingStepsForTick(stepsPerFrame);
-        for (let i = 0; i < burst; i++) {
-            trainOneStep();
-        }
-        performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
-        return computeSnapshot();
     },
 };
 

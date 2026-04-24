@@ -123,8 +123,9 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     const imageDataRef = useRef<ImageData | null>(null);
     const lastGridSizeRef = useRef(0);
 
-    const snapshot = useTrainingStore((s) => s.snapshot);
-    const frameVersion = useTrainingStore((s) => s.frameVersion);
+    const snapshotOutputGrid = useTrainingStore((s) => s.snapshot?.outputGrid);
+    const snapshotGridSize = useTrainingStore((s) => s.snapshot?.gridSize ?? 0);
+    const outputGridVersion = useTrainingStore((s) => s.outputGridVersion);
 
     // Track container size for responsive canvas
     const [canvasSize, setCanvasSize] = useState(320);
@@ -180,10 +181,12 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         ctx.fillStyle = BG_COLOR;
         ctx.fillRect(0, 0, logicalW, logicalH);
 
-        // Draw heatmap when grid data exists
+        // Draw heatmap when grid data exists. The version selector intentionally
+        // drives this mutable frame-buffer read.
+        void outputGridVersion;
         const frameBuffer = getFrameBuffer();
-        const grid = frameBuffer.outputGrid ?? snapshot?.outputGrid;
-        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : snapshot?.gridSize ?? 0;
+        const grid = frameBuffer.outputGrid ?? snapshotOutputGrid;
+        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : snapshotGridSize;
 
         if (grid && gridSize > 0) {
             // Allocate / reuse offscreen canvas + ImageData
@@ -214,7 +217,16 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         if (showTestData && testPoints.length > 0) {
             drawPoints(ctx, testPoints, logicalW, logicalH, true);
         }
-    }, [snapshot, frameVersion, trainPoints, testPoints, showTestData, discretize, canvasSize]);
+    }, [
+        snapshotOutputGrid,
+        snapshotGridSize,
+        outputGridVersion,
+        trainPoints,
+        testPoints,
+        showTestData,
+        discretize,
+        canvasSize,
+    ]);
 
     // Paint immediately after React commits the latest frame. Snapshot delivery
     // is already rAF-gated in workerBridge, so an extra rAF here can keep

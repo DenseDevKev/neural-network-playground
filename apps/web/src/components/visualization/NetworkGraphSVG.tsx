@@ -47,6 +47,39 @@ interface TooltipData {
     text: string[];
 }
 
+interface FocusTargetPosition {
+    x: number;
+    y: number;
+}
+
+function describeGraphNode(layerIdx: number, nodeIdx: number, layerCount: number): string {
+    if (layerIdx === 0) return `Input ${nodeIdx + 1}`;
+    if (layerIdx === layerCount - 1) return 'Output neuron';
+    return `Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`;
+}
+
+function edgeConnectionLabel(layerIdx: number, nodeIdx: number, prevIdx: number, layerCount: number): string {
+    return `${describeGraphNode(layerIdx - 1, prevIdx, layerCount)} to ${describeGraphNode(layerIdx, nodeIdx, layerCount)}`;
+}
+
+function bezierMidpoint(prev: NodePos, node: NodePos): FocusTargetPosition {
+    const cpX = (node.x - prev.x) * 0.45;
+    const x0 = prev.x;
+    const y0 = prev.y;
+    const x1 = prev.x + cpX;
+    const y1 = prev.y;
+    const x2 = node.x - cpX;
+    const y2 = node.y;
+    const x3 = node.x;
+    const y3 = node.y;
+    const t = 0.5;
+    const u = 1 - t;
+    return {
+        x: u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
+        y: u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3,
+    };
+}
+
 // ── Color helpers ─────────────────────────────────────────────────────────────
 
 function nodeColor(value: number): string {
@@ -177,6 +210,7 @@ interface NetworkEdgesProps {
     hoveredEdge: string | null;
     onEdgeEnter: (layerIdx: number, nodeIdx: number, prevIdx: number, weight: number, x: number, y: number) => void;
     onEdgeLeave: () => void;
+    onEdgeFocus: (layerIdx: number, nodeIdx: number, prevIdx: number, weight: number, x: number, y: number) => void;
 }
 
 const NetworkEdges = memo(function NetworkEdges({
@@ -185,6 +219,7 @@ const NetworkEdges = memo(function NetworkEdges({
     hoveredEdge,
     onEdgeEnter,
     onEdgeLeave,
+    onEdgeFocus,
 }: NetworkEdgesProps) {
     return (
         <>
@@ -205,11 +240,18 @@ const NetworkEdges = memo(function NetworkEdges({
                         const isHovered = hoveredEdge === key;
                         const cpX = (node.x - prevNode.x) * 0.45;
                         const pathD = `M ${prevNode.x},${prevNode.y} C ${prevNode.x + cpX},${prevNode.y} ${node.x - cpX},${node.y} ${node.x},${node.y}`;
+                        const midpoint = bezierMidpoint(prevNode, node);
+                        const connection = edgeConnectionLabel(layerIdx, nodeIdx, prevIdx, nodePositions.length);
+                        const ariaLabel = `Weight: ${weight.toFixed(4)}. Connection: ${connection}`;
 
                         return (
                             <g key={key}>
                                 {/* Wide transparent hit area */}
                                 <path
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-label={ariaLabel}
+                                    className="network-edge-hit"
                                     d={pathD}
                                     stroke="transparent"
                                     strokeWidth={12}
@@ -220,6 +262,8 @@ const NetworkEdges = memo(function NetworkEdges({
                                         onEdgeEnter(layerIdx, nodeIdx, prevIdx, weight, e.clientX - rect.left, e.clientY - rect.top);
                                     }}
                                     onMouseLeave={onEdgeLeave}
+                                    onFocus={() => onEdgeFocus(layerIdx, nodeIdx, prevIdx, weight, midpoint.x, midpoint.y)}
+                                    onBlur={onEdgeLeave}
                                 />
                                 {/* Visible edge */}
                                 <path
@@ -270,6 +314,7 @@ interface NetworkNodesProps {
     activation: string;
     onNodeEnter: (x: number, y: number, text: string[]) => void;
     onNodeLeave: () => void;
+    onNodeFocus: (x: number, y: number, text: string[]) => void;
 }
 
 const NetworkNodes = memo(function NetworkNodes({
@@ -281,6 +326,7 @@ const NetworkNodes = memo(function NetworkNodes({
     activation,
     onNodeEnter,
     onNodeLeave,
+    onNodeFocus,
 }: NetworkNodesProps) {
     /**
      * Map (layerIdx, nodeIdx) → index into neuronGrids.
@@ -343,21 +389,39 @@ const NetworkNodes = memo(function NetworkNodes({
                     const isOutput = layerIdx === layers.length - 1;
                     const heatmapIdx = getNeuronGridIndex(layerIdx, nodeIdx);
                     const heatmap = heatmapIdx != null ? neuronGrids?.[heatmapIdx] ?? null : null;
+                    const tooltipLines = buildTooltipLines(layerIdx, nodeIdx);
+                    const ariaLabel = tooltipLines.join('. ');
 
                     return (
                         <g
                             key={`n-${layerIdx}-${nodeIdx}`}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={ariaLabel}
+                            className="network-node-hit"
                             style={{ cursor: 'pointer' }}
                             onMouseEnter={(e) => {
                                 const rect = (e.target as SVGElement).closest('svg')!.getBoundingClientRect();
                                 onNodeEnter(
                                     e.clientX - rect.left,
                                     e.clientY - rect.top,
-                                    buildTooltipLines(layerIdx, nodeIdx),
+                                    tooltipLines,
                                 );
                             }}
                             onMouseLeave={onNodeLeave}
+                            onFocus={() => onNodeFocus(node.x, node.y, tooltipLines)}
+                            onBlur={onNodeLeave}
                         >
+                            <circle
+                                className="network-node-focus-ring"
+                                cx={node.x}
+                                cy={node.y}
+                                r={NODE_RADIUS + 9}
+                                fill="none"
+                                stroke="rgba(255, 255, 255, 0)"
+                                strokeWidth={2.5}
+                                style={{ pointerEvents: 'none' }}
+                            />
                             {/* Glow ring */}
                             <circle
                                 cx={node.x}
@@ -448,8 +512,12 @@ export function NetworkGraphSVG() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const features = usePlaygroundStore((s) => s.features);
     const activation = usePlaygroundStore((s) => s.network.activation);
-    const snapshot = useTrainingStore((s) => s.snapshot);
-    const frameVersion = useTrainingStore((s) => s.frameVersion);
+    const snapshotWeights = useTrainingStore((s) => s.snapshot?.weights);
+    const snapshotBiases = useTrainingStore((s) => s.snapshot?.biases);
+    const snapshotNeuronGrids = useTrainingStore((s) => s.snapshot?.neuronGrids);
+    const snapshotGridSize = useTrainingStore((s) => s.snapshot?.gridSize ?? GRID_SIZE);
+    const paramsVersion = useTrainingStore((s) => s.paramsVersion);
+    const neuronGridsVersion = useTrainingStore((s) => s.neuronGridsVersion);
 
     const [tooltip, setTooltip] = useState<TooltipData | null>(null);
     const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
@@ -523,6 +591,8 @@ export function NetworkGraphSVG() {
     // materialising a packed view from the snapshot's nested arrays only
     // on very first render or in tests that bypass the worker.
     const flat = useMemo<FlatNetworkView | null>(() => {
+        // The version selector intentionally drives this mutable frame-buffer read.
+        void paramsVersion;
         const frameBuffer = getFrameBuffer();
         if (frameBuffer.weights && frameBuffer.biases && frameBuffer.weightLayout) {
             return {
@@ -531,39 +601,41 @@ export function NetworkGraphSVG() {
                 layerSizes: frameBuffer.weightLayout.layerSizes,
             };
         }
-        if (snapshot?.weights && snapshot.weights.length > 0 && snapshot.biases) {
+        if (snapshotWeights && snapshotWeights.length > 0 && snapshotBiases) {
             // Snapshot fallback: pack on the fly. Happens rarely — only before
             // the first streamed frame arrives.
-            const sizes: number[] = [snapshot.weights[0]?.[0]?.length ?? 0];
+            const sizes: number[] = [snapshotWeights[0]?.[0]?.length ?? 0];
             let total = 0;
-            for (const layer of snapshot.weights) {
+            for (const layer of snapshotWeights) {
                 sizes.push(layer.length);
                 for (const neuron of layer) total += neuron.length;
             }
             const w = new Float32Array(total);
             let off = 0;
-            for (const layer of snapshot.weights) {
+            for (const layer of snapshotWeights) {
                 for (const neuron of layer) {
                     w.set(neuron, off);
                     off += neuron.length;
                 }
             }
             let btotal = 0;
-            for (const layer of snapshot.biases) btotal += layer.length;
+            for (const layer of snapshotBiases) btotal += layer.length;
             const b = new Float32Array(btotal);
             off = 0;
-            for (const layer of snapshot.biases) {
+            for (const layer of snapshotBiases) {
                 b.set(layer, off);
                 off += layer.length;
             }
             return { weights: w, biases: b, layerSizes: sizes };
         }
         return null;
-    }, [frameVersion, snapshot?.weights, snapshot?.biases]);
+    }, [paramsVersion, snapshotWeights, snapshotBiases]);
 
     // Build per-neuron grid views (no PNG encoding). Each HeatmapCanvas then
     // paints its grid into a real <canvas> via putImageData + drawImage.
     const neuronGrids = useMemo<NeuronGridEntry[] | null>(() => {
+        // The version selector intentionally drives this mutable frame-buffer read.
+        void neuronGridsVersion;
         const frameBuffer = getFrameBuffer();
         if (frameBuffer.neuronGrids && frameBuffer.neuronGridLayout) {
             const { count, gridSize } = frameBuffer.neuronGridLayout;
@@ -573,10 +645,8 @@ export function NetworkGraphSVG() {
                 gridSize,
             }));
         }
-        if (!snapshot?.neuronGrids) return null;
-        const gridSize = snapshot.gridSize ?? GRID_SIZE;
-        const snapshotNeuronGrids = snapshot.neuronGrids;
         if (snapshotNeuronGrids instanceof Float32Array) {
+            const gridSize = snapshotGridSize;
             const count = layers.slice(1).reduce((sum, size) => sum + size, 0);
             const cells = gridSize * gridSize;
             return Array.from({ length: count }, (_, idx) => ({
@@ -584,8 +654,9 @@ export function NetworkGraphSVG() {
                 gridSize,
             }));
         }
-        return snapshotNeuronGrids.map((grid) => ({ grid, gridSize }));
-    }, [frameVersion, layers, snapshot?.neuronGrids, snapshot?.gridSize]);
+        if (!snapshotNeuronGrids) return null;
+        return snapshotNeuronGrids.map((grid) => ({ grid, gridSize: snapshotGridSize }));
+    }, [neuronGridsVersion, layers, snapshotNeuronGrids, snapshotGridSize]);
 
     // ── Stable handlers (no deps — all data flows in via arguments or closure over setters) ──
 
@@ -606,6 +677,26 @@ export function NetworkGraphSVG() {
         });
     }, []);
 
+    const toCssPosition = useCallback(
+        ({ x, y }: FocusTargetPosition): FocusTargetPosition => ({
+            x: (x / svgWidth) * containerSize.width,
+            y: (y / svgHeight) * containerSize.height,
+        }),
+        [svgWidth, svgHeight, containerSize.width, containerSize.height],
+    );
+
+    const handleEdgeFocus = useCallback((
+        layerIdx: number,
+        nodeIdx: number,
+        prevIdx: number,
+        weight: number,
+        x: number,
+        y: number,
+    ) => {
+        const css = toCssPosition({ x, y });
+        handleEdgeEnter(layerIdx, nodeIdx, prevIdx, weight, css.x, css.y);
+    }, [handleEdgeEnter, toCssPosition]);
+
     const handleEdgeLeave = useCallback(() => {
         setHoveredEdge(null);
         setTooltip(null);
@@ -614,6 +705,10 @@ export function NetworkGraphSVG() {
     const handleNodeEnter = useCallback((x: number, y: number, text: string[]) => {
         setTooltip({ x, y, text });
     }, []);
+
+    const handleNodeFocus = useCallback((x: number, y: number, text: string[]) => {
+        setTooltip({ ...toCssPosition({ x, y }), text });
+    }, [toCssPosition]);
 
     const handleNodeLeave = useCallback(() => {
         setTooltip(null);
@@ -645,6 +740,7 @@ export function NetworkGraphSVG() {
                     hoveredEdge={hoveredEdge}
                     onEdgeEnter={handleEdgeEnter}
                     onEdgeLeave={handleEdgeLeave}
+                    onEdgeFocus={handleEdgeFocus}
                 />
 
                 {/* Nodes — re-renders on bias/heatmap change; skips on edge hover */}
@@ -657,6 +753,7 @@ export function NetworkGraphSVG() {
                     activation={activation}
                     onNodeEnter={handleNodeEnter}
                     onNodeLeave={handleNodeLeave}
+                    onNodeFocus={handleNodeFocus}
                 />
 
                 {/* Labels — only re-renders when network shape changes */}

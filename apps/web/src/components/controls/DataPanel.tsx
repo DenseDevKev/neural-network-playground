@@ -47,7 +47,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             {configError && configErrorSource === 'data' && (
                 <div className="config-feedback config-feedback--error" role="alert">
                     <span>{configError}</span>
-                    <button className="btn btn--ghost btn--sm" onClick={retryDataChange}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={retryDataChange}>
                         Retry
                     </button>
                 </div>
@@ -59,6 +59,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 <div className="chip-group">
                     <Tooltip content="Switch to classification datasets">
                         <button
+                            type="button"
                             className={`chip ${problemType === 'classification' ? 'active' : ''}`}
                             onClick={() => {
                                 beginDataChange();
@@ -70,6 +71,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     </Tooltip>
                     <Tooltip content="Switch to regression datasets">
                         <button
+                            type="button"
                             className={`chip ${problemType === 'regression' ? 'active' : ''}`}
                             onClick={() => {
                                 beginDataChange();
@@ -87,6 +89,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 {datasets.map((ds) => (
                     <Tooltip key={ds.id} content={`Use the ${ds.label} dataset`}>
                         <button
+                            type="button"
                             className={`chip ${dataset === ds.id ? 'active' : ''}`}
                             onClick={() => {
                                 beginDataChange();
@@ -138,13 +141,14 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 />
             </Tooltip>
 
-            <Tooltip content="Regenerate the current dataset with the latest settings" block>
+            <Tooltip content="Reset the model and regenerate the current dataset with the latest settings" block>
                 <button
+                    type="button"
                     className="btn btn--ghost btn--sm"
                     style={{ marginTop: 10, width: '100%' }}
                     onClick={onReset}
                 >
-                    ↻ Regenerate
+                    ↻ Reset model & data
                 </button>
             </Tooltip>
         </div>

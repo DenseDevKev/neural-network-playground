@@ -19,8 +19,9 @@ import {
     flattenBiases,
     flattenNeuronGrids,
     flattenWeights,
-    getFrameVersion,
+    getFrameVersions,
     updateFrameBuffer,
+    type FrameVersions,
 } from '../worker/frameBuffer.ts';
 import type { NetworkSnapshot } from '@nn-playground/engine';
 import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
@@ -46,7 +47,7 @@ function getTotalNeuronCount(layerSizes: number[]): number {
     return total;
 }
 
-function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): number {
+function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
     const outputGrid = snapshot.outputGrid.length > 0
         ? (snapshot.outputGrid instanceof Float32Array ? snapshot.outputGrid : new Float32Array(snapshot.outputGrid))
         : null;
@@ -69,7 +70,7 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): number {
         }
     }
 
-    return updateFrameBuffer({
+    updateFrameBuffer({
         outputGrid,
         gridSize: snapshot.gridSize,
         neuronGrids,
@@ -80,6 +81,7 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): number {
         layerStats: snapshot.layerStats ?? null,
         confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
     });
+    return getFrameVersions();
 }
 
 function createStreamSnapshot(
@@ -159,7 +161,7 @@ export function useTraining(): TrainingHook {
         ts.setSnapshot(result.snapshot);
         ts.resetHistory();
         if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-        ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+        ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
         newRunTo(result.runId);
 
         // Store points reactively so UI renders immediately
@@ -213,7 +215,7 @@ export function useTraining(): TrainingHook {
             if (msg.type === 'snapshot') {
                 ts.clearWorkerError();
                 ts.setSnapshot(createStreamSnapshot(msg, ts.snapshot));
-                ts.setFrameVersion(getFrameVersion());
+                ts.setFrameVersions(getFrameVersions());
                 ts.setTestMetricsStale(msg.scalars.testMetricsStale === true);
                 if (msg.historyPoint) ts.addHistoryPoint(msg.historyPoint);
             } else if (msg.type === 'status') {
@@ -273,7 +275,7 @@ export function useTraining(): TrainingHook {
                 ts.setSnapshot(result.snapshot);
                 ts.resetHistory();
                 if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-                ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+                ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
 
                 // Update points reactively
                 const trainPts = await api.getTrainPoints();
@@ -289,7 +291,6 @@ export function useTraining(): TrainingHook {
             }
         };
         sync();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [network, training, data, features, configSyncNonce]);
 
     // Sync demand changes to worker
@@ -353,7 +354,7 @@ export function useTraining(): TrainingHook {
             const snap = await api.step(1);
             const ts = useTrainingStore.getState();
             ts.setSnapshot(snap);
-            ts.setFrameVersion(syncSnapshotToFrameBuffer(snap));
+            ts.setFrameVersions(syncSnapshotToFrameBuffer(snap));
             if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
         } catch (error) {
             reportWorkerError(error, 'Failed to run a training step.');
@@ -379,7 +380,7 @@ export function useTraining(): TrainingHook {
             ts.setSnapshot(result.snapshot);
             ts.resetHistory();
             if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-            ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+            ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
             ts.setStatus('idle');
 
             // Refresh points

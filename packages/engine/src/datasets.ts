@@ -15,29 +15,46 @@ export function generateDataset(
     seed: number = 42,
 ): DataSplit {
     const rng = new PRNG(seed);
-    const half = Math.floor(numSamples / 2);
+    const requestedSamples = normalizeSampleCount(numSamples);
+    const pairedClassCount = Math.ceil(requestedSamples / 2);
 
     let points: DataPoint[];
     switch (type) {
-        case 'circle': points = genCircle(half, noise, rng); break;
-        case 'xor': points = genXor(half, noise, rng); break;
-        case 'gauss': points = genGauss(half, noise, rng); break;
-        case 'spiral': points = genSpiral(half, noise, rng); break;
-        case 'moons': points = genMoons(half, noise, rng); break;
-        case 'checkerboard': points = genCheckerboard(half, noise, rng); break;
-        case 'rings': points = genRings(half, noise, rng); break;
-        case 'heart': points = genHeart(half, noise, rng); break;
-        case 'reg-plane': points = genRegPlane(numSamples, noise, rng); break;
-        case 'reg-gauss': points = genRegGauss(numSamples, noise, rng); break;
-        default: points = genCircle(half, noise, rng);
+        case 'circle': points = genCircle(pairedClassCount, noise, rng); break;
+        case 'xor': points = genXor(requestedSamples, noise, rng); break;
+        case 'gauss': points = genGauss(pairedClassCount, noise, rng); break;
+        case 'spiral': points = genSpiral(pairedClassCount, noise, rng); break;
+        case 'moons': points = genMoons(pairedClassCount, noise, rng); break;
+        case 'checkerboard': points = genCheckerboard(pairedClassCount, noise, rng); break;
+        case 'rings': points = genRings(requestedSamples, noise, rng); break;
+        case 'heart': points = genHeart(pairedClassCount, noise, rng); break;
+        case 'reg-plane': points = genRegPlane(requestedSamples, noise, rng); break;
+        case 'reg-gauss': points = genRegGauss(requestedSamples, noise, rng); break;
+        default: points = genCircle(pairedClassCount, noise, rng);
     }
 
     rng.shuffle(points);
-    const splitIdx = Math.floor(points.length * trainRatio);
+    points = points.slice(0, requestedSamples);
+    const splitIdx = getSplitIndex(points.length, trainRatio);
     return {
         train: points.slice(0, splitIdx),
         test: points.slice(splitIdx),
     };
+}
+
+function normalizeSampleCount(numSamples: number): number {
+    return Number.isFinite(numSamples) ? Math.max(0, Math.floor(numSamples)) : DEFAULT_NUM_SAMPLES;
+}
+
+function getSplitIndex(total: number, trainRatio: number): number {
+    if (total <= 0) return 0;
+    if (total === 1) return 1;
+
+    const ratio = Number.isFinite(trainRatio) && trainRatio > 0 && trainRatio < 1
+        ? trainRatio
+        : 0.5;
+    const splitIdx = Math.floor(total * ratio);
+    return Math.min(total - 1, Math.max(1, splitIdx));
 }
 
 // ── Classification datasets ──
@@ -66,27 +83,19 @@ function genCircle(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[
     return points;
 }
 
-function genXor(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[] {
+function genXor(n: number, noise: number, rng: PRNG): DataPoint[] {
     const points: DataPoint[] = [];
-    for (let i = 0; i < pointsPerClass; i++) {
-        // Class 0: top-left and bottom-right
-        const x0 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
-        const y0 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
-        points.push({ x: x0, y: y0, label: 0 });
+    for (let i = 0; i < n; i++) {
+        const quadrant = i % 4;
+        const xMin = quadrant === 0 || quadrant === 3 ? -1 : 0;
+        const yMin = quadrant === 2 || quadrant === 3 ? -1 : 0;
+        const label = quadrant === 0 || quadrant === 2 ? 0 : 1;
 
-        const x1 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
-        const y1 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
-        points.push({ x: x1, y: y1, label: 0 });
-    }
-    for (let i = 0; i < pointsPerClass; i++) {
-        // Class 1: top-right and bottom-left
-        const x0 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
-        const y0 = rng.range(0, 1) + rng.gaussian(0, noise * 0.01);
-        points.push({ x: x0, y: y0, label: 1 });
-
-        const x1 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
-        const y1 = rng.range(-1, 0) + rng.gaussian(0, noise * 0.01);
-        points.push({ x: x1, y: y1, label: 1 });
+        points.push({
+            x: rng.range(xMin, xMin + 1) + rng.gaussian(0, noise * 0.01),
+            y: rng.range(yMin, yMin + 1) + rng.gaussian(0, noise * 0.01),
+            label,
+        });
     }
     return points;
 }
@@ -161,23 +170,21 @@ function genCheckerboard(pointsPerClass: number, noise: number, rng: PRNG): Data
     return points;
 }
 
-function genRings(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[] {
+function genRings(n: number, noise: number, rng: PRNG): DataPoint[] {
     const points: DataPoint[] = [];
     const rings = 3;
-    const pointsPerRing = Math.floor((pointsPerClass * 2) / rings);
-    for (let ring = 0; ring < rings; ring++) {
+    for (let i = 0; i < n; i++) {
+        const ring = i % rings;
         const rMin = (ring * 0.9) / rings;
         const rMax = ((ring + 1) * 0.9) / rings;
         const label = ring % 2;
-        for (let i = 0; i < pointsPerRing; i++) {
-            const r = rng.range(rMin, rMax);
-            const angle = rng.range(0, 2 * Math.PI);
-            points.push({
-                x: r * Math.cos(angle) + rng.gaussian(0, noise * 0.008),
-                y: r * Math.sin(angle) + rng.gaussian(0, noise * 0.008),
-                label,
-            });
-        }
+        const r = rng.range(rMin, rMax);
+        const angle = rng.range(0, 2 * Math.PI);
+        points.push({
+            x: r * Math.cos(angle) + rng.gaussian(0, noise * 0.008),
+            y: r * Math.sin(angle) + rng.gaussian(0, noise * 0.008),
+            label,
+        });
     }
     return points;
 }

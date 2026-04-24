@@ -151,6 +151,14 @@ describe('Softplus', () => {
         const sigmoid = 1 / (1 + Math.exp(-2));
         expect(sp.df(2, sp.f(2))).toBeCloseTo(sigmoid, 8);
     });
+
+    it('stays finite for saturated inputs', () => {
+        expect(Number.isFinite(sp.f(1000))).toBe(true);
+        expect(sp.f(1000)).toBeCloseTo(1000, 8);
+        expect(sp.f(-1000)).toBeCloseTo(0, 8);
+        expect(sp.df(1000, sp.f(1000))).toBeCloseTo(1, 8);
+        expect(sp.df(-1000, sp.f(-1000))).toBeCloseTo(0, 8);
+    });
 });
 
 describe('Numerical gradient check (all activations)', () => {

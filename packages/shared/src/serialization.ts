@@ -19,6 +19,8 @@ import {
     DEFAULT_FEATURES,
     MAX_HIDDEN_LAYERS,
     MAX_NEURONS_PER_LAYER,
+    MAX_TRAIN_TEST_RATIO,
+    MIN_TRAIN_TEST_RATIO,
 } from './constants.js';
 import { countActiveFeatures, isLossCompatible } from '@nn-playground/engine';
 
@@ -308,8 +310,15 @@ export function normalizeAppConfig(
         return { config: null, error: 'Configuration contains an unsupported problem type.' };
     }
 
-    if (strict && (!isFiniteNumber(data.trainTestRatio) || data.trainTestRatio <= 0 || data.trainTestRatio >= 1)) {
-        return { config: null, error: 'Train/test ratio must be between 0 and 1.' };
+    if (
+        strict &&
+        (
+            !isFiniteNumber(data.trainTestRatio) ||
+            data.trainTestRatio < MIN_TRAIN_TEST_RATIO ||
+            data.trainTestRatio > MAX_TRAIN_TEST_RATIO
+        )
+    ) {
+        return { config: null, error: 'Train/test ratio must be between 0.1 and 0.9.' };
     }
 
     if (strict && (!isFiniteNumber(data.noise) || data.noise < 0 || data.noise > 100)) {
@@ -352,6 +361,17 @@ export function normalizeAppConfig(
         return { config: null, error: 'Network seed must be a valid number.' };
     }
 
+    if (
+        strict &&
+        (
+            !isFiniteNumber(network.outputSize) ||
+            !Number.isInteger(network.outputSize) ||
+            network.outputSize !== 1
+        )
+    ) {
+        return { config: null, error: 'Only single-output networks are supported.' };
+    }
+
     if (strict && !VALID_LOSSES.has(training.lossType as LossType)) {
         return { config: null, error: 'Configuration contains an unsupported loss function.' };
     }
@@ -382,6 +402,10 @@ export function normalizeAppConfig(
 
     if (strict && training.gradientClip !== null && (!isFiniteNumber(training.gradientClip) || training.gradientClip <= 0)) {
         return { config: null, error: 'Gradient clip must be null or a positive number.' };
+    }
+
+    if (strict && training.huberDelta !== undefined && (!isFiniteNumber(training.huberDelta) || training.huberDelta <= 0)) {
+        return { config: null, error: 'Huber delta must be a positive finite number.' };
     }
 
     const inputSize = countActiveFeatures(features);
@@ -422,13 +446,17 @@ export function normalizeAppConfig(
 
     const safeData = strict
         ? {
-            trainTestRatio: strictNumber(data.trainTestRatio, (n) => n > 0 && n < 1, 'Train/test ratio must be between 0 and 1.').value!,
+            trainTestRatio: strictNumber(
+                data.trainTestRatio,
+                (n) => n >= MIN_TRAIN_TEST_RATIO && n <= MAX_TRAIN_TEST_RATIO,
+                'Train/test ratio must be between 0.1 and 0.9.',
+            ).value!,
             noise: strictNumber(data.noise, (n) => n >= 0 && n <= 100, 'Noise must be between 0 and 100.').value!,
             numSamples: strictNumber(data.numSamples, (n) => Number.isInteger(n) && n >= 1 && n <= 10000, 'Sample count must be between 1 and 10000.').value!,
             seed: data.seed as number,
         }
         : {
-            trainTestRatio: lenientNumber(data.trainTestRatio, DEFAULT_DATA.trainTestRatio, 0, 1, { exclusive: true }),
+            trainTestRatio: lenientNumber(data.trainTestRatio, DEFAULT_DATA.trainTestRatio, MIN_TRAIN_TEST_RATIO, MAX_TRAIN_TEST_RATIO),
             noise: lenientNumber(data.noise, DEFAULT_DATA.noise, 0, 100),
             numSamples: lenientNumber(data.numSamples, DEFAULT_DATA.numSamples, 1, 10000, { integer: true }),
             seed: isFiniteNumber(data.seed) ? data.seed : DEFAULT_DATA.seed,
@@ -448,6 +476,10 @@ export function normalizeAppConfig(
             regularizationRate: lenientNumber(training.regularizationRate, DEFAULT_TRAINING.regularizationRate, 0, 1),
         };
 
+    const huberDelta = isFiniteNumber(training.huberDelta) && training.huberDelta > 0
+        ? training.huberDelta
+        : undefined;
+
     return {
         config: {
             data: {
@@ -461,7 +493,9 @@ export function normalizeAppConfig(
             network: {
                 inputSize,
                 hiddenLayers,
-                outputSize: isFiniteNumber(network.outputSize) ? network.outputSize : 1,
+                outputSize: isFiniteNumber(network.outputSize) && Number.isInteger(network.outputSize) && network.outputSize === 1
+                    ? network.outputSize
+                    : 1,
                 activation: getValidValue(network.activation as string | null, VALID_ACTIVATIONS, DEFAULT_NETWORK.activation),
                 outputActivation,
                 weightInit: getValidValue(network.weightInit as string | null, VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
@@ -476,6 +510,7 @@ export function normalizeAppConfig(
                 regularization: getValidValue(training.regularization as string | null, VALID_REGULARIZATION, DEFAULT_TRAINING.regularization),
                 regularizationRate: safeTraining.regularizationRate,
                 gradientClip,
+                ...(huberDelta !== undefined ? { huberDelta } : {}),
             },
             features,
             ui: normalizedUi,
