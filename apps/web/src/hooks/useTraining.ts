@@ -245,7 +245,7 @@ export function useTraining(): TrainingHook {
             if (msg.type === 'snapshot') {
                 ts.applyStreamedSnapshot({
                     snapshot: createStreamSnapshot(msg, ts.snapshot),
-                    frameVersions: getFrameVersions(),
+                    frameVersion: getFrameVersion(),
                     testMetricsStale: msg.scalars.testMetricsStale === true,
                 });
             } else if (msg.type === 'status') {
@@ -340,7 +340,7 @@ export function useTraining(): TrainingHook {
             }
         };
         sync();
-    }, [network, training, data, features, configSyncNonce, beginConfigSync, finishConfigSyncIfCurrent, isCurrentConfigSync]);
+    }, [network, training, data, features, configSyncNonce]);
 
     // Sync demand changes to worker
     useEffect(() => {

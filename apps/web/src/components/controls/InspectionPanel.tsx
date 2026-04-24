@@ -1,7 +1,7 @@
 // ── Advanced Inspection Panel ──
 // Displays per-layer gradient magnitudes, activation stats, and weight distributions.
 
-import { useEffect, useMemo, useState, memo } from 'react';
+import { useEffect, useMemo, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
@@ -24,6 +24,17 @@ export const InspectionPanel = memo(function InspectionPanel() {
     const [traceResult, setTraceResult] = useState<PredictionTraceResponse | null>(null);
     const [traceError, setTraceError] = useState<string | null>(null);
     const [traceLoading, setTraceLoading] = useState(false);
+
+    useEffect(() => {
+        const enableLayerStats = (needLayerStats: boolean) => {
+            const { demand, setDemand } = usePlaygroundStore.getState();
+            if (demand.needLayerStats === needLayerStats) return;
+            setDemand({ ...demand, needLayerStats });
+        };
+
+        enableLayerStats(true);
+        return () => enableLayerStats(false);
+    }, []);
 
     useEffect(() => {
         const enableLayerStats = (needLayerStats: boolean) => {

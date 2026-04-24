@@ -53,7 +53,7 @@ export interface TrainingStore {
     addHistoryPoint: (point: HistoryPoint) => void;
     applyStreamedSnapshot: (payload: {
         snapshot: NetworkSnapshot;
-        frameVersions: FrameVersions;
+        frameVersion: number;
         testMetricsStale: boolean;
     }) => void;
     resetHistory: () => void;
@@ -100,7 +100,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
 
     setStatus: (status) => set({ status }),
     setSnapshot: (snapshot) => set({ snapshot }),
-    applyStreamedSnapshot: ({ snapshot, frameVersions, testMetricsStale }) => {
+    applyStreamedSnapshot: ({ snapshot, frameVersion, testMetricsStale }) => {
         set((state) => {
             const historyVersion = snapshot.historyPoint
                 ? appendHistoryPoint(snapshot.historyPoint)
@@ -108,12 +108,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
 
             return {
                 snapshot,
-                frameVersion: frameVersions.frameVersion,
-                outputGridVersion: frameVersions.outputGridVersion,
-                neuronGridsVersion: frameVersions.neuronGridsVersion,
-                paramsVersion: frameVersions.paramsVersion,
-                layerStatsVersion: frameVersions.layerStatsVersion,
-                confusionMatrixVersion: frameVersions.confusionMatrixVersion,
+                frameVersion,
                 historyVersion,
                 testMetricsStale,
                 workerError: null,
