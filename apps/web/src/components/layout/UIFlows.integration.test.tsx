@@ -133,7 +133,7 @@ describe('UI integration flows', () => {
         const tooltipId = trigger!.getAttribute('aria-describedby');
         const tooltip = tooltipId ? document.getElementById(tooltipId) : null;
         expect(tooltip).toBeInTheDocument();
-        expect(tooltip).toHaveTextContent('Use the XOR dataset');
+        expect(tooltip).toHaveTextContent('Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.');
 
         vi.useRealTimers();
     });

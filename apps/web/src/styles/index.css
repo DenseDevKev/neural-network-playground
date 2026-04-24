@@ -880,6 +880,88 @@ input[type="range"]::-webkit-slider-thumb:hover {
     box-shadow: 0 0 12px rgba(0, 229, 195, 0.12);
 }
 
+/* ── Guided lesson mode ── */
+.guided-lesson {
+    position: fixed;
+    right: var(--space-md);
+    bottom: 34px;
+    z-index: 950;
+    width: min(320px, calc(100vw - 32px));
+    padding: var(--space-md);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    border-radius: var(--radius-sm);
+    background: rgba(19, 19, 19, 0.96);
+    box-shadow: var(--shadow-lg);
+}
+
+.guided-lesson__eyebrow {
+    margin-bottom: 2px;
+    color: var(--color-warning);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.guided-lesson__title {
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.guided-lesson__progress {
+    margin-top: var(--space-sm);
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+}
+
+.guided-lesson__step-title {
+    margin-top: var(--space-xs);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    line-height: 1.35;
+}
+
+.guided-lesson__body {
+    margin-top: var(--space-sm);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+.guided-lesson__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
+}
+
+.guided-lesson__start {
+    width: 100%;
+    margin-top: var(--space-md);
+}
+
+.lesson-target {
+    border-radius: var(--radius-sm);
+}
+
+.lesson-target--active {
+    position: relative;
+    outline: 2px solid var(--color-warning);
+    outline-offset: 3px;
+    box-shadow: 0 0 0 6px rgba(234, 179, 8, 0.12), 0 0 22px rgba(234, 179, 8, 0.18);
+}
+
+@media (max-width: 720px) {
+    .guided-lesson {
+        right: var(--space-sm);
+        bottom: 38px;
+        width: calc(100vw - 16px);
+    }
+}
+
 .training-status {
     display: inline-flex;
     align-items: center;
