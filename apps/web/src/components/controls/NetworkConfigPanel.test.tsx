@@ -59,4 +59,9 @@ describe('NetworkConfigPanel loading feedback', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBe('network');
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);
     });
+
+    it('gives the activation select an accessible name', () => {
+        render(<NetworkConfigPanel />);
+        expect(screen.getByRole('combobox', { name: 'Activation' })).toBeInTheDocument();
+    });
 });

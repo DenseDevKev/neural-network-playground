@@ -43,4 +43,20 @@ describe('PresetPanel', () => {
         expect(button).toHaveClass('preset-card--selected');
         expect(button).toHaveAttribute('aria-pressed', 'true');
     });
+
+    it('keeps the applied preset highlighted after the panel remounts', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+
+        const { unmount } = render(<PresetPanel onReset={onReset} />);
+
+        await user.click(screen.getByRole('button', { name: 'Apply preset: XOR Needs Hidden Layers' }));
+
+        unmount();
+        render(<PresetPanel onReset={onReset} />);
+
+        const button = screen.getByRole('button', { name: 'Apply preset: XOR Needs Hidden Layers' });
+        expect(button).toHaveClass('preset-card--selected');
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+    });
 });

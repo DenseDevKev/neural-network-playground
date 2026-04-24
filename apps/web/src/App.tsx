@@ -1,11 +1,12 @@
 // ── Root App Component ──
-// Wires the three RegionShell layout variants (Dock / Grid / Split).
+// Wires the RegionShell layout variants (Dock / Focus / Grid / Split).
 // Layout selection lives in useLayoutStore (persisted to localStorage).
 // Each shell receives typed content props — adding a new panel means
 // adding it to the relevant content map, not editing any layout code.
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useLayoutStore } from './store/useLayoutStore.ts';
+import type { LayoutVariant } from './store/useLayoutStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import { useTraining } from './hooks/useTraining.ts';
@@ -13,6 +14,7 @@ import { Header } from './components/layout/Header.tsx';
 import { Panel } from './components/common/Panel.tsx';
 import {
     DockShell,
+    FocusShell,
     GridShell,
     SplitShell,
 } from './components/layout/RegionShell.tsx';
@@ -51,6 +53,7 @@ export default function App() {
     // Stable refs so keyboard handler never goes stale
     const trainingRef = useRef(training);
     const statusRef = useRef(status);
+    const workerErrorDialogRef = useRef<HTMLDivElement>(null);
     useEffect(() => { trainingRef.current = training; }, [training]);
     useEffect(() => { statusRef.current = status; }, [status]);
 
@@ -79,6 +82,12 @@ export default function App() {
         window.addEventListener('resize', updateCompactMode);
         return () => window.removeEventListener('resize', updateCompactMode);
     }, []);
+
+    useEffect(() => {
+        if (workerError) {
+            workerErrorDialogRef.current?.focus();
+        }
+    }, [workerError]);
 
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
@@ -167,7 +176,7 @@ export default function App() {
     );
 
     const gridConfigPanels = (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+        <div className="forge-panel-stack">
             <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
             <Panel title="Data" phase="build"><DataPanel onReset={stableReset} /></Panel>
             <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
@@ -178,11 +187,15 @@ export default function App() {
     );
 
     const gridInspectPanels = (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: '100%' }}>
+        <div className="forge-panel-stack">
             {inspectPanel}
             {codePanel}
         </div>
     );
+
+    const workerErrorDescription = workerError
+        ? `${workerError} Refresh the page to restart the playground.`
+        : '';
 
     return (
         <div className="forge-shell">
@@ -198,12 +211,22 @@ export default function App() {
 
             {/* Worker crash overlay */}
             {workerError && (
-                <div className="error-overlay" role="alertdialog" aria-modal="true">
+                <div
+                    className="error-overlay"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="worker-error-title"
+                    aria-describedby="worker-error-description"
+                    tabIndex={-1}
+                    ref={workerErrorDialogRef}
+                >
                     <div className="error-overlay__content">
                         <EmptyState
                             icon="⚠"
                             title="Worker connection lost"
-                            description={`${workerError} Refresh the page to restart the playground.`}
+                            titleId="worker-error-title"
+                            description={workerErrorDescription}
+                            descriptionId="worker-error-description"
                             action={{ label: 'Refresh page', onClick: () => window.location.reload() }}
                         />
                     </div>
@@ -214,7 +237,12 @@ export default function App() {
                 <Header training={training} effectiveLayout={effectiveLayout} isCompact={isCompact} />
             </ErrorBoundary>
 
-            <div className="forge-workspace" id="main-content" tabIndex={-1}>
+            <main
+                className="forge-workspace"
+                id="main-content"
+                tabIndex={-1}
+                aria-label="Neural network playground workspace"
+            >
                 <ErrorBoundary title="Workspace unavailable" description="Layout shell failed." actionLabel="Reload" onRetry={stableReset}>
                     {effectiveLayout === 'dock' && (
                         <DockShell
@@ -223,6 +251,15 @@ export default function App() {
                             canvasContent={canvasPanel}
                             transportContent={transport}
                             compact={isCompact}
+                        />
+                    )}
+
+                    {effectiveLayout === 'focus' && (
+                        <FocusShell
+                            leftTabContent={leftTabContent}
+                            rightTabContent={rightTabContent}
+                            canvasContent={canvasPanel}
+                            transportContent={transport}
                         />
                     )}
 
@@ -261,6 +298,7 @@ export default function App() {
                                     <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
                                     <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
+                                    {codePanel}
                                 </>
                             }
                             runLeft={
@@ -283,6 +321,7 @@ export default function App() {
                                 <>
                                     {confusionPanel}
                                     <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+                                    <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
                                 </>
                             }
@@ -290,14 +329,14 @@ export default function App() {
                         />
                     )}
                 </ErrorBoundary>
-            </div>
+            </main>
 
             <StatusBar effectiveLayout={effectiveLayout} />
         </div>
     );
 }
 
-function StatusBar({ effectiveLayout }: { effectiveLayout: 'dock' | 'grid' | 'split' }) {
+function StatusBar({ effectiveLayout }: { effectiveLayout: LayoutVariant }) {
     const status = useTrainingStore((s) => s.status);
     const phase = useLayoutStore((s) => s.phase);
     const dataset = usePlaygroundStore((s) => s.data.dataset);

@@ -22,6 +22,7 @@ vi.mock('./components/layout/Header.tsx', () => ({
 
 vi.mock('./components/layout/RegionShell.tsx', () => ({
     DockShell:  () => <section aria-label="Dock workspace">Workspace</section>,
+    FocusShell: () => <section aria-label="Focus workspace">Workspace</section>,
     GridShell:  () => <section aria-label="Grid workspace">Workspace</section>,
     SplitShell: () => <section aria-label="Split workspace">Workspace</section>,
 }));
@@ -75,6 +76,11 @@ describe('App accessibility shell', () => {
     it('renders a skip link to the main content', () => {
         render(<App />);
         expect(screen.getByRole('link', { name: 'Skip to main content' })).toHaveAttribute('href', '#main-content');
+    });
+
+    it('exposes the redesigned workspace as the main landmark', () => {
+        render(<App />);
+        expect(screen.getByRole('main', { name: 'Neural network playground workspace' })).toHaveAttribute('id', 'main-content');
     });
 
     it('has no obvious accessibility violations in the shell', async () => {
@@ -135,6 +141,11 @@ describe('App accessibility shell', () => {
             useLayoutStore.getState().setLayout('grid');
         });
         expect(useLayoutStore.getState().layout).toBe('grid');
+
+        act(() => {
+            useLayoutStore.getState().setLayout('focus');
+        });
+        expect(useLayoutStore.getState().layout).toBe('focus');
 
         act(() => {
             useLayoutStore.getState().setLayout('split');

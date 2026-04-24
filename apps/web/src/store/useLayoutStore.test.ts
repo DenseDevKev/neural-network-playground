@@ -24,8 +24,11 @@ describe('useLayoutStore', () => {
         expect(state.activeTabRight).toBe('boundary');
     });
 
-    it('setLayout switches between dock, grid, and split', () => {
+    it('setLayout switches between dock, focus, grid, and split', () => {
         const { setLayout } = useLayoutStore.getState();
+
+        setLayout('focus');
+        expect(useLayoutStore.getState().layout).toBe('focus');
 
         setLayout('grid');
         expect(useLayoutStore.getState().layout).toBe('grid');
@@ -63,6 +66,14 @@ describe('useLayoutStore', () => {
         expect(useLayoutStore.getState().activeTabRight).toBe('code');
     });
 
+    it('persists the code export tab across panel remounts', () => {
+        useLayoutStore.getState().setCodeExportTab('numpy');
+        expect(useLayoutStore.getState().codeExportTab).toBe('numpy');
+
+        useLayoutStore.getState().setCodeExportTab('tfjs');
+        expect(useLayoutStore.getState().codeExportTab).toBe('tfjs');
+    });
+
     it('persists state to localStorage under nn-playground-layout', () => {
         useLayoutStore.getState().setLayout('grid');
         useLayoutStore.getState().setPhase('run');
@@ -77,10 +88,11 @@ describe('useLayoutStore', () => {
             LAYOUT_STORAGE_KEY,
             JSON.stringify({
                 state: {
-                    layout: 'split',
+                    layout: 'focus',
                     phase: 'run',
                     activeTabLeft: 'features',
                     activeTabRight: 'loss',
+                    codeExportTab: 'numpy',
                 },
                 version: 0,
             }),
@@ -89,10 +101,11 @@ describe('useLayoutStore', () => {
         const freshStore = createLayoutStore();
         await Promise.resolve(freshStore.persist.rehydrate());
 
-        expect(freshStore.getState().layout).toBe('split');
+        expect(freshStore.getState().layout).toBe('focus');
         expect(freshStore.getState().phase).toBe('run');
         expect(freshStore.getState().activeTabLeft).toBe('features');
         expect(freshStore.getState().activeTabRight).toBe('loss');
+        expect(freshStore.getState().codeExportTab).toBe('numpy');
     });
 
     it('sanitizes invalid persisted layout state on rehydrate', async () => {
@@ -104,6 +117,7 @@ describe('useLayoutStore', () => {
                     phase: 'debug',
                     activeTabLeft: 'missing',
                     activeTabRight: 'also-missing',
+                    codeExportTab: 'also-missing',
                 },
                 version: 0,
             }),
@@ -116,5 +130,6 @@ describe('useLayoutStore', () => {
         expect(freshStore.getState().phase).toBe('build');
         expect(freshStore.getState().activeTabLeft).toBe('data');
         expect(freshStore.getState().activeTabRight).toBe('boundary');
+        expect(freshStore.getState().codeExportTab).toBe('pseudocode');
     });
 });

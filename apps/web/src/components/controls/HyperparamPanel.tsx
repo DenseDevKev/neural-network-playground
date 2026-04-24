@@ -23,6 +23,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                 <Tooltip content="Control how large each gradient update is">
                     <select
                         className="select"
+                        aria-label="Learning rate"
                         value={learningRate}
                         onChange={(e) => usePlaygroundStore.getState().setLearningRate(Number(e.target.value))}
                     >
@@ -39,6 +40,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                 <Tooltip content="Choose how training error is measured">
                     <select
                         className="select"
+                        aria-label="Loss"
                         value={lossType}
                         onChange={(e) => usePlaygroundStore.getState().setLossType(e.target.value as LossType)}
                     >
@@ -55,6 +57,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                 <Tooltip content="Select the optimization algorithm used during training">
                     <select
                         className="select"
+                        aria-label="Optimizer"
                         value={optimizer}
                         onChange={(e) => usePlaygroundStore.getState().setOptimizer(e.target.value as OptimizerType)}
                     >
@@ -71,6 +74,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                 <Tooltip content="Choose how many samples are processed per update">
                     <select
                         className="select"
+                        aria-label="Batch size"
                         value={batchSize}
                         onChange={(e) => usePlaygroundStore.getState().setBatchSize(Number(e.target.value))}
                     >
@@ -87,6 +91,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                 <Tooltip content="Apply a penalty to discourage overfitting">
                     <select
                         className="select"
+                        aria-label="Regularization"
                         value={regularization}
                         onChange={(e) => usePlaygroundStore.getState().setRegularization(e.target.value as RegularizationType)}
                     >
@@ -104,6 +109,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                     <Tooltip content="Set the strength of the regularization penalty">
                         <select
                             className="select"
+                            aria-label="Regularization rate"
                             value={regularizationRate}
                             onChange={(e) => usePlaygroundStore.getState().setRegularizationRate(Number(e.target.value))}
                         >

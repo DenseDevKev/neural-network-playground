@@ -112,10 +112,10 @@ export const Header = memo(function Header({ training, effectiveLayout, isCompac
 
             <div className="forge-topbar__kit">
                 <div className="forge-segmented" role="group" aria-label="Layout variant">
-                    {(['dock', 'grid', 'split'] as const).map((variant) => {
+                    {(['dock', 'focus', 'grid', 'split'] as const).map((variant) => {
                         const isDisabled = isCompact && variant !== 'dock';
                         const title = isDisabled
-                            ? 'Grid and split layouts are available on screens 900px and wider.'
+                            ? 'Focus, grid, and split layouts are available on screens 900px and wider.'
                             : `Switch to the ${variant} layout.`;
 
                         return (

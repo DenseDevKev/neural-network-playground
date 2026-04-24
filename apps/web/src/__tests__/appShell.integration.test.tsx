@@ -112,6 +112,26 @@ describe('App shell integration', () => {
         expect(await screen.findByText('Mock Code Export')).toBeInTheDocument();
     });
 
+    it('renders parity-complete controls in the focus layout', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        await user.click(screen.getByRole('button', { name: 'focus' }));
+
+        expect(screen.getByText('Mock Presets')).toBeInTheDocument();
+        expect(screen.getByText('Mock Data')).toBeInTheDocument();
+        expect(screen.getByText('Mock Features')).toBeInTheDocument();
+        expect(screen.getByText('Mock Network Config')).toBeInTheDocument();
+        expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
+        expect(screen.getByText('Mock Config Panel')).toBeInTheDocument();
+        expect(screen.getByText('Mock Topology Graph')).toBeInTheDocument();
+        expect(screen.getByText('Mock Boundary')).toBeInTheDocument();
+        expect(screen.getByText('Mock Loss Chart')).toBeInTheDocument();
+        expect(screen.getByText('Mock Confusion Matrix')).toBeInTheDocument();
+        expect(await screen.findByText('Mock Inspection')).toBeInTheDocument();
+        expect(await screen.findByText('Mock Code Export')).toBeInTheDocument();
+    });
+
     it('restores split build parity with network and config editors', async () => {
         const user = userEvent.setup();
         render(<App />);
@@ -125,6 +145,24 @@ describe('App shell integration', () => {
         expect(screen.getByText('Mock Features')).toBeInTheDocument();
         expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
         expect(screen.getByText('Mock Config Panel')).toBeInTheDocument();
+        expect(await screen.findByText('Mock Code Export')).toBeInTheDocument();
+    });
+
+    it('keeps both-phase config and code panels available in split run mode', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        await user.click(screen.getByRole('button', { name: 'split' }));
+        await user.click(screen.getByRole('button', { name: 'Run' }));
+
+        expect(screen.getByText('Mock Topology Graph')).toBeInTheDocument();
+        expect(screen.getByText('Mock Boundary')).toBeInTheDocument();
+        expect(screen.getByText('Mock Loss Chart')).toBeInTheDocument();
+        expect(screen.getByText('Mock Confusion Matrix')).toBeInTheDocument();
+        expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
+        expect(screen.getByText('Mock Config Panel')).toBeInTheDocument();
+        expect(await screen.findByText('Mock Inspection')).toBeInTheDocument();
+        expect(await screen.findByText('Mock Code Export')).toBeInTheDocument();
     });
 
     it('falls back to compact dock mode without stranding persisted split users', () => {
@@ -140,6 +178,7 @@ describe('App shell integration', () => {
 
         expect(screen.queryByRole('group', { name: 'Workspace phase' })).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'dock' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'focus' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'grid' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'split' })).toBeDisabled();
         expect(screen.getByText('Mock Network Config')).toBeInTheDocument();

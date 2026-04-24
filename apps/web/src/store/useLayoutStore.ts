@@ -10,34 +10,39 @@ import { createStore } from 'zustand/vanilla';
 
 export const LAYOUT_STORAGE_KEY = 'nn-playground-layout';
 
-export type LayoutVariant = 'dock' | 'grid' | 'split';
+export type LayoutVariant = 'dock' | 'focus' | 'grid' | 'split';
 export type PhaseMode = 'build' | 'run';
 
 export type LeftTabId = 'presets' | 'data' | 'features' | 'network' | 'hyperparams' | 'config';
 export type RightTabId = 'boundary' | 'loss' | 'confusion' | 'inspection' | 'code';
+export type CodeExportTab = 'pseudocode' | 'numpy' | 'tfjs';
 
 const DEFAULT_LAYOUT_STATE = {
     layout: 'dock' as LayoutVariant,
     phase: 'build' as PhaseMode,
     activeTabLeft: 'data' as LeftTabId,
     activeTabRight: 'boundary' as RightTabId,
+    codeExportTab: 'pseudocode' as CodeExportTab,
 };
 
-const VALID_LAYOUTS: readonly LayoutVariant[] = ['dock', 'grid', 'split'];
+const VALID_LAYOUTS: readonly LayoutVariant[] = ['dock', 'focus', 'grid', 'split'];
 const VALID_PHASES: readonly PhaseMode[] = ['build', 'run'];
 const VALID_LEFT_TABS: readonly LeftTabId[] = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'];
 const VALID_RIGHT_TABS: readonly RightTabId[] = ['boundary', 'loss', 'confusion', 'inspection', 'code'];
+const VALID_CODE_EXPORT_TABS: readonly CodeExportTab[] = ['pseudocode', 'numpy', 'tfjs'];
 
 export interface LayoutStore {
     layout: LayoutVariant;
     phase: PhaseMode;
     activeTabLeft: LeftTabId;
     activeTabRight: RightTabId;
+    codeExportTab: CodeExportTab;
 
     setLayout: (layout: LayoutVariant) => void;
     setPhase: (phase: PhaseMode) => void;
     setActiveTabLeft: (tab: LeftTabId) => void;
     setActiveTabRight: (tab: RightTabId) => void;
+    setCodeExportTab: (tab: CodeExportTab) => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,6 +66,9 @@ function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STA
         activeTabRight: isOneOf(state.activeTabRight, VALID_RIGHT_TABS)
             ? state.activeTabRight
             : DEFAULT_LAYOUT_STATE.activeTabRight,
+        codeExportTab: isOneOf(state.codeExportTab, VALID_CODE_EXPORT_TABS)
+            ? state.codeExportTab
+            : DEFAULT_LAYOUT_STATE.codeExportTab,
     };
 }
 
@@ -74,6 +82,7 @@ export function createLayoutStore() {
                 setPhase: (phase) => set({ phase }),
                 setActiveTabLeft: (activeTabLeft) => set({ activeTabLeft }),
                 setActiveTabRight: (activeTabRight) => set({ activeTabRight }),
+                setCodeExportTab: (codeExportTab) => set({ codeExportTab }),
             }),
             {
                 name: LAYOUT_STORAGE_KEY,

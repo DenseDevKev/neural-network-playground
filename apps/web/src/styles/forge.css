@@ -188,9 +188,9 @@
 .forge-dock--compact {
     grid-template-columns: 40px minmax(0, 1fr);
     grid-template-rows:
-        minmax(220px, 0.95fr)
-        minmax(260px, 1.1fr)
-        minmax(220px, 0.95fr)
+        minmax(140px, 0.8fr)
+        minmax(170px, 1fr)
+        minmax(150px, 0.8fr)
         auto;
 }
 
@@ -386,7 +386,66 @@
 .forge-grid__confusion { grid-column: 7 / span 3; grid-row: 6 / span 3; }
 .forge-grid__inspect   { grid-column: 10 / span 3; grid-row: 6 / span 3; }
 .forge-grid__transport { grid-column: 1 / -1; grid-row: 9; }
-.forge-grid .forge-panel { height: 100%; }
+.forge-grid__topology > .forge-panel,
+.forge-grid__boundary > .forge-panel,
+.forge-grid__loss > .forge-panel,
+.forge-grid__confusion > .forge-panel {
+    height: 100%;
+}
+.forge-grid__config,
+.forge-grid__inspect {
+    min-height: 0;
+    overflow: hidden;
+}
+
+.forge-panel-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 2px;
+}
+.forge-panel-stack > .forge-panel {
+    flex: 0 0 auto;
+}
+
+/* ─── FOCUS layout ─────────────────────────────────────────────── */
+.forge-focus {
+    display: grid;
+    grid-template-columns: var(--left-w, 300px) minmax(0, 1fr) var(--right-w, 360px);
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: 100%;
+    min-height: 0;
+    gap: var(--space-sm);
+    padding: var(--space-sm);
+    background: var(--bg-base);
+}
+.forge-focus__left,
+.forge-focus__right,
+.forge-focus__center {
+    min-height: 0;
+    min-width: 0;
+}
+.forge-focus__center {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.forge-focus__center > .forge-panel {
+    height: 100%;
+}
+.forge-focus__bottom {
+    grid-column: 1 / -1;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    padding: 8px var(--space-md);
+    display: flex;
+    align-items: center;
+}
 
 /* ─── SPLIT layout ──────────────────────────────────────────────── */
 .forge-split {
@@ -764,6 +823,10 @@
 @media (max-width: 1100px) {
     .forge-dock {
         grid-template-columns: 40px 260px 1fr 320px;
+    }
+
+    .forge-focus {
+        grid-template-columns: 260px minmax(0, 1fr) 320px;
     }
 
     .forge-dock.forge-dock--compact {

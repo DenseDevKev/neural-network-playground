@@ -1,9 +1,10 @@
-// ── RegionShell ── three layout variants driven by useLayoutStore
+// ── RegionShell ── layout variants driven by useLayoutStore
 // Dock: icon-rail + left-tabs + canvas + right-tabs + bottom-transport
+// Focus: canvas-centered overview with all side panels scrollable
 // Grid: 12-col × 8-row freeform tiles with named regions
 // Split: build ↔ run mode columns
 
-import { memo, type ReactNode } from 'react';
+import { memo, type KeyboardEvent, type ReactNode } from 'react';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 
 // ─── Tab definitions ───────────────────────────────────────────────────────
@@ -34,16 +35,44 @@ interface TabStripProps {
     tabs: TabDef[];
     active: string;
     onSelect: (id: string) => void;
+    idBase: string;
+    ariaLabel: string;
 }
 
-function TabStrip({ tabs, active, onSelect }: TabStripProps) {
+function TabStrip({ tabs, active, onSelect, idBase, ariaLabel }: TabStripProps) {
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+        const currentIndex = tabs.findIndex((tab) => tab.id === active);
+        if (currentIndex < 0) return;
+
+        let nextIndex = currentIndex;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            nextIndex = (currentIndex + 1) % tabs.length;
+        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+        } else if (event.key === 'Home') {
+            nextIndex = 0;
+        } else if (event.key === 'End') {
+            nextIndex = tabs.length - 1;
+        } else {
+            return;
+        }
+
+        event.preventDefault();
+        onSelect(tabs[nextIndex].id);
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+        buttons[nextIndex]?.focus();
+    };
+
     return (
-        <div className="forge-tabs" role="tablist">
+        <div className="forge-tabs" role="tablist" aria-label={ariaLabel} onKeyDown={handleKeyDown}>
             {tabs.map((t) => (
                 <button
                     key={t.id}
+                    id={`${idBase}-tab-${t.id}`}
                     role="tab"
                     aria-selected={active === t.id}
+                    aria-controls={`${idBase}-panel-${t.id}`}
+                    tabIndex={active === t.id ? 0 : -1}
                     className={`forge-tab ${active === t.id ? 'forge-tab--active' : ''}`}
                     onClick={() => onSelect(t.id)}
                 >
@@ -93,6 +122,7 @@ export const DockShell = memo(function DockShell({
                         className={`forge-rail__btn ${activeTabLeft === r.id ? 'forge-rail__btn--active' : ''}`}
                         title={r.label}
                         aria-label={r.label}
+                        aria-pressed={activeTabLeft === r.id}
                         onClick={() => setTabLeft(r.id)}
                     >
                         {r.icon}
@@ -103,6 +133,7 @@ export const DockShell = memo(function DockShell({
                     className={`forge-rail__btn ${activeTabLeft === 'presets' ? 'forge-rail__btn--active' : ''}`}
                     title="Presets"
                     aria-label="Presets"
+                    aria-pressed={activeTabLeft === 'presets'}
                     onClick={() => setTabLeft('presets')}
                 >
                     ★
@@ -111,8 +142,19 @@ export const DockShell = memo(function DockShell({
 
             {/* Left panel */}
             <div className="forge-dock__left">
-                <TabStrip tabs={LEFT_TABS} active={activeTabLeft} onSelect={(id) => setTabLeft(id as any)} />
-                <div className="forge-tabs__tray">
+                <TabStrip
+                    tabs={LEFT_TABS}
+                    active={activeTabLeft}
+                    onSelect={(id) => setTabLeft(id as any)}
+                    idBase="forge-left"
+                    ariaLabel="Configuration panels"
+                />
+                <div
+                    className="forge-tabs__tray"
+                    role="tabpanel"
+                    id={`forge-left-panel-${activeTabLeft}`}
+                    aria-labelledby={`forge-left-tab-${activeTabLeft}`}
+                >
                     <div className="forge-tabs__content">
                         {leftTabContent[activeTabLeft] ?? null}
                     </div>
@@ -126,8 +168,19 @@ export const DockShell = memo(function DockShell({
 
             {/* Right panel */}
             <div className="forge-dock__right">
-                <TabStrip tabs={RIGHT_TABS} active={activeTabRight} onSelect={(id) => setTabRight(id as any)} />
-                <div className="forge-tabs__tray">
+                <TabStrip
+                    tabs={RIGHT_TABS}
+                    active={activeTabRight}
+                    onSelect={(id) => setTabRight(id as any)}
+                    idBase="forge-right"
+                    ariaLabel="Output panels"
+                />
+                <div
+                    className="forge-tabs__tray"
+                    role="tabpanel"
+                    id={`forge-right-panel-${activeTabRight}`}
+                    aria-labelledby={`forge-right-tab-${activeTabRight}`}
+                >
                     <div className="forge-tabs__content">
                         {rightTabContent[activeTabRight] ?? null}
                     </div>
@@ -136,6 +189,54 @@ export const DockShell = memo(function DockShell({
 
             {/* Bottom transport */}
             <div className="forge-dock__bottom">
+                {transportContent}
+            </div>
+        </div>
+    );
+});
+
+// ─── FOCUS ────────────────────────────────────────────────────────────────
+export const FocusShell = memo(function FocusShell({
+    leftTabContent,
+    rightTabContent,
+    canvasContent,
+    transportContent,
+}: DockProps) {
+    return (
+        <div className="forge-focus">
+            <div className="forge-focus__left forge-panel-stack" aria-label="Configuration panels">
+                {LEFT_TABS.map((tab) => (
+                    <section className="forge-panel" key={tab.id} aria-label={tab.label}>
+                        <div className="forge-panel__head">
+                            <span className="forge-panel__grip" aria-hidden />
+                            <span className="forge-panel__title">{tab.label}</span>
+                        </div>
+                        <div className="forge-panel__body">
+                            {leftTabContent[tab.id] ?? null}
+                        </div>
+                    </section>
+                ))}
+            </div>
+
+            <div className="forge-focus__center">
+                {canvasContent}
+            </div>
+
+            <div className="forge-focus__right forge-panel-stack" aria-label="Output panels">
+                {RIGHT_TABS.map((tab) => (
+                    <section className="forge-panel" key={tab.id} aria-label={tab.label}>
+                        <div className="forge-panel__head">
+                            <span className="forge-panel__grip" aria-hidden />
+                            <span className="forge-panel__title">{tab.label}</span>
+                        </div>
+                        <div className="forge-panel__body">
+                            {rightTabContent[tab.id] ?? null}
+                        </div>
+                    </section>
+                ))}
+            </div>
+
+            <div className="forge-focus__bottom">
                 {transportContent}
             </div>
         </div>

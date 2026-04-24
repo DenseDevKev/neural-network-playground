@@ -1,24 +1,24 @@
 // ── Code Export Panel ──
 // Tabbed panel that generates pseudocode, NumPy, and TF.js code from the current network.
 
-import { useState, useMemo, useCallback, memo } from 'react';
+import { useMemo, useCallback, memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { useLayoutStore, type CodeExportTab } from '../../store/useLayoutStore.ts';
 import { generatePseudocode, generateNumPy, generateTFJS } from '@nn-playground/shared';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { getFrameBuffer, unflattenBiases, unflattenWeights } from '../../worker/frameBuffer.ts';
 import { useTimedState } from '../../hooks/useTimedState.ts';
 
-type CodeTab = 'pseudocode' | 'numpy' | 'tfjs';
-
-const TABS: { id: CodeTab; label: string }[] = [
+const TABS: { id: CodeExportTab; label: string }[] = [
     { id: 'pseudocode', label: 'Pseudocode' },
     { id: 'numpy', label: 'NumPy' },
     { id: 'tfjs', label: 'TF.js' },
 ];
 
 export const CodeExportPanel = memo(function CodeExportPanel() {
-    const [activeTab, setActiveTab] = useState<CodeTab>('pseudocode');
+    const activeTab = useLayoutStore((s) => s.codeExportTab);
+    const setActiveTab = useLayoutStore((s) => s.setCodeExportTab);
     const [copied, setCopied] = useTimedState(false, 2000);
 
     const network = usePlaygroundStore((s) => s.network);
@@ -62,7 +62,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         navigator.clipboard.writeText(code).then(() => {
             setCopied(true);
         });
-    }, [code]);
+    }, [code, setCopied]);
 
     return (
         <div className="code-export-panel">

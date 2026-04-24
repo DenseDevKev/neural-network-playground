@@ -6,6 +6,7 @@ import { act, render, screen, fireEvent } from '@testing-library/react';
 import { CodeExportPanel } from './CodeExportPanel';
 import { useTrainingStore } from '../../store/useTrainingStore';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore';
+import { useLayoutStore } from '../../store/useLayoutStore';
 import { resetFrameBuffer, updateFrameBuffer } from '../../worker/frameBuffer';
 import {
     DEFAULT_DATA,
@@ -57,6 +58,14 @@ describe('CodeExportPanel', () => {
             workerError: null,
             testMetricsStale: false,
         });
+
+        useLayoutStore.setState({
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'code',
+            codeExportTab: 'pseudocode',
+        } as any);
 
         // Seed the frame buffer with weights
         const weights = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
@@ -173,5 +182,18 @@ describe('CodeExportPanel', () => {
         const callArg = (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mock.calls[0][0];
         const renderedCode = document.querySelector('.code-export__code')?.textContent ?? '';
         expect(callArg).toBe(renderedCode);
+    });
+
+    it('preserves the selected export tab after the panel remounts', async () => {
+        const { unmount } = render(<CodeExportPanel />);
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: 'NumPy' }));
+        });
+
+        unmount();
+        render(<CodeExportPanel />);
+
+        expect(screen.getByRole('button', { name: 'NumPy' })).toHaveClass('active');
     });
 });

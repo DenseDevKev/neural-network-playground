@@ -95,13 +95,14 @@ describe('Header', () => {
         expect(training.pause).toHaveBeenCalledTimes(1);
     });
 
-    it('renders the layout picker with dock, grid, and split options', () => {
+    it('renders the layout picker with dock, focus, grid, and split options', () => {
         renderHeader();
 
         const picker = screen.getByRole('group', { name: 'Layout variant' });
         expect(picker).toBeInTheDocument();
 
         expect(screen.getByRole('button', { name: 'dock' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'focus' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'grid' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument();
     });
@@ -109,6 +110,9 @@ describe('Header', () => {
     it('updates the layout store when a layout option is clicked on desktop', async () => {
         const user = userEvent.setup();
         renderHeader();
+
+        await user.click(screen.getByRole('button', { name: 'focus' }));
+        expect(useLayoutStore.getState().layout).toBe('focus');
 
         await user.click(screen.getByRole('button', { name: 'grid' }));
         expect(useLayoutStore.getState().layout).toBe('grid');
@@ -142,6 +146,7 @@ describe('Header', () => {
         expect(screen.getByRole('group', { name: 'Layout variant' })).toBeInTheDocument();
         expect(screen.queryByRole('group', { name: 'Workspace phase' })).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'dock' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'focus' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'grid' })).toBeDisabled();
         expect(screen.getByRole('button', { name: 'split' })).toBeDisabled();
     });

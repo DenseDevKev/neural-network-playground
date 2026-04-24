@@ -95,6 +95,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                 <Tooltip content="Choose the activation function for hidden layers">
                     <select
                         className="select"
+                        aria-label="Activation"
                         value={activation}
                         onChange={(e) => {
                             beginNetworkChange();
