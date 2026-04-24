@@ -25,8 +25,19 @@ const CHART_H = 140;
 const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 
 const Y_AXIS_PADDED_MAX_MULTIPLIER = 1.1;
+const PLATEAU_WINDOW = 8;
+const PLATEAU_EPSILON = 0.005;
+const DIVERGENCE_MULTIPLIER = 1.5;
 
 type ChartTab = 'loss' | 'accuracy';
+
+interface LossDiagnostics {
+    bestLoss: number;
+    bestStep: number;
+    generalizationGap: number | null;
+    plateauIndex: number | null;
+    divergenceIndex: number | null;
+}
 
 // ── Full redraw ──────────────────────────────────────────────────────────────
 
@@ -35,6 +46,7 @@ function drawChart(
     hist: HistoryArrays,
     tab: ChartTab,
     yMax: number,
+    diagnostics?: LossDiagnostics | null,
 ) {
     const w = CHART_W;
     const h = CHART_H;
@@ -64,14 +76,16 @@ function drawChart(
 
         drawTypedLine(
             ctx, hist.trainLoss, hist.count, scaleX,
-            (v) => scaleY(Math.min(v, yMax)),
+            (v) => scaleY(Math.min(safeLossValue(v, yMax), yMax)),
             '#00e5c3', false, true, plotH,
         );
         drawTypedLine(
             ctx, hist.testLoss, hist.count, scaleX,
-            (v) => scaleY(Math.min(v, yMax)),
+            (v) => scaleY(Math.min(safeLossValue(v, yMax), yMax)),
             '#7c5cfc', true, false,
         );
+
+        drawLossDiagnosticMarkers(ctx, hist, diagnostics, scaleX, plotH);
 
         drawLegend(ctx, [
             { color: '#00e5c3', label: 'Train', dashed: false },
@@ -120,10 +134,87 @@ function computeYMax(hist: HistoryArrays, tab: ChartTab): number {
     if (hist.count === 0) return 0.01;
     let maxLoss = 0;
     for (let i = 0; i < hist.count; i++) {
-        if (hist.trainLoss[i] > maxLoss) maxLoss = hist.trainLoss[i];
-        if (hist.testLoss[i] > maxLoss) maxLoss = hist.testLoss[i];
+        if (Number.isFinite(hist.trainLoss[i]) && hist.trainLoss[i] > maxLoss) maxLoss = hist.trainLoss[i];
+        if (Number.isFinite(hist.testLoss[i]) && hist.testLoss[i] > maxLoss) maxLoss = hist.testLoss[i];
     }
     return Math.max(maxLoss * Y_AXIS_PADDED_MAX_MULTIPLIER, 0.01);
+}
+
+function safeLossValue(value: number, fallback: number): number {
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function computeLossDiagnostics(hist: HistoryArrays): LossDiagnostics | null {
+    if (hist.count === 0) return null;
+
+    let bestLoss = Number.POSITIVE_INFINITY;
+    let bestStep = 0;
+    let bestTrainLoss = Number.POSITIVE_INFINITY;
+    let bestTrainIndex = 0;
+
+    for (let i = 0; i < hist.count; i++) {
+        const testLoss = hist.testLoss[i];
+        if (Number.isFinite(testLoss) && testLoss < bestLoss) {
+            bestLoss = testLoss;
+            bestStep = i;
+        }
+
+        const trainLoss = hist.trainLoss[i];
+        if (Number.isFinite(trainLoss) && trainLoss < bestTrainLoss) {
+            bestTrainLoss = trainLoss;
+            bestTrainIndex = i;
+        }
+    }
+
+    if (!Number.isFinite(bestLoss)) {
+        bestLoss = bestTrainLoss;
+        bestStep = bestTrainIndex;
+    }
+    if (!Number.isFinite(bestLoss)) return null;
+
+    const latestIndex = hist.count - 1;
+    const latestTrain = hist.trainLoss[latestIndex];
+    const latestTest = hist.testLoss[latestIndex];
+    const generalizationGap =
+        Number.isFinite(latestTrain) && Number.isFinite(latestTest)
+            ? latestTest - latestTrain
+            : null;
+
+    let plateauIndex: number | null = null;
+    if (hist.count >= PLATEAU_WINDOW) {
+        const start = hist.count - PLATEAU_WINDOW;
+        let minLoss = Number.POSITIVE_INFINITY;
+        let maxLoss = Number.NEGATIVE_INFINITY;
+        let allFinite = true;
+        for (let i = start; i < hist.count; i++) {
+            const loss = hist.trainLoss[i];
+            if (!Number.isFinite(loss)) {
+                allFinite = false;
+                break;
+            }
+            minLoss = Math.min(minLoss, loss);
+            maxLoss = Math.max(maxLoss, loss);
+        }
+
+        const tolerance = Math.max(Math.abs(hist.trainLoss[start]) * PLATEAU_EPSILON, 0.0005);
+        if (allFinite && maxLoss - minLoss <= tolerance) {
+            plateauIndex = start;
+        }
+    }
+
+    let divergenceIndex: number | null = null;
+    if (!Number.isFinite(latestTrain) || !Number.isFinite(latestTest)) {
+        divergenceIndex = latestIndex;
+    } else if (
+        Number.isFinite(bestTrainLoss) &&
+        bestTrainLoss > 0 &&
+        latestTrain > bestTrainLoss * DIVERGENCE_MULTIPLIER &&
+        latestIndex > bestTrainIndex
+    ) {
+        divergenceIndex = latestIndex;
+    }
+
+    return { bestLoss, bestStep, generalizationGap, plateauIndex, divergenceIndex };
 }
 
 // ── Grid / line / legend helpers (unchanged) ─────────────────────────────────
@@ -198,16 +289,51 @@ function drawTypedLine(
     }
 
     ctx.beginPath();
+    let hasPoint = false;
     for (let i = 0; i < count; i++) {
+        if (!Number.isFinite(data[i])) continue;
         const x = scaleX(i);
         const y = scaleY(data[i]);
-        if (i === 0) ctx.moveTo(x, y);
+        if (!hasPoint) {
+            ctx.moveTo(x, y);
+            hasPoint = true;
+        }
         else ctx.lineTo(x, y);
     }
-    ctx.stroke();
+    if (hasPoint) ctx.stroke();
 
     ctx.setLineDash([]);
     ctx.shadowBlur = 0;
+}
+
+function drawLossDiagnosticMarkers(
+    ctx: CanvasRenderingContext2D,
+    hist: HistoryArrays,
+    diagnostics: LossDiagnostics | null | undefined,
+    scaleX: (i: number) => number,
+    plotH: number,
+) {
+    if (!diagnostics || hist.count < 2) return;
+
+    const drawMarker = (index: number | null, color: string, label: string, y: number) => {
+        if (index === null) return;
+        const x = scaleX(Math.max(0, Math.min(hist.count - 1, index)));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, PADDING.top);
+        ctx.lineTo(x, PADDING.top + plotH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = color;
+        ctx.font = '9px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x, y);
+    };
+
+    drawMarker(diagnostics.plateauIndex, '#f6c85f', 'Plateau', PADDING.top + 10);
+    drawMarker(diagnostics.divergenceIndex, '#ff6b6b', 'Divergence', PADDING.top + 22);
 }
 
 function drawLegend(
@@ -257,6 +383,7 @@ export const LossChart = memo(function LossChart() {
     // Re-read history on each commit. Returned object is a reference view
     // onto the packed Float64Arrays; no allocation here.
     const hist = readHistory();
+    const lossDiagnostics = computeLossDiagnostics(hist);
 
     // If we switch to regression, snap back to loss tab
     useEffect(() => {
@@ -297,7 +424,7 @@ export const LossChart = memo(function LossChart() {
         lastCountRef.current = nextHist.count;
         lastCompactionRef.current = compactionNow;
 
-        drawChart(ctx, nextHist, tab, nextYMax);
+        drawChart(ctx, nextHist, tab, nextYMax, computeLossDiagnostics(nextHist));
     }, [historyVersion, tab]);
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -472,6 +599,34 @@ export const LossChart = memo(function LossChart() {
                     </>
                 )}
             </div>
+            {tab === 'loss' && lossDiagnostics && (
+                <div
+                    aria-label="Loss diagnostics"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                        marginTop: 6,
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 10,
+                        color: 'var(--text-secondary)',
+                    }}
+                >
+                    <span>Best {lossDiagnostics.bestLoss.toFixed(4)}</span>
+                    <span>Gap {lossDiagnostics.generalizationGap === null ? 'n/a' : formatSigned(lossDiagnostics.generalizationGap)}</span>
+                    {lossDiagnostics.plateauIndex !== null && (
+                        <span style={{ color: '#f6c85f' }}>Plateau</span>
+                    )}
+                    {lossDiagnostics.divergenceIndex !== null && (
+                        <span style={{ color: '#ff6b6b' }}>Divergence</span>
+                    )}
+                </div>
+            )}
         </div>
     );
 });
+
+function formatSigned(value: number): string {
+    return `${value >= 0 ? '+' : ''}${value.toFixed(4)}`;
+}

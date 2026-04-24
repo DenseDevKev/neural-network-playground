@@ -211,11 +211,11 @@ export function useTraining(): TrainingHook {
             const ts = useTrainingStore.getState();
 
             if (msg.type === 'snapshot') {
-                ts.clearWorkerError();
-                ts.setSnapshot(createStreamSnapshot(msg, ts.snapshot));
-                ts.setFrameVersion(getFrameVersion());
-                ts.setTestMetricsStale(msg.scalars.testMetricsStale === true);
-                if (msg.historyPoint) ts.addHistoryPoint(msg.historyPoint);
+                ts.applyStreamedSnapshot({
+                    snapshot: createStreamSnapshot(msg, ts.snapshot),
+                    frameVersion: getFrameVersion(),
+                    testMetricsStale: msg.scalars.testMetricsStale === true,
+                });
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused' || msg.status === 'idle') {
                     ts.setStatus(msg.status);
@@ -289,7 +289,6 @@ export function useTraining(): TrainingHook {
             }
         };
         sync();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [network, training, data, features, configSyncNonce]);
 
     // Sync demand changes to worker

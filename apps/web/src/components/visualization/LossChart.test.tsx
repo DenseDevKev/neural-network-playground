@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { LossChart } from './LossChart.tsx';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -82,6 +82,30 @@ describe('LossChart', () => {
         });
 
         expect(fillRect.mock.calls.length).toBeGreaterThan(initialPaints);
+    });
+
+    it('shows loss diagnostics from the history buffer', () => {
+        render(<LossChart />);
+
+        expect(screen.getByText(/Best 0\.8000/)).toBeInTheDocument();
+        expect(screen.getByText(/Gap \+0\.1000/)).toBeInTheDocument();
+    });
+
+    it('marks a plateau when recent loss stops improving', () => {
+        act(() => {
+            useTrainingStore.getState().resetHistory();
+            for (let step = 0; step < 8; step++) {
+                useTrainingStore.getState().addHistoryPoint({
+                    step,
+                    trainLoss: 0.5,
+                    testLoss: 0.55,
+                });
+            }
+        });
+
+        render(<LossChart />);
+
+        expect(screen.getByText('Plateau')).toBeInTheDocument();
     });
 
     afterEach(() => {
