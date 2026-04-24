@@ -35,12 +35,8 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
 
             {/* Hidden layers +/- */}
             <div className="control-row" style={{ marginBottom: 8 }}>
-                <span className="control-label">Hidden layers</span>
-                <div
-                    className="forge-stepper"
-                    role="group"
-                    aria-label="Hidden layer count"
-                >
+                <span className="control-label">Hidden Layers</span>
+                <div className="layer-controls">
                     <Tooltip content="Cause: removing a hidden layer lowers model capacity. Effect: the boundary becomes simpler and may underfit curved data.">
                         <button
                             type="button"
@@ -55,9 +51,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                             −
                         </button>
                     </Tooltip>
-                    <span className="forge-stepper__value" aria-live="polite">
-                        {hiddenLayers.length}
-                    </span>
+                    <span className="layer-controls__count">{hiddenLayers.length}</span>
                     <Tooltip content="Cause: adding a hidden layer adds another learned transformation. Effect: the boundary can bend more, but training may take longer.">
                         <button
                             type="button"

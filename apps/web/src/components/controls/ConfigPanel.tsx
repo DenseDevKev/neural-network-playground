@@ -99,17 +99,17 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
         <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <Tooltip content="Cause: export saves the current data, network, feature, and training choices. Effect: you can replay the same experiment later.">
-                    <button type="button" className="btn btn--ghost btn--sm" onClick={handleExport}>
+                    <button className="btn btn--ghost btn--sm" onClick={handleExport}>
                         ↓ Export JSON
                     </button>
                 </Tooltip>
                 <Tooltip content="Cause: import replaces the current configuration with a saved one. Effect: the playground resets into that experiment state.">
-                    <button type="button" className="btn btn--ghost btn--sm" onClick={handleImport}>
+                    <button className="btn btn--ghost btn--sm" onClick={handleImport}>
                         ↑ Import JSON
                     </button>
                 </Tooltip>
                 <Tooltip content="Cause: copying the URL captures the current configuration in the address. Effect: someone else can open the same setup.">
-                    <button type="button" className="btn btn--ghost btn--sm" onClick={handleCopyUrl}>
+                    <button className="btn btn--ghost btn--sm" onClick={handleCopyUrl}>
                         🔗 Copy URL
                     </button>
                 </Tooltip>

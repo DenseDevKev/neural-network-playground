@@ -71,7 +71,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             {/* Problem type toggle */}
             <div className="control-row" style={{ marginBottom: 12 }}>
                 <span className="control-label">Problem</span>
-                <div className="chip-group" role="group" aria-label="Problem type">
+                <div className="chip-group">
                     <Tooltip content="Cause: classification uses class labels. Effect: the boundary view shows which region the model assigns to each class.">
                         <button
                             type="button"
@@ -184,7 +184,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 />
             </Tooltip>
 
-            <Tooltip content="Reset the model and regenerate the current dataset with the latest settings" block>
+            <Tooltip content="Cause: regenerating samples redraws the same dataset pattern with the current settings. Effect: you can check whether behavior is robust or seed-specific." block>
                 <button
                     type="button"
                     className="btn btn--ghost btn--sm"

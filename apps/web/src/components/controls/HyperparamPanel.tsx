@@ -58,8 +58,8 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
 
             {/* LR schedule */}
             <div className="control-row">
-                <span className="control-label">LR schedule</span>
-                <Tooltip content="Shape the learning rate as training progresses">
+                <span className="control-label">Learning rate</span>
+                <Tooltip content="Cause: larger learning rates take bigger weight updates. Effect: training can move faster, but too large can overshoot and make loss jump.">
                     <select
                         className="select"
                         aria-label="LR schedule"
@@ -168,7 +168,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
             {/* Loss */}
             <div className="control-row">
                 <span className="control-label">Loss</span>
-                <Tooltip content="Choose how training error is measured">
+                <Tooltip content="Cause: loss defines what the model is punished for. Effect: cross entropy sharpens classification confidence, while MSE fits numeric distance.">
                     <select
                         className="select"
                         aria-label="Loss"
@@ -203,7 +203,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
             {/* Optimizer */}
             <div className="control-row">
                 <span className="control-label">Optimizer</span>
-                <Tooltip content="Select the optimization algorithm used during training">
+                <Tooltip content="Cause: optimizers choose how gradients become weight updates. Effect: momentum and Adam can smooth or adapt steps compared with plain SGD.">
                     <select
                         className="select"
                         aria-label="Optimizer"
@@ -293,7 +293,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
             {/* Batch size */}
             <div className="control-row">
                 <span className="control-label">Batch size</span>
-                <Tooltip content="Choose how many samples are processed per update">
+                <Tooltip content="Cause: larger batches average more samples per update. Effect: the path is steadier, but each visible update reacts less often.">
                     <select
                         className="select"
                         aria-label="Batch size"
@@ -344,7 +344,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
             {/* Regularization */}
             <div className="control-row">
                 <span className="control-label">Regularization</span>
-                <Tooltip content="Apply a penalty to discourage overfitting">
+                <Tooltip content="Cause: regularization penalizes large or unnecessary weights. Effect: the boundary often smooths out and generalizes better on noisy data.">
                     <select
                         className="select"
                         aria-label="Regularization"
@@ -361,8 +361,8 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
             {/* Regularization rate */}
             {regularization !== 'none' && (
                 <div className="control-row">
-                    <span className="control-label">Learning rate</span>
-                    <Tooltip content="Cause: larger learning rates take bigger weight updates. Effect: training can move faster, but too large can overshoot and make loss jump.">
+                    <span className="control-label">Reg. rate</span>
+                    <Tooltip content="Cause: increasing the penalty pushes weights harder toward simpler solutions. Effect: too much can underfit and leave the boundary too flat.">
                         <select
                             className="select"
                             aria-label="Learning rate"

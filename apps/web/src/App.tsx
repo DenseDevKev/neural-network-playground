@@ -107,15 +107,6 @@ export default function App() {
         [lessonHighlight],
     );
 
-    useEffect(() => {
-        setDemand(deriveVisualizationDemand({
-            layout: effectiveLayout,
-            phase,
-            activeTabRight,
-            graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
-        }));
-    }, [activeTabRight, canvasNetworkGraph, effectiveLayout, phase, setDemand]);
-
     // Performance observer (dev only)
     useEffect(() => {
         if (!import.meta.env.DEV || typeof PerformanceObserver === 'undefined') return;
