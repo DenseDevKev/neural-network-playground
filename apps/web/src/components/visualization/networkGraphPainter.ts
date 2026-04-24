@@ -31,6 +31,24 @@ export interface NodeRef {
     nodeIdx: number;
 }
 
+export type EdgeFilter = 'all' | 'strong' | 'positive' | 'negative';
+
+export const edgeFilterOptions: ReadonlyArray<{ id: EdgeFilter; label: string }> = [
+    { id: 'all', label: 'All' },
+    { id: 'strong', label: 'Strong' },
+    { id: 'positive', label: '+' },
+    { id: 'negative', label: '-' },
+];
+
+const STRONG_EDGE_THRESHOLD = 1.5;
+
+export function shouldRenderEdge(weight: number, filter: EdgeFilter): boolean {
+    if (filter === 'strong') return Math.abs(weight) >= STRONG_EDGE_THRESHOLD;
+    if (filter === 'positive') return weight >= 0;
+    if (filter === 'negative') return weight < 0;
+    return true;
+}
+
 // ── Visual constants (must match the SVG renderer for parity) ───────────────
 
 export const NODE_RADIUS = 14;
@@ -106,6 +124,7 @@ export function paintEdges(
     nodePositions: NodePos[][],
     flat: FlatNetworkView | null,
     hovered: EdgeRef | null,
+    filter: EdgeFilter = 'all',
 ): void {
     if (!flat) return;
 
@@ -121,19 +140,19 @@ export function paintEdges(
     const bandMagsNeg = [0, 0, 0];
 
     const addEdge = (prev: NodePos, node: NodePos, weight: number) => {
+        if (!shouldRenderEdge(weight, filter)) return;
         const dx = cpX(prev, node);
-        const path = new Path2D();
+        const abs = Math.abs(weight);
+        const band = abs < 0.5 ? 0 : abs < 1.5 ? 1 : 2;
+        const arr = weight >= 0 ? bandsPos : bandsNeg;
+        const mags = weight >= 0 ? bandMagsPos : bandMagsNeg;
+        const path = arr[band];
         path.moveTo(prev.x, prev.y);
         path.bezierCurveTo(
             prev.x + dx, prev.y,
             node.x - dx, node.y,
             node.x, node.y,
         );
-        const abs = Math.abs(weight);
-        const band = abs < 0.5 ? 0 : abs < 1.5 ? 1 : 2;
-        const arr = weight >= 0 ? bandsPos : bandsNeg;
-        const mags = weight >= 0 ? bandMagsPos : bandMagsNeg;
-        arr[band].addPath(path);
         if (abs > mags[band]) mags[band] = abs;
     };
 
@@ -168,7 +187,7 @@ export function paintEdges(
 
     // Hovered edge gets its own stroke on top with the exact weight, so the
     // highlight is visually correct (not just a band approximation).
-    if (hovered) {
+    if (hovered && shouldRenderEdge(hovered.weight, filter)) {
         const prevLayer = nodePositions[hovered.layerIdx - 1];
         const layer = nodePositions[hovered.layerIdx];
         const prev = prevLayer?.[hovered.prevIdx];
@@ -229,18 +248,18 @@ export function paintNodes(
 
         for (let i = 0; i < layer.length; i++) {
             const n = layer[i];
-            const subPath = new Path2D();
-            subPath.moveTo(n.x + NODE_RADIUS, n.y);
-            subPath.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
 
             if (target) {
-                target.addPath(subPath);
+                target.moveTo(n.x + NODE_RADIUS, n.y);
+                target.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
             } else {
                 // Hidden layer — bias-tinted; bucket by sign.
                 const bias = flat
                     ? flat.biases[layerBiasOffset(flat.layerSizes, l - 1) + i]
                     : 0;
-                (bias >= 0 ? hiddenPos : hiddenNeg).addPath(subPath);
+                const hiddenTarget = bias >= 0 ? hiddenPos : hiddenNeg;
+                hiddenTarget.moveTo(n.x + NODE_RADIUS, n.y);
+                hiddenTarget.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
             }
         }
     }

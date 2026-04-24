@@ -31,15 +31,18 @@ import {
 } from '../../worker/frameBuffer.ts';
 import {
     type EdgeRef,
+    type EdgeFilter,
     type FlatNetworkView,
     type NodePos,
     type NodeRef,
     NODE_RADIUS,
+    edgeFilterOptions,
     hitTestEdge,
     hitTestNode,
     paintEdges,
     paintLabels,
     paintNodes,
+    shouldRenderEdge,
 } from './networkGraphPainter.ts';
 
 // ── Layout constants — match the SVG renderer for visual parity ────────────
@@ -48,6 +51,9 @@ const MIN_NODE_GAP = 42;
 const PAD_X = 60;
 const PAD_Y = 40;
 const HEATMAP_SIZE = 24;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 1.25;
 
 interface TooltipData {
     x: number;
@@ -116,6 +122,20 @@ interface NeuronGridEntry {
     gridSize: number;
 }
 
+interface Viewport {
+    zoom: number;
+    panX: number;
+    panY: number;
+}
+
+function clampZoom(zoom: number): number {
+    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+}
+
+function zoomLabel(zoom: number): string {
+    return `${Math.round(zoom * 100)}%`;
+}
+
 export function NetworkGraphCanvas() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const features = usePlaygroundStore((s) => s.features);
@@ -126,6 +146,9 @@ export function NetworkGraphCanvas() {
     const [tooltip, setTooltip] = useState<TooltipData | null>(null);
     const [hoveredEdge, setHoveredEdge] = useState<EdgeRef | null>(null);
     const [hoveredNode, setHoveredNode] = useState<NodeRef | null>(null);
+    const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>('all');
+    const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
+    const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
 
     const activeFeatures = useMemo(() => getActiveFeatures(features), [features]);
     const inputSize = activeFeatures.length;
@@ -270,6 +293,42 @@ export function NetworkGraphCanvas() {
         [neuronGrids, layers],
     );
 
+    const fitGraphToView = useCallback(() => {
+        const fitZoom = clampZoom(Math.min(
+            containerSize.width / canvasWidth,
+            containerSize.height / canvasHeight,
+            1,
+        ));
+        setViewport({
+            zoom: fitZoom,
+            panX: (containerSize.width - canvasWidth * fitZoom) / 2,
+            panY: (containerSize.height - canvasHeight * fitZoom) / 2,
+        });
+    }, [containerSize.width, containerSize.height, canvasWidth, canvasHeight]);
+
+    const zoomGraph = useCallback((direction: 1 | -1) => {
+        setViewport((current) => {
+            const nextZoom = clampZoom(direction > 0 ? current.zoom * ZOOM_STEP : current.zoom / ZOOM_STEP);
+            const centerX = containerSize.width / 2;
+            const centerY = containerSize.height / 2;
+            const worldX = (centerX - current.panX) / current.zoom;
+            const worldY = (centerY - current.panY) / current.zoom;
+            return {
+                zoom: nextZoom,
+                panX: centerX - worldX * nextZoom,
+                panY: centerY - worldY * nextZoom,
+            };
+        });
+    }, [containerSize.width, containerSize.height]);
+
+    const screenToWorld = useCallback(
+        (screenX: number, screenY: number) => ({
+            x: (screenX - viewport.panX) / viewport.zoom,
+            y: (screenY - viewport.panY) / viewport.zoom,
+        }),
+        [viewport],
+    );
+
     /** Tooltip text for a hovered node, mirroring the SVG renderer's format. */
     const buildNodeTooltipLines = useCallback(
         (layerIdx: number, nodeIdx: number): string[] => {
@@ -308,25 +367,35 @@ export function NetworkGraphCanvas() {
         if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
-        const physicalW = Math.round(canvasWidth * dpr);
-        const physicalH = Math.round(canvasHeight * dpr);
+        const logicalW = Math.max(1, containerSize.width);
+        const logicalH = Math.max(1, containerSize.height);
+        const physicalW = Math.round(logicalW * dpr);
+        const physicalH = Math.round(logicalH * dpr);
         if (canvas.width !== physicalW || canvas.height !== physicalH) {
             canvas.width = physicalW;
             canvas.height = physicalH;
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        ctx.clearRect(0, 0, logicalW, logicalH);
 
-        paintEdges(ctx, nodePositions, flat, hoveredEdge);
+        ctx.save();
+        ctx.translate(viewport.panX, viewport.panY);
+        ctx.scale(viewport.zoom, viewport.zoom);
+        paintEdges(ctx, nodePositions, flat, hoveredEdge, edgeFilter);
         paintNodes(ctx, nodePositions, flat);
         paintLabels(ctx, nodePositions, layerLabels);
+        ctx.restore();
     }, [
         canvasWidth,
         canvasHeight,
+        containerSize.width,
+        containerSize.height,
         nodePositions,
         flat,
         hoveredEdge,
+        edgeFilter,
         layerLabels,
+        viewport,
         // re-paint on every snapshot even if `flat` reference is stable —
         // weights mutate in place inside the Float32Array.
         frameVersion,
@@ -338,13 +407,22 @@ export function NetworkGraphCanvas() {
             const canvas = canvasRef.current;
             if (!canvas) return;
             const rect = canvas.getBoundingClientRect();
-            // Map client coordinates back into canvas-logical units (the
-            // canvas is rendered to fit its container via CSS `width: 100%`,
-            // so the on-screen size and the logical drawing size differ).
-            const sx = canvasWidth / rect.width;
-            const sy = canvasHeight / rect.height;
-            const x = (event.clientX - rect.left) * sx;
-            const y = (event.clientY - rect.top) * sy;
+            const screenX = event.clientX - rect.left;
+            const screenY = event.clientY - rect.top;
+
+            if (dragRef.current) {
+                const dx = event.clientX - dragRef.current.x;
+                const dy = event.clientY - dragRef.current.y;
+                dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+                setViewport((current) => ({
+                    ...current,
+                    panX: current.panX + dx,
+                    panY: current.panY + dy,
+                }));
+                return;
+            }
+
+            const { x, y } = screenToWorld(screenX, screenY);
 
             const node = hitTestNode(x, y, nodePositions);
             if (node) {
@@ -357,8 +435,8 @@ export function NetworkGraphCanvas() {
                 }
                 if (hoveredEdge) setHoveredEdge(null);
                 setTooltip({
-                    x: event.clientX - rect.left + 12,
-                    y: event.clientY - rect.top - 8,
+                    x: screenX + 12,
+                    y: screenY - 8,
                     text: buildNodeTooltipLines(node.layerIdx, node.nodeIdx),
                 });
                 return;
@@ -366,7 +444,7 @@ export function NetworkGraphCanvas() {
             if (hoveredNode) setHoveredNode(null);
 
             const edge = hitTestEdge(x, y, nodePositions, flat);
-            if (edge) {
+            if (edge && shouldRenderEdge(edge.weight, edgeFilter)) {
                 if (
                     !hoveredEdge ||
                     hoveredEdge.layerIdx !== edge.layerIdx ||
@@ -376,10 +454,11 @@ export function NetworkGraphCanvas() {
                     setHoveredEdge(edge);
                 }
                 setTooltip({
-                    x: event.clientX - rect.left + 12,
-                    y: event.clientY - rect.top - 8,
+                    x: screenX + 12,
+                    y: screenY - 8,
                     text: [
-                        `Weight: ${edge.weight.toFixed(4)}`,
+                        `${edge.weight >= 0 ? 'Positive' : 'Negative'} weight: ${edge.weight.toFixed(4)}`,
+                        `Magnitude: ${Math.abs(edge.weight).toFixed(4)}`,
                         `Layer ${edge.layerIdx}, [${edge.prevIdx}→${edge.nodeIdx}]`,
                     ],
                 });
@@ -389,18 +468,56 @@ export function NetworkGraphCanvas() {
             if (tooltip) setTooltip(null);
         },
         [
-            canvasWidth,
-            canvasHeight,
             nodePositions,
             flat,
+            edgeFilter,
             hoveredEdge,
             hoveredNode,
             tooltip,
             buildNodeTooltipLines,
+            screenToWorld,
         ],
     );
 
+    const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+        if (event.button !== 0) return;
+        dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        if (event.currentTarget.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+        setTooltip(null);
+    }, []);
+
+    const finishPointerDrag = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+        if (dragRef.current?.pointerId === event.pointerId) {
+            dragRef.current = null;
+            if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+        }
+    }, []);
+
+    const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
+        event.preventDefault();
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const screenX = event.clientX - rect.left;
+        const screenY = event.clientY - rect.top;
+        setViewport((current) => {
+            const nextZoom = clampZoom(event.deltaY < 0 ? current.zoom * ZOOM_STEP : current.zoom / ZOOM_STEP);
+            const worldX = (screenX - current.panX) / current.zoom;
+            const worldY = (screenY - current.panY) / current.zoom;
+            return {
+                zoom: nextZoom,
+                panX: screenX - worldX * nextZoom,
+                panY: screenY - worldY * nextZoom,
+            };
+        });
+    }, []);
+
     const handlePointerLeave = useCallback(() => {
+        dragRef.current = null;
         setHoveredEdge(null);
         setHoveredNode(null);
         setTooltip(null);
@@ -447,34 +564,81 @@ export function NetworkGraphCanvas() {
                     width: '100%',
                     height: '100%',
                     display: 'block',
-                    cursor: hoveredNode || hoveredEdge ? 'pointer' : 'default',
+                    cursor: dragRef.current ? 'grabbing' : hoveredNode || hoveredEdge ? 'pointer' : 'grab',
                 }}
+                onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
+                onPointerUp={finishPointerDrag}
+                onPointerCancel={finishPointerDrag}
                 onPointerLeave={handlePointerLeave}
+                onWheel={handleWheel}
             />
+
+            <div className="network-graph-controls" aria-label="Graph view controls">
+                <button
+                    type="button"
+                    aria-label="Zoom out graph"
+                    title="Zoom out"
+                    onClick={() => zoomGraph(-1)}
+                >
+                    -
+                </button>
+                <span className="network-graph-controls__zoom">{zoomLabel(viewport.zoom)}</span>
+                <button
+                    type="button"
+                    aria-label="Zoom in graph"
+                    title="Zoom in"
+                    onClick={() => zoomGraph(1)}
+                >
+                    +
+                </button>
+                <button
+                    type="button"
+                    aria-label="Fit graph to view"
+                    title="Fit graph"
+                    onClick={fitGraphToView}
+                >
+                    Fit
+                </button>
+            </div>
+
+            <div className="network-graph-legend" aria-label="Edge weight legend">
+                <div className="network-graph-legend__scale">
+                    <span><i className="network-graph-legend__swatch network-graph-legend__swatch--positive" /> Positive</span>
+                    <span><i className="network-graph-legend__swatch network-graph-legend__swatch--negative" /> Negative</span>
+                    <span className="network-graph-legend__hint">width = |weight|</span>
+                </div>
+                <div className="network-graph-legend__filters">
+                    {edgeFilterOptions.map((option) => (
+                        <button
+                            key={option.id}
+                            type="button"
+                            aria-label={option.id === 'strong' ? 'Show only strong edges' : `Show ${option.label.toLowerCase()} edges`}
+                            aria-pressed={edgeFilter === option.id}
+                            className={edgeFilter === option.id ? 'network-graph-legend__filter network-graph-legend__filter--active' : 'network-graph-legend__filter'}
+                            onClick={() => setEdgeFilter(option.id)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
             {/* Heatmap overlays — one per non-input neuron, positioned over
                 the corresponding canvas-painted node disc. */}
             {heatmapTiles.map((tile) => {
                 const r = NODE_RADIUS - 1.5;
-                // Convert canvas-logical coordinates back into CSS pixels:
-                // the canvas itself is rendered with `width: 100%`, so we
-                // scale node positions by container/canvas ratio. The
-                // ResizeObserver keeps containerSize in sync with the
-                // visible width, so canvasWidth / containerSize.width is
-                // typically 1; the math is here for completeness.
-                const left = (tile.x / canvasWidth) * containerSize.width - r;
-                const top = (tile.y / canvasHeight) * containerSize.height - r;
+                const scaledR = r * viewport.zoom;
                 return (
                     <div
                         key={tile.key}
                         className="network-graph-heatmap-slot"
                         style={{
                             position: 'absolute',
-                            left,
-                            top,
-                            width: 2 * r,
-                            height: 2 * r,
+                            left: tile.x * viewport.zoom + viewport.panX - scaledR,
+                            top: tile.y * viewport.zoom + viewport.panY - scaledR,
+                            width: 2 * scaledR,
+                            height: 2 * scaledR,
                             pointerEvents: 'none',
                         }}
                     >

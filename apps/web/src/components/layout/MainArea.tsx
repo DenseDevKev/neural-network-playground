@@ -3,10 +3,11 @@
 // integration points consumed by App.tsx via RegionShell.
 // The legacy MainArea default export is preserved for tests and fallback contexts.
 
-import { lazy, memo, Suspense } from 'react';
+import { lazy, memo, Suspense, useState } from 'react';
 import { TrainingControls } from '../controls/TrainingControls.tsx';
 import { NetworkGraph } from '../visualization/NetworkGraph.tsx';
 import { DecisionBoundary } from '../visualization/DecisionBoundary.tsx';
+import type { DecisionOverlayMode } from '../visualization/DecisionBoundary.tsx';
 import { LossChart } from '../visualization/LossChart.tsx';
 import { ConfusionMatrix } from '../visualization/ConfusionMatrix.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
@@ -48,6 +49,7 @@ export const BoundaryContent = memo(function BoundaryContent() {
     const discretize   = usePlaygroundStore((s) => s.ui.discretizeOutput);
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
+    const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');
     return (
         <ErrorBoundary title="Decision boundary unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
             <>
@@ -56,6 +58,7 @@ export const BoundaryContent = memo(function BoundaryContent() {
                     testPoints={testPoints}
                     showTestData={showTestData}
                     discretize={discretize}
+                    overlayMode={overlayMode}
                 />
                 <div style={{ display: 'flex', gap: 16, padding: '6px 0', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -78,6 +81,18 @@ export const BoundaryContent = memo(function BoundaryContent() {
                             onChange={(e) => usePlaygroundStore.getState().setDiscretize(e.target.checked)} />
                         Discretize output
                     </label>
+                    <div className="decision-overlay-controls" aria-label="Decision overlay controls">
+                        {(['none', 'uncertainty', 'misclassification'] as const).map((mode) => (
+                            <button
+                                key={mode}
+                                type="button"
+                                aria-pressed={overlayMode === mode}
+                                onClick={() => setOverlayMode(mode)}
+                            >
+                                {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : 'Errors'}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </>
         </ErrorBoundary>
@@ -122,6 +137,7 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
     const discretize   = usePlaygroundStore((s) => s.ui.discretizeOutput);
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
+    const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');
 
     return (
         <>
@@ -138,8 +154,21 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                         testPoints={testPoints}
                         showTestData={showTestData}
                         discretize={discretize}
+                        overlayMode={overlayMode}
                     />
                 </ErrorBoundary>
+                <div className="decision-overlay-controls" aria-label="Decision overlay controls">
+                    {(['none', 'uncertainty', 'misclassification'] as const).map((mode) => (
+                        <button
+                            key={mode}
+                            type="button"
+                            aria-pressed={overlayMode === mode}
+                            onClick={() => setOverlayMode(mode)}
+                        >
+                            {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : 'Errors'}
+                        </button>
+                    ))}
+                </div>
                 <div style={{ display: 'flex', gap: 16, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)', padding: '4px 0' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <i style={{ width: 10, height: 10, background: HEX_BLUE, borderRadius: 2, display: 'inline-block' }} />
