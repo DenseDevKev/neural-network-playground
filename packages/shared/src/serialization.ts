@@ -10,6 +10,8 @@ import type {
     OptimizerType,
     RegularizationType,
     WeightInitType,
+    LRSchedule,
+    LRScheduleType,
 } from '@nn-playground/engine';
 import type { AppConfig, UIConfig } from './types.js';
 import {
@@ -51,6 +53,7 @@ const VALID_LOSSES = new Set<LossType>(['mse', 'crossEntropy', 'huber']);
 const VALID_OPTIMIZERS = new Set<OptimizerType>(['sgd', 'sgdMomentum', 'adam']);
 const VALID_REGULARIZATION = new Set<RegularizationType>(['none', 'l1', 'l2']);
 const VALID_PROBLEM_TYPES = new Set<DataConfig['problemType']>(['classification', 'regression']);
+const VALID_LR_SCHEDULES = new Set<LRScheduleType>(['constant', 'step', 'cosine']);
 
 export interface ImportedConfigValidationResult {
     config: AppConfig | null;
@@ -88,8 +91,23 @@ export function encodeUrlState(config: AppConfig): string {
     p.set('bs', String(config.training.batchSize));
     p.set('l', config.training.lossType);
     p.set('o', config.training.optimizer);
+    p.set('m', String(config.training.momentum));
     p.set('rg', config.training.regularization);
     p.set('rr', String(config.training.regularizationRate));
+    if (config.training.gradientClip != null) p.set('gc', String(config.training.gradientClip));
+    if (config.training.adamBeta1 != null) p.set('b1', String(config.training.adamBeta1));
+    if (config.training.adamBeta2 != null) p.set('b2', String(config.training.adamBeta2));
+    if (config.training.huberDelta != null) p.set('hd', String(config.training.huberDelta));
+    if (config.training.lrSchedule) {
+        p.set('lrs', config.training.lrSchedule.type);
+        if (config.training.lrSchedule.type === 'step') {
+            p.set('lrss', String(config.training.lrSchedule.stepSize));
+            p.set('lrsg', String(config.training.lrSchedule.gamma));
+        } else if (config.training.lrSchedule.type === 'cosine') {
+            p.set('lrst', String(config.training.lrSchedule.totalSteps));
+            p.set('lrsm', String(config.training.lrSchedule.minLr));
+        }
+    }
 
     // Features (encode as a bitfield: x,y,x²,y²,xy,sinx,siny,cosx,cosy)
     const featureBits = [
@@ -157,11 +175,19 @@ export function decodeUrlState(hash: string): AppConfig {
         batchSize: parseNum(p.get('bs'), DEFAULT_TRAINING.batchSize),
         lossType: getValidValue(p.get('l'), VALID_LOSSES, DEFAULT_TRAINING.lossType),
         optimizer: getValidValue(p.get('o'), VALID_OPTIMIZERS, DEFAULT_TRAINING.optimizer),
-        momentum: DEFAULT_TRAINING.momentum,
+        momentum: parseNum(p.get('m'), DEFAULT_TRAINING.momentum),
         regularization: getValidValue(p.get('rg'), VALID_REGULARIZATION, DEFAULT_TRAINING.regularization),
         regularizationRate: parseNum(p.get('rr'), DEFAULT_TRAINING.regularizationRate),
-        gradientClip: null,
+        gradientClip: p.has('gc') ? parseNum(p.get('gc'), DEFAULT_TRAINING.gradientClip ?? 1) : null,
     };
+    const adamBeta1 = parseOptionalNum(p.get('b1'));
+    if (adamBeta1 != null) training.adamBeta1 = adamBeta1;
+    const adamBeta2 = parseOptionalNum(p.get('b2'));
+    if (adamBeta2 != null) training.adamBeta2 = adamBeta2;
+    const huberDelta = parseOptionalNum(p.get('hd'));
+    if (huberDelta != null) training.huberDelta = huberDelta;
+    const lrSchedule = parseUrlLRSchedule(p);
+    if (lrSchedule) training.lrSchedule = lrSchedule;
 
     const ui: UIConfig = {
         showTestData: p.get('st') === '1',
@@ -200,6 +226,29 @@ function parseNum(val: string | null, fallback: number): number {
     if (val == null) return fallback;
     const n = Number(val);
     return isNaN(n) ? fallback : n;
+}
+
+function parseOptionalNum(val: string | null): number | undefined {
+    if (val == null) return undefined;
+    const n = Number(val);
+    return Number.isFinite(n) ? n : undefined;
+}
+
+function parseUrlLRSchedule(p: URLSearchParams): LRSchedule | undefined {
+    const type = getValidValue(p.get('lrs'), VALID_LR_SCHEDULES, 'constant');
+    if (type === 'constant') return undefined;
+    if (type === 'step') {
+        return {
+            type,
+            stepSize: parseNum(p.get('lrss'), 100),
+            gamma: parseNum(p.get('lrsg'), 0.5),
+        };
+    }
+    return {
+        type,
+        totalSteps: parseNum(p.get('lrst'), 1000),
+        minLr: parseNum(p.get('lrsm'), 0),
+    };
 }
 
 function getCompatibleOutputActivation(
@@ -270,6 +319,70 @@ function lenientNumber(
         ? value
         : Math.min(max, value);
     return opts.integer ? Math.trunc(clamped) : clamped;
+}
+
+function normalizeOptionalPositive(
+    value: unknown,
+    strict: boolean,
+    error: string,
+): { value: number | undefined; error: string | null } {
+    if (value === undefined) return { value: undefined, error: null };
+    if (!isFiniteNumber(value) || value <= 0) {
+        return strict ? { value: undefined, error } : { value: undefined, error: null };
+    }
+    return { value, error: null };
+}
+
+function normalizeOptionalUnitInterval(
+    value: unknown,
+    strict: boolean,
+    error: string,
+): { value: number | undefined; error: string | null } {
+    if (value === undefined) return { value: undefined, error: null };
+    if (!isFiniteNumber(value) || value <= 0 || value >= 1) {
+        return strict ? { value: undefined, error } : { value: undefined, error: null };
+    }
+    return { value, error: null };
+}
+
+function normalizeLRSchedule(value: unknown, strict: boolean): { value: LRSchedule | undefined; error: string | null } {
+    if (value === undefined) return { value: undefined, error: null };
+    if (!isRecord(value) || !VALID_LR_SCHEDULES.has(value.type as LRScheduleType)) {
+        return strict
+            ? { value: undefined, error: 'Learning-rate schedule is invalid.' }
+            : { value: undefined, error: null };
+    }
+
+    if (value.type === 'constant') return { value: undefined, error: null };
+
+    if (value.type === 'step') {
+        if (
+            !isFiniteNumber(value.stepSize) ||
+            !Number.isInteger(value.stepSize) ||
+            value.stepSize < 1 ||
+            !isFiniteNumber(value.gamma) ||
+            value.gamma <= 0 ||
+            value.gamma >= 1
+        ) {
+            return strict
+                ? { value: undefined, error: 'Step schedule requires a positive integer interval and gamma between 0 and 1.' }
+                : { value: undefined, error: null };
+        }
+        return { value: { type: 'step', stepSize: value.stepSize, gamma: value.gamma }, error: null };
+    }
+
+    if (
+        !isFiniteNumber(value.totalSteps) ||
+        !Number.isInteger(value.totalSteps) ||
+        value.totalSteps < 1 ||
+        !isFiniteNumber(value.minLr) ||
+        value.minLr < 0
+    ) {
+        return strict
+            ? { value: undefined, error: 'Cosine schedule requires positive total steps and a non-negative minimum learning rate.' }
+            : { value: undefined, error: null };
+    }
+    return { value: { type: 'cosine', totalSteps: value.totalSteps, minLr: value.minLr }, error: null };
 }
 
 function validateFeatureFlags(value: unknown): value is FeatureFlags {
@@ -384,6 +497,17 @@ export function normalizeAppConfig(
         return { config: null, error: 'Gradient clip must be null or a positive number.' };
     }
 
+    const adamBeta1 = normalizeOptionalUnitInterval(training.adamBeta1, strict, 'Adam beta 1 must be between 0 and 1.');
+    if (adamBeta1.error) return { config: null, error: adamBeta1.error };
+    const adamBeta2 = normalizeOptionalUnitInterval(training.adamBeta2, strict, 'Adam beta 2 must be between 0 and 1.');
+    if (adamBeta2.error) return { config: null, error: adamBeta2.error };
+    const adamEps = normalizeOptionalPositive(training.adamEps, strict, 'Adam epsilon must be a positive number.');
+    if (adamEps.error) return { config: null, error: adamEps.error };
+    const huberDelta = normalizeOptionalPositive(training.huberDelta, strict, 'Huber delta must be a positive number.');
+    if (huberDelta.error) return { config: null, error: huberDelta.error };
+    const lrSchedule = normalizeLRSchedule(training.lrSchedule, strict);
+    if (lrSchedule.error) return { config: null, error: lrSchedule.error };
+
     const inputSize = countActiveFeatures(features);
     if (inputSize === 0) {
         return strict
@@ -476,6 +600,11 @@ export function normalizeAppConfig(
                 regularization: getValidValue(training.regularization as string | null, VALID_REGULARIZATION, DEFAULT_TRAINING.regularization),
                 regularizationRate: safeTraining.regularizationRate,
                 gradientClip,
+                ...(adamBeta1.value !== undefined ? { adamBeta1: adamBeta1.value } : {}),
+                ...(adamBeta2.value !== undefined ? { adamBeta2: adamBeta2.value } : {}),
+                ...(adamEps.value !== undefined ? { adamEps: adamEps.value } : {}),
+                ...(huberDelta.value !== undefined ? { huberDelta: huberDelta.value } : {}),
+                ...(lrSchedule.value !== undefined ? { lrSchedule: lrSchedule.value } : {}),
             },
             features,
             ui: normalizedUi,

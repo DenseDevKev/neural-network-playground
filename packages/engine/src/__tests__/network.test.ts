@@ -138,6 +138,16 @@ describe('Network training', () => {
         expect(isNaN(loss)).toBe(false);
         expect(loss).toBeGreaterThanOrEqual(0);
     });
+
+    it('preserves recent gradient magnitudes for layer stats after a batch update', () => {
+        const net = new Network(makeConfig());
+
+        net.trainBatch([[0, 0], [1, 1]], [[0], [1]], defaultTraining);
+
+        const stats = net.getLayerStats();
+        expect(stats).toHaveLength(2);
+        expect(stats.some((layer) => layer.meanAbsGradient > 0)).toBe(true);
+    });
 });
 
 describe('Network evaluate', () => {

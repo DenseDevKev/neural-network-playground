@@ -61,4 +61,11 @@ describe('DataPanel loading feedback', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);
     });
+
+    it('explains cause and effect in data tooltips', () => {
+        render(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByText('Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.')).toBeInTheDocument();
+        expect(screen.getByText('Cause: more noise blurs class edges. Effect: training loss may flatten and test accuracy becomes harder to improve.')).toBeInTheDocument();
+    });
 });

@@ -12,6 +12,8 @@ import type {
     LossType,
     OptimizerType,
     RegularizationType,
+    WeightInitType,
+    LRSchedule,
     DataSplit,
 } from '@nn-playground/engine';
 import {
@@ -87,6 +89,13 @@ export interface PlaygroundStore {
     setBatchSize: (bs: number) => void;
     setLossType: (loss: LossType) => void;
     setOptimizer: (opt: OptimizerType) => void;
+    setMomentum: (momentum: number) => void;
+    setGradientClip: (clip: number | null) => void;
+    setAdamBetas: (beta1: number, beta2: number) => void;
+    setHuberDelta: (delta: number) => void;
+    setLRSchedule: (schedule: LRSchedule | undefined) => void;
+    setWeightInit: (init: WeightInitType) => void;
+    setOutputActivation: (activation: ActivationType) => void;
     setRegularization: (reg: RegularizationType) => void;
     setRegularizationRate: (rate: number) => void;
     setShowTestData: (show: boolean) => void;
@@ -251,6 +260,37 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         setOptimizer: (optimizer) => set((s) => ({
             training: { ...s.training, optimizer },
         })),
+
+        setMomentum: (momentum) => set((s) => ({
+            training: { ...s.training, momentum },
+        })),
+
+        setGradientClip: (gradientClip) => set((s) => ({
+            training: { ...s.training, gradientClip },
+        })),
+
+        setAdamBetas: (adamBeta1, adamBeta2) => set((s) => ({
+            training: { ...s.training, adamBeta1, adamBeta2 },
+        })),
+
+        setHuberDelta: (huberDelta) => set((s) => ({
+            training: { ...s.training, huberDelta },
+        })),
+
+        setLRSchedule: (lrSchedule) => set((s) => ({
+            training: lrSchedule
+                ? { ...s.training, lrSchedule }
+                : { ...s.training, lrSchedule: undefined },
+        })),
+
+        setWeightInit: (weightInit) => set((s) => ({
+            network: { ...s.network, weightInit },
+        })),
+
+        setOutputActivation: (outputActivation) => set((s) => {
+            if (!isLossCompatible(s.training.lossType, outputActivation)) return s;
+            return { network: { ...s.network, outputActivation } };
+        }),
 
         setRegularization: (regularization) => set((s) => ({
             training: { ...s.training, regularization },

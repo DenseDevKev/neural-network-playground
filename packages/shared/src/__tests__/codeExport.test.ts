@@ -40,7 +40,7 @@ const mockSnapshot: NetworkSnapshot = {
 };
 
 describe("codeExport", () => {
-  describe("generatePseudocode", () => {
+    describe("generatePseudocode", () => {
     it("generates pseudocode without snapshot", () => {
       const output = generatePseudocode(
         mockConfig,
@@ -65,6 +65,32 @@ describe("codeExport", () => {
       expect(output).toContain(
         "neuron 0: bias=0.1000  weights=[0.1000, 0.2000]",
       );
+    });
+
+    it("includes exposed training hyperparameters", () => {
+      const output = generatePseudocode(
+        mockConfig,
+        {
+          ...DEFAULT_TRAINING,
+          optimizer: "adam",
+          lossType: "huber",
+          momentum: 0.7,
+          gradientClip: 0.5,
+          adamBeta1: 0.8,
+          adamBeta2: 0.98,
+          huberDelta: 0.75,
+          lrSchedule: { type: "step", stepSize: 25, gamma: 0.5 },
+        },
+        DEFAULT_FEATURES,
+        null,
+      );
+
+      expect(output).toContain("momentum = 0.7");
+      expect(output).toContain("gradient_clip = 0.5");
+      expect(output).toContain("adam_beta1 = 0.8");
+      expect(output).toContain("adam_beta2 = 0.98");
+      expect(output).toContain("huber_delta = 0.75");
+      expect(output).toContain("lr_schedule = step(step_size=25, gamma=0.5)");
     });
   });
 
@@ -238,6 +264,22 @@ describe("codeExport", () => {
       );
       expect(output).toContain("Load trained weights");
       expect(output).toContain("Layer 1: 2×2, bias: 2");
+    });
+
+    it("uses adjustable optimizer hyperparameters in TFJS output", () => {
+      const output = generateTFJS(
+        mockConfig,
+        {
+          ...DEFAULT_TRAINING,
+          optimizer: "adam",
+          adamBeta1: 0.8,
+          adamBeta2: 0.98,
+        },
+        DEFAULT_FEATURES,
+        null,
+      );
+
+      expect(output).toContain("tf.train.adam(0.03, 0.8, 0.98)");
     });
   });
 });

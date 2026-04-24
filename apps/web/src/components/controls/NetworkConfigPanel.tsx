@@ -37,7 +37,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
             <div className="control-row" style={{ marginBottom: 8 }}>
                 <span className="control-label">Hidden Layers</span>
                 <div className="layer-controls">
-                    <Tooltip content="Remove the last hidden layer">
+                    <Tooltip content="Cause: removing a hidden layer lowers model capacity. Effect: the boundary becomes simpler and may underfit curved data.">
                         <button
                             className="btn btn--ghost btn--icon btn--sm"
                             onClick={() => {
@@ -51,7 +51,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                         </button>
                     </Tooltip>
                     <span className="layer-controls__count">{hiddenLayers.length}</span>
-                    <Tooltip content="Add another hidden layer">
+                    <Tooltip content="Cause: adding a hidden layer adds another learned transformation. Effect: the boundary can bend more, but training may take longer.">
                         <button
                             className="btn btn--ghost btn--icon btn--sm"
                             onClick={() => {
@@ -83,7 +83,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                         aria-label={`Neurons in layer ${idx + 1}`}
                         style={{ flex: 1 }}
                     />
-                    <Tooltip content={`${count} neurons in layer ${idx + 1}`}>
+                    <Tooltip content={`Cause: layer ${idx + 1} has ${count} neurons to detect intermediate patterns. Effect: more neurons can model finer bends, but too many can overfit noisy samples.`}>
                         <span className="neuron-badge">{count}</span>
                     </Tooltip>
                 </div>
@@ -92,7 +92,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
             {/* Activation */}
             <div className="control-row" style={{ marginTop: 8 }}>
                 <span className="control-label">Activation</span>
-                <Tooltip content="Choose the activation function for hidden layers">
+                <Tooltip content="Cause: activation functions decide when neurons pass signal forward. Effect: tanh/sigmoid smooth the boundary, while ReLU-family choices make sharper bends.">
                     <select
                         className="select"
                         aria-label="Activation"

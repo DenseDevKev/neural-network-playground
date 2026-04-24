@@ -9,11 +9,13 @@ import {
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import {
+    edgeFilterOptions,
     hitTestEdge,
     hitTestNode,
     paintEdges,
     paintLabels,
     paintNodes,
+    shouldRenderEdge,
 } from './networkGraphPainter.ts';
 
 // Minimal Canvas2D mock — just enough for paintEdges/paintNodes/paintLabels
@@ -32,6 +34,8 @@ function createMockContext() {
         stroke: vi.fn(),
         fillText: vi.fn(),
         setTransform: vi.fn(),
+        translate: vi.fn(),
+        scale: vi.fn(),
         save: vi.fn(),
         restore: vi.fn(),
         createImageData: (w: number, h: number) => ({
@@ -140,6 +144,27 @@ describe('NetworkGraphCanvas', () => {
         fireEvent.pointerLeave(canvas);
         expect(container.querySelector('.network-tooltip')).toBeNull();
     });
+
+    it('renders graph viewport controls and updates the zoom label', () => {
+        const { container } = render(<NetworkGraphCanvas />);
+
+        const zoomLabel = container.querySelector('.network-graph-controls__zoom');
+        expect(zoomLabel?.textContent).toBe('100%');
+
+        fireEvent.click(container.querySelector('button[aria-label="Zoom in graph"]')!);
+
+        expect(zoomLabel?.textContent).toBe('125%');
+        expect(container.querySelector('button[aria-label="Fit graph to view"]')).not.toBeNull();
+    });
+
+    it('renders an edge legend and can filter to strong weights', () => {
+        const { container } = render(<NetworkGraphCanvas />);
+
+        expect(container.querySelector('.network-graph-legend')).not.toBeNull();
+        fireEvent.click(container.querySelector('button[aria-label="Show only strong edges"]')!);
+
+        expect(container.querySelector('button[aria-label="Show only strong edges"]')).toHaveAttribute('aria-pressed', 'true');
+    });
 });
 
 describe('networkGraphPainter helpers', () => {
@@ -180,5 +205,18 @@ describe('networkGraphPainter helpers', () => {
         expect(() => paintEdges(ctx, nodePositions, null, null)).not.toThrow();
         expect(() => paintNodes(ctx, nodePositions, null)).not.toThrow();
         expect(() => paintLabels(ctx, nodePositions, ['Input', 'Output'])).not.toThrow();
+    });
+
+    it('defines edge filter options used by the graph legend', () => {
+        expect(edgeFilterOptions.map((option) => option.id)).toEqual(['all', 'strong', 'positive', 'negative']);
+    });
+
+    it('filters edges by sign and strong magnitude', () => {
+        expect(shouldRenderEdge(0.2, 'all')).toBe(true);
+        expect(shouldRenderEdge(0.2, 'strong')).toBe(false);
+        expect(shouldRenderEdge(1.6, 'strong')).toBe(true);
+        expect(shouldRenderEdge(0.7, 'positive')).toBe(true);
+        expect(shouldRenderEdge(-0.7, 'positive')).toBe(false);
+        expect(shouldRenderEdge(-0.7, 'negative')).toBe(true);
     });
 });

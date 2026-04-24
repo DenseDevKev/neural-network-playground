@@ -163,6 +163,7 @@ export class Network {
     // Gradient accumulators — shaped identically to weights / biases.
     private weightGrads: Float64Array[] = [];
     private biasGrads: Float64Array[] = [];
+    private recentWeightGrads: Float64Array[] = [];
 
     // Optimizer state. Allocated lazily on the first applyGradients call
     // that actually needs it (SGD stays empty, momentum allocates `m*`,
@@ -211,6 +212,7 @@ export class Network {
 
             this.weightGrads.push(new Float64Array(fanOut * fanIn));
             this.biasGrads.push(new Float64Array(fanOut));
+            this.recentWeightGrads.push(new Float64Array(fanOut * fanIn));
 
             this.preActs.push(new Float64Array(fanOut));
             this.outputs.push(new Float64Array(fanOut));
@@ -364,6 +366,18 @@ export class Network {
         if (clip != null && clip > 0) {
             const norm = Math.sqrt(sqSum);
             if (norm > clip) scale = clip / norm;
+        }
+
+        // Preserve the gradients that were actually applied so inspection
+        // stats remain useful after the accumulators are zeroed below.
+        for (let l = 0; l < this.weightGrads.length; l++) {
+            const wg = this.weightGrads[l];
+            const recent = this.recentWeightGrads[l];
+            if (scale === 1) {
+                recent.set(wg);
+            } else {
+                for (let i = 0, n = wg.length; i < n; i++) recent[i] = wg[i] * scale;
+            }
         }
 
         // Pass 2: optimizer update.
@@ -904,7 +918,15 @@ export class Network {
 
             // Mean |g|
             let sumAbsG = 0;
-            const wg = this.weightGrads[l];
+            let wg = this.weightGrads[l];
+            let hasCurrentGradient = false;
+            for (let i = 0; i < wg.length; i++) {
+                if (wg[i] !== 0) {
+                    hasCurrentGradient = true;
+                    break;
+                }
+            }
+            if (!hasCurrentGradient) wg = this.recentWeightGrads[l];
             for (let i = 0; i < wg.length; i++) sumAbsG += Math.abs(wg[i]);
             const meanAbsGradient = wg.length > 0 ? sumAbsG / wg.length : 0;
 
@@ -937,6 +959,7 @@ export class Network {
             initBiasesInto(this.biases[l]);
             this.weightGrads[l].fill(0);
             this.biasGrads[l].fill(0);
+            this.recentWeightGrads[l].fill(0);
         }
         this.hasMomentumState = false;
         this.hasAdamState = false;

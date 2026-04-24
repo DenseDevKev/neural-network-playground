@@ -12,6 +12,12 @@ export const MIN_NEURONS_PER_LAYER = 1;
 export const LEARNING_RATES = [0.00001, 0.0001, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10];
 export const BATCH_SIZES = [1, 2, 4, 8, 10, 16, 32, 64];
 export const REGULARIZATION_RATES = [0, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1];
+export const MOMENTUM_VALUES = [0, 0.5, 0.7, 0.8, 0.9, 0.95, 0.99];
+export const GRADIENT_CLIP_VALUES = [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5];
+export const ADAM_BETA1_VALUES = [0.7, 0.8, 0.85, 0.9, 0.95];
+export const ADAM_BETA2_VALUES = [0.9, 0.95, 0.98, 0.99, 0.999];
+export const HUBER_DELTA_VALUES = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.25, 5];
+export const LR_SCHEDULE_GAMMA_VALUES = [0.1, 0.25, 0.5, 0.6, 0.75, 0.9];
 
 
 export const DEFAULT_FEATURES: FeatureFlags = {

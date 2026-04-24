@@ -34,6 +34,15 @@ function activationStr(act: string): string {
     return map[act] || act;
 }
 
+function lrScheduleStr(training: TrainingConfig): string | null {
+    const schedule = training.lrSchedule;
+    if (!schedule || schedule.type === 'constant') return null;
+    if (schedule.type === 'step') {
+        return `step(step_size=${schedule.stepSize}, gamma=${schedule.gamma})`;
+    }
+    return `cosine(total_steps=${schedule.totalSteps}, min_lr=${schedule.minLr})`;
+}
+
 /**
  * Generate pseudocode description of the network.
  */
@@ -69,6 +78,17 @@ export function generatePseudocode(
     code += `  optimizer = ${training.optimizer === 'sgd' ? 'SGD' : training.optimizer === 'sgdMomentum' ? 'SGD+Momentum' : 'Adam'}\n`;
     code += `  learning_rate = ${training.learningRate}\n`;
     code += `  batch_size = ${training.batchSize}\n`;
+    code += `  momentum = ${training.momentum}\n`;
+    code += `  gradient_clip = ${training.gradientClip ?? 'off'}\n`;
+    if (training.optimizer === 'adam') {
+        code += `  adam_beta1 = ${training.adamBeta1 ?? 0.9}\n`;
+        code += `  adam_beta2 = ${training.adamBeta2 ?? 0.999}\n`;
+    }
+    if (training.lossType === 'huber') {
+        code += `  huber_delta = ${training.huberDelta ?? 1}\n`;
+    }
+    const schedule = lrScheduleStr(training);
+    if (schedule) code += `  lr_schedule = ${schedule}\n`;
 
     if (snapshot) {
         code += `\n# Trained weights (step ${snapshot.step}):\n`;
@@ -197,8 +217,8 @@ export function generateTFJS(
     };
     const optMap: Record<string, string> = {
         sgd: `tf.train.sgd(${training.learningRate})`,
-        sgdMomentum: `tf.train.momentum(${training.learningRate}, 0.9)`,
-        adam: `tf.train.adam(${training.learningRate})`,
+        sgdMomentum: `tf.train.momentum(${training.learningRate}, ${training.momentum})`,
+        adam: `tf.train.adam(${training.learningRate}, ${training.adamBeta1 ?? 0.9}, ${training.adamBeta2 ?? 0.999})`,
     };
 
     code += `model.compile({\n`;
@@ -211,6 +231,13 @@ export function generateTFJS(
     code += `// await model.fit(xTrain, yTrain, {\n`;
     code += `//   epochs: 100,\n`;
     code += `//   batchSize: ${training.batchSize},\n`;
+    if (training.gradientClip != null) {
+        code += `//   // Gradient clipping threshold: ${training.gradientClip}\n`;
+    }
+    const schedule = lrScheduleStr(training);
+    if (schedule) {
+        code += `//   // Learning-rate schedule: ${schedule}\n`;
+    }
     code += `// });\n`;
 
     if (snapshot) {
