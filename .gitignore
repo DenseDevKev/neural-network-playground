@@ -35,3 +35,6 @@ yarn-error.log*
 *.log
 *.swp
 *~
+
+# Playwright CLI artifacts
+.playwright-cli/

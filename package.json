@@ -10,7 +10,6 @@
     "test": "pnpm -r test",
     "test:engine": "pnpm --filter @nn-playground/engine test",
     "lint": "eslint .",
-    "format": "prettier --write .",
     "clean": "pnpm -r exec rm -rf dist node_modules"
   },
   "license": "Apache-2.0",
