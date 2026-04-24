@@ -47,7 +47,13 @@ import {
     publishSharedSnapshot,
     type SharedSnapshotViews,
 } from './sharedSnapshot.ts';
-import { getTrainingStepsForTick, normalizeTrainingSpeed } from './trainingLoop.ts';
+import {
+    createMiniBatchScratch,
+    fillMiniBatchScratch,
+    getTrainingStepsForTick,
+    normalizeTrainingSpeed,
+    type MiniBatchScratch,
+} from './trainingLoop.ts';
 
 interface WorkerState {
     network: Network | null;
@@ -68,6 +74,8 @@ interface WorkerState {
     rafId: number | null;
     /** Shuffled index array — re-shuffled at the start of each epoch. */
     shuffledIndices: number[];
+    /** Reusable mini-batch views, filled with sample references each step. */
+    batchScratch: MiniBatchScratch | null;
     /** Separate PRNG for epoch shuffling, independent from network weights. */
     shufflePrng: PRNG | null;
     /** What visual data the UI currently needs. */
@@ -244,6 +252,7 @@ const state: WorkerState = {
     running: false,
     rafId: null,
     shuffledIndices: [],
+    batchScratch: null,
     shufflePrng: null,
     demand: { ...DEFAULT_DEMAND },
     snapshotsSinceLastTestEval: 0,
@@ -377,6 +386,7 @@ function buildDataAndNetwork(): void {
     // Initialise shuffle state — seed is offset from data seed to stay independent.
     const n = state.trainInputs.length;
     state.shuffledIndices = Array.from({ length: n }, (_, i) => i);
+    state.batchScratch = createMiniBatchScratch(state.trainingConfig!.batchSize);
     state.shufflePrng = new PRNG((state.dataConfig!.seed ?? 42) + 1234);
     // Shuffle once up front so the very first epoch is not in generator order
     // (important for datasets whose generators emit class-sorted samples).
@@ -791,12 +801,20 @@ function trainOneStep(): void {
 
     const startIdx = batchSlot * bs;
     const endIdx = Math.min(startIdx + bs, n);
-    const batchIndices = state.shuffledIndices.slice(startIdx, endIdx);
-    const batchInputs = batchIndices.map((i) => state.trainInputs[i]);
-    const batchTargets = batchIndices.map((i) => state.trainTargets[i]);
+    if (!state.batchScratch) {
+        state.batchScratch = createMiniBatchScratch(bs);
+    }
+    const batch = fillMiniBatchScratch(
+        state.batchScratch,
+        state.trainInputs,
+        state.trainTargets,
+        state.shuffledIndices,
+        startIdx,
+        endIdx,
+    );
 
-    if (batchInputs.length > 0) {
-        const batchLoss = state.network.trainBatch(batchInputs, batchTargets, state.trainingConfig);
+    if (batch.inputs.length > 0) {
+        const batchLoss = state.network.trainBatch(batch.inputs, batch.targets, state.trainingConfig);
         // Feed the running EMA of batch loss. This is what the UI line
         // actually follows between full-dataset evaluations.
         if (Number.isFinite(batchLoss)) {
