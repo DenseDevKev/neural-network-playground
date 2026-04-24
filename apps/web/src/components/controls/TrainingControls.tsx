@@ -26,7 +26,14 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
     return (
         <div className="training-bar">
             <div className="training-bar__controls">
-                <Tooltip content={isRunning ? 'Pause training' : 'Start training'} shortcut="Space">
+                <Tooltip
+                    content={
+                        isRunning
+                            ? 'Cause: pause stops the update loop. Effect: the current boundary stays frozen so you can inspect metrics and weights.'
+                            : 'Cause: play repeats weight updates continuously. Effect: the boundary and metrics evolve until you pause or reset.'
+                    }
+                    shortcut="Space"
+                >
                     <button
                         className={`btn btn--play btn--control ${isRunning ? 'running' : ''}`}
                         onClick={isRunning ? training.pause : training.play}
@@ -37,7 +44,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         <span className="btn__shortcut">Space</span>
                     </button>
                 </Tooltip>
-                <Tooltip content="Run one training step" shortcut="→">
+                <Tooltip content="Cause: step applies one update. Effect: you can connect a single weight change to the next boundary or loss movement." shortcut="→">
                     <button
                         className="btn btn--ghost btn--control"
                         onClick={training.step}
@@ -48,7 +55,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         <span className="btn__shortcut">→</span>
                     </button>
                 </Tooltip>
-                <Tooltip content="Reset model and regenerate data" shortcut="R">
+                <Tooltip content="Cause: reset rebuilds weights and data from the current settings. Effect: you can tell whether a result was learned reliably or got lucky." shortcut="R">
                     <button
                         className="btn btn--ghost btn--control"
                         onClick={training.reset}
@@ -65,8 +72,11 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                 <span className="training-bar__speed-label">Steps/frame:</span>
                 {SPEED_OPTIONS.map((opt) => {
                     const stepLabel = `${opt.value} ${opt.value === 1 ? 'step' : 'steps'} per frame`;
+                    const speedTooltip = opt.value === 5
+                        ? 'Cause: higher speed runs more updates per animation frame. Effect: learning completes sooner, but individual changes are harder to inspect.'
+                        : `Cause: ${stepLabel} controls how many updates happen before each redraw. Effect: lower values are easier to inspect, while higher values finish faster.`;
                     return (
-                        <Tooltip key={opt.value} content={stepLabel}>
+                        <Tooltip key={opt.value} content={speedTooltip}>
                             <button
                                 className={`speed-btn ${stepsPerFrame === opt.value ? 'active' : ''}`}
                                 onClick={() => setStepsPerFrame(opt.value)}

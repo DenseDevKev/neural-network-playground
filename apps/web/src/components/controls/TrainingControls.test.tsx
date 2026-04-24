@@ -83,4 +83,13 @@ describe('TrainingControls', () => {
     expect(screen.getByText('Step 128')).toBeInTheDocument();
     expect(screen.getByText('Epoch 4')).toBeInTheDocument();
   });
+
+  it('explains cause and effect in training tooltips', () => {
+    const training = createTrainingMock();
+
+    render(<TrainingControls training={training} />);
+
+    expect(screen.getByText('Cause: play repeats weight updates continuously. Effect: the boundary and metrics evolve until you pause or reset.')).toBeInTheDocument();
+    expect(screen.getByText('Cause: higher speed runs more updates per animation frame. Effect: learning completes sooner, but individual changes are harder to inspect.')).toBeInTheDocument();
+  });
 });

@@ -29,4 +29,11 @@ describe('HyperparamPanel accessibility', () => {
         expect(screen.getByRole('combobox', { name: 'Batch size' })).toBeInTheDocument();
         expect(screen.getByRole('combobox', { name: 'Regularization' })).toBeInTheDocument();
     });
+
+    it('explains cause and effect in hyperparameter tooltips', () => {
+        render(<HyperparamPanel />);
+
+        expect(screen.getByText('Cause: larger learning rates take bigger weight updates. Effect: training can move faster, but too large can overshoot and make loss jump.')).toBeInTheDocument();
+        expect(screen.getByText('Cause: larger batches average more samples per update. Effect: the path is steadier, but each visible update reacts less often.')).toBeInTheDocument();
+    });
 });
