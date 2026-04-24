@@ -11,8 +11,6 @@ export default [
         ignores: [
             '**/dist/**',
             '**/node_modules/**',
-            'legacy/',
-            'conductor/',
         ],
     },
     {
