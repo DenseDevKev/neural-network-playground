@@ -56,11 +56,12 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             {/* Problem type toggle */}
             <div className="control-row" style={{ marginBottom: 12 }}>
                 <span className="control-label">Problem</span>
-                <div className="chip-group">
+                <div className="chip-group" role="group" aria-label="Problem type">
                     <Tooltip content="Switch to classification datasets">
                         <button
                             type="button"
                             className={`chip ${problemType === 'classification' ? 'active' : ''}`}
+                            aria-pressed={problemType === 'classification'}
                             onClick={() => {
                                 beginDataChange();
                                 store.getState().setDataset('circle');
@@ -73,6 +74,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                         <button
                             type="button"
                             className={`chip ${problemType === 'regression' ? 'active' : ''}`}
+                            aria-pressed={problemType === 'regression'}
                             onClick={() => {
                                 beginDataChange();
                                 store.getState().setDataset('reg-plane');

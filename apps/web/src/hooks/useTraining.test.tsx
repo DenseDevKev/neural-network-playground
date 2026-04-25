@@ -73,6 +73,16 @@ function makeSnapshot(step: number): NetworkSnapshot {
     };
 }
 
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+}
+
 function resetStores(): void {
     window.history.replaceState(null, '', '/');
     resetFrameBuffer();
@@ -246,5 +256,77 @@ describe('useTraining', () => {
         });
 
         await waitFor(() => expect(bridge.workerApi.setWebGpuEnabled).toHaveBeenCalledWith(false));
+    });
+
+    it('drops stale config sync completions after a newer config wins', async () => {
+        renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        const first = deferred<{ snapshot: NetworkSnapshot; runId: number }>();
+        const second = deferred<{ snapshot: NetworkSnapshot; runId: number }>();
+        bridge.workerApi.updateConfig
+            .mockReset()
+            .mockImplementationOnce(() => first.promise)
+            .mockImplementationOnce(() => second.promise);
+        bridge.newRunTo.mockClear();
+
+        act(() => {
+            useTrainingStore.getState().beginConfigChange('data');
+            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 1);
+        });
+        await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
+
+        act(() => {
+            useTrainingStore.getState().beginConfigChange('data');
+            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 2);
+        });
+        await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(2));
+
+        await act(async () => {
+            second.resolve({ snapshot: makeSnapshot(20), runId: 220 });
+            await second.promise;
+        });
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(20));
+
+        await act(async () => {
+            first.resolve({ snapshot: makeSnapshot(10), runId: 210 });
+            await first.promise;
+        });
+
+        expect(useTrainingStore.getState().snapshot?.step).toBe(20);
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+        expect(useTrainingStore.getState().configError).toBeNull();
+        expect(bridge.newRunTo).toHaveBeenCalledWith(220);
+        expect(bridge.newRunTo).not.toHaveBeenCalledWith(210);
+    });
+
+    it('does not start training while a config sync is pending', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        const pending = deferred<{ snapshot: NetworkSnapshot; runId: number }>();
+        bridge.workerApi.updateConfig.mockReset().mockReturnValueOnce(pending.promise);
+        bridge.postStreamCommand.mockClear();
+        bridge.startRenderLoop.mockClear();
+
+        act(() => {
+            useTrainingStore.getState().beginConfigChange('data');
+            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 1);
+        });
+        await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
+
+        act(() => {
+            result.current.play();
+        });
+
+        expect(useTrainingStore.getState().status).toBe('idle');
+        expect(bridge.startRenderLoop).not.toHaveBeenCalled();
+        expect(bridge.postStreamCommand).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startTraining' }));
+
+        await act(async () => {
+            pending.resolve({ snapshot: makeSnapshot(30), runId: 230 });
+            await pending.promise;
+        });
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(30));
     });
 });

@@ -227,6 +227,14 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isValidAdamBeta(value: unknown): value is number {
+    return isFiniteNumber(value) && value >= 0 && value < 1;
+}
+
+function isValidAdamEps(value: unknown): value is number {
+    return isFiniteNumber(value) && value > 0;
+}
+
 function isStrict(options?: NormalizeAppConfigOptions): boolean {
     return options?.mode !== 'lenient';
 }
@@ -408,6 +416,18 @@ export function normalizeAppConfig(
         return { config: null, error: 'Huber delta must be a positive finite number.' };
     }
 
+    if (strict && training.adamBeta1 !== undefined && !isValidAdamBeta(training.adamBeta1)) {
+        return { config: null, error: 'Adam beta1 must be finite and at least 0 and less than 1.' };
+    }
+
+    if (strict && training.adamBeta2 !== undefined && !isValidAdamBeta(training.adamBeta2)) {
+        return { config: null, error: 'Adam beta2 must be finite and at least 0 and less than 1.' };
+    }
+
+    if (strict && training.adamEps !== undefined && !isValidAdamEps(training.adamEps)) {
+        return { config: null, error: 'Adam epsilon must be a positive finite number.' };
+    }
+
     const inputSize = countActiveFeatures(features);
     if (inputSize === 0) {
         return strict
@@ -479,6 +499,9 @@ export function normalizeAppConfig(
     const huberDelta = isFiniteNumber(training.huberDelta) && training.huberDelta > 0
         ? training.huberDelta
         : undefined;
+    const adamBeta1 = isValidAdamBeta(training.adamBeta1) ? training.adamBeta1 : undefined;
+    const adamBeta2 = isValidAdamBeta(training.adamBeta2) ? training.adamBeta2 : undefined;
+    const adamEps = isValidAdamEps(training.adamEps) ? training.adamEps : undefined;
 
     return {
         config: {
@@ -510,6 +533,9 @@ export function normalizeAppConfig(
                 regularization: getValidValue(training.regularization as string | null, VALID_REGULARIZATION, DEFAULT_TRAINING.regularization),
                 regularizationRate: safeTraining.regularizationRate,
                 gradientClip,
+                ...(adamBeta1 !== undefined ? { adamBeta1 } : {}),
+                ...(adamBeta2 !== undefined ? { adamBeta2 } : {}),
+                ...(adamEps !== undefined ? { adamEps } : {}),
                 ...(huberDelta !== undefined ? { huberDelta } : {}),
             },
             features,

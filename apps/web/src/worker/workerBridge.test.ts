@@ -333,6 +333,79 @@ describe('workerBridge streamed snapshots', () => {
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
     });
 
+    it('does not let stale shared buffers install or satisfy a later snapshot', () => {
+        const listener = getRegisteredStreamListener();
+        const staleViews = allocSharedSnapshotViews(2, 1);
+        const staleSeq = publishSharedSnapshot(
+            staleViews,
+            new Float32Array([9, 9, 9, 9]),
+            new Float32Array([8, 8, 8, 8]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+
+        newRunTo(2);
+        resetFrameBuffer();
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 1,
+                control: staleViews.controlSAB,
+                outputGrid: staleViews.outputGridSAB,
+                neuronGrids: staleViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+
+        startRenderLoop();
+        listener({
+            data: makeSnapshotMessage(1, {
+                runId: 2,
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq: staleSeq,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        let frame = getFrameBuffer();
+        expect(frame.outputGrid).toBeNull();
+        expect(frame.neuronGrids).toBeNull();
+
+        const currentViews = allocSharedSnapshotViews(2, 1);
+        const currentSeq = publishSharedSnapshot(
+            currentViews,
+            new Float32Array([0.2, 0.4, 0.6, 0.8]),
+            new Float32Array([0.8, 0.6, 0.4, 0.2]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 2,
+                control: currentViews.controlSAB,
+                outputGrid: currentViews.outputGridSAB,
+                neuronGrids: currentViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+        listener({
+            data: makeSnapshotMessage(2, {
+                runId: 2,
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq: currentSeq,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        frame = getFrameBuffer();
+        expect(frame.outputGrid).toEqual(new Float32Array([0.2, 0.4, 0.6, 0.8]));
+        expect(frame.neuronGrids).toEqual(new Float32Array([0.8, 0.6, 0.4, 0.2]));
+    });
+
     it('drops stale out-of-order snapshots before they reach the frame buffer', () => {
         const listener = getRegisteredStreamListener();
 

@@ -271,6 +271,35 @@ describe('Network training', () => {
         expect(() => net.applyGradients(defaultTraining, Number.NaN)).toThrow(RangeError);
     });
 
+    it('applyGradients rejects invalid finite/ranged training hyperparameters', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.applyGradients({ ...defaultTraining, learningRate: Number.NaN }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...defaultTraining, batchSize: 0 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...defaultTraining, regularizationRate: -0.1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...defaultTraining, gradientClip: 0 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({
+            ...defaultTraining,
+            optimizer: 'sgdMomentum',
+            momentum: 1.01,
+        }, 1)).toThrow(RangeError);
+    });
+
+    it('applyGradients rejects invalid Adam hyperparameters', () => {
+        const net = new Network(makeConfig());
+        const adamTraining: TrainingConfig = {
+            ...defaultTraining,
+            optimizer: 'adam',
+        };
+
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta1: -0.1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta1: 1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta2: Number.NaN }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta2: 1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamEps: 0 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamEps: Number.POSITIVE_INFINITY }, 1)).toThrow(RangeError);
+    });
+
     it('normalizes multi-output gradients by output size', () => {
         const net = new Network(makeConfig({
             inputSize: 1,
@@ -633,6 +662,16 @@ describe('buildGridInputs', () => {
         for (const inp of inputs) {
             expect(inp).toHaveLength(2); // x and y features
         }
+    });
+
+    it('rejects grid sizes smaller than 2', () => {
+        const active = getActiveFeatures(defaultFeatureFlags());
+        expect(() => buildGridInputs(1, active)).toThrow(RangeError);
+    });
+
+    it('rejects non-integer grid sizes', () => {
+        const active = getActiveFeatures(defaultFeatureFlags());
+        expect(() => buildGridInputs(2.5, active)).toThrow(RangeError);
     });
 });
 

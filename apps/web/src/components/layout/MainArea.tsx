@@ -12,7 +12,6 @@ import { ConfusionMatrix } from '../visualization/ConfusionMatrix.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
 import { Panel } from '../common/Panel.tsx';
 import { ErrorBoundary } from '../common/ErrorBoundary.tsx';
 import { LoadingState } from '../common/LoadingState.tsx';
@@ -57,16 +56,6 @@ export const BoundaryContent = memo(function BoundaryContent() {
                     showTestData={showTestData}
                     discretize={discretize}
                 />
-                <div style={{ display: 'flex', gap: 16, padding: '6px 0', fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <i style={{ width: 10, height: 10, background: HEX_BLUE, borderRadius: 2, display: 'inline-block' }} />
-                        Class 0 / Negative
-                    </span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <i style={{ width: 10, height: 10, background: HEX_ORANGE, borderRadius: 2, display: 'inline-block' }} />
-                        Class 1 / Positive
-                    </span>
-                </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
                     <label className="checkbox-row">
                         <input type="checkbox" checked={showTestData}
@@ -140,16 +129,6 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                         discretize={discretize}
                     />
                 </ErrorBoundary>
-                <div style={{ display: 'flex', gap: 16, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-secondary)', padding: '4px 0' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <i style={{ width: 10, height: 10, background: HEX_BLUE, borderRadius: 2, display: 'inline-block' }} />
-                        Negative
-                    </span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <i style={{ width: 10, height: 10, background: HEX_ORANGE, borderRadius: 2, display: 'inline-block' }} />
-                        Positive
-                    </span>
-                </div>
                 <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
                     <LossChart />
                 </ErrorBoundary>

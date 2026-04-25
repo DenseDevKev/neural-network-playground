@@ -73,6 +73,11 @@ export function batchLoss(
     predictions: number[],
     targets: number[],
 ): number {
+    if (predictions.length !== targets.length) {
+        throw new RangeError('predictions and targets must have the same batch length');
+    }
+    if (predictions.length === 0) return 0;
+
     let sum = 0;
     for (let i = 0; i < predictions.length; i++) {
         sum += fn.loss(predictions[i], targets[i]);

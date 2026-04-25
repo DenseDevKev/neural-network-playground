@@ -100,7 +100,7 @@ function createStreamSnapshot(
         testMetrics: {
             loss: msg.scalars.testLoss,
             accuracy: msg.scalars.testAccuracy,
-            confusionMatrix: msg.confusionMatrix,
+            confusionMatrix: msg.confusionMatrix ?? previousSnapshot?.testMetrics.confusionMatrix,
         },
         weights: previousSnapshot?.weights ?? [],
         biases: previousSnapshot?.biases ?? [],
@@ -126,6 +126,9 @@ export function useTraining(): TrainingHook {
     const prevConfigSyncNonceRef = useRef(0);
     const stepsPerFrameRef = useRef(5);
     const isPlayingRef = useRef(false);
+    const configSyncSeqRef = useRef(0);
+    const activeConfigSyncSeqRef = useRef(0);
+    const configSyncPendingRef = useRef(false);
 
     // Config selectors (from playground store — stable, rarely changes)
     const network = usePlaygroundStore((s) => s.network);
@@ -144,6 +147,24 @@ export function useTraining(): TrainingHook {
         ts.setWorkerError(getErrorMessage(error, fallback));
         ts.setStatus('paused');
         initializedRef.current = false;
+    }, []);
+
+    const beginConfigSync = useCallback(() => {
+        const seq = configSyncSeqRef.current + 1;
+        configSyncSeqRef.current = seq;
+        activeConfigSyncSeqRef.current = seq;
+        configSyncPendingRef.current = true;
+        return seq;
+    }, []);
+
+    const isCurrentConfigSync = useCallback((seq: number) => (
+        configSyncPendingRef.current && activeConfigSyncSeqRef.current === seq
+    ), []);
+
+    const finishConfigSyncIfCurrent = useCallback((seq: number) => {
+        if (activeConfigSyncSeqRef.current === seq) {
+            configSyncPendingRef.current = false;
+        }
     }, []);
 
     const initializeWorker = useCallback(async () => {
@@ -249,6 +270,7 @@ export function useTraining(): TrainingHook {
         const previousConfigSnapshot = prevConfigRef.current;
         prevConfigRef.current = nextSnapshot;
         prevConfigSyncNonceRef.current = configSyncNonce;
+        const seq = beginConfigSync();
 
         const sync = async () => {
             // Stop streaming before config change
@@ -270,6 +292,7 @@ export function useTraining(): TrainingHook {
                     config.features,
                     false,
                 );
+                if (!isCurrentConfigSync(seq)) return;
                 // Sync to worker's runId AFTER updateConfig returns
                 newRunTo(result.runId);
                 ts.setSnapshot(result.snapshot);
@@ -279,19 +302,24 @@ export function useTraining(): TrainingHook {
 
                 // Update points reactively
                 const trainPts = await api.getTrainPoints();
+                if (!isCurrentConfigSync(seq)) return;
                 const testPts = await api.getTestPoints();
+                if (!isCurrentConfigSync(seq)) return;
                 ts.setTrainPoints(trainPts);
                 ts.setTestPoints(testPts);
 
                 ps.syncToUrl();
                 ts.finishConfigChange();
+                finishConfigSyncIfCurrent(seq);
             } catch (error) {
+                if (!isCurrentConfigSync(seq)) return;
                 prevConfigRef.current = previousConfigSnapshot;
                 ts.failConfigChange(error instanceof Error ? error.message : 'Failed to update configuration');
+                finishConfigSyncIfCurrent(seq);
             }
         };
         sync();
-    }, [network, training, data, features, configSyncNonce]);
+    }, [network, training, data, features, configSyncNonce, beginConfigSync, finishConfigSyncIfCurrent, isCurrentConfigSync]);
 
     // Sync demand changes to worker
     useEffect(() => {
@@ -315,6 +343,10 @@ export function useTraining(): TrainingHook {
     }, [webgpuGrid]);
 
     const play = useCallback(() => {
+        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+            return;
+        }
+
         const startTraining = () => {
             isPlayingRef.current = true;
             useTrainingStore.getState().setStatus('running');
@@ -367,14 +399,18 @@ export function useTraining(): TrainingHook {
             stopRenderLoop();
             isPlayingRef.current = false;
         }
+        const seq = beginConfigSync();
         try {
             if (!initializedRef.current) {
                 await initializeWorker();
+                if (!isCurrentConfigSync(seq)) return;
                 useTrainingStore.getState().setStatus('idle');
+                finishConfigSyncIfCurrent(seq);
                 return;
             }
             const api = getWorkerApi();
             const result = await api.reset();
+            if (!isCurrentConfigSync(seq)) return;
             newRunTo(result.runId);
             const ts = useTrainingStore.getState();
             ts.setSnapshot(result.snapshot);
@@ -385,17 +421,25 @@ export function useTraining(): TrainingHook {
 
             // Refresh points
             const trainPts = await api.getTrainPoints();
+            if (!isCurrentConfigSync(seq)) return;
             const testPts = await api.getTestPoints();
+            if (!isCurrentConfigSync(seq)) return;
             ts.setTrainPoints(trainPts);
             ts.setTestPoints(testPts);
+            finishConfigSyncIfCurrent(seq);
         } catch (error) {
+            if (!isCurrentConfigSync(seq)) return;
             reportWorkerError(error, 'Failed to reset training.');
+            finishConfigSyncIfCurrent(seq);
         }
-    }, [initializeWorker, reportWorkerError]);
+    }, [beginConfigSync, finishConfigSyncIfCurrent, initializeWorker, isCurrentConfigSync, reportWorkerError]);
 
     // Cleanup on unmount
     useEffect(() => {
         return () => {
+            activeConfigSyncSeqRef.current = configSyncSeqRef.current + 1;
+            configSyncSeqRef.current = activeConfigSyncSeqRef.current;
+            configSyncPendingRef.current = false;
             isPlayingRef.current = false;
             terminateWorker();
         };

@@ -38,6 +38,7 @@ let _pendingSnapshot: WorkerToMainMessage | null = null;
 // renderer never observes torn state even if the worker publishes again
 // while React is mid-paint.
 let _sharedViews: SharedSnapshotViews | null = null;
+let _sharedViewsRunId: number | null = null;
 let _sharedOutputReadBuf: Float32Array | null = null;
 let _sharedNeuronReadBuf: Float32Array | null = null;
 let _sharedNeuronGridLayout: { count: number; gridSize: number } | null = null;
@@ -50,6 +51,7 @@ function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
         gridSize: msg.gridSize,
         neuronCount: msg.neuronGridLayout.count,
     });
+    _sharedViewsRunId = msg.runId;
     // Allocate reader-side destination arrays sized to the new shape.
     // These are regular (non-shared) Float32Arrays so downstream renderers
     // work on a stable copy; the cost is a single memcpy per snapshot.
@@ -62,9 +64,16 @@ function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
 
 function tearDownSharedBuffers(): void {
     _sharedViews = null;
+    _sharedViewsRunId = null;
     _sharedOutputReadBuf = null;
     _sharedNeuronReadBuf = null;
     _sharedNeuronGridLayout = null;
+}
+
+function clearSharedBuffersIfRunMismatch(): void {
+    if (_sharedViewsRunId !== null && _sharedViewsRunId !== _currentRunId) {
+        tearDownSharedBuffers();
+    }
 }
 
 // Callback for when a new snapshot is ready to be applied (called from rAF loop)
@@ -182,6 +191,8 @@ function framePatchFrom(msg: import('@nn-playground/shared').WorkerSnapshotMessa
     if (
         msg.sharedSeq !== undefined &&
         _sharedViews &&
+        _sharedViewsRunId === msg.runId &&
+        _sharedViewsRunId === _currentRunId &&
         _sharedOutputReadBuf &&
         _sharedNeuronReadBuf
     ) {
@@ -301,6 +312,7 @@ export function newRun(): number {
     _currentRunId++;
     _latestSnapshotId = -1;
     _pendingSnapshot = null;
+    clearSharedBuffersIfRunMismatch();
     return _currentRunId;
 }
 
@@ -311,6 +323,7 @@ export function newRunTo(targetRunId: number): void {
     _currentRunId = targetRunId;
     _latestSnapshotId = -1;
     _pendingSnapshot = null;
+    clearSharedBuffersIfRunMismatch();
 }
 
 /**

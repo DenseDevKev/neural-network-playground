@@ -300,4 +300,101 @@ describe('compatibility normalization', () => {
         expect(result.config?.training.huberDelta).toBeUndefined();
         expect('huberDelta' in result.config!.training).toBe(false);
     });
+
+    it('strictly rejects invalid optional Adam fields', () => {
+        const cases = [
+            {
+                patch: { adamBeta1: -0.1 },
+                error: 'Adam beta1 must be finite and at least 0 and less than 1.',
+            },
+            {
+                patch: { adamBeta1: 1 },
+                error: 'Adam beta1 must be finite and at least 0 and less than 1.',
+            },
+            {
+                patch: { adamBeta2: Number.NaN },
+                error: 'Adam beta2 must be finite and at least 0 and less than 1.',
+            },
+            {
+                patch: { adamBeta2: 1 },
+                error: 'Adam beta2 must be finite and at least 0 and less than 1.',
+            },
+            {
+                patch: { adamEps: 0 },
+                error: 'Adam epsilon must be a positive finite number.',
+            },
+            {
+                patch: { adamEps: Number.POSITIVE_INFINITY },
+                error: 'Adam epsilon must be a positive finite number.',
+            },
+        ];
+
+        for (const { patch, error } of cases) {
+            const result = validateImportedConfig({
+                ...validConfig,
+                training: {
+                    ...validConfig.training,
+                    optimizer: 'adam',
+                    ...patch,
+                },
+            });
+
+            expect(result.config).toBeNull();
+            expect(result.error).toBe(error);
+        }
+    });
+
+    it('leniently omits invalid optional Adam fields', () => {
+        const result = normalizeAppConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                adamBeta1: 1,
+                adamBeta2: Number.NaN,
+                adamEps: 0,
+            },
+        }, { mode: 'lenient' });
+
+        expect(result.error).toBeNull();
+        expect(result.config?.training.adamBeta1).toBeUndefined();
+        expect(result.config?.training.adamBeta2).toBeUndefined();
+        expect(result.config?.training.adamEps).toBeUndefined();
+        expect('adamBeta1' in result.config!.training).toBe(false);
+        expect('adamBeta2' in result.config!.training).toBe(false);
+        expect('adamEps' in result.config!.training).toBe(false);
+    });
+
+    it('preserves valid optional Adam fields during normalization', () => {
+        const strict = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                adamBeta1: 0.8,
+                adamBeta2: 0.95,
+                adamEps: 1e-7,
+            },
+        });
+        const lenient = normalizeAppConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                adamBeta1: 0,
+                adamBeta2: 0.999,
+                adamEps: 1e-8,
+            },
+        }, { mode: 'lenient' });
+
+        expect(strict.error).toBeNull();
+        expect(strict.config?.training.adamBeta1).toBe(0.8);
+        expect(strict.config?.training.adamBeta2).toBe(0.95);
+        expect(strict.config?.training.adamEps).toBe(1e-7);
+
+        expect(lenient.error).toBeNull();
+        expect(lenient.config?.training.adamBeta1).toBe(0);
+        expect(lenient.config?.training.adamBeta2).toBe(0.999);
+        expect(lenient.config?.training.adamEps).toBe(1e-8);
+    });
 });

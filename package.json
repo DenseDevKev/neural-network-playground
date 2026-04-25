@@ -9,6 +9,8 @@
     "build": "pnpm --filter @nn-playground/web build",
     "test": "pnpm -r test",
     "test:engine": "pnpm --filter @nn-playground/engine test",
+    "test:perf": "pnpm --filter @nn-playground/engine test:perf",
+    "bench": "pnpm --filter @nn-playground/engine bench",
     "lint": "eslint .",
     "clean": "pnpm -r exec rm -rf dist node_modules"
   },

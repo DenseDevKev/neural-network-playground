@@ -135,4 +135,15 @@ describe('batchLoss', () => {
         const mse = getLoss('mse');
         expect(batchLoss(mse, [0.5, 0.5], [0.5, 0.5])).toBe(0);
     });
+
+    it('returns 0 for an empty batch', () => {
+        const mse = getLoss('mse');
+        expect(batchLoss(mse, [], [])).toBe(0);
+    });
+
+    it('rejects mismatched prediction and target batch lengths', () => {
+        const mse = getLoss('mse');
+        expect(() => batchLoss(mse, [0], [])).toThrow(RangeError);
+        expect(() => batchLoss(mse, [], [0])).toThrow(RangeError);
+    });
 });

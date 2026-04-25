@@ -9,6 +9,7 @@ import { useLayoutStore } from './store/useLayoutStore.ts';
 import type { LayoutVariant } from './store/useLayoutStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
+import { DEFAULT_DEMAND, type VisualizationDemand } from '@nn-playground/shared';
 import { useTraining } from './hooks/useTraining.ts';
 import { Header } from './components/layout/Header.tsx';
 import { Panel } from './components/common/Panel.tsx';
@@ -39,6 +40,40 @@ import { EmptyState } from './components/common/EmptyState.tsx';
 
 const COMPACT_BREAKPOINT = 900;
 const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
+
+function deriveVisualizationDemand(args: {
+    layout: LayoutVariant;
+    phase: 'build' | 'run';
+    activeTabRight: string;
+    graphRenderer: 'canvas' | 'svg';
+}): VisualizationDemand {
+    const rightTab = args.activeTabRight;
+    const allRightPanelsVisible = args.layout === 'focus' || args.layout === 'grid';
+    const selectedRightPanelVisible = args.layout === 'dock';
+    const splitRunVisible = args.layout === 'split' && args.phase === 'run';
+
+    const boundaryVisible =
+        allRightPanelsVisible ||
+        splitRunVisible ||
+        (selectedRightPanelVisible && rightTab === 'boundary');
+    const confusionVisible =
+        allRightPanelsVisible ||
+        splitRunVisible ||
+        (selectedRightPanelVisible && rightTab === 'confusion');
+    const inspectionVisible =
+        allRightPanelsVisible ||
+        splitRunVisible ||
+        (selectedRightPanelVisible && rightTab === 'inspection');
+    const graphConsumesNeuronGrids = args.graphRenderer === 'canvas' || args.graphRenderer === 'svg';
+
+    return {
+        ...DEFAULT_DEMAND,
+        needDecisionBoundary: boundaryVisible,
+        needNeuronGrids: graphConsumesNeuronGrids,
+        needLayerStats: inspectionVisible,
+        needConfusionMatrix: confusionVisible,
+    };
+}
 
 function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
     if (!(target instanceof Element)) return false;
@@ -74,12 +109,16 @@ function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
 export default function App() {
     const training = useTraining();
     const persistedLayout = useLayoutStore((s) => s.layout);
+    const phase = useLayoutStore((s) => s.phase);
+    const activeTabRight = useLayoutStore((s) => s.activeTabRight);
     const status = useTrainingStore((s) => s.status);
     const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
     const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const workerError = useTrainingStore((s) => s.workerError);
+    const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
+    const setDemand = usePlaygroundStore((s) => s.setDemand);
     const [isCompact, setIsCompact] = useState(() => window.innerWidth < COMPACT_BREAKPOINT);
 
     // Stable refs so keyboard handler never goes stale
@@ -91,6 +130,15 @@ export default function App() {
 
     const stableReset = useCallback(() => trainingRef.current.reset(), []);
     const effectiveLayout = isCompact ? 'dock' : persistedLayout;
+
+    useEffect(() => {
+        setDemand(deriveVisualizationDemand({
+            layout: effectiveLayout,
+            phase,
+            activeTabRight,
+            graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
+        }));
+    }, [activeTabRight, canvasNetworkGraph, effectiveLayout, phase, setDemand]);
 
     // Performance observer (dev only)
     useEffect(() => {

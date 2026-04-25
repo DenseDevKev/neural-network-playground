@@ -182,6 +182,22 @@ function assertFiniteValue(value: number, name: string): void {
     }
 }
 
+function assertFiniteInRange(
+    value: number,
+    name: string,
+    min: number,
+    max: number,
+    options: { minInclusive?: boolean; maxInclusive?: boolean } = {},
+): void {
+    const minOk = options.minInclusive === true ? value >= min : value > min;
+    const maxOk = options.maxInclusive === true ? value <= max : value < max;
+    if (!Number.isFinite(value) || !minOk || !maxOk) {
+        const minLabel = options.minInclusive === true ? `[${min}` : `(${min}`;
+        const maxLabel = options.maxInclusive === true ? `${max}]` : `${max})`;
+        throw new RangeError(`${name} must be finite and in range ${minLabel}, ${maxLabel}`);
+    }
+}
+
 function assertVectorShape(
     vector: ArrayLike<number> | undefined,
     expectedLen: number,
@@ -277,6 +293,37 @@ function assertSerializedParams(
         for (let n = 0; n < fanOut; n++) {
             assertFiniteValue(biasLayer[n], `serialized biases[${l}][${n}]`);
         }
+    }
+}
+
+function assertTrainingHyperparams(training: TrainingConfig): void {
+    assertFiniteInRange(training.learningRate, 'learningRate', 0, Number.POSITIVE_INFINITY);
+    assertFiniteInRange(training.batchSize, 'batchSize', 0, Number.POSITIVE_INFINITY);
+    assertFiniteInRange(training.regularizationRate, 'regularizationRate', 0, Number.POSITIVE_INFINITY, {
+        minInclusive: true,
+    });
+    assertFiniteInRange(training.momentum, 'momentum', 0, 1, {
+        minInclusive: true,
+        maxInclusive: true,
+    });
+    assertFiniteInRange(training.adamBeta1 ?? 0.9, 'adamBeta1', 0, 1, { minInclusive: true });
+    assertFiniteInRange(training.adamBeta2 ?? 0.999, 'adamBeta2', 0, 1, { minInclusive: true });
+    assertFiniteInRange(training.adamEps ?? 1e-8, 'adamEps', 0, Number.POSITIVE_INFINITY);
+
+    const clip = training.gradientClip;
+    if (clip != null) {
+        assertFiniteInRange(clip, 'gradientClip', 0, Number.POSITIVE_INFINITY);
+    }
+
+    switch (training.optimizer) {
+        case 'sgd':
+            break;
+        case 'sgdMomentum':
+            break;
+        case 'adam':
+            break;
+        default:
+            throw new RangeError('optimizer must be one of sgd, sgdMomentum, or adam');
     }
 }
 
@@ -481,8 +528,10 @@ export class Network {
         if (!Number.isFinite(batchSize) || batchSize <= 0) {
             throw new RangeError('gradient normalization count must be finite and greater than 0');
         }
+        assertTrainingHyperparams(training);
         this.prepareOptimizer(training.optimizer);
         const lr = computeLearningRate(training.learningRate, this.currentStep, training.lrSchedule);
+        assertFiniteInRange(lr, 'effective learningRate', 0, Number.POSITIVE_INFINITY);
         const invB = 1 / batchSize;
 
         // Pass 1: average grads, accumulate squared norm.
@@ -1182,6 +1231,10 @@ export function buildGridInputs(
     gridSize: number,
     activeFeatures: FeatureSpec[],
 ): number[][] {
+    if (!Number.isInteger(gridSize) || gridSize < 2) {
+        throw new RangeError('gridSize must be an integer greater than or equal to 2');
+    }
+
     const inputs: number[][] = [];
     for (let gy = 0; gy < gridSize; gy++) {
         for (let gx = 0; gx < gridSize; gx++) {

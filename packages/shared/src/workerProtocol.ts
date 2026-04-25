@@ -138,6 +138,7 @@ export interface WorkerSnapshotMessage {
 
     historyPoint: HistoryPoint;
     confusionMatrix?: ConfusionMatrixData;
+    confusionMatrixVersion?: number;
 
     /**
      * When the worker is publishing heavy buffers (outputGrid, neuronGrids,
