@@ -246,6 +246,7 @@ export function paintNodes(
         const isOutput = l === layerCount - 1;
         const target = isInput ? inputStroke : isOutput ? outputStroke : null;
         const layer = nodePositions[l];
+        const biasBase = flat && !target ? layerBiasOffset(flat.layerSizes, l - 1) : 0;
 
         for (let i = 0; i < layer.length; i++) {
             const n = layer[i];
@@ -255,9 +256,7 @@ export function paintNodes(
                 target.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
             } else {
                 // Hidden layer — bias-tinted; bucket by sign.
-                const bias = flat
-                    ? flat.biases[layerBiasOffset(flat.layerSizes, l - 1) + i]
-                    : 0;
+                const bias = flat ? flat.biases[biasBase + i] : 0;
                 const hiddenTarget = bias >= 0 ? hiddenPos : hiddenNeg;
                 hiddenTarget.moveTo(n.x + NODE_RADIUS, n.y);
                 hiddenTarget.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
