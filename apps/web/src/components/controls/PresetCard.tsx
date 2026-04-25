@@ -13,7 +13,7 @@ function formatDifficulty(difficulty: NonNullable<Preset['difficulty']>) {
 
 export function PresetCard({ preset, isSelected, onSelect }: PresetCardProps) {
     return (
-        <Tooltip content="Apply preset and reset training" block>
+        <Tooltip content={`Cause: this loads the ${preset.title} preset and resets training. Effect: the playground starts from a known setup for the lesson goal.`} block>
             <button
                 type="button"
                 className={`preset-card${isSelected ? ' preset-card--selected' : ''}`}

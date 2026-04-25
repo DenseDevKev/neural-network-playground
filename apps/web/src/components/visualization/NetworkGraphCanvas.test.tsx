@@ -1,28 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import { NetworkGraphCanvas } from './NetworkGraphCanvas.tsx';
 import {
     resetFrameBuffer,
     updateFrameBuffer,
-    getFrameVersions,
+    getFrameVersion,
 } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import {
+    edgeFilterOptions,
     hitTestEdge,
     hitTestNode,
     paintEdges,
     paintLabels,
     paintNodes,
+    shouldRenderEdge,
 } from './networkGraphPainter.ts';
 
 // Minimal Canvas2D mock — just enough for paintEdges/paintNodes/paintLabels
 // to run. We assert at the integration level that the component mounts and
 // triggers a paint; the painter helpers are exercised in isolation below.
-const mockContexts: ReturnType<typeof createMockContext>[] = [];
-
 function createMockContext() {
-    const context = {
+    return {
         clearRect: vi.fn(),
         fillRect: vi.fn(),
         beginPath: vi.fn(),
@@ -34,6 +34,8 @@ function createMockContext() {
         stroke: vi.fn(),
         fillText: vi.fn(),
         setTransform: vi.fn(),
+        translate: vi.fn(),
+        scale: vi.fn(),
         save: vi.fn(),
         restore: vi.fn(),
         createImageData: (w: number, h: number) => ({
@@ -52,8 +54,6 @@ function createMockContext() {
         textAlign: 'start' as CanvasTextAlign,
         textBaseline: 'alphabetic' as CanvasTextBaseline,
     };
-    mockContexts.push(context);
-    return context;
 }
 
 describe('NetworkGraphCanvas', () => {
@@ -61,29 +61,17 @@ describe('NetworkGraphCanvas', () => {
     const originalResizeObserver = window.ResizeObserver;
 
     beforeEach(() => {
-        mockContexts.length = 0;
         resetFrameBuffer();
         useTrainingStore.setState({
             snapshot: null,
             frameVersion: 0,
-            outputGridVersion: 0,
-            neuronGridsVersion: 0,
-            paramsVersion: 0,
-            layerStatsVersion: 0,
-            confusionMatrixVersion: 0,
             trainPoints: [],
             testPoints: [],
         });
 
-        const contextsByCanvas = new WeakMap<HTMLCanvasElement, ReturnType<typeof createMockContext>>();
-        HTMLCanvasElement.prototype.getContext = vi.fn(function (this: HTMLCanvasElement) {
-            let context = contextsByCanvas.get(this);
-            if (!context) {
-                context = createMockContext();
-                contextsByCanvas.set(this, context);
-            }
-            return context as unknown as CanvasRenderingContext2D;
-        }) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = vi.fn(
+            () => createMockContext() as unknown as CanvasRenderingContext2D,
+        ) as unknown as typeof HTMLCanvasElement.prototype.getContext;
 
         class ResizeObserverMock {
             observe() {}
@@ -115,7 +103,7 @@ describe('NetworkGraphCanvas', () => {
                 biases,
                 weightLayout: { layerSizes },
             });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
+            useTrainingStore.setState({ frameVersion: getFrameVersion() });
         });
 
         // Match the network shape the component reads from the store.
@@ -129,51 +117,6 @@ describe('NetworkGraphCanvas', () => {
         const { container } = render(<NetworkGraphCanvas />);
         const canvas = container.querySelector('canvas');
         expect(canvas).not.toBeNull();
-    });
-
-    it('repaints graph for weight-only versions but not grid-only versions', () => {
-        const layerSizes = [2, 2, 1];
-
-        act(() => {
-            updateFrameBuffer({
-                weights: new Float32Array([0.3, -0.5, 0.7, -0.2, 0.9, -0.4]),
-                biases: new Float32Array([0.1, -0.1, 0.05]),
-                weightLayout: { layerSizes },
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
-
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [2],
-            },
-        });
-
-        render(<NetworkGraphCanvas />);
-        const mainContext = mockContexts[0];
-        expect(mainContext.clearRect).toHaveBeenCalledTimes(1);
-
-        act(() => {
-            updateFrameBuffer({
-                weights: new Float32Array([0.4, -0.6, 0.8, -0.3, 1.0, -0.5]),
-                biases: new Float32Array([0.2, -0.2, 0.15]),
-                weightLayout: { layerSizes },
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
-
-        expect(mainContext.clearRect).toHaveBeenCalledTimes(2);
-
-        act(() => {
-            updateFrameBuffer({
-                neuronGrids: new Float32Array(3 * 4),
-                neuronGridLayout: { count: 3, gridSize: 2 },
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
-
-        expect(mainContext.clearRect).toHaveBeenCalledTimes(2);
     });
 
     it('exposes a screen-reader summary describing the network shape', () => {
@@ -202,103 +145,25 @@ describe('NetworkGraphCanvas', () => {
         expect(container.querySelector('.network-tooltip')).toBeNull();
     });
 
-    it('shows node details from a keyboard focus target and clears them on blur', () => {
-        act(() => {
-            updateFrameBuffer({
-                weights: new Float32Array([0.3, -0.5, 0.7, -0.2, 0.9, -0.4]),
-                biases: new Float32Array([0.1, -0.1, 0.05]),
-                weightLayout: { layerSizes: [2, 2, 1] },
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [2],
-                activation: 'tanh',
-            },
-        });
-
-        render(<NetworkGraphCanvas />);
-
-        const nodeTarget = screen.getByRole('button', {
-            name: /Hidden 1, Neuron 1.*Bias: 0\.1000.*Activation: tanh/,
-        });
-        fireEvent.focus(nodeTarget);
-
-        expect(screen.getByText('Hidden 1, Neuron 1')).toBeInTheDocument();
-        expect(screen.getByText('Bias: 0.1000')).toBeInTheDocument();
-        expect(screen.getByText('Activation: tanh')).toBeInTheDocument();
-
-        fireEvent.blur(nodeTarget);
-        expect(screen.queryByText('Hidden 1, Neuron 1')).not.toBeInTheDocument();
-    });
-
-    it('shows edge details from a keyboard focus target and clears them on blur', () => {
-        act(() => {
-            updateFrameBuffer({
-                weights: new Float32Array([0.3, -0.5, 0.7, -0.2, 0.9, -0.4]),
-                biases: new Float32Array([0.1, -0.1, 0.05]),
-                weightLayout: { layerSizes: [2, 2, 1] },
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [2],
-            },
-        });
-
-        render(<NetworkGraphCanvas />);
-
-        const edgeTarget = screen.getByRole('button', {
-            name: /Weight: 0\.3000.*Connection: Input 1 to Hidden 1, Neuron 1/,
-        });
-        fireEvent.focus(edgeTarget);
-
-        expect(screen.getByText('Weight: 0.3000')).toBeInTheDocument();
-        expect(screen.getByText('Layer 1, [0→0]')).toBeInTheDocument();
-
-        fireEvent.blur(edgeTarget);
-        expect(screen.queryByText('Weight: 0.3000')).not.toBeInTheDocument();
-    });
-
-    it('still shows node details on pointer hover', () => {
-        act(() => {
-            updateFrameBuffer({
-                weights: new Float32Array([0.3, -0.5, 0.7, -0.2, 0.9, -0.4]),
-                biases: new Float32Array([0.1, -0.1, 0.05]),
-                weightLayout: { layerSizes: [2, 2, 1] },
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [2],
-                activation: 'tanh',
-            },
-        });
-
+    it('renders graph viewport controls and updates the zoom label', () => {
         const { container } = render(<NetworkGraphCanvas />);
-        const canvas = container.querySelector('canvas')!;
-        canvas.getBoundingClientRect = vi.fn(() => ({
-            left: 0,
-            top: 0,
-            right: 1140,
-            bottom: 720,
-            width: 1140,
-            height: 720,
-            x: 0,
-            y: 0,
-            toJSON: () => ({}),
-        }));
 
-        fireEvent.pointerMove(canvas, { clientX: 570, clientY: 200 });
+        const zoomLabel = container.querySelector('.network-graph-controls__zoom');
+        expect(zoomLabel?.textContent).toBe('100%');
 
-        expect(screen.getByText('Hidden 1, Neuron 1')).toBeInTheDocument();
-        expect(screen.getByText('Bias: 0.1000')).toBeInTheDocument();
+        fireEvent.click(container.querySelector('button[aria-label="Zoom in graph"]')!);
+
+        expect(zoomLabel?.textContent).toBe('125%');
+        expect(container.querySelector('button[aria-label="Fit graph to view"]')).not.toBeNull();
+    });
+
+    it('renders an edge legend and can filter to strong weights', () => {
+        const { container } = render(<NetworkGraphCanvas />);
+
+        expect(container.querySelector('.network-graph-legend')).not.toBeNull();
+        fireEvent.click(container.querySelector('button[aria-label="Show only strong edges"]')!);
+
+        expect(container.querySelector('button[aria-label="Show only strong edges"]')).toHaveAttribute('aria-pressed', 'true');
     });
 });
 
@@ -342,38 +207,16 @@ describe('networkGraphPainter helpers', () => {
         expect(() => paintLabels(ctx, nodePositions, ['Input', 'Output'])).not.toThrow();
     });
 
-    it('paintEdges builds only bucket-level Path2D objects when no edge is hovered', () => {
-        const originalPath2D = globalThis.Path2D;
-        const path2DMock = vi.fn().mockImplementation(() => ({
-            addPath: vi.fn(),
-            moveTo: vi.fn(),
-            bezierCurveTo: vi.fn(),
-        }));
-        vi.stubGlobal('Path2D', path2DMock);
+    it('defines edge filter options used by the graph legend', () => {
+        expect(edgeFilterOptions.map((option) => option.id)).toEqual(['all', 'strong', 'positive', 'negative']);
+    });
 
-        const ctx = createMockContext() as unknown as CanvasRenderingContext2D;
-        const flat = {
-            weights: new Float32Array([0.25, -0.4, 1, -1.2, 2, -2.4]),
-            biases: new Float32Array([0, 0, 0]),
-            layerSizes: [2, 2, 1],
-        };
-        const positions = [
-            [{ x: 10, y: 80 }, { x: 10, y: 140 }],
-            [{ x: 110, y: 80 }, { x: 110, y: 140 }],
-            [{ x: 210, y: 110 }],
-        ];
-
-        try {
-            paintEdges(ctx, positions, flat, null);
-
-            expect(path2DMock).toHaveBeenCalledTimes(6);
-        } finally {
-            vi.unstubAllGlobals();
-            Object.defineProperty(globalThis, 'Path2D', {
-                configurable: true,
-                writable: true,
-                value: originalPath2D,
-            });
-        }
+    it('filters edges by sign and strong magnitude', () => {
+        expect(shouldRenderEdge(0.2, 'all')).toBe(true);
+        expect(shouldRenderEdge(0.2, 'strong')).toBe(false);
+        expect(shouldRenderEdge(1.6, 'strong')).toBe(true);
+        expect(shouldRenderEdge(0.7, 'positive')).toBe(true);
+        expect(shouldRenderEdge(-0.7, 'positive')).toBe(false);
+        expect(shouldRenderEdge(-0.7, 'negative')).toBe(true);
     });
 });

@@ -20,32 +20,23 @@ import {
     type HistoryArrays,
 } from '../../store/historyBuffer.ts';
 
-const DEFAULT_CHART_SIZE = { width: 400, height: 140 };
+const CHART_W = 400;
+const CHART_H = 140;
 const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 
 const Y_AXIS_PADDED_MAX_MULTIPLIER = 1.1;
+const PLATEAU_WINDOW = 8;
+const PLATEAU_EPSILON = 0.005;
+const DIVERGENCE_MULTIPLIER = 1.5;
 
 type ChartTab = 'loss' | 'accuracy';
-type ChartSize = { width: number; height: number };
 
-function normalizeChartSize(width: number, height: number): ChartSize {
-    return {
-        width: width > 0 ? width : DEFAULT_CHART_SIZE.width,
-        height: height > 0 ? height : DEFAULT_CHART_SIZE.height,
-    };
-}
-
-function sameChartSize(a: ChartSize, b: ChartSize): boolean {
-    return a.width === b.width && a.height === b.height;
-}
-
-function getChartGeometry(size: ChartSize) {
-    const width = size.width;
-    const height = size.height;
-    const plotW = Math.max(0, width - PADDING.left - PADDING.right);
-    const plotH = Math.max(0, height - PADDING.top - PADDING.bottom);
-
-    return { width, height, plotW, plotH };
+interface LossDiagnostics {
+    bestLoss: number;
+    bestStep: number;
+    generalizationGap: number | null;
+    plateauIndex: number | null;
+    divergenceIndex: number | null;
 }
 
 // ── Full redraw ──────────────────────────────────────────────────────────────
@@ -55,9 +46,10 @@ function drawChart(
     hist: HistoryArrays,
     tab: ChartTab,
     yMax: number,
-    size: ChartSize,
+    diagnostics?: LossDiagnostics | null,
 ) {
-    const { width: w, height: h, plotW, plotH } = getChartGeometry(size);
+    const w = CHART_W;
+    const h = CHART_H;
 
     // Clear
     ctx.fillStyle = '#1c2030';
@@ -71,6 +63,8 @@ function drawChart(
         return;
     }
 
+    const plotW = w - PADDING.left - PADDING.right;
+    const plotH = h - PADDING.top - PADDING.bottom;
     const xMax = hist.count - 1;
 
     const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
@@ -82,14 +76,16 @@ function drawChart(
 
         drawTypedLine(
             ctx, hist.trainLoss, hist.count, scaleX,
-            (v) => scaleY(Math.min(v, yMax)),
+            (v) => scaleY(Math.min(safeLossValue(v, yMax), yMax)),
             '#00e5c3', false, true, plotH,
         );
         drawTypedLine(
             ctx, hist.testLoss, hist.count, scaleX,
-            (v) => scaleY(Math.min(v, yMax)),
+            (v) => scaleY(Math.min(safeLossValue(v, yMax), yMax)),
             '#7c5cfc', true, false,
         );
+
+        drawLossDiagnosticMarkers(ctx, hist, diagnostics, scaleX, plotH);
 
         drawLegend(ctx, [
             { color: '#00e5c3', label: 'Train', dashed: false },
@@ -138,10 +134,87 @@ function computeYMax(hist: HistoryArrays, tab: ChartTab): number {
     if (hist.count === 0) return 0.01;
     let maxLoss = 0;
     for (let i = 0; i < hist.count; i++) {
-        if (hist.trainLoss[i] > maxLoss) maxLoss = hist.trainLoss[i];
-        if (hist.testLoss[i] > maxLoss) maxLoss = hist.testLoss[i];
+        if (Number.isFinite(hist.trainLoss[i]) && hist.trainLoss[i] > maxLoss) maxLoss = hist.trainLoss[i];
+        if (Number.isFinite(hist.testLoss[i]) && hist.testLoss[i] > maxLoss) maxLoss = hist.testLoss[i];
     }
     return Math.max(maxLoss * Y_AXIS_PADDED_MAX_MULTIPLIER, 0.01);
+}
+
+function safeLossValue(value: number, fallback: number): number {
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function computeLossDiagnostics(hist: HistoryArrays): LossDiagnostics | null {
+    if (hist.count === 0) return null;
+
+    let bestLoss = Number.POSITIVE_INFINITY;
+    let bestStep = 0;
+    let bestTrainLoss = Number.POSITIVE_INFINITY;
+    let bestTrainIndex = 0;
+
+    for (let i = 0; i < hist.count; i++) {
+        const testLoss = hist.testLoss[i];
+        if (Number.isFinite(testLoss) && testLoss < bestLoss) {
+            bestLoss = testLoss;
+            bestStep = i;
+        }
+
+        const trainLoss = hist.trainLoss[i];
+        if (Number.isFinite(trainLoss) && trainLoss < bestTrainLoss) {
+            bestTrainLoss = trainLoss;
+            bestTrainIndex = i;
+        }
+    }
+
+    if (!Number.isFinite(bestLoss)) {
+        bestLoss = bestTrainLoss;
+        bestStep = bestTrainIndex;
+    }
+    if (!Number.isFinite(bestLoss)) return null;
+
+    const latestIndex = hist.count - 1;
+    const latestTrain = hist.trainLoss[latestIndex];
+    const latestTest = hist.testLoss[latestIndex];
+    const generalizationGap =
+        Number.isFinite(latestTrain) && Number.isFinite(latestTest)
+            ? latestTest - latestTrain
+            : null;
+
+    let plateauIndex: number | null = null;
+    if (hist.count >= PLATEAU_WINDOW) {
+        const start = hist.count - PLATEAU_WINDOW;
+        let minLoss = Number.POSITIVE_INFINITY;
+        let maxLoss = Number.NEGATIVE_INFINITY;
+        let allFinite = true;
+        for (let i = start; i < hist.count; i++) {
+            const loss = hist.trainLoss[i];
+            if (!Number.isFinite(loss)) {
+                allFinite = false;
+                break;
+            }
+            minLoss = Math.min(minLoss, loss);
+            maxLoss = Math.max(maxLoss, loss);
+        }
+
+        const tolerance = Math.max(Math.abs(hist.trainLoss[start]) * PLATEAU_EPSILON, 0.0005);
+        if (allFinite && maxLoss - minLoss <= tolerance) {
+            plateauIndex = start;
+        }
+    }
+
+    let divergenceIndex: number | null = null;
+    if (!Number.isFinite(latestTrain) || !Number.isFinite(latestTest)) {
+        divergenceIndex = latestIndex;
+    } else if (
+        Number.isFinite(bestTrainLoss) &&
+        bestTrainLoss > 0 &&
+        latestTrain > bestTrainLoss * DIVERGENCE_MULTIPLIER &&
+        latestIndex > bestTrainIndex
+    ) {
+        divergenceIndex = latestIndex;
+    }
+
+    return { bestLoss, bestStep, generalizationGap, plateauIndex, divergenceIndex };
 }
 
 // ── Grid / line / legend helpers (unchanged) ─────────────────────────────────
@@ -216,16 +289,51 @@ function drawTypedLine(
     }
 
     ctx.beginPath();
+    let hasPoint = false;
     for (let i = 0; i < count; i++) {
+        if (!Number.isFinite(data[i])) continue;
         const x = scaleX(i);
         const y = scaleY(data[i]);
-        if (i === 0) ctx.moveTo(x, y);
+        if (!hasPoint) {
+            ctx.moveTo(x, y);
+            hasPoint = true;
+        }
         else ctx.lineTo(x, y);
     }
-    ctx.stroke();
+    if (hasPoint) ctx.stroke();
 
     ctx.setLineDash([]);
     ctx.shadowBlur = 0;
+}
+
+function drawLossDiagnosticMarkers(
+    ctx: CanvasRenderingContext2D,
+    hist: HistoryArrays,
+    diagnostics: LossDiagnostics | null | undefined,
+    scaleX: (i: number) => number,
+    plotH: number,
+) {
+    if (!diagnostics || hist.count < 2) return;
+
+    const drawMarker = (index: number | null, color: string, label: string, y: number) => {
+        if (index === null) return;
+        const x = scaleX(Math.max(0, Math.min(hist.count - 1, index)));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(x, PADDING.top);
+        ctx.lineTo(x, PADDING.top + plotH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = color;
+        ctx.font = '9px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(label, x, y);
+    };
+
+    drawMarker(diagnostics.plateauIndex, '#f6c85f', 'Plateau', PADDING.top + 10);
+    drawMarker(diagnostics.divergenceIndex, '#ff6b6b', 'Divergence', PADDING.top + 22);
 }
 
 function drawLegend(
@@ -259,14 +367,12 @@ function drawLegend(
 
 export const LossChart = memo(function LossChart() {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const chartFrameRef = useRef<HTMLDivElement>(null);
     // Subscribe to the scalar version counter — never to the history array
     // itself — so the LossChart is the only thing that re-renders per frame.
     const historyVersion = useTrainingStore((s) => s.historyVersion);
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const [tab, setTab] = useState<ChartTab>('loss');
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-    const [chartSize, setChartSize] = useState<ChartSize>(DEFAULT_CHART_SIZE);
 
     // Cached state that lets the next render reuse the previous paint.
     const lastYMaxRef = useRef(0);
@@ -277,6 +383,7 @@ export const LossChart = memo(function LossChart() {
     // Re-read history on each commit. Returned object is a reference view
     // onto the packed Float64Arrays; no allocation here.
     const hist = readHistory();
+    const lossDiagnostics = computeLossDiagnostics(hist);
 
     // If we switch to regression, snap back to loss tab
     useEffect(() => {
@@ -284,38 +391,14 @@ export const LossChart = memo(function LossChart() {
     }, [problemType]);
 
     useEffect(() => {
-        const frame = chartFrameRef.current;
-        if (!frame) return;
-
-        const measureFrame = () => {
-            const rect = frame.getBoundingClientRect();
-            const nextSize = normalizeChartSize(rect.width, rect.height);
-            setChartSize((currentSize) => (
-                sameChartSize(currentSize, nextSize) ? currentSize : nextSize
-            ));
-        };
-
-        measureFrame();
-
-        if (!window.ResizeObserver) return;
-
-        const resizeObserver = new window.ResizeObserver(measureFrame);
-        resizeObserver.observe(frame);
-
-        return () => resizeObserver.disconnect();
-    }, []);
-
-    useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         const dpr = window.devicePixelRatio || 1;
-        const physicalWidth = Math.max(1, Math.round(chartSize.width * dpr));
-        const physicalHeight = Math.max(1, Math.round(chartSize.height * dpr));
-        if (canvas.width !== physicalWidth || canvas.height !== physicalHeight) {
-            canvas.width = physicalWidth;
-            canvas.height = physicalHeight;
+        if (canvas.width !== CHART_W * dpr || canvas.height !== CHART_H * dpr) {
+            canvas.width = CHART_W * dpr;
+            canvas.height = CHART_H * dpr;
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -341,28 +424,18 @@ export const LossChart = memo(function LossChart() {
         lastCountRef.current = nextHist.count;
         lastCompactionRef.current = compactionNow;
 
-        drawChart(ctx, nextHist, tab, nextYMax, chartSize);
-    }, [historyVersion, tab, chartSize]);
+        drawChart(ctx, nextHist, tab, nextYMax, computeLossDiagnostics(nextHist));
+    }, [historyVersion, tab]);
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (hist.count < 2) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
-        const measuredSize = normalizeChartSize(rect.width, rect.height);
-        const { plotW } = getChartGeometry(measuredSize);
 
-        setChartSize((currentSize) => (
-            sameChartSize(currentSize, measuredSize) ? currentSize : measuredSize
-        ));
-
+        const plotW = CHART_W - PADDING.left - PADDING.right;
         const chartX = x - PADDING.left;
 
         const xMax = hist.count - 1;
-        if (plotW <= 0) {
-            setHoverIndex(null);
-            return;
-        }
-
         const index = Math.round((chartX / plotW) * xMax);
         if (index < 0 || index > xMax || x < PADDING.left || x > PADDING.left + plotW) {
             setHoverIndex(null);
@@ -375,7 +448,8 @@ export const LossChart = memo(function LossChart() {
 
     let hoverState = null;
     if (hoverIndex !== null && hoverIndex < hist.count) {
-        const { width: chartWidth, plotW, plotH } = getChartGeometry(chartSize);
+        const plotW = CHART_W - PADDING.left - PADDING.right;
+        const plotH = CHART_H - PADDING.top - PADDING.bottom;
         const xMax = hist.count - 1;
         const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
 
@@ -409,7 +483,6 @@ export const LossChart = memo(function LossChart() {
             x: xPos,
             trainY, testY, trainValStr, testValStr,
             alignRight,
-            chartWidth,
             step: hoverIndex,
         };
     }
@@ -431,7 +504,6 @@ export const LossChart = memo(function LossChart() {
             <div className="chart-tabs">
                 <Tooltip content="View train and test loss over time">
                     <button
-                        type="button"
                         className={`chart-tab ${tab === 'loss' ? 'active' : ''}`}
                         onClick={() => setTab('loss')}
                         aria-pressed={tab === 'loss'}
@@ -442,7 +514,6 @@ export const LossChart = memo(function LossChart() {
                 {problemType === 'classification' && (
                     <Tooltip content="View classification accuracy over time">
                         <button
-                            type="button"
                             className={`chart-tab ${tab === 'accuracy' ? 'active' : ''}`}
                             onClick={() => setTab('accuracy')}
                             aria-pressed={tab === 'accuracy'}
@@ -452,13 +523,10 @@ export const LossChart = memo(function LossChart() {
                     </Tooltip>
                 )}
             </div>
-            <div
-                ref={chartFrameRef}
-                style={{ position: 'relative', width: '100%', height: DEFAULT_CHART_SIZE.height }}
-            >
+            <div style={{ position: 'relative', width: CHART_W, height: CHART_H }}>
                 <canvas
                     ref={canvasRef}
-                    style={{ width: '100%', height: '100%', display: 'block' }}
+                    style={{ width: CHART_W, height: CHART_H, display: 'block' }}
                     aria-label={tab === 'loss' ? 'Loss over training steps' : 'Accuracy over training steps'}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
@@ -502,7 +570,7 @@ export const LossChart = memo(function LossChart() {
                             style={{
                                 position: 'absolute',
                                 top: 8,
-                                ...(hoverState.alignRight ? { right: hoverState.chartWidth - hoverState.x + 8 } : { left: hoverState.x + 8 }),
+                                ...(hoverState.alignRight ? { right: CHART_W - hoverState.x + 8 } : { left: hoverState.x + 8 }),
                                 backgroundColor: '#1c2030',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: 4,
@@ -531,6 +599,34 @@ export const LossChart = memo(function LossChart() {
                     </>
                 )}
             </div>
+            {tab === 'loss' && lossDiagnostics && (
+                <div
+                    aria-label="Loss diagnostics"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        flexWrap: 'wrap',
+                        marginTop: 6,
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: 10,
+                        color: 'var(--text-secondary)',
+                    }}
+                >
+                    <span>Best {lossDiagnostics.bestLoss.toFixed(4)}</span>
+                    <span>Gap {lossDiagnostics.generalizationGap === null ? 'n/a' : formatSigned(lossDiagnostics.generalizationGap)}</span>
+                    {lossDiagnostics.plateauIndex !== null && (
+                        <span style={{ color: '#f6c85f' }}>Plateau</span>
+                    )}
+                    {lossDiagnostics.divergenceIndex !== null && (
+                        <span style={{ color: '#ff6b6b' }}>Divergence</span>
+                    )}
+                </div>
+            )}
         </div>
     );
 });
+
+function formatSigned(value: number): string {
+    return `${value >= 0 ? '+' : ''}${value.toFixed(4)}`;
+}

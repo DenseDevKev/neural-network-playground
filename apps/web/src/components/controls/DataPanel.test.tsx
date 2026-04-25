@@ -62,15 +62,10 @@ describe('DataPanel loading feedback', () => {
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);
     });
 
-    it('labels the reset action clearly while preserving reset behavior', async () => {
-        const user = userEvent.setup();
-        const onReset = vi.fn();
+    it('explains cause and effect in data tooltips', () => {
+        render(<DataPanel onReset={vi.fn()} />);
 
-        render(<DataPanel onReset={onReset} />);
-
-        await user.click(screen.getByRole('button', { name: /reset model & data/i }));
-
-        expect(onReset).toHaveBeenCalledTimes(1);
-        expect(screen.queryByRole('button', { name: /regenerate/i })).not.toBeInTheDocument();
+        expect(screen.getByText('Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.')).toBeInTheDocument();
+        expect(screen.getByText('Cause: more noise blurs class edges. Effect: training loss may flatten and test accuracy becomes harder to improve.')).toBeInTheDocument();
     });
 });

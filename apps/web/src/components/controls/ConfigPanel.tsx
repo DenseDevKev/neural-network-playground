@@ -28,17 +28,19 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
         setFeedback({ message: 'Exported!', tone: 'status' });
     }, [setFeedback]);
 
-    const handleCopyUrl = useCallback(async () => {
-        try {
-            if (!navigator.clipboard?.writeText) {
-                throw new Error('Clipboard API unavailable');
-            }
-
-            await navigator.clipboard.writeText(window.location.href);
-            setFeedback({ message: 'URL copied!', tone: 'status' });
-        } catch {
-            setFeedback({ message: 'Could not copy URL.', tone: 'error' });
+    const handleCopyUrl = useCallback(() => {
+        const writeText = navigator.clipboard?.writeText;
+        if (!writeText) {
+            setFeedback({ message: 'Could not copy URL', tone: 'error' });
+            return;
         }
+        writeText.call(navigator.clipboard, window.location.href)
+            .then(() => {
+                setFeedback({ message: 'URL copied!', tone: 'status' });
+            })
+            .catch(() => {
+                setFeedback({ message: 'Could not copy URL', tone: 'error' });
+            });
     }, [setFeedback]);
 
     const handleImport = useCallback(() => {
@@ -96,17 +98,17 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
     return (
         <div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <Tooltip content="Download the current playground configuration as JSON">
+                <Tooltip content="Cause: export saves the current data, network, feature, and training choices. Effect: you can replay the same experiment later.">
                     <button type="button" className="btn btn--ghost btn--sm" onClick={handleExport}>
                         ↓ Export JSON
                     </button>
                 </Tooltip>
-                <Tooltip content="Import a previously saved JSON configuration file">
+                <Tooltip content="Cause: import replaces the current configuration with a saved one. Effect: the playground resets into that experiment state.">
                     <button type="button" className="btn btn--ghost btn--sm" onClick={handleImport}>
                         ↑ Import JSON
                     </button>
                 </Tooltip>
-                <Tooltip content="Copy a shareable URL for the current configuration">
+                <Tooltip content="Cause: copying the URL captures the current configuration in the address. Effect: someone else can open the same setup.">
                     <button type="button" className="btn btn--ghost btn--sm" onClick={handleCopyUrl}>
                         🔗 Copy URL
                     </button>

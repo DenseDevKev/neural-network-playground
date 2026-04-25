@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import { DecisionBoundary } from './DecisionBoundary.tsx';
-import { resetFrameBuffer, updateFrameBuffer, getFrameVersions } from '../../worker/frameBuffer.ts';
+import { classifyPointFromGrid } from './DecisionBoundary.tsx';
+import { resetFrameBuffer, updateFrameBuffer, getFrameVersion } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 
 const drawImage = vi.fn();
@@ -18,11 +19,15 @@ function createMockContext() {
         fillRect: vi.fn(),
         beginPath: vi.fn(),
         moveTo: vi.fn(),
+        lineTo: vi.fn(),
         arc: vi.fn(),
         fill: vi.fn(),
         stroke: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
         clearRect: vi.fn(),
         setTransform: vi.fn(),
+        globalCompositeOperation: 'source-over' as GlobalCompositeOperation,
         imageSmoothingEnabled: false,
         imageSmoothingQuality: 'low' as const,
         fillStyle: '',
@@ -47,11 +52,6 @@ describe('DecisionBoundary', () => {
         useTrainingStore.setState({
             snapshot: null,
             frameVersion: 0,
-            outputGridVersion: 0,
-            neuronGridsVersion: 0,
-            paramsVersion: 0,
-            layerStatsVersion: 0,
-            confusionMatrixVersion: 0,
             trainPoints: [],
             testPoints: [],
         });
@@ -89,7 +89,7 @@ describe('DecisionBoundary', () => {
             outputGrid: new Float32Array([0, 0.25, 0.75, 1]),
             gridSize: 2,
         });
-        useTrainingStore.getState().setFrameVersions(getFrameVersions());
+        useTrainingStore.setState({ frameVersion: getFrameVersion() });
 
         render(
             <DecisionBoundary
@@ -107,50 +107,46 @@ describe('DecisionBoundary', () => {
                 outputGrid: new Float32Array([1, 0.75, 0.25, 0]),
                 gridSize: 2,
             });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
+            useTrainingStore.setState({ frameVersion: getFrameVersion() });
         });
 
         expect(drawImage).toHaveBeenCalledTimes(2);
         expect(window.requestAnimationFrame).not.toHaveBeenCalled();
     });
 
-    it('does not redraw heatmap for scalar/weights-only frames, then redraws for output-grid frames', () => {
-        updateFrameBuffer({
-            outputGrid: new Float32Array([0, 0.25, 0.75, 1]),
-            gridSize: 2,
-        });
-        useTrainingStore.getState().setFrameVersions(getFrameVersions());
-
-        render(
+    it('renders uncertainty and misclassification overlay controls when requested', () => {
+        const { rerender, container } = render(
             <DecisionBoundary
-                trainPoints={[{ x: -0.5, y: 0.5, label: 0 }]}
+                trainPoints={[{ x: 0, y: 0, label: 0 }]}
                 testPoints={[]}
                 showTestData={false}
                 discretize={false}
+                overlayMode="uncertainty"
             />,
         );
 
-        expect(drawImage).toHaveBeenCalledTimes(1);
+        expect(container.querySelector('[data-overlay-mode="uncertainty"]')).not.toBeNull();
 
-        act(() => {
-            updateFrameBuffer({
-                weights: new Float32Array([0.1, 0.2]),
-                biases: new Float32Array([0.3]),
-                weightLayout: { layerSizes: [2, 1] },
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
+        rerender(
+            <DecisionBoundary
+                trainPoints={[{ x: 0, y: 0, label: 0 }]}
+                testPoints={[]}
+                showTestData={false}
+                discretize={false}
+                overlayMode="misclassification"
+            />,
+        );
 
-        expect(drawImage).toHaveBeenCalledTimes(1);
+        expect(container.querySelector('[data-overlay-mode="misclassification"]')).not.toBeNull();
+    });
 
-        act(() => {
-            updateFrameBuffer({
-                outputGrid: new Float32Array([1, 0.75, 0.25, 0]),
-                gridSize: 2,
-            });
-            useTrainingStore.getState().setFrameVersions(getFrameVersions());
-        });
+    it('classifies a point from the nearest decision grid cell', () => {
+        const grid = new Float32Array([
+            0.1, 0.8,
+            0.2, 0.9,
+        ]);
 
-        expect(drawImage).toHaveBeenCalledTimes(2);
+        expect(classifyPointFromGrid({ x: -1, y: 1, label: 0 }, grid, 2)).toBe(0);
+        expect(classifyPointFromGrid({ x: 1, y: -1, label: 0 }, grid, 2)).toBe(1);
     });
 });

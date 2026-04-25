@@ -98,7 +98,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
                 <pre className="code-export__code">{code}</pre>
             </div>
 
-            <Tooltip content="Copy the generated code to your clipboard" block>
+            <Tooltip content="Cause: copy exports the code generated from the visible configuration. Effect: you can inspect or reuse the learned setup outside the playground." block>
                 <button
                     type="button"
                     className="btn btn--ghost btn--sm"

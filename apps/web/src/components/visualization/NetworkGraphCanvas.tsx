@@ -28,19 +28,21 @@ import {
     extractNeuronGrid,
     getFrameBuffer,
     layerBiasOffset,
-    layerWeightOffset,
 } from '../../worker/frameBuffer.ts';
 import {
     type EdgeRef,
+    type EdgeFilter,
     type FlatNetworkView,
     type NodePos,
     type NodeRef,
     NODE_RADIUS,
+    edgeFilterOptions,
     hitTestEdge,
     hitTestNode,
     paintEdges,
     paintLabels,
     paintNodes,
+    shouldRenderEdge,
 } from './networkGraphPainter.ts';
 
 // ── Layout constants — match the SVG renderer for visual parity ────────────
@@ -49,49 +51,14 @@ const MIN_NODE_GAP = 42;
 const PAD_X = 60;
 const PAD_Y = 40;
 const HEATMAP_SIZE = 24;
+const MIN_ZOOM = 0.35;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 1.25;
 
 interface TooltipData {
     x: number;
     y: number;
     text: string[];
-}
-
-interface FocusTargetPosition {
-    x: number;
-    y: number;
-}
-
-function describeGraphNode(layerIdx: number, nodeIdx: number, layerCount: number): string {
-    if (layerIdx === 0) return `Input ${nodeIdx + 1}`;
-    if (layerIdx === layerCount - 1) return 'Output neuron';
-    return `Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`;
-}
-
-function edgeConnectionLabel(layerIdx: number, nodeIdx: number, prevIdx: number, layerCount: number): string {
-    return `${describeGraphNode(layerIdx - 1, prevIdx, layerCount)} to ${describeGraphNode(layerIdx, nodeIdx, layerCount)}`;
-}
-
-function bezierMidpoint(prev: NodePos, node: NodePos): FocusTargetPosition {
-    const cpX = (node.x - prev.x) * 0.45;
-    const x0 = prev.x;
-    const y0 = prev.y;
-    const x1 = prev.x + cpX;
-    const y1 = prev.y;
-    const x2 = node.x - cpX;
-    const y2 = node.y;
-    const x3 = node.x;
-    const y3 = node.y;
-    const t = 0.5;
-    const u = 1 - t;
-    return {
-        x: u * u * u * x0 + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3,
-        y: u * u * u * y0 + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3,
-    };
-}
-
-function toFixedLabel(value: number | null | undefined, digits = 4): string {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
-    return value.toFixed(digits);
 }
 
 // ── Persistent source canvas for heatmap upscale (one per process) ─────────
@@ -155,20 +122,37 @@ interface NeuronGridEntry {
     gridSize: number;
 }
 
+interface Viewport {
+    zoom: number;
+    panX: number;
+    panY: number;
+}
+
+function clampZoom(zoom: number): number {
+    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
+}
+
+function zoomLabel(zoom: number): string {
+    return `${Math.round(zoom * 100)}%`;
+}
+
+function toFixedLabel(value: number | null | undefined, digits = 4): string {
+    return Number.isFinite(value) ? value!.toFixed(digits) : 'n/a';
+}
+
 export function NetworkGraphCanvas() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const features = usePlaygroundStore((s) => s.features);
     const activation = usePlaygroundStore((s) => s.network.activation);
-    const snapshotWeights = useTrainingStore((s) => s.snapshot?.weights);
-    const snapshotBiases = useTrainingStore((s) => s.snapshot?.biases);
-    const snapshotNeuronGrids = useTrainingStore((s) => s.snapshot?.neuronGrids);
-    const snapshotGridSize = useTrainingStore((s) => s.snapshot?.gridSize ?? GRID_SIZE);
-    const paramsVersion = useTrainingStore((s) => s.paramsVersion);
-    const neuronGridsVersion = useTrainingStore((s) => s.neuronGridsVersion);
+    const snapshot = useTrainingStore((s) => s.snapshot);
+    const frameVersion = useTrainingStore((s) => s.frameVersion);
 
     const [tooltip, setTooltip] = useState<TooltipData | null>(null);
     const [hoveredEdge, setHoveredEdge] = useState<EdgeRef | null>(null);
     const [hoveredNode, setHoveredNode] = useState<NodeRef | null>(null);
+    const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>('all');
+    const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
+    const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
 
     const activeFeatures = useMemo(() => getActiveFeatures(features), [features]);
     const inputSize = activeFeatures.length;
@@ -234,8 +218,6 @@ export function NetworkGraphCanvas() {
 
     // Flat-buffer view, identical contract to the SVG renderer's `flat`.
     const flat = useMemo<FlatNetworkView | null>(() => {
-        // The version selector intentionally drives this mutable frame-buffer read.
-        void paramsVersion;
         const fb = getFrameBuffer();
         if (fb.weights && fb.biases && fb.weightLayout) {
             return {
@@ -244,40 +226,38 @@ export function NetworkGraphCanvas() {
                 layerSizes: fb.weightLayout.layerSizes,
             };
         }
-        if (snapshotWeights && snapshotWeights.length > 0 && snapshotBiases) {
-            const sizes: number[] = [snapshotWeights[0]?.[0]?.length ?? 0];
+        if (snapshot?.weights && snapshot.weights.length > 0 && snapshot.biases) {
+            const sizes: number[] = [snapshot.weights[0]?.[0]?.length ?? 0];
             let total = 0;
-            for (const layer of snapshotWeights) {
+            for (const layer of snapshot.weights) {
                 sizes.push(layer.length);
                 for (const neuron of layer) total += neuron.length;
             }
             const w = new Float32Array(total);
             let off = 0;
-            for (const layer of snapshotWeights) {
+            for (const layer of snapshot.weights) {
                 for (const neuron of layer) {
                     w.set(neuron, off);
                     off += neuron.length;
                 }
             }
             let btotal = 0;
-            for (const layer of snapshotBiases) btotal += layer.length;
+            for (const layer of snapshot.biases) btotal += layer.length;
             const b = new Float32Array(btotal);
             off = 0;
-            for (const layer of snapshotBiases) {
+            for (const layer of snapshot.biases) {
                 b.set(layer, off);
                 off += layer.length;
             }
             return { weights: w, biases: b, layerSizes: sizes };
         }
         return null;
-    }, [paramsVersion, snapshotWeights, snapshotBiases]);
+    }, [frameVersion, snapshot?.weights, snapshot?.biases]);
 
     // Per-neuron heatmap source data — same derivation as the SVG renderer.
     // Output: array indexed [hidden1, hidden2, ..., output], one entry per
     // non-input neuron in render order.
     const neuronGrids = useMemo<NeuronGridEntry[] | null>(() => {
-        // The version selector intentionally drives this mutable frame-buffer read.
-        void neuronGridsVersion;
         const fb = getFrameBuffer();
         if (fb.neuronGrids && fb.neuronGridLayout) {
             const { count, gridSize } = fb.neuronGridLayout;
@@ -287,9 +267,9 @@ export function NetworkGraphCanvas() {
                 gridSize,
             }));
         }
-        if (!snapshotNeuronGrids) return null;
-        const gridSize = snapshotGridSize;
-        const sng = snapshotNeuronGrids;
+        if (!snapshot?.neuronGrids) return null;
+        const gridSize = snapshot.gridSize ?? GRID_SIZE;
+        const sng = snapshot.neuronGrids;
         if (sng instanceof Float32Array) {
             const count = layers.slice(1).reduce((sum, size) => sum + size, 0);
             const cells = gridSize * gridSize;
@@ -299,7 +279,7 @@ export function NetworkGraphCanvas() {
             }));
         }
         return sng.map((grid) => ({ grid, gridSize }));
-    }, [neuronGridsVersion, layers, snapshotNeuronGrids, snapshotGridSize]);
+    }, [frameVersion, layers, snapshot?.neuronGrids, snapshot?.gridSize]);
 
     /** Map (layerIdx, nodeIdx) → index into neuronGrids, or null for input. */
     const getNeuronGridIndex = useCallback(
@@ -317,12 +297,40 @@ export function NetworkGraphCanvas() {
         [neuronGrids, layers],
     );
 
-    const toCssPosition = useCallback(
-        ({ x, y }: FocusTargetPosition): FocusTargetPosition => ({
-            x: (x / canvasWidth) * containerSize.width,
-            y: (y / canvasHeight) * containerSize.height,
+    const fitGraphToView = useCallback(() => {
+        const fitZoom = clampZoom(Math.min(
+            containerSize.width / canvasWidth,
+            containerSize.height / canvasHeight,
+            1,
+        ));
+        setViewport({
+            zoom: fitZoom,
+            panX: (containerSize.width - canvasWidth * fitZoom) / 2,
+            panY: (containerSize.height - canvasHeight * fitZoom) / 2,
+        });
+    }, [containerSize.width, containerSize.height, canvasWidth, canvasHeight]);
+
+    const zoomGraph = useCallback((direction: 1 | -1) => {
+        setViewport((current) => {
+            const nextZoom = clampZoom(direction > 0 ? current.zoom * ZOOM_STEP : current.zoom / ZOOM_STEP);
+            const centerX = containerSize.width / 2;
+            const centerY = containerSize.height / 2;
+            const worldX = (centerX - current.panX) / current.zoom;
+            const worldY = (centerY - current.panY) / current.zoom;
+            return {
+                zoom: nextZoom,
+                panX: centerX - worldX * nextZoom,
+                panY: centerY - worldY * nextZoom,
+            };
+        });
+    }, [containerSize.width, containerSize.height]);
+
+    const screenToWorld = useCallback(
+        (screenX: number, screenY: number) => ({
+            x: (screenX - viewport.panX) / viewport.zoom,
+            y: (screenY - viewport.panY) / viewport.zoom,
         }),
-        [canvasWidth, canvasHeight, containerSize.width, containerSize.height],
+        [viewport],
     );
 
     /** Tooltip text for a hovered node, mirroring the SVG renderer's format. */
@@ -341,10 +349,10 @@ export function NetworkGraphCanvas() {
                 : undefined;
             if (isOutput) {
                 lines.push('Output neuron');
-                if (bias != null && Number.isFinite(bias)) lines.push(`Bias: ${toFixedLabel(bias)}`);
+                if (bias != null) lines.push(`Bias: ${toFixedLabel(bias)}`);
             } else {
                 lines.push(`Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`);
-                if (bias != null && Number.isFinite(bias)) lines.push(`Bias: ${toFixedLabel(bias)}`);
+                if (bias != null) lines.push(`Bias: ${toFixedLabel(bias)}`);
                 lines.push(`Activation: ${activation}`);
             }
             return lines;
@@ -352,63 +360,8 @@ export function NetworkGraphCanvas() {
         [layers, activeFeatures, activation, flat],
     );
 
-    const buildNodeAriaLabel = useCallback(
-        (layerIdx: number, nodeIdx: number): string => buildNodeTooltipLines(layerIdx, nodeIdx).join('. '),
-        [buildNodeTooltipLines],
-    );
-
-    const buildEdgeTooltipLines = useCallback(
-        (edge: EdgeRef): string[] => [
-            `Weight: ${toFixedLabel(edge.weight)}`,
-            `Layer ${edge.layerIdx}, [${edge.prevIdx}→${edge.nodeIdx}]`,
-        ],
-        [],
-    );
-
-    const buildEdgeAriaLabel = useCallback(
-        (edge: EdgeRef): string => {
-            const connection = edgeConnectionLabel(edge.layerIdx, edge.nodeIdx, edge.prevIdx, layers.length);
-            return `Weight: ${toFixedLabel(edge.weight)}. Connection: ${connection}`;
-        },
-        [layers.length],
-    );
-
-    const clearFocusTarget = useCallback(() => {
-        setHoveredEdge(null);
-        setHoveredNode(null);
-        setTooltip(null);
-    }, []);
-
-    const focusGraphNode = useCallback(
-        (layerIdx: number, nodeIdx: number, position: FocusTargetPosition) => {
-            const css = toCssPosition(position);
-            setHoveredEdge(null);
-            setHoveredNode({ layerIdx, nodeIdx });
-            setTooltip({
-                x: css.x + 12,
-                y: css.y - 8,
-                text: buildNodeTooltipLines(layerIdx, nodeIdx),
-            });
-        },
-        [toCssPosition, buildNodeTooltipLines],
-    );
-
-    const focusGraphEdge = useCallback(
-        (edge: EdgeRef, position: FocusTargetPosition) => {
-            const css = toCssPosition(position);
-            setHoveredNode(null);
-            setHoveredEdge(edge);
-            setTooltip({
-                x: css.x + 12,
-                y: css.y - 8,
-                text: buildEdgeTooltipLines(edge),
-            });
-        },
-        [toCssPosition, buildEdgeTooltipLines],
-    );
-
     // ── Paint pass ───────────────────────────────────────────────────────────
-    // Triggers on paramsVersion (weight/bias changes), layout changes, or hover state.
+    // Triggers on frameVersion (new snapshot), layout changes, or hover state.
     // `paintLabels` is a bit redundant on every hover but cheap (~5 fillText
     // calls) and saves us a separate effect.
     useEffect(() => {
@@ -418,28 +371,38 @@ export function NetworkGraphCanvas() {
         if (!ctx) return;
 
         const dpr = window.devicePixelRatio || 1;
-        const physicalW = Math.round(canvasWidth * dpr);
-        const physicalH = Math.round(canvasHeight * dpr);
+        const logicalW = Math.max(1, containerSize.width);
+        const logicalH = Math.max(1, containerSize.height);
+        const physicalW = Math.round(logicalW * dpr);
+        const physicalH = Math.round(logicalH * dpr);
         if (canvas.width !== physicalW || canvas.height !== physicalH) {
             canvas.width = physicalW;
             canvas.height = physicalH;
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+        ctx.clearRect(0, 0, logicalW, logicalH);
 
-        paintEdges(ctx, nodePositions, flat, hoveredEdge);
+        ctx.save();
+        ctx.translate(viewport.panX, viewport.panY);
+        ctx.scale(viewport.zoom, viewport.zoom);
+        paintEdges(ctx, nodePositions, flat, hoveredEdge, edgeFilter);
         paintNodes(ctx, nodePositions, flat);
         paintLabels(ctx, nodePositions, layerLabels);
+        ctx.restore();
     }, [
         canvasWidth,
         canvasHeight,
+        containerSize.width,
+        containerSize.height,
         nodePositions,
         flat,
         hoveredEdge,
+        edgeFilter,
         layerLabels,
-        // re-paint on every params snapshot even if `flat` reference is stable —
+        viewport,
+        // re-paint on every snapshot even if `flat` reference is stable —
         // weights mutate in place inside the Float32Array.
-        paramsVersion,
+        frameVersion,
     ]);
 
     // ── Pointer wiring ──────────────────────────────────────────────────────
@@ -448,13 +411,22 @@ export function NetworkGraphCanvas() {
             const canvas = canvasRef.current;
             if (!canvas) return;
             const rect = canvas.getBoundingClientRect();
-            // Map client coordinates back into canvas-logical units (the
-            // canvas is rendered to fit its container via CSS `width: 100%`,
-            // so the on-screen size and the logical drawing size differ).
-            const sx = canvasWidth / rect.width;
-            const sy = canvasHeight / rect.height;
-            const x = (event.clientX - rect.left) * sx;
-            const y = (event.clientY - rect.top) * sy;
+            const screenX = event.clientX - rect.left;
+            const screenY = event.clientY - rect.top;
+
+            if (dragRef.current) {
+                const dx = event.clientX - dragRef.current.x;
+                const dy = event.clientY - dragRef.current.y;
+                dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+                setViewport((current) => ({
+                    ...current,
+                    panX: current.panX + dx,
+                    panY: current.panY + dy,
+                }));
+                return;
+            }
+
+            const { x, y } = screenToWorld(screenX, screenY);
 
             const node = hitTestNode(x, y, nodePositions);
             if (node) {
@@ -467,8 +439,8 @@ export function NetworkGraphCanvas() {
                 }
                 if (hoveredEdge) setHoveredEdge(null);
                 setTooltip({
-                    x: event.clientX - rect.left + 12,
-                    y: event.clientY - rect.top - 8,
+                    x: screenX + 12,
+                    y: screenY - 8,
                     text: buildNodeTooltipLines(node.layerIdx, node.nodeIdx),
                 });
                 return;
@@ -476,7 +448,7 @@ export function NetworkGraphCanvas() {
             if (hoveredNode) setHoveredNode(null);
 
             const edge = hitTestEdge(x, y, nodePositions, flat);
-            if (edge) {
+            if (edge && shouldRenderEdge(edge.weight, edgeFilter)) {
                 if (
                     !hoveredEdge ||
                     hoveredEdge.layerIdx !== edge.layerIdx ||
@@ -486,9 +458,13 @@ export function NetworkGraphCanvas() {
                     setHoveredEdge(edge);
                 }
                 setTooltip({
-                    x: event.clientX - rect.left + 12,
-                    y: event.clientY - rect.top - 8,
-                    text: buildEdgeTooltipLines(edge),
+                    x: screenX + 12,
+                    y: screenY - 8,
+                    text: [
+                        `${edge.weight >= 0 ? 'Positive' : 'Negative'} weight: ${toFixedLabel(edge.weight)}`,
+                        `Magnitude: ${toFixedLabel(Math.abs(edge.weight))}`,
+                        `Layer ${edge.layerIdx}, [${edge.prevIdx}→${edge.nodeIdx}]`,
+                    ],
                 });
                 return;
             }
@@ -496,19 +472,56 @@ export function NetworkGraphCanvas() {
             if (tooltip) setTooltip(null);
         },
         [
-            canvasWidth,
-            canvasHeight,
             nodePositions,
             flat,
+            edgeFilter,
             hoveredEdge,
             hoveredNode,
             tooltip,
             buildNodeTooltipLines,
-            buildEdgeTooltipLines,
+            screenToWorld,
         ],
     );
 
+    const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+        if (event.button !== 0) return;
+        dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        if (event.currentTarget.setPointerCapture) {
+            event.currentTarget.setPointerCapture(event.pointerId);
+        }
+        setTooltip(null);
+    }, []);
+
+    const finishPointerDrag = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+        if (dragRef.current?.pointerId === event.pointerId) {
+            dragRef.current = null;
+            if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+        }
+    }, []);
+
+    const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
+        event.preventDefault();
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const screenX = event.clientX - rect.left;
+        const screenY = event.clientY - rect.top;
+        setViewport((current) => {
+            const nextZoom = clampZoom(event.deltaY < 0 ? current.zoom * ZOOM_STEP : current.zoom / ZOOM_STEP);
+            const worldX = (screenX - current.panX) / current.zoom;
+            const worldY = (screenY - current.panY) / current.zoom;
+            return {
+                zoom: nextZoom,
+                panX: screenX - worldX * nextZoom,
+                panY: screenY - worldY * nextZoom,
+            };
+        });
+    }, []);
+
     const handlePointerLeave = useCallback(() => {
+        dragRef.current = null;
         setHoveredEdge(null);
         setHoveredNode(null);
         setTooltip(null);
@@ -541,40 +554,6 @@ export function NetworkGraphCanvas() {
             `, 1 output. Activation: ${activation}.`;
     }, [activeFeatures.length, hiddenLayers, activation]);
 
-    const edgeFocusTargets = useMemo(() => {
-        if (!flat) return [];
-        const targets: Array<{
-            key: string;
-            edge: EdgeRef;
-            position: FocusTargetPosition;
-        }> = [];
-        for (let layerIdx = 1; layerIdx < nodePositions.length; layerIdx++) {
-            const prevNodes = nodePositions[layerIdx - 1];
-            const layerNodes = nodePositions[layerIdx];
-            const base = layerWeightOffset(flat.layerSizes, layerIdx - 1);
-            const fanIn = flat.layerSizes[layerIdx - 1];
-            for (let nodeIdx = 0; nodeIdx < layerNodes.length; nodeIdx++) {
-                for (let prevIdx = 0; prevIdx < prevNodes.length; prevIdx++) {
-                    const edge = {
-                        layerIdx,
-                        nodeIdx,
-                        prevIdx,
-                        weight: flat.weights[base + nodeIdx * fanIn + prevIdx],
-                    };
-                    if (!Number.isFinite(edge.weight)) {
-                        continue;
-                    }
-                    targets.push({
-                        key: `edge-focus-${layerIdx}-${nodeIdx}-${prevIdx}`,
-                        edge,
-                        position: bezierMidpoint(prevNodes[prevIdx], layerNodes[nodeIdx]),
-                    });
-                }
-            }
-        }
-        return targets;
-    }, [flat, nodePositions]);
-
     return (
         <div
             ref={containerRef}
@@ -589,34 +568,81 @@ export function NetworkGraphCanvas() {
                     width: '100%',
                     height: '100%',
                     display: 'block',
-                    cursor: hoveredNode || hoveredEdge ? 'pointer' : 'default',
+                    cursor: dragRef.current ? 'grabbing' : hoveredNode || hoveredEdge ? 'pointer' : 'grab',
                 }}
+                onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
+                onPointerUp={finishPointerDrag}
+                onPointerCancel={finishPointerDrag}
                 onPointerLeave={handlePointerLeave}
+                onWheel={handleWheel}
             />
+
+            <div className="network-graph-controls" aria-label="Graph view controls">
+                <button
+                    type="button"
+                    aria-label="Zoom out graph"
+                    title="Zoom out"
+                    onClick={() => zoomGraph(-1)}
+                >
+                    -
+                </button>
+                <span className="network-graph-controls__zoom">{zoomLabel(viewport.zoom)}</span>
+                <button
+                    type="button"
+                    aria-label="Zoom in graph"
+                    title="Zoom in"
+                    onClick={() => zoomGraph(1)}
+                >
+                    +
+                </button>
+                <button
+                    type="button"
+                    aria-label="Fit graph to view"
+                    title="Fit graph"
+                    onClick={fitGraphToView}
+                >
+                    Fit
+                </button>
+            </div>
+
+            <div className="network-graph-legend" aria-label="Edge weight legend">
+                <div className="network-graph-legend__scale">
+                    <span><i className="network-graph-legend__swatch network-graph-legend__swatch--positive" /> Positive</span>
+                    <span><i className="network-graph-legend__swatch network-graph-legend__swatch--negative" /> Negative</span>
+                    <span className="network-graph-legend__hint">width = |weight|</span>
+                </div>
+                <div className="network-graph-legend__filters">
+                    {edgeFilterOptions.map((option) => (
+                        <button
+                            key={option.id}
+                            type="button"
+                            aria-label={option.id === 'strong' ? 'Show only strong edges' : `Show ${option.label.toLowerCase()} edges`}
+                            aria-pressed={edgeFilter === option.id}
+                            className={edgeFilter === option.id ? 'network-graph-legend__filter network-graph-legend__filter--active' : 'network-graph-legend__filter'}
+                            onClick={() => setEdgeFilter(option.id)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
+                </div>
+            </div>
 
             {/* Heatmap overlays — one per non-input neuron, positioned over
                 the corresponding canvas-painted node disc. */}
             {heatmapTiles.map((tile) => {
                 const r = NODE_RADIUS - 1.5;
-                // Convert canvas-logical coordinates back into CSS pixels:
-                // the canvas itself is rendered with `width: 100%`, so we
-                // scale node positions by container/canvas ratio. The
-                // ResizeObserver keeps containerSize in sync with the
-                // visible width, so canvasWidth / containerSize.width is
-                // typically 1; the math is here for completeness.
-                const left = (tile.x / canvasWidth) * containerSize.width - r;
-                const top = (tile.y / canvasHeight) * containerSize.height - r;
+                const scaledR = r * viewport.zoom;
                 return (
                     <div
                         key={tile.key}
                         className="network-graph-heatmap-slot"
                         style={{
                             position: 'absolute',
-                            left,
-                            top,
-                            width: 2 * r,
-                            height: 2 * r,
+                            left: tile.x * viewport.zoom + viewport.panX - scaledR,
+                            top: tile.y * viewport.zoom + viewport.panY - scaledR,
+                            width: 2 * scaledR,
+                            height: 2 * scaledR,
                             pointerEvents: 'none',
                         }}
                     >
@@ -624,46 +650,6 @@ export function NetworkGraphCanvas() {
                     </div>
                 );
             })}
-
-            <div className="network-graph-focus-layer">
-                {edgeFocusTargets.map(({ key, edge, position }) => {
-                    const css = toCssPosition(position);
-                    return (
-                        <button
-                            key={key}
-                            type="button"
-                            className="network-graph-focus-target network-graph-focus-target--edge"
-                            aria-label={buildEdgeAriaLabel(edge)}
-                            onFocus={() => focusGraphEdge(edge, position)}
-                            onBlur={clearFocusTarget}
-                            style={{
-                                left: css.x,
-                                top: css.y,
-                            }}
-                        />
-                    );
-                })}
-
-                {nodePositions.map((layerNodes, layerIdx) =>
-                    layerNodes.map((node, nodeIdx) => {
-                        const css = toCssPosition(node);
-                        return (
-                            <button
-                                key={`node-focus-${layerIdx}-${nodeIdx}`}
-                                type="button"
-                                className="network-graph-focus-target network-graph-focus-target--node"
-                                aria-label={buildNodeAriaLabel(layerIdx, nodeIdx)}
-                                onFocus={() => focusGraphNode(layerIdx, nodeIdx, node)}
-                                onBlur={clearFocusTarget}
-                                style={{
-                                    left: css.x,
-                                    top: css.y,
-                                }}
-                            />
-                        );
-                    }),
-                )}
-            </div>
 
             {/* Tooltip — same DOM-overlay style as the SVG renderer */}
             {tooltip && (

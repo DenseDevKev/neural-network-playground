@@ -270,7 +270,7 @@ describe('compatibility normalization', () => {
             });
 
             expect(result.config).toBeNull();
-            expect(result.error).toBe('Huber delta must be a positive finite number.');
+            expect(result.error).toBe('Huber delta must be a positive number.');
         }
 
         const valid = validateImportedConfig({
@@ -305,27 +305,27 @@ describe('compatibility normalization', () => {
         const cases = [
             {
                 patch: { adamBeta1: -0.1 },
-                error: 'Adam beta1 must be finite and at least 0 and less than 1.',
+                error: 'Adam beta 1 must be at least 0 and less than 1.',
             },
             {
                 patch: { adamBeta1: 1 },
-                error: 'Adam beta1 must be finite and at least 0 and less than 1.',
+                error: 'Adam beta 1 must be at least 0 and less than 1.',
             },
             {
                 patch: { adamBeta2: Number.NaN },
-                error: 'Adam beta2 must be finite and at least 0 and less than 1.',
+                error: 'Adam beta 2 must be at least 0 and less than 1.',
             },
             {
                 patch: { adamBeta2: 1 },
-                error: 'Adam beta2 must be finite and at least 0 and less than 1.',
+                error: 'Adam beta 2 must be at least 0 and less than 1.',
             },
             {
                 patch: { adamEps: 0 },
-                error: 'Adam epsilon must be a positive finite number.',
+                error: 'Adam epsilon must be a positive number.',
             },
             {
                 patch: { adamEps: Number.POSITIVE_INFINITY },
-                error: 'Adam epsilon must be a positive finite number.',
+                error: 'Adam epsilon must be a positive number.',
             },
         ];
 

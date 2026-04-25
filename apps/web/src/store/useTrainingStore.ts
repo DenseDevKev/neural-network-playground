@@ -50,6 +50,11 @@ export interface TrainingStore {
     setStatus: (s: TrainingStatus) => void;
     setSnapshot: (snap: NetworkSnapshot) => void;
     addHistoryPoint: (point: HistoryPoint) => void;
+    applyStreamedSnapshot: (payload: {
+        snapshot: NetworkSnapshot;
+        frameVersions: FrameVersions;
+        testMetricsStale: boolean;
+    }) => void;
     resetHistory: () => void;
     setFrameVersion: (version: number) => void;
     setFrameVersions: (versions: FrameVersions) => void;
@@ -91,6 +96,26 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
 
     setStatus: (status) => set({ status }),
     setSnapshot: (snapshot) => set({ snapshot }),
+    applyStreamedSnapshot: ({ snapshot, frameVersions, testMetricsStale }) => {
+        set((state) => {
+            const historyVersion = snapshot.historyPoint
+                ? appendHistoryPoint(snapshot.historyPoint)
+                : state.historyVersion;
+
+            return {
+                snapshot,
+                frameVersion: frameVersions.frameVersion,
+                outputGridVersion: frameVersions.outputGridVersion,
+                neuronGridsVersion: frameVersions.neuronGridsVersion,
+                paramsVersion: frameVersions.paramsVersion,
+                layerStatsVersion: frameVersions.layerStatsVersion,
+                confusionMatrixVersion: frameVersions.confusionMatrixVersion,
+                historyVersion,
+                testMetricsStale,
+                workerError: null,
+            };
+        });
+    },
     addHistoryPoint: (point) => {
         // Append to the packed ring buffer and publish the new version.
         // No array is allocated per frame; chart components pull data

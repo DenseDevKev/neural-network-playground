@@ -16,13 +16,17 @@ const TEST_RADIUS = 3;
 const POINT_STROKE_DARK = 'rgba(0,0,0,0.5)';
 const POINT_STROKE_LIGHT = '#fff';
 const HEATMAP_ALPHA = 255;
+const UNCERTAINTY_THRESHOLD = 0.12;
 
 interface Props {
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     showTestData: boolean;
     discretize: boolean;
+    overlayMode?: DecisionOverlayMode;
 }
+
+export type DecisionOverlayMode = 'none' | 'uncertainty' | 'misclassification';
 
 // ── Drawing helpers (pure functions, no hooks) ──
 
@@ -43,6 +47,81 @@ function drawHeatmap(
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(tempCanvas, 0, 0, canvasW, canvasH);
+}
+
+export function classifyPointFromGrid(
+    point: DataPoint,
+    grid: ArrayLike<number>,
+    gridSize: number,
+): 0 | 1 {
+    const gx = Math.max(0, Math.min(gridSize - 1, Math.round(((point.x + 1) / 2) * (gridSize - 1))));
+    const gy = Math.max(0, Math.min(gridSize - 1, Math.round((1 - (point.y + 1) / 2) * (gridSize - 1))));
+    return grid[gy * gridSize + gx] >= 0.5 ? 1 : 0;
+}
+
+function writeUncertaintyOverlay(
+    grid: ArrayLike<number>,
+    imageData: ImageData,
+): void {
+    for (let i = 0; i < grid.length; i++) {
+        const distance = Math.abs(grid[i] - 0.5);
+        const strength = Math.max(0, 1 - distance / UNCERTAINTY_THRESHOLD);
+        const idx = i * 4;
+        imageData.data[idx] = 255;
+        imageData.data[idx + 1] = 255;
+        imageData.data[idx + 2] = 255;
+        imageData.data[idx + 3] = Math.round(strength * 105);
+    }
+}
+
+function drawUncertaintyOverlay(
+    ctx: CanvasRenderingContext2D,
+    grid: ArrayLike<number>,
+    canvasW: number,
+    canvasH: number,
+    tempCanvas: HTMLCanvasElement,
+    imageData: ImageData,
+): void {
+    const tempCtx = tempCanvas.getContext('2d')!;
+    writeUncertaintyOverlay(grid, imageData);
+    tempCtx.putImageData(imageData, 0, 0);
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.drawImage(tempCanvas, 0, 0, canvasW, canvasH);
+    ctx.restore();
+}
+
+function drawMisclassificationOverlay(
+    ctx: CanvasRenderingContext2D,
+    points: DataPoint[],
+    grid: ArrayLike<number>,
+    gridSize: number,
+    canvasW: number,
+    canvasH: number,
+    isTest: boolean,
+): void {
+    const radius = (isTest ? TEST_RADIUS : TRAIN_RADIUS) + 4;
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = isTest ? 1.5 : 2;
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.45)';
+    ctx.shadowBlur = 8;
+
+    for (const p of points) {
+        if (p.label !== 0 && p.label !== 1) continue;
+        if (classifyPointFromGrid(p, grid, gridSize) === p.label) continue;
+        const px = ((p.x + 1) / 2) * canvasW;
+        const py = (1 - (p.y + 1) / 2) * canvasH;
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.moveTo(px - radius * 0.65, py - radius * 0.65);
+        ctx.lineTo(px + radius * 0.65, py + radius * 0.65);
+        ctx.moveTo(px + radius * 0.65, py - radius * 0.65);
+        ctx.lineTo(px - radius * 0.65, py + radius * 0.65);
+        ctx.stroke();
+    }
+
+    ctx.restore();
 }
 
 function drawPoints(
@@ -114,6 +193,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     testPoints,
     showTestData,
     discretize,
+    overlayMode = 'none',
 }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -121,11 +201,11 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     // Off-screen resources (reused between frames)
     const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const imageDataRef = useRef<ImageData | null>(null);
+    const overlayImageDataRef = useRef<ImageData | null>(null);
     const lastGridSizeRef = useRef(0);
 
-    const snapshotOutputGrid = useTrainingStore((s) => s.snapshot?.outputGrid);
-    const snapshotGridSize = useTrainingStore((s) => s.snapshot?.gridSize ?? 0);
-    const outputGridVersion = useTrainingStore((s) => s.outputGridVersion);
+    const snapshot = useTrainingStore((s) => s.snapshot);
+    const frameVersion = useTrainingStore((s) => s.frameVersion);
 
     // Track container size for responsive canvas
     const [canvasSize, setCanvasSize] = useState(320);
@@ -181,12 +261,10 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         ctx.fillStyle = BG_COLOR;
         ctx.fillRect(0, 0, logicalW, logicalH);
 
-        // Draw heatmap when grid data exists. The version selector intentionally
-        // drives this mutable frame-buffer read.
-        void outputGridVersion;
+        // Draw heatmap when grid data exists
         const frameBuffer = getFrameBuffer();
-        const grid = frameBuffer.outputGrid ?? snapshotOutputGrid;
-        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : snapshotGridSize;
+        const grid = frameBuffer.outputGrid ?? snapshot?.outputGrid;
+        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : snapshot?.gridSize ?? 0;
 
         if (grid && gridSize > 0) {
             // Allocate / reuse offscreen canvas + ImageData
@@ -196,6 +274,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                 tc.height = gridSize;
                 tempCanvasRef.current = tc;
                 imageDataRef.current = tc.getContext('2d')!.createImageData(gridSize, gridSize);
+                overlayImageDataRef.current = tc.getContext('2d')!.createImageData(gridSize, gridSize);
                 lastGridSizeRef.current = gridSize;
             }
 
@@ -208,6 +287,24 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                 tempCanvasRef.current!,
                 imageDataRef.current!,
             );
+
+            if (overlayMode === 'uncertainty' && overlayImageDataRef.current) {
+                drawUncertaintyOverlay(
+                    ctx,
+                    grid,
+                    logicalW,
+                    logicalH,
+                    tempCanvasRef.current!,
+                    overlayImageDataRef.current,
+                );
+            }
+
+            if (overlayMode === 'misclassification') {
+                drawMisclassificationOverlay(ctx, trainPoints, grid, gridSize, logicalW, logicalH, false);
+                if (showTestData && testPoints.length > 0) {
+                    drawMisclassificationOverlay(ctx, testPoints, grid, gridSize, logicalW, logicalH, true);
+                }
+            }
         }
 
         // Draw data points on top
@@ -217,16 +314,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         if (showTestData && testPoints.length > 0) {
             drawPoints(ctx, testPoints, logicalW, logicalH, true);
         }
-    }, [
-        snapshotOutputGrid,
-        snapshotGridSize,
-        outputGridVersion,
-        trainPoints,
-        testPoints,
-        showTestData,
-        discretize,
-        canvasSize,
-    ]);
+    }, [snapshot, frameVersion, trainPoints, testPoints, showTestData, discretize, canvasSize, overlayMode]);
 
     // Paint immediately after React commits the latest frame. Snapshot delivery
     // is already rAF-gated in workerBridge, so an extra rAF here can keep
@@ -255,6 +343,13 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                 style={{ width: '100%', height: '100%' }}
                 aria-label="Decision boundary visualization showing the neural network's classification regions"
             />
+            <div className="decision-boundary__overlay-badge" data-overlay-mode={overlayMode}>
+                {overlayMode === 'uncertainty'
+                    ? 'Uncertainty'
+                    : overlayMode === 'misclassification'
+                        ? 'Misclassified'
+                        : 'Output'}
+            </div>
             <div className="decision-boundary__legend">
                 <div className="decision-boundary__legend-item">
                     <div className="decision-boundary__swatch" style={{ background: HEX_BLUE }} />

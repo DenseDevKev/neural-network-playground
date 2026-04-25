@@ -1,87 +1,67 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useTrainingStore } from './useTrainingStore.ts';
+import { readHistory } from './historyBuffer.ts';
+import type { NetworkSnapshot } from '@nn-playground/engine';
 
-describe('useTrainingStore config lifecycle', () => {
+function makeSnapshot(step: number): NetworkSnapshot {
+    return {
+        step,
+        epoch: 0,
+        weights: [],
+        biases: [],
+        trainLoss: 0.5,
+        testLoss: 0.6,
+        trainMetrics: { loss: 0.5 },
+        testMetrics: { loss: 0.6 },
+        outputGrid: [],
+        gridSize: 40,
+        historyPoint: { step, trainLoss: 0.5, testLoss: 0.6 },
+    };
+}
+
+describe('useTrainingStore streamed snapshots', () => {
     beforeEach(() => {
         useTrainingStore.getState().resetHistory();
         useTrainingStore.setState({
-            status: 'idle',
             snapshot: null,
-            trainPoints: [],
-            testPoints: [],
-            stepsPerFrame: 5,
-            dataConfigLoading: false,
-            networkConfigLoading: false,
-            featuresConfigLoading: false,
-            trainingConfigLoading: false,
-            pendingConfigSource: null,
-            configError: null,
-            configErrorSource: null,
-            configSyncNonce: 0,
-            workerError: null,
+            frameVersion: 0,
+            testMetricsStale: false,
+            workerError: 'previous error',
         });
     });
 
-    it('defaults every config source to idle', () => {
-        const state = useTrainingStore.getState();
+    it('applies snapshot, frame version, stale flag, and history in one store publication', () => {
+        let publications = 0;
+        const unsubscribe = useTrainingStore.subscribe(() => {
+            publications++;
+        });
 
-        expect(state.pendingConfigSource).toBeNull();
-        expect(state.dataConfigLoading).toBe(false);
-        expect(state.networkConfigLoading).toBe(false);
-        expect(state.featuresConfigLoading).toBe(false);
-        expect(state.trainingConfigLoading).toBe(false);
-        expect(state.configError).toBeNull();
-        expect(state.configErrorSource).toBeNull();
-    });
+        useTrainingStore.getState().applyStreamedSnapshot({
+            snapshot: makeSnapshot(3),
+            frameVersions: {
+                frameVersion: 7,
+                outputGridVersion: 8,
+                neuronGridsVersion: 9,
+                paramsVersion: 10,
+                layerStatsVersion: 11,
+                confusionMatrixVersion: 12,
+            },
+            testMetricsStale: true,
+        });
 
-    it('marks feature config changes as the active source', () => {
-        useTrainingStore.getState().beginConfigChange('features');
-
-        const state = useTrainingStore.getState();
-        expect(state.pendingConfigSource).toBe('features');
-        expect(state.featuresConfigLoading).toBe(true);
-        expect(state.dataConfigLoading).toBe(false);
-        expect(state.networkConfigLoading).toBe(false);
-        expect(state.trainingConfigLoading).toBe(false);
-    });
-
-    it('marks training config changes as the active source', () => {
-        useTrainingStore.getState().beginConfigChange('training');
+        unsubscribe();
 
         const state = useTrainingStore.getState();
-        expect(state.pendingConfigSource).toBe('training');
-        expect(state.trainingConfigLoading).toBe(true);
-        expect(state.dataConfigLoading).toBe(false);
-        expect(state.networkConfigLoading).toBe(false);
-        expect(state.featuresConfigLoading).toBe(false);
-    });
-
-    it('clears every loading flag when a config change finishes or fails', () => {
-        useTrainingStore.getState().beginConfigChange('features');
-        useTrainingStore.getState().finishConfigChange();
-
-        expect(useTrainingStore.getState().featuresConfigLoading).toBe(false);
-
-        useTrainingStore.getState().beginConfigChange('training');
-        useTrainingStore.getState().failConfigChange('Failed to update training');
-
-        const state = useTrainingStore.getState();
-        expect(state.trainingConfigLoading).toBe(false);
-        expect(state.pendingConfigSource).toBeNull();
-        expect(state.configErrorSource).toBe('training');
-    });
-
-    it('retries the config source that failed most recently', () => {
-        useTrainingStore.getState().beginConfigChange('features');
-        useTrainingStore.getState().failConfigChange('Failed to update features');
-
-        useTrainingStore.getState().retryConfigSync();
-
-        const state = useTrainingStore.getState();
-        expect(state.pendingConfigSource).toBe('features');
-        expect(state.featuresConfigLoading).toBe(true);
-        expect(state.configError).toBeNull();
-        expect(state.configErrorSource).toBeNull();
-        expect(state.configSyncNonce).toBe(1);
+        expect(publications).toBe(1);
+        expect(state.snapshot?.step).toBe(3);
+        expect(state.frameVersion).toBe(7);
+        expect(state.outputGridVersion).toBe(8);
+        expect(state.neuronGridsVersion).toBe(9);
+        expect(state.paramsVersion).toBe(10);
+        expect(state.layerStatsVersion).toBe(11);
+        expect(state.confusionMatrixVersion).toBe(12);
+        expect(state.testMetricsStale).toBe(true);
+        expect(state.workerError).toBeNull();
+        expect(readHistory().count).toBe(1);
     });
 });

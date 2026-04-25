@@ -64,4 +64,11 @@ describe('NetworkConfigPanel loading feedback', () => {
         render(<NetworkConfigPanel />);
         expect(screen.getByRole('combobox', { name: 'Activation' })).toBeInTheDocument();
     });
+
+    it('explains cause and effect in network tooltips', () => {
+        render(<NetworkConfigPanel />);
+
+        expect(screen.getByText('Cause: adding a hidden layer adds another learned transformation. Effect: the boundary can bend more, but training may take longer.')).toBeInTheDocument();
+        expect(screen.getByText('Cause: activation functions decide when neurons pass signal forward. Effect: tanh/sigmoid smooth the boundary, while ReLU-family choices make sharper bends.')).toBeInTheDocument();
+    });
 });

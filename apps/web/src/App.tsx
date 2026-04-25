@@ -29,6 +29,7 @@ import {
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
+import { GuidedLessonPanel, type LessonTarget } from './components/controls/GuidedLessonPanel.tsx';
 import { DataPanel } from './components/controls/DataPanel.tsx';
 import { FeaturesPanel } from './components/controls/FeaturesPanel.tsx';
 import { NetworkConfigPanel } from './components/controls/NetworkConfigPanel.tsx';
@@ -120,6 +121,7 @@ export default function App() {
     const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
     const setDemand = usePlaygroundStore((s) => s.setDemand);
     const [isCompact, setIsCompact] = useState(() => window.innerWidth < COMPACT_BREAKPOINT);
+    const [lessonHighlight, setLessonHighlight] = useState<LessonTarget | null>(null);
 
     // Stable refs so keyboard handler never goes stale
     const trainingRef = useRef(training);
@@ -129,7 +131,14 @@ export default function App() {
     useEffect(() => { statusRef.current = status; }, [status]);
 
     const stableReset = useCallback(() => trainingRef.current.reset(), []);
+    const handleLessonHighlightChange = useCallback((target: LessonTarget | null) => {
+        setLessonHighlight(target);
+    }, []);
     const effectiveLayout = isCompact ? 'dock' : persistedLayout;
+    const lessonTargetClass = useCallback(
+        (target: LessonTarget) => `lesson-target ${lessonHighlight === target ? 'lesson-target--active' : ''}`,
+        [lessonHighlight],
+    );
 
     useEffect(() => {
         setDemand(deriveVisualizationDemand({
@@ -196,10 +205,10 @@ export default function App() {
 
     const leftTabContent = {
         presets: <PresetPanel onReset={stableReset} />,
-        data: <DataPanel onReset={stableReset} />,
+        data: <div className={lessonTargetClass('data')} data-lesson-target="data"><DataPanel onReset={stableReset} /></div>,
         features: <FeaturesPanel />,
-        network: <NetworkConfigPanel />,
-        hyperparams: <HyperparamPanel />,
+        network: <div className={lessonTargetClass('network')} data-lesson-target="network"><NetworkConfigPanel /></div>,
+        hyperparams: <div className={lessonTargetClass('hyperparams')} data-lesson-target="hyperparams"><HyperparamPanel /></div>,
         config: <ConfigPanel onReset={stableReset} />,
     };
 
@@ -211,7 +220,11 @@ export default function App() {
         code: <CodeContent />,
     };
 
-    const transport = <TrainingControls training={training} />;
+    const transport = (
+        <div className={lessonTargetClass('transport')} data-lesson-target="transport">
+            <TrainingControls training={training} />
+        </div>
+    );
 
     const canvasPanel = (
         <Panel title="Network Topology" phase="build" fill>
@@ -254,10 +267,10 @@ export default function App() {
     const gridConfigPanels = (
         <div className="forge-panel-stack">
             <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
-            <Panel title="Data" phase="build"><DataPanel onReset={stableReset} /></Panel>
+            <Panel title="Data" phase="build" className={lessonTargetClass('data')}><DataPanel onReset={stableReset} /></Panel>
             <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
-            <Panel title="Network" phase="build"><NetworkConfigPanel /></Panel>
-            <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+            <Panel title="Network" phase="build" className={lessonTargetClass('network')}><NetworkConfigPanel /></Panel>
+            <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
             <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
         </div>
     );
@@ -356,7 +369,7 @@ export default function App() {
                             buildLeft={
                                 <>
                                     <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
-                                    <Panel title="Data" phase="build"><DataPanel onReset={stableReset} /></Panel>
+                                    <Panel title="Data" phase="build" className={lessonTargetClass('data')}><DataPanel onReset={stableReset} /></Panel>
                                 </>
                             }
                             buildCenter={
@@ -366,13 +379,13 @@ export default function App() {
                                             <CanvasContent />
                                         </div>
                                     </Panel>
-                                    <Panel title="Network" phase="build"><NetworkConfigPanel /></Panel>
+                                    <Panel title="Network" phase="build" className={lessonTargetClass('network')}><NetworkConfigPanel /></Panel>
                                 </>
                             }
                             buildRight={
                                 <>
                                     <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
-                                    <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
                                 </>
@@ -396,7 +409,7 @@ export default function App() {
                             runRight={
                                 <>
                                     {confusionPanel}
-                                    <Panel title="Hyperparameters" phase="both"><HyperparamPanel /></Panel>
+                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
                                 </>
@@ -406,6 +419,8 @@ export default function App() {
                     )}
                 </ErrorBoundary>
             </main>
+
+            <GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} />
 
             <StatusBar effectiveLayout={effectiveLayout} />
         </div>

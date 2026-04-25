@@ -234,11 +234,11 @@ export function useTraining(): TrainingHook {
             const ts = useTrainingStore.getState();
 
             if (msg.type === 'snapshot') {
-                ts.clearWorkerError();
-                ts.setSnapshot(createStreamSnapshot(msg, ts.snapshot));
-                ts.setFrameVersions(getFrameVersions());
-                ts.setTestMetricsStale(msg.scalars.testMetricsStale === true);
-                if (msg.historyPoint) ts.addHistoryPoint(msg.historyPoint);
+                ts.applyStreamedSnapshot({
+                    snapshot: createStreamSnapshot(msg, ts.snapshot),
+                    frameVersions: getFrameVersions(),
+                    testMetricsStale: msg.scalars.testMetricsStale === true,
+                });
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused' || msg.status === 'idle') {
                     ts.setStatus(msg.status);

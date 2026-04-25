@@ -54,7 +54,10 @@ import {
     publishSharedSnapshot,
     type SharedSnapshotViews,
 } from './sharedSnapshot.ts';
-import { getTrainingStepsForTick, normalizeTrainingSpeed } from './trainingLoop.ts';
+import {
+    getTrainingStepsForTick,
+    normalizeTrainingSpeed,
+} from './trainingLoop.ts';
 
 interface WorkerState {
     network: Network | null;

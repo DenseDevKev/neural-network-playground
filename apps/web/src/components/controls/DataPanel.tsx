@@ -22,6 +22,19 @@ const REGRESSION_DATASETS: { id: DatasetType; label: string }[] = [
     { id: 'reg-gauss', label: 'Multi-Gauss' },
 ];
 
+const DATASET_TOOLTIPS: Record<DatasetType, string> = {
+    circle: 'Cause: circle data wraps one class around another. Effect: hidden layers or squared features help make a curved boundary.',
+    xor: 'Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.',
+    gauss: 'Cause: Gaussian blobs are mostly separable clusters. Effect: simple models learn quickly unless noise overlaps the classes.',
+    spiral: 'Cause: spiral arms twist around each other. Effect: deeper networks usually need more training steps to untangle the boundary.',
+    moons: 'Cause: moon shapes curve past each other. Effect: extra neurons help bend the decision boundary between the arcs.',
+    checkerboard: 'Cause: checkerboard labels alternate in many small regions. Effect: the model needs more local bends and may train slowly.',
+    rings: 'Cause: rings stack circular bands. Effect: curved features or hidden layers make the class transitions easier to fit.',
+    heart: 'Cause: the heart outline has tight curves and a notch. Effect: low-capacity networks underfit the shape.',
+    'reg-plane': 'Cause: plane regression is almost linear. Effect: a simple network can fit it without hidden layers.',
+    'reg-gauss': 'Cause: multi-Gauss regression has several smooth bumps. Effect: hidden layers help approximate the changing surface.',
+};
+
 interface DataPanelProps {
     onReset: () => void;
 }
@@ -57,7 +70,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             <div className="control-row" style={{ marginBottom: 12 }}>
                 <span className="control-label">Problem</span>
                 <div className="chip-group" role="group" aria-label="Problem type">
-                    <Tooltip content="Switch to classification datasets">
+                    <Tooltip content="Cause: classification uses class labels. Effect: the boundary view shows which region the model assigns to each class.">
                         <button
                             type="button"
                             className={`chip ${problemType === 'classification' ? 'active' : ''}`}
@@ -70,7 +83,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                             Classification
                         </button>
                     </Tooltip>
-                    <Tooltip content="Switch to regression datasets">
+                    <Tooltip content="Cause: regression predicts a continuous value. Effect: loss tracks distance from a surface instead of class mistakes.">
                         <button
                             type="button"
                             className={`chip ${problemType === 'regression' ? 'active' : ''}`}
@@ -89,7 +102,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             {/* Dataset selector */}
             <div className="chip-group" style={{ marginBottom: 12 }}>
                 {datasets.map((ds) => (
-                    <Tooltip key={ds.id} content={`Use the ${ds.label} dataset`}>
+                    <Tooltip key={ds.id} content={DATASET_TOOLTIPS[ds.id]}>
                         <button
                             type="button"
                             className={`chip ${dataset === ds.id ? 'active' : ''}`}
@@ -110,7 +123,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 <span className="control-label">Train ratio</span>
                 <span className="control-value">{Math.round(trainTestRatio * 100)}%</span>
             </div>
-            <Tooltip content="Control the percentage of samples used for training" block>
+            <Tooltip content="Cause: a higher train ratio gives the model more examples to fit. Effect: the test set gets smaller, so generalization estimates become noisier." block>
                 <input
                     type="range"
                     min="10"
@@ -129,7 +142,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 <span className="control-label">Noise</span>
                 <span className="control-value">{noise}</span>
             </div>
-            <Tooltip content="Adjust how much randomness is added to the dataset" block>
+            <Tooltip content="Cause: more noise blurs class edges. Effect: training loss may flatten and test accuracy becomes harder to improve." block>
                 <input
                     type="range"
                     min="0"
