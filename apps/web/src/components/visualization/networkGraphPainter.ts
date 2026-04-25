@@ -144,6 +144,7 @@ export function paintEdges(
         for (let nodeIdx = 0; nodeIdx < layerNodes.length; nodeIdx++) {
             for (let prevIdx = 0; prevIdx < prevNodes.length; prevIdx++) {
                 const w = flat.weights[base + nodeIdx * fanIn + prevIdx];
+                if (!Number.isFinite(w)) continue;
                 addEdge(prevNodes[prevIdx], layerNodes[nodeIdx], w);
             }
         }
@@ -172,7 +173,7 @@ export function paintEdges(
         const layer = nodePositions[hovered.layerIdx];
         const prev = prevLayer?.[hovered.prevIdx];
         const node = layer?.[hovered.nodeIdx];
-        if (prev && node) {
+        if (prev && node && Number.isFinite(hovered.weight)) {
             const dx = cpX(prev, node);
             ctx.beginPath();
             ctx.moveTo(prev.x, prev.y);
@@ -335,6 +336,7 @@ export function hitTestEdge(
                     const d2 = pointSegmentDist2(x, y, ax, ay, bx, by);
                     if (d2 < threshold2 && (!best || d2 < best.dist2)) {
                         const weight = flat.weights[base + nodeIdx * fanIn + prevIdx];
+                        if (!Number.isFinite(weight)) continue;
                         best = {
                             ref: { layerIdx, nodeIdx, prevIdx, weight },
                             dist2: d2,

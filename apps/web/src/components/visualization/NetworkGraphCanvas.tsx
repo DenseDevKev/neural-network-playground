@@ -89,6 +89,11 @@ function bezierMidpoint(prev: NodePos, node: NodePos): FocusTargetPosition {
     };
 }
 
+function toFixedLabel(value: number | null | undefined, digits = 4): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
+    return value.toFixed(digits);
+}
+
 // ── Persistent source canvas for heatmap upscale (one per process) ─────────
 let _sourceCanvas: HTMLCanvasElement | null = null;
 let _sourceCtx: CanvasRenderingContext2D | null = null;
@@ -336,10 +341,10 @@ export function NetworkGraphCanvas() {
                 : undefined;
             if (isOutput) {
                 lines.push('Output neuron');
-                if (bias != null) lines.push(`Bias: ${bias.toFixed(4)}`);
+                if (bias != null && Number.isFinite(bias)) lines.push(`Bias: ${toFixedLabel(bias)}`);
             } else {
                 lines.push(`Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`);
-                if (bias != null) lines.push(`Bias: ${bias.toFixed(4)}`);
+                if (bias != null && Number.isFinite(bias)) lines.push(`Bias: ${toFixedLabel(bias)}`);
                 lines.push(`Activation: ${activation}`);
             }
             return lines;
@@ -354,7 +359,7 @@ export function NetworkGraphCanvas() {
 
     const buildEdgeTooltipLines = useCallback(
         (edge: EdgeRef): string[] => [
-            `Weight: ${edge.weight.toFixed(4)}`,
+            `Weight: ${toFixedLabel(edge.weight)}`,
             `Layer ${edge.layerIdx}, [${edge.prevIdx}→${edge.nodeIdx}]`,
         ],
         [],
@@ -363,7 +368,7 @@ export function NetworkGraphCanvas() {
     const buildEdgeAriaLabel = useCallback(
         (edge: EdgeRef): string => {
             const connection = edgeConnectionLabel(edge.layerIdx, edge.nodeIdx, edge.prevIdx, layers.length);
-            return `Weight: ${edge.weight.toFixed(4)}. Connection: ${connection}`;
+            return `Weight: ${toFixedLabel(edge.weight)}. Connection: ${connection}`;
         },
         [layers.length],
     );
@@ -556,6 +561,9 @@ export function NetworkGraphCanvas() {
                         prevIdx,
                         weight: flat.weights[base + nodeIdx * fanIn + prevIdx],
                     };
+                    if (!Number.isFinite(edge.weight)) {
+                        continue;
+                    }
                     targets.push({
                         key: `edge-focus-${layerIdx}-${nodeIdx}-${prevIdx}`,
                         edge,

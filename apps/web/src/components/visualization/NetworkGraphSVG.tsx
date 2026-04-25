@@ -80,6 +80,11 @@ function bezierMidpoint(prev: NodePos, node: NodePos): FocusTargetPosition {
     };
 }
 
+function toFixedLabel(value: number | null | undefined, digits = 4): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
+    return value.toFixed(digits);
+}
+
 // ── Color helpers ─────────────────────────────────────────────────────────────
 
 function nodeColor(value: number): string {
@@ -236,13 +241,14 @@ const NetworkEdges = memo(function NetworkEdges({
                 return layerNodes.map((node, nodeIdx) =>
                     prevNodes.map((prevNode, prevIdx) => {
                         const weight = flat ? flat.weights[base + nodeIdx * fanIn + prevIdx] : 0;
+                        const safeWeight = Number.isFinite(weight) ? weight : 0;
                         const key = `e-${layerIdx}-${nodeIdx}-${prevIdx}`;
                         const isHovered = hoveredEdge === key;
                         const cpX = (node.x - prevNode.x) * 0.45;
                         const pathD = `M ${prevNode.x},${prevNode.y} C ${prevNode.x + cpX},${prevNode.y} ${node.x - cpX},${node.y} ${node.x},${node.y}`;
                         const midpoint = bezierMidpoint(prevNode, node);
                         const connection = edgeConnectionLabel(layerIdx, nodeIdx, prevIdx, nodePositions.length);
-                        const ariaLabel = `Weight: ${weight.toFixed(4)}. Connection: ${connection}`;
+                        const ariaLabel = `Weight: ${toFixedLabel(safeWeight)}. Connection: ${connection}`;
 
                         return (
                             <g key={key}>
@@ -259,31 +265,31 @@ const NetworkEdges = memo(function NetworkEdges({
                                     style={{ cursor: 'pointer' }}
                                     onMouseEnter={(e) => {
                                         const rect = (e.target as SVGElement).closest('svg')!.getBoundingClientRect();
-                                        onEdgeEnter(layerIdx, nodeIdx, prevIdx, weight, e.clientX - rect.left, e.clientY - rect.top);
+                                        onEdgeEnter(layerIdx, nodeIdx, prevIdx, safeWeight, e.clientX - rect.left, e.clientY - rect.top);
                                     }}
                                     onMouseLeave={onEdgeLeave}
-                                    onFocus={() => onEdgeFocus(layerIdx, nodeIdx, prevIdx, weight, midpoint.x, midpoint.y)}
+                                    onFocus={() => onEdgeFocus(layerIdx, nodeIdx, prevIdx, safeWeight, midpoint.x, midpoint.y)}
                                     onBlur={onEdgeLeave}
                                 />
                                 {/* Visible edge */}
                                 <path
                                     d={pathD}
                                     fill="none"
-                                    stroke={edgeColor(weight)}
-                                    strokeWidth={isHovered ? edgeWidth(weight) * 2 : edgeWidth(weight)}
+                                    stroke={edgeColor(safeWeight)}
+                                    strokeWidth={isHovered ? edgeWidth(safeWeight) * 2 : edgeWidth(safeWeight)}
                                     opacity={isHovered ? 1 : 0.7}
                                     style={{ transition: 'stroke-width 200ms ease, opacity 200ms ease', pointerEvents: 'none' }}
                                 />
                                 {/* Flow animation */}
-                                {Math.abs(weight) > 0.05 && (
+                                {Math.abs(safeWeight) > 0.05 && (
                                     <path
                                         d={pathD}
                                         fill="none"
-                                        stroke={weight > 0 ? 'rgba(249, 115, 22, 0.8)' : 'rgba(59, 130, 246, 0.8)'}
+                                        stroke={safeWeight > 0 ? 'rgba(249, 115, 22, 0.8)' : 'rgba(59, 130, 246, 0.8)'}
                                         strokeWidth={1.5}
                                         strokeDasharray="4 12"
-                                        className={weight > 0 ? 'network-flow-anim' : 'network-flow-anim-reverse'}
-                                        opacity={0.4 + Math.min(Math.abs(weight), 2) * 0.25}
+                                        className={safeWeight > 0 ? 'network-flow-anim' : 'network-flow-anim-reverse'}
+                                        opacity={0.4 + Math.min(Math.abs(safeWeight), 2) * 0.25}
                                         style={{ pointerEvents: 'none' }}
                                     />
                                 )}
@@ -370,11 +376,17 @@ const NetworkNodes = memo(function NetworkNodes({
         } else if (isOutput) {
             lines.push('Output neuron');
             const bias = biasAt(layerIdx, nodeIdx);
-            if (bias != null) lines.push(`Bias: ${bias.toFixed(4)}`);
+            if (bias != null) {
+                const biasText = toFixedLabel(bias);
+                if (biasText !== 'N/A') lines.push(`Bias: ${biasText}`);
+            }
         } else {
             lines.push(`Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`);
             const bias = biasAt(layerIdx, nodeIdx);
-            if (bias != null) lines.push(`Bias: ${bias.toFixed(4)}`);
+            if (bias != null) {
+                const biasText = toFixedLabel(bias);
+                if (biasText !== 'N/A') lines.push(`Bias: ${biasText}`);
+            }
             lines.push(`Activation: ${activation}`);
         }
         return lines;
@@ -673,7 +685,7 @@ export function NetworkGraphSVG() {
         setTooltip({
             x,
             y,
-            text: [`Weight: ${weight.toFixed(4)}`, `Layer ${layerIdx}, [${prevIdx}→${nodeIdx}]`],
+            text: [`Weight: ${toFixedLabel(weight)}`, `Layer ${layerIdx}, [${prevIdx}→${nodeIdx}]`],
         });
     }, []);
 
