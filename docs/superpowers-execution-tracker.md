@@ -19,12 +19,16 @@ blocker changes.
 - [x] P0C deterministic explanations implemented - [REQ-P0C](#req-p0c)
 - [x] P0C minimal UI implemented - [REQ-P0C](#req-p0c)
 - [x] P0C focused and full verification complete - [REQ-P0C](#req-p0c), [REQ-VERIFY](#req-verify)
-- [ ] Explicit approval received to start P1 - [REQ-AGENTS](#req-agents)
+- [x] Explicit approval received to start P1 - [REQ-AGENTS](#req-agents), [REQ-P1](#req-p1)
+- [x] P1 lesson schema/registry implemented - [REQ-P1](#req-p1)
+- [x] P1 XOR migration and conservative 3-lesson batch implemented - [REQ-P1](#req-p1)
+- [x] P1 final verification complete - [REQ-VERIFY](#req-verify)
+- [x] P1 final reviews complete - [REQ-AGENTS](#req-agents)
 
 ## Current Gate
 
-P0C is complete. Do not start P1 until explicit approval is received and the
-P1 schema/content migration plan is written against a refreshed repo file map.
+P1 is complete. Do not expand beyond the conservative 3-lesson seed set until a
+new plan explicitly reopens the lesson schema/content gate.
 
 ## Prompt Requirement Index
 
@@ -96,6 +100,18 @@ Explanation rules and minimal UI:
 - Add a minimal "Why did this happen?" surface.
 - Use existing metrics/diagnostics only.
 - Do not add lessons, custom datasets, or expensive worker data.
+
+<a id="req-p1"></a>
+### REQ-P1
+
+Lesson system:
+
+- Keep lesson schema/registry web-local under `apps/web/src/lessons/`.
+- Define `LessonDefinition`, `LessonStep`, and `LessonTarget`.
+- Migrate the existing XOR guided lesson into the registry.
+- Add only the conservative 3-lesson seed set: XOR, Single Neuron, Regression Plane.
+- Do not add Feature Engineering in P1.
+- Do not change shared exports, serialization, worker protocol, store shape, presets, or app-wide layout model.
 
 <a id="req-tdd"></a>
 ### REQ-TDD
@@ -189,10 +205,37 @@ approval to proceed.
 
 ### P1: Lesson System
 
-- [ ] Define `LessonDefinition` and `LessonStep`
-- [ ] Migrate current XOR guided lesson
-- [ ] Add 2-3 lessons first
-- [ ] Verify schema before expanding lesson count
+#### P1A: Schema and Registry
+
+- [x] Define web-local `LessonDefinition` and `LessonStep` - [REQ-P1](#req-p1)
+- [x] Define `LessonTarget` as `data | network | hyperparams | transport` - [REQ-P1](#req-p1)
+- [x] Add `LESSON_DEFINITIONS` registry - [REQ-P1](#req-p1)
+- [x] Add `DEFAULT_LESSON_ID` - [REQ-P1](#req-p1)
+- [x] Add `getLessonDefinition` and `getLessonPreset` - [REQ-P1](#req-p1)
+- [x] Test registry ids, preset references, required text, valid targets, and no runtime predicates/config snapshots - [REQ-P1](#req-p1), [REQ-TDD](#req-tdd)
+
+#### P1B: XOR Migration
+
+- [x] Remove hardcoded XOR lesson constants from `GuidedLessonPanel` - [REQ-P1](#req-p1)
+- [x] Render guided lesson state from registry data - [REQ-P1](#req-p1)
+- [x] Preserve XOR preset application, reset, target order, tab/phase focus, finish, and unmount cleanup - [REQ-P1](#req-p1), [REQ-TDD](#req-tdd)
+
+#### P1C: Conservative Lesson Content
+
+- [x] Add `lesson-xor-hidden-layers` - [REQ-P1](#req-p1)
+- [x] Add `lesson-single-neuron-linear-separator` - [REQ-P1](#req-p1)
+- [x] Add `lesson-regression-plane-baseline` - [REQ-P1](#req-p1)
+- [x] Add minimal in-panel selector for the seed lessons - [REQ-P1](#req-p1)
+- [x] Test each lesson appears, starts, applies its preset, shows correct progress, and reaches run-phase transport - [REQ-P1](#req-p1), [REQ-TDD](#req-tdd)
+
+#### P1D: Verification and Gate
+
+- [x] Run full P1 verification - [REQ-VERIFY](#req-verify)
+- [x] Complete P1 read-only spec compliance review - [REQ-AGENTS](#req-agents)
+- [x] Complete P1 read-only code quality review - [REQ-AGENTS](#req-agents)
+- [x] Complete P1 read-only schema invariant review - [REQ-AGENTS](#req-agents)
+- [x] Complete P1 read-only merge-steward review - [REQ-AGENTS](#req-agents)
+- [x] Do not expand beyond conservative 3 lessons until schema gate remains stable - [REQ-P1](#req-p1)
 
 ### P2: Experiment Memory
 
@@ -225,7 +268,8 @@ approval to proceed.
 ### Gate
 
 - [x] Do not start P0C without explicit approval - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
-- [ ] Do not start P1 without explicit approval - [REQ-AGENTS](#req-agents)
+- [x] Do not start P1 without explicit approval - [REQ-AGENTS](#req-agents), [REQ-P1](#req-p1)
+- [x] Do not expand beyond conservative 3 lessons until schema gate remains stable - [REQ-P1](#req-p1)
 
 ## Agent Review Log
 
@@ -245,6 +289,23 @@ approval to proceed.
 | Banach | High | P0C code quality review | APPROVED | Approved staged diff with non-blocking notes. Locale-sensitive tie-break and duplicated accessible label were addressed after review. Snapshot re-render note accepted as safe for the small P0C rule set. |
 | Boyle | High | P0C final spec compliance review | APPROVED | Confirmed deterministic explanations, minimal UI, existing metrics only, required tests, and no protocol/store/serialization/dependency/P1 scope creep. |
 | Huygens | High | P0C final merge-steward review | APPROVED | Confirmed staged files match the P0C allowlist, unrelated dirty files are unstaged, no public exports/protocol/config/store/persistence/dependency changes, no snapshots, and no P1 work. |
+| Descartes | High | P1 schema/registry planning recon | COMPLETED | Recommended web-local lesson schema/registry because lessons depend on web layout, phase, and highlight concepts. |
+| Poincare | High | P1 schema/registry planning recon | COMPLETED | Confirmed `apps/web/src/lessons` ownership and warned against shared package exports for P1. |
+| Singer | High | P1 XOR migration planning recon | COMPLETED | Documented behavior to preserve: XOR preset, reset, target order, tab/phase focus, finish, and unmount cleanup. |
+| Dalton | High | P1 XOR migration planning recon | COMPLETED | Confirmed `transport` is a lesson target but not a layout tab, so lesson targets must remain UI-specific. |
+| Kant | High | P1 content planning recon | COMPLETED | Proposed Feature Engineering, but noted it requires a new `features` lesson target. Deferred by user choice. |
+| Averroes | High | P1 content planning recon | COMPLETED | Recommended conservative beginner lessons and a minimal in-panel selector. |
+| Epicurus | High | P1 verification gate planning recon | COMPLETED | Recommended web-local invariant tests, full verification commands, and review/merge-steward gates. |
+| Jason | High | P1 verification gate planning recon | COMPLETED | Confirmed verified command syntax and collision rules for P1. |
+| Noether | High | P1 schema/registry review | APPROVED | Confirmed web-local schema, four-value `LessonTarget`, registry exports, conservative 3 lessons, and invariant tests. |
+| Boole | High | P1 schema/registry review | APPROVED | Confirmed exact conservative lesson ids, no `features` target, and no shared/package contract churn. |
+| Godel | High | P1 XOR migration review | NEEDS_CHANGES | Found selector overflow risk from three long nowrap buttons in the fixed-width guided panel. Fixed with a vertical labelled button group and wrapped button text. |
+| Planck | High | P1 XOR migration review | APPROVED | Confirmed XOR behavior, target order, phase progression, finish/unmount cleanup, and no CSS/layout/store/shared changes. |
+| Euclid | High | P1 content review | APPROVED | Confirmed exact conservative 3-lesson set, no `features` target, local selector, per-lesson progress, and transport/run coverage. |
+| Sagan | High | P1 content review | APPROVED | Confirmed preset wiring, no Feature Engineering, no `features` target, and guided panel coverage for selection/start/progress. |
+| Dewey | High | P1 final checklist review | APPROVED | Confirmed staged files match P1 allowlist, no shared/store/worker/serialization/preset changes, and no P2 work. |
+| Hypatia | High | P1 merge-steward review | NEEDS_CHANGES | Requested tracker final-review checkboxes and schema-stability gate be marked complete. Code scope and verification evidence were otherwise clean. |
+| Kuhn | High | P1 final merge-steward re-review | APPROVED | Confirmed tracker gate fixes, staged allowlist, no shared/protocol/store/serialization/preset/dependency/snapshot changes, and clean cached diff. |
 
 ## Verification Log
 
@@ -283,16 +344,32 @@ approval to proceed.
 | `pnpm lint` | PASS | ESLint passed. |
 | `pnpm build` | PASS | Production build passed with existing Vite chunk-size warning. |
 
+### P1
+
+| Command | Outcome | Notes |
+|---|---|---|
+| `pnpm --filter @nn-playground/web test src/lessons/lessonRegistry.test.ts` | EXPECTED FAIL | Initial TDD red run failed because `lessonRegistry.ts` did not exist. |
+| `pnpm --filter @nn-playground/web test src/components/controls/GuidedLessonPanel.test.tsx` | EXPECTED FAIL | Initial TDD red run failed because the registry import did not exist. |
+| `pnpm --filter @nn-playground/web test src/lessons/lessonRegistry.test.ts` | PASS | Registry invariants passed: 1 file, 6 tests. |
+| `pnpm --filter @nn-playground/web test src/components/controls/GuidedLessonPanel.test.tsx` | PASS | Guided lesson panel migration/content tests passed: 1 file, 3 tests. |
+| `pnpm --filter @nn-playground/web test src/lessons/lessonRegistry.test.ts src/components/controls/GuidedLessonPanel.test.tsx` | PASS | Combined P1 targeted suite passed: 2 files, 9 tests. |
+| `pnpm --filter @nn-playground/web test` | EXPECTED FAIL | First full-web run caught an accessibility regression in the lesson selector markup. |
+| `pnpm --filter @nn-playground/web test src/App.test.tsx` | PASS | Accessibility regression fixed by changing the selector container to a labelled group: 1 file, 10 tests. |
+| `pnpm --filter @nn-playground/web test` | PASS | Full web suite passed after the accessibility fix: 45 files, 259 tests. |
+| `pnpm --filter @nn-playground/shared test` | PASS | Full shared suite unchanged by P1: 4 files, 59 tests. |
+| `pnpm lint` | PASS | ESLint passed. |
+| `pnpm test` | PASS | Workspace test suite passed: engine 277 tests, shared 59 tests, web 259 tests. |
+| `pnpm build` | PASS | Production build passed with existing Vite chunk-size warning. |
+| `pnpm --filter @nn-playground/web test src/components/controls/GuidedLessonPanel.test.tsx src/lessons/lessonRegistry.test.ts src/App.test.tsx` | PASS | Focused rerun after reviewer-requested selector overflow fix: 3 files, 19 tests. |
+| `pnpm --filter @nn-playground/web test` | PASS | Full web rerun after selector overflow fix: 45 files, 259 tests. |
+| `pnpm lint` | PASS | ESLint rerun passed after selector overflow fix. |
+| `pnpm build` | PASS | Production build rerun passed after selector overflow fix with existing Vite chunk-size warning. |
+
 ## File Ownership And Collision Notes
 
 Current unrelated dirty/untracked files to avoid unless explicitly assigned:
 
-- `apps/web/src/App.tsx`
-- `apps/web/src/components/controls/NetworkConfigPanel.tsx`
-- `apps/web/src/styles/forge.css`
-- `apps/web/src/styles/index.css`
-- `.claude/settings.local.json`
-- `FEATURE_BRAINSTORM.md`
+- None at P1 start.
 
 Current P0A files:
 
@@ -316,6 +393,14 @@ P0C files:
 - `apps/web/src/components/visualization/TrainingExplanationPanel.test.tsx`
 - `apps/web/src/components/layout/MainArea.tsx`
 - `apps/web/src/components/layout/MainArea.test.tsx`
+
+P1 files:
+
+- `apps/web/src/lessons/types.ts`
+- `apps/web/src/lessons/lessonRegistry.ts`
+- `apps/web/src/lessons/lessonRegistry.test.ts`
+- `apps/web/src/components/controls/GuidedLessonPanel.tsx`
+- `apps/web/src/components/controls/GuidedLessonPanel.test.tsx`
 
 No worker may edit outside its allowlist, change serialization unexpectedly, add
 dependencies, or perform unrelated cleanup.
