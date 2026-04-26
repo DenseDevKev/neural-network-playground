@@ -44,9 +44,23 @@ const swish: ActivationFn = {
     },
 };
 
+function stableSoftplus(x: number): number {
+    return x > 0
+        ? x + Math.log1p(Math.exp(-x))
+        : Math.log1p(Math.exp(x));
+}
+
+function stableSigmoid(x: number): number {
+    if (x >= 0) {
+        return 1 / (1 + Math.exp(-x));
+    }
+    const ex = Math.exp(x);
+    return ex / (1 + ex);
+}
+
 const softplus: ActivationFn = {
-    f: (x) => Math.log(1 + Math.exp(x)),
-    df: (x) => 1 / (1 + Math.exp(-x)),
+    f: stableSoftplus,
+    df: (x) => stableSigmoid(x),
 };
 
 const ACTIVATIONS: Record<ActivationType, ActivationFn> = {

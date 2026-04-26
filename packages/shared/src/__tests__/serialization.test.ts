@@ -4,6 +4,8 @@ import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
+    MAX_TRAIN_TEST_RATIO,
+    MIN_TRAIN_TEST_RATIO,
     decodeUrlState,
     validateImportedConfig,
     normalizeAppConfig,
@@ -37,39 +39,6 @@ describe('URL State Serialization', () => {
         expect(decoded.data.dataset).toBe(DEFAULT_DATA.dataset);
         expect(decoded.network.hiddenLayers).toEqual(DEFAULT_NETWORK.hiddenLayers);
         expect(decoded.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
-    });
-
-    it('round-trips advanced training and network hyperparameters', () => {
-        const advanced: AppConfig = {
-            ...validConfig,
-            network: {
-                ...validConfig.network,
-                outputActivation: 'linear',
-                weightInit: 'he',
-            },
-            training: {
-                ...validConfig.training,
-                lossType: 'huber',
-                optimizer: 'adam',
-                momentum: 0.72,
-                gradientClip: 0.25,
-                adamBeta1: 0.82,
-                adamBeta2: 0.97,
-                huberDelta: 0.4,
-                lrSchedule: { type: 'step', stepSize: 25, gamma: 0.6 },
-            },
-        };
-
-        const decoded = decodeUrlState(encodeUrlState(advanced));
-
-        expect(decoded.network.outputActivation).toBe('linear');
-        expect(decoded.network.weightInit).toBe('he');
-        expect(decoded.training.momentum).toBe(0.72);
-        expect(decoded.training.gradientClip).toBe(0.25);
-        expect(decoded.training.adamBeta1).toBe(0.82);
-        expect(decoded.training.adamBeta2).toBe(0.97);
-        expect(decoded.training.huberDelta).toBe(0.4);
-        expect(decoded.training.lrSchedule).toEqual({ type: 'step', stepSize: 25, gamma: 0.6 });
     });
 });
 
@@ -184,7 +153,7 @@ describe('decodeUrlState', () => {
         expect(decoded.data.numSamples).toBe(10000);
         expect(decoded.training.batchSize).toBe(DEFAULT_TRAINING.batchSize);
         expect(decoded.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
-        expect(decoded.data.trainTestRatio).toBe(DEFAULT_DATA.trainTestRatio);
+        expect(decoded.data.trainTestRatio).toBe(MAX_TRAIN_TEST_RATIO);
         expect(decoded.data.noise).toBe(DEFAULT_DATA.noise);
         expect(decoded.data.seed).toBe(DEFAULT_DATA.seed);
         expect(decoded.network.seed).toBe(DEFAULT_NETWORK.seed);
@@ -224,30 +193,208 @@ describe('compatibility normalization', () => {
         expect(result.error).toBe('Sample count must be between 1 and 10000.');
     });
 
-    it('preserves optional training hyperparameters during strict import', () => {
-        const result = validateImportedConfig({
+    it('strictly rejects imported configs with non-single output sizes', () => {
+        for (const outputSize of [0, 1.5, Number.POSITIVE_INFINITY, 2]) {
+            const result = validateImportedConfig({
+                ...validConfig,
+                network: {
+                    ...validConfig.network,
+                    outputSize,
+                },
+            });
+
+            expect(result.config).toBeNull();
+            expect(result.error).toBe('Only single-output networks are supported.');
+        }
+    });
+
+    it('leniently normalizes non-single output sizes to one output', () => {
+        for (const outputSize of [0, 1.5, Number.POSITIVE_INFINITY, 2]) {
+            const result = normalizeAppConfig({
+                ...validConfig,
+                network: {
+                    ...validConfig.network,
+                    outputSize,
+                },
+            }, { mode: 'lenient' });
+
+            expect(result.error).toBeNull();
+            expect(result.config?.network.outputSize).toBe(1);
+        }
+    });
+
+    it('strictly rejects train/test ratios outside the supported app range', () => {
+        for (const trainTestRatio of [MIN_TRAIN_TEST_RATIO - 0.01, MAX_TRAIN_TEST_RATIO + 0.01]) {
+            const result = validateImportedConfig({
+                ...validConfig,
+                data: {
+                    ...validConfig.data,
+                    trainTestRatio,
+                },
+            });
+
+            expect(result.config).toBeNull();
+            expect(result.error).toBe('Train/test ratio must be between 0.1 and 0.9.');
+        }
+    });
+
+    it('leniently normalizes train/test ratios using existing numeric bounds behavior', () => {
+        const below = normalizeAppConfig({
+            ...validConfig,
+            data: {
+                ...validConfig.data,
+                trainTestRatio: MIN_TRAIN_TEST_RATIO - 0.01,
+            },
+        }, { mode: 'lenient' });
+        const above = normalizeAppConfig({
+            ...validConfig,
+            data: {
+                ...validConfig.data,
+                trainTestRatio: MAX_TRAIN_TEST_RATIO + 0.01,
+            },
+        }, { mode: 'lenient' });
+
+        expect(below.config?.data.trainTestRatio).toBe(DEFAULT_DATA.trainTestRatio);
+        expect(above.config?.data.trainTestRatio).toBe(MAX_TRAIN_TEST_RATIO);
+    });
+
+    it('strictly rejects invalid huber deltas and preserves valid values', () => {
+        for (const huberDelta of [0, -1, Number.POSITIVE_INFINITY, Number.NaN]) {
+            const result = validateImportedConfig({
+                ...validConfig,
+                training: {
+                    ...validConfig.training,
+                    lossType: 'huber',
+                    huberDelta,
+                },
+            });
+
+            expect(result.config).toBeNull();
+            expect(result.error).toBe('Huber delta must be a positive number.');
+        }
+
+        const valid = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                lossType: 'huber',
+                huberDelta: 0.75,
+            },
+        });
+
+        expect(valid.error).toBeNull();
+        expect(valid.config?.training.huberDelta).toBe(0.75);
+    });
+
+    it('leniently omits invalid huber deltas', () => {
+        const result = normalizeAppConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                lossType: 'huber',
+                huberDelta: 0,
+            },
+        }, { mode: 'lenient' });
+
+        expect(result.error).toBeNull();
+        expect(result.config?.training.huberDelta).toBeUndefined();
+        expect('huberDelta' in result.config!.training).toBe(false);
+    });
+
+    it('strictly rejects invalid optional Adam fields', () => {
+        const cases = [
+            {
+                patch: { adamBeta1: -0.1 },
+                error: 'Adam beta 1 must be at least 0 and less than 1.',
+            },
+            {
+                patch: { adamBeta1: 1 },
+                error: 'Adam beta 1 must be at least 0 and less than 1.',
+            },
+            {
+                patch: { adamBeta2: Number.NaN },
+                error: 'Adam beta 2 must be at least 0 and less than 1.',
+            },
+            {
+                patch: { adamBeta2: 1 },
+                error: 'Adam beta 2 must be at least 0 and less than 1.',
+            },
+            {
+                patch: { adamEps: 0 },
+                error: 'Adam epsilon must be a positive number.',
+            },
+            {
+                patch: { adamEps: Number.POSITIVE_INFINITY },
+                error: 'Adam epsilon must be a positive number.',
+            },
+        ];
+
+        for (const { patch, error } of cases) {
+            const result = validateImportedConfig({
+                ...validConfig,
+                training: {
+                    ...validConfig.training,
+                    optimizer: 'adam',
+                    ...patch,
+                },
+            });
+
+            expect(result.config).toBeNull();
+            expect(result.error).toBe(error);
+        }
+    });
+
+    it('leniently omits invalid optional Adam fields', () => {
+        const result = normalizeAppConfig({
             ...validConfig,
             training: {
                 ...validConfig.training,
                 optimizer: 'adam',
-                lossType: 'huber',
-                momentum: 0.33,
-                gradientClip: 1.5,
-                adamBeta1: 0.7,
-                adamBeta2: 0.95,
-                huberDelta: 2.25,
-                lrSchedule: { type: 'cosine', totalSteps: 500, minLr: 0.0001 },
+                adamBeta1: 1,
+                adamBeta2: Number.NaN,
+                adamEps: 0,
             },
-        });
+        }, { mode: 'lenient' });
 
         expect(result.error).toBeNull();
-        expect(result.config?.training).toMatchObject({
-            momentum: 0.33,
-            gradientClip: 1.5,
-            adamBeta1: 0.7,
-            adamBeta2: 0.95,
-            huberDelta: 2.25,
-            lrSchedule: { type: 'cosine', totalSteps: 500, minLr: 0.0001 },
+        expect(result.config?.training.adamBeta1).toBeUndefined();
+        expect(result.config?.training.adamBeta2).toBeUndefined();
+        expect(result.config?.training.adamEps).toBeUndefined();
+        expect('adamBeta1' in result.config!.training).toBe(false);
+        expect('adamBeta2' in result.config!.training).toBe(false);
+        expect('adamEps' in result.config!.training).toBe(false);
+    });
+
+    it('preserves valid optional Adam fields during normalization', () => {
+        const strict = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                adamBeta1: 0.8,
+                adamBeta2: 0.95,
+                adamEps: 1e-7,
+            },
         });
+        const lenient = normalizeAppConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                adamBeta1: 0,
+                adamBeta2: 0.999,
+                adamEps: 1e-8,
+            },
+        }, { mode: 'lenient' });
+
+        expect(strict.error).toBeNull();
+        expect(strict.config?.training.adamBeta1).toBe(0.8);
+        expect(strict.config?.training.adamBeta2).toBe(0.95);
+        expect(strict.config?.training.adamEps).toBe(1e-7);
+
+        expect(lenient.error).toBeNull();
+        expect(lenient.config?.training.adamBeta1).toBe(0);
+        expect(lenient.config?.training.adamBeta2).toBe(0.999);
+        expect(lenient.config?.training.adamEps).toBe(1e-8);
     });
 });

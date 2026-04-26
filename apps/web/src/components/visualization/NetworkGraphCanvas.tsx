@@ -24,11 +24,8 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { getActiveFeatures } from '@nn-playground/engine';
 import { GRID_SIZE, writeNormalizedHeatmap } from '@nn-playground/shared';
-import {
-    extractNeuronGrid,
-    getFrameBuffer,
-    layerBiasOffset,
-} from '../../worker/frameBuffer.ts';
+import { getFrameBuffer } from '../../worker/frameBuffer.ts';
+import { extractNeuronGrid, layerBiasOffset } from '../../worker/frameBufferLayout.ts';
 import {
     type EdgeRef,
     type EdgeFilter,
@@ -136,6 +133,10 @@ function zoomLabel(zoom: number): string {
     return `${Math.round(zoom * 100)}%`;
 }
 
+function toFixedLabel(value: number | null | undefined, digits = 4): string {
+    return Number.isFinite(value) ? value!.toFixed(digits) : 'n/a';
+}
+
 export function NetworkGraphCanvas() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const features = usePlaygroundStore((s) => s.features);
@@ -214,6 +215,7 @@ export function NetworkGraphCanvas() {
 
     // Flat-buffer view, identical contract to the SVG renderer's `flat`.
     const flat = useMemo<FlatNetworkView | null>(() => {
+        void frameVersion;
         const fb = getFrameBuffer();
         if (fb.weights && fb.biases && fb.weightLayout) {
             return {
@@ -254,6 +256,7 @@ export function NetworkGraphCanvas() {
     // Output: array indexed [hidden1, hidden2, ..., output], one entry per
     // non-input neuron in render order.
     const neuronGrids = useMemo<NeuronGridEntry[] | null>(() => {
+        void frameVersion;
         const fb = getFrameBuffer();
         if (fb.neuronGrids && fb.neuronGridLayout) {
             const { count, gridSize } = fb.neuronGridLayout;
@@ -345,10 +348,10 @@ export function NetworkGraphCanvas() {
                 : undefined;
             if (isOutput) {
                 lines.push('Output neuron');
-                if (bias != null) lines.push(`Bias: ${bias.toFixed(4)}`);
+                if (bias != null) lines.push(`Bias: ${toFixedLabel(bias)}`);
             } else {
                 lines.push(`Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`);
-                if (bias != null) lines.push(`Bias: ${bias.toFixed(4)}`);
+                if (bias != null) lines.push(`Bias: ${toFixedLabel(bias)}`);
                 lines.push(`Activation: ${activation}`);
             }
             return lines;
@@ -457,8 +460,8 @@ export function NetworkGraphCanvas() {
                     x: screenX + 12,
                     y: screenY - 8,
                     text: [
-                        `${edge.weight >= 0 ? 'Positive' : 'Negative'} weight: ${edge.weight.toFixed(4)}`,
-                        `Magnitude: ${Math.abs(edge.weight).toFixed(4)}`,
+                        `${edge.weight >= 0 ? 'Positive' : 'Negative'} weight: ${toFixedLabel(edge.weight)}`,
+                        `Magnitude: ${toFixedLabel(Math.abs(edge.weight))}`,
                         `Layer ${edge.layerIdx}, [${edge.prevIdx}→${edge.nodeIdx}]`,
                     ],
                 });

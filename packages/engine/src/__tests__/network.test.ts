@@ -71,6 +71,13 @@ describe('Network construction', () => {
         const b = new Network(makeConfig({ seed: 2 }));
         expect(a.getWeights()).not.toEqual(b.getWeights());
     });
+
+    it('rejects non-finite or non-positive layer sizes', () => {
+        expect(() => new Network(makeConfig({ inputSize: 0 }))).toThrow(RangeError);
+        expect(() => new Network(makeConfig({ outputSize: Number.POSITIVE_INFINITY }))).toThrow(RangeError);
+        expect(() => new Network(makeConfig({ hiddenLayers: [4, -1] }))).toThrow(RangeError);
+        expect(() => new Network(makeConfig({ hiddenLayers: [4, 1.5] }))).toThrow(RangeError);
+    });
 });
 
 describe('Network forward pass', () => {
@@ -108,6 +115,22 @@ describe('Network forward pass', () => {
         const out = net.forward([1, 1]);
         expect(isNaN(out[0])).toBe(false);
     });
+
+    it('softplus output remains finite for saturated positive inputs', () => {
+        const net = new Network(makeConfig({
+            inputSize: 1,
+            hiddenLayers: [],
+            outputSize: 1,
+            outputActivation: 'softplus',
+            weightInit: 'zeros',
+        }));
+        net.setWeight(0, 0, 0, 1000);
+
+        const out = net.forward([1]);
+
+        expect(Number.isFinite(out[0])).toBe(true);
+        expect(out[0]).toBeCloseTo(1000, 8);
+    });
 });
 
 describe('Network training', () => {
@@ -139,6 +162,217 @@ describe('Network training', () => {
         expect(loss).toBeGreaterThanOrEqual(0);
     });
 
+    it('trainBatch with an empty batch is a no-op', () => {
+        const net = new Network(makeConfig());
+        const weightsBefore = net.getWeights();
+        const biasesBefore = net.getBiases();
+        const stepBefore = net.getStep();
+
+        const loss = net.trainBatch([], [], defaultTraining);
+
+        expect(loss).toBe(0);
+        expect(net.getWeights()).toEqual(weightsBefore);
+        expect(net.getBiases()).toEqual(biasesBefore);
+        expect(net.getStep()).toBe(stepBefore);
+    });
+
+    it('trainBatchIndexed matches trainBatch for the selected samples', () => {
+        const config = makeConfig({ hiddenLayers: [3], seed: 7 });
+        const indexed = new Network(config);
+        const sliced = new Network(config);
+        const inputs = [
+            [0, 0],
+            [0, 1],
+            [1, 0],
+            [1, 1],
+            [0.25, 0.75],
+        ];
+        const targets = [[0], [1], [1], [0], [1]];
+        const indices = new Uint32Array([4, 1, 3]);
+
+        const indexedLoss = indexed.trainBatchIndexed(inputs, targets, indices, 0, indices.length, defaultTraining);
+        const slicedLoss = sliced.trainBatch(
+            [inputs[4], inputs[1], inputs[3]],
+            [targets[4], targets[1], targets[3]],
+            defaultTraining,
+        );
+
+        expect(indexedLoss).toBeCloseTo(slicedLoss, 12);
+        expect(indexed.getWeights()).toEqual(sliced.getWeights());
+        expect(indexed.getBiases()).toEqual(sliced.getBiases());
+        expect(indexed.getStep()).toBe(sliced.getStep());
+    });
+
+    it('trainBatchIndexed rejects invalid ranges and indices', () => {
+        const net = new Network(makeConfig());
+        const inputs = [[0, 0], [1, 1]];
+        const targets = [[0], [1]];
+        const indices = [0, 1];
+
+        expect(() => net.trainBatchIndexed(inputs, targets, indices, -1, 1, defaultTraining)).toThrow(RangeError);
+        expect(() => net.trainBatchIndexed(inputs, targets, indices, 0, 3, defaultTraining)).toThrow(RangeError);
+        expect(() => net.trainBatchIndexed(inputs, targets, indices, 2, 1, defaultTraining)).toThrow(RangeError);
+        expect(() => net.trainBatchIndexed(inputs, targets, [0, 2], 0, 2, defaultTraining)).toThrow(RangeError);
+        expect(() => net.trainBatchIndexed(inputs, targets, [0, 1.5], 0, 2, defaultTraining)).toThrow(RangeError);
+        expect(() => net.trainBatchIndexed(inputs, targets, [0, -1], 0, 2, defaultTraining)).toThrow(RangeError);
+    });
+
+    it('trainBatchIndexed validates selected sample shapes', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.trainBatchIndexed(
+            [[0, 0], [1]],
+            [[0], [1]],
+            [1],
+            0,
+            1,
+            defaultTraining,
+        )).toThrow(RangeError);
+
+        expect(() => net.trainBatchIndexed(
+            [[0, 0], [1, 1]],
+            [[0], [1, 0]],
+            [1],
+            0,
+            1,
+            defaultTraining,
+        )).toThrow(RangeError);
+    });
+
+    it('trainBatchIndexed with an empty selected range is a no-op', () => {
+        const net = new Network(makeConfig());
+        const weightsBefore = net.getWeights();
+        const biasesBefore = net.getBiases();
+        const stepBefore = net.getStep();
+
+        const loss = net.trainBatchIndexed([[0, 0]], [[0]], [0], 0, 0, defaultTraining);
+
+        expect(loss).toBe(0);
+        expect(net.getWeights()).toEqual(weightsBefore);
+        expect(net.getBiases()).toEqual(biasesBefore);
+        expect(net.getStep()).toBe(stepBefore);
+    });
+
+    it('throws for wrong input or target shapes', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.forward([0])).toThrow(RangeError);
+        expect(() => net.trainBatch([[0, 0], [1, 1]], [[0]], defaultTraining)).toThrow(RangeError);
+        expect(() => net.trainBatch([[0]], [[0]], defaultTraining)).toThrow(RangeError);
+        expect(() => net.trainBatch([[0, 0]], [[0, 1]], defaultTraining)).toThrow(RangeError);
+        expect(() => net.evaluate([[0, 0]], [[0, 1]], 'crossEntropy', 'classification')).toThrow(RangeError);
+    });
+
+    it('applyGradients rejects invalid normalization counts', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.applyGradients(defaultTraining, 0)).toThrow(RangeError);
+        expect(() => net.applyGradients(defaultTraining, -1)).toThrow(RangeError);
+        expect(() => net.applyGradients(defaultTraining, Number.NaN)).toThrow(RangeError);
+    });
+
+    it('applyGradients rejects invalid finite/ranged training hyperparameters', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.applyGradients({ ...defaultTraining, learningRate: Number.NaN }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...defaultTraining, batchSize: 0 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...defaultTraining, regularizationRate: -0.1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...defaultTraining, gradientClip: 0 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({
+            ...defaultTraining,
+            optimizer: 'sgdMomentum',
+            momentum: 1.01,
+        }, 1)).toThrow(RangeError);
+    });
+
+    it('applyGradients rejects invalid Adam hyperparameters', () => {
+        const net = new Network(makeConfig());
+        const adamTraining: TrainingConfig = {
+            ...defaultTraining,
+            optimizer: 'adam',
+        };
+
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta1: -0.1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta1: 1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta2: Number.NaN }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamBeta2: 1 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamEps: 0 }, 1)).toThrow(RangeError);
+        expect(() => net.applyGradients({ ...adamTraining, adamEps: Number.POSITIVE_INFINITY }, 1)).toThrow(RangeError);
+    });
+
+    it('normalizes multi-output gradients by output size', () => {
+        const net = new Network(makeConfig({
+            inputSize: 1,
+            hiddenLayers: [],
+            outputSize: 2,
+            outputActivation: 'linear',
+            weightInit: 'zeros',
+        }));
+        const training: TrainingConfig = {
+            ...defaultTraining,
+            learningRate: 1,
+            lossType: 'mse',
+            optimizer: 'sgd',
+        };
+
+        const loss = net.trainBatch([[1]], [[1, 1]], training);
+
+        expect(loss).toBeCloseTo(0.5, 8);
+        expect(net.getWeight(0, 0, 0)).toBeCloseTo(0.5, 8);
+        expect(net.getWeight(0, 1, 0)).toBeCloseTo(0.5, 8);
+        expect(net.getBias(0, 0)).toBeCloseTo(0.5, 8);
+        expect(net.getBias(0, 1)).toBeCloseTo(0.5, 8);
+    });
+
+    it('updates saturated sigmoid outputs with cross-entropy', () => {
+        const net = new Network(makeConfig({
+            inputSize: 1,
+            hiddenLayers: [],
+            outputSize: 1,
+            outputActivation: 'sigmoid',
+            weightInit: 'zeros',
+        }));
+        net.setWeight(0, 0, 0, 1000);
+        const training: TrainingConfig = {
+            ...defaultTraining,
+            learningRate: 0.1,
+            optimizer: 'sgd',
+            lossType: 'crossEntropy',
+        };
+
+        net.trainBatch([[1]], [[0]], training);
+
+        expect(net.getWeight(0, 0, 0)).toBeLessThan(1000);
+        expect(net.getBias(0, 0)).toBeLessThan(0);
+    });
+
+    it('resets optimizer buffers and optimizer step when switching optimizers', () => {
+        const config = makeConfig({ hiddenLayers: [3] });
+        const net = new Network(config);
+        const momentumTraining: TrainingConfig = {
+            ...defaultTraining,
+            optimizer: 'sgdMomentum',
+            momentum: 0.9,
+        };
+        const adamTraining: TrainingConfig = {
+            ...defaultTraining,
+            optimizer: 'adam',
+        };
+        const inputs = [[0, 0], [1, 1]];
+        const targets = [[0], [1]];
+
+        net.trainBatch(inputs, targets, momentumTraining);
+        const reference = Network.deserialize(net.serialize());
+
+        net.trainBatch(inputs, targets, adamTraining);
+        reference.trainBatch(inputs, targets, adamTraining);
+
+        expect(net.getWeights()).toEqual(reference.getWeights());
+        expect(net.getBiases()).toEqual(reference.getBiases());
+        expect(net.getStep()).toBe(2);
+        expect(reference.getStep()).toBe(1);
+    });
+
     it('preserves recent gradient magnitudes for layer stats after a batch update', () => {
         const net = new Network(makeConfig());
 
@@ -166,7 +400,7 @@ describe('Network evaluate', () => {
     });
 
     it('returns correct confusion matrix for classification', () => {
-        const net = new Network(makeConfig());
+        const net = new Network(makeConfig({ inputSize: 1 }));
         // Mock forward pass to precisely control the prediction class
         // If input[0] > 0 -> return 0.9 (Class 1)
         // If input[0] <= 0 -> return 0.1 (Class 0)
@@ -186,6 +420,37 @@ describe('Network evaluate', () => {
 
         expect(metrics.confusionMatrix).toEqual({ tp: 1, fn: 1, fp: 1, tn: 1 });
         expect(metrics.accuracy).toBe(0.5); // 2 correct out of 4
+    });
+
+    it('keeps evaluation metrics finite and equivalent to public forward predictions', () => {
+        const config = makeConfig({ outputSize: 2, outputActivation: 'sigmoid' });
+        const net = new Network(config);
+        const inputs = [[0, 0], [1, 1], [0.25, 0.75]];
+        const targets = [[1, 0], [0, 1], [0, 1]];
+        const lossFn = (prediction: number, target: number): number => {
+            const eps = 1e-12;
+            const p = Math.min(Math.max(prediction, eps), 1 - eps);
+            return -(target * Math.log(p) + (1 - target) * Math.log(1 - p));
+        };
+        let expectedLoss = 0;
+        let expectedCorrect = 0;
+
+        for (let i = 0; i < inputs.length; i++) {
+            const pred = net.forward(inputs[i]);
+            for (let o = 0; o < pred.length; o++) {
+                expect(Number.isFinite(pred[o])).toBe(true);
+                expectedLoss += lossFn(pred[o], targets[i][o]);
+            }
+            const predClass = pred[1] > pred[0] ? 1 : 0;
+            const targetClass = targets[i][1] > targets[i][0] ? 1 : 0;
+            if (predClass === targetClass) expectedCorrect++;
+        }
+
+        const metrics = net.evaluate(inputs, targets, 'crossEntropy', 'classification');
+
+        expect(Number.isFinite(metrics.loss)).toBe(true);
+        expect(metrics.loss).toBeCloseTo(expectedLoss / (inputs.length * config.outputSize), 12);
+        expect(metrics.accuracy).toBe(expectedCorrect / inputs.length);
     });
 
     it('returns loss without accuracy for regression', () => {
@@ -305,6 +570,63 @@ describe('Network serialize/deserialize', () => {
         const input = [0.2, 0.8];
         expect(restored.forward(input)).toEqual(net.forward(input));
     });
+
+    it('rejects invalid serialized dimensions', () => {
+        const data = new Network(makeConfig()).serialize();
+
+        expect(() => Network.deserialize({
+            ...data,
+            config: { ...data.config, inputSize: 0 },
+        })).toThrow(RangeError);
+        expect(() => Network.deserialize({
+            ...data,
+            weights: data.weights.slice(0, -1),
+        })).toThrow(RangeError);
+        expect(() => Network.deserialize({
+            ...data,
+            biases: data.biases.slice(0, -1),
+        })).toThrow(RangeError);
+    });
+
+    it('rejects serialized weights with missing rows or wrong row sizes', () => {
+        const data = new Network(makeConfig()).serialize();
+        const missingRow = {
+            ...data,
+            weights: data.weights.map((layer) => layer.map((row) => [...row])),
+        };
+        missingRow.weights[0] = missingRow.weights[0].slice(0, -1);
+
+        const wrongRowSize = {
+            ...data,
+            weights: data.weights.map((layer) => layer.map((row) => [...row])),
+        };
+        wrongRowSize.weights[0][0] = wrongRowSize.weights[0][0].slice(0, -1);
+
+        expect(() => Network.deserialize(missingRow)).toThrow(RangeError);
+        expect(() => Network.deserialize(wrongRowSize)).toThrow(RangeError);
+    });
+
+    it('rejects serialized biases with wrong sizes', () => {
+        const data = new Network(makeConfig()).serialize();
+        const wrongBiasSize = {
+            ...data,
+            biases: data.biases.map((layer) => [...layer]),
+        };
+        wrongBiasSize.biases[0] = wrongBiasSize.biases[0].slice(0, -1);
+
+        expect(() => Network.deserialize(wrongBiasSize)).toThrow(RangeError);
+    });
+
+    it('rejects non-finite serialized parameter values', () => {
+        const badWeight = new Network(makeConfig()).serialize();
+        badWeight.weights[0][0][0] = Number.NaN;
+
+        const badBias = new Network(makeConfig()).serialize();
+        badBias.biases[0][0] = Number.POSITIVE_INFINITY;
+
+        expect(() => Network.deserialize(badWeight)).toThrow(RangeError);
+        expect(() => Network.deserialize(badBias)).toThrow(RangeError);
+    });
 });
 
 describe('Network snapshot', () => {
@@ -350,6 +672,16 @@ describe('buildGridInputs', () => {
         for (const inp of inputs) {
             expect(inp).toHaveLength(2); // x and y features
         }
+    });
+
+    it('rejects grid sizes smaller than 2', () => {
+        const active = getActiveFeatures(defaultFeatureFlags());
+        expect(() => buildGridInputs(1, active)).toThrow(RangeError);
+    });
+
+    it('rejects non-integer grid sizes', () => {
+        const active = getActiveFeatures(defaultFeatureFlags());
+        expect(() => buildGridInputs(2.5, active)).toThrow(RangeError);
     });
 });
 

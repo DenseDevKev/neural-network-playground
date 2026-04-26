@@ -207,7 +207,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         },
 
         setHiddenLayers: (layers) => set((s) => ({
-            network: { ...s.network, hiddenLayers: layers },
+            network: { ...s.network, hiddenLayers: [...layers] },
         })),
 
         addLayer: () => set((s) => {

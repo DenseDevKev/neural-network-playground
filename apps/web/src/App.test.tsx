@@ -111,6 +111,55 @@ describe('App accessibility shell', () => {
         expect(trainingMock.reset).toHaveBeenCalledTimes(1);
     });
 
+    it('handles global keyboard shortcuts from page background focus', () => {
+        render(<App />);
+
+        fireEvent.keyDown(document.body, { code: 'KeyR' });
+        fireEvent.keyDown(window, { code: 'KeyR' });
+
+        expect(trainingMock.reset).toHaveBeenCalledTimes(2);
+    });
+
+    it('ignores global keyboard shortcuts from focused interactive elements', () => {
+        render(
+            <>
+                <App />
+                <button type="button">Regular button</button>
+                <button type="button" role="tab">Tab control</button>
+                <a href="#example">Example link</a>
+                <input aria-label="Typing field" />
+                <select aria-label="Dataset select"><option>Circle</option></select>
+                <textarea aria-label="Notes" />
+                <div contentEditable role="textbox" aria-label="Editable notes" />
+                <div role="button" tabIndex={0}>Div button</div>
+                <div role="switch" tabIndex={0} aria-checked="false">Switch control</div>
+                <div role="slider" tabIndex={0} aria-label="Slider control" aria-valuemin={0} aria-valuemax={1} aria-valuenow={0}>Slider control</div>
+                <div tabIndex={0} aria-label="Graph node">Graph node</div>
+            </>,
+        );
+
+        const interactiveTargets = [
+            screen.getByRole('button', { name: 'Regular button' }),
+            screen.getByRole('tab', { name: 'Tab control' }),
+            screen.getByRole('link', { name: 'Example link' }),
+            screen.getByRole('textbox', { name: 'Typing field' }),
+            screen.getByRole('combobox', { name: 'Dataset select' }),
+            screen.getByRole('textbox', { name: 'Notes' }),
+            screen.getByRole('textbox', { name: 'Editable notes' }),
+            screen.getByRole('button', { name: 'Div button' }),
+            screen.getByRole('switch', { name: 'Switch control' }),
+            screen.getByRole('slider', { name: 'Slider control' }),
+            screen.getByLabelText('Graph node'),
+        ];
+
+        for (const target of interactiveTargets) {
+            target.focus();
+            fireEvent.keyDown(target, { code: 'KeyR' });
+        }
+
+        expect(trainingMock.reset).not.toHaveBeenCalled();
+    });
+
     it('pauses training with Space when already running and ignores shortcuts in inputs', () => {
         useTrainingStore.setState({ status: 'running' });
         render(

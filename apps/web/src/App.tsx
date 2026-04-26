@@ -37,18 +37,55 @@ import { ConfigPanel } from './components/controls/ConfigPanel.tsx';
 import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
+import { deriveVisualizationDemand } from './components/layout/deriveVisualizationDemand.ts';
 
 const COMPACT_BREAKPOINT = 900;
+const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
+
+function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
+    if (!(target instanceof Element)) return false;
+    if (target === document.body || target === document.documentElement) return false;
+
+    let el: Element | null = target;
+    while (el) {
+        if (
+            el instanceof HTMLButtonElement ||
+            el instanceof HTMLInputElement ||
+            el instanceof HTMLSelectElement ||
+            el instanceof HTMLTextAreaElement ||
+            el instanceof HTMLAnchorElement
+        ) {
+            return true;
+        }
+
+        const role = el.getAttribute('role');
+        if (role && SHORTCUT_BLOCKED_ROLES.has(role)) return true;
+
+        const tabIndex = el.getAttribute('tabindex');
+        if (tabIndex !== null && tabIndex !== '-1') return true;
+
+        const contentEditable = el.getAttribute('contenteditable');
+        if (contentEditable !== null && contentEditable.toLowerCase() !== 'false') return true;
+
+        el = el.parentElement;
+    }
+
+    return false;
+}
 
 export default function App() {
     const training = useTraining();
     const persistedLayout = useLayoutStore((s) => s.layout);
+    const phase = useLayoutStore((s) => s.phase);
+    const activeTabRight = useLayoutStore((s) => s.activeTabRight);
     const status = useTrainingStore((s) => s.status);
     const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
     const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const workerError = useTrainingStore((s) => s.workerError);
+    const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
+    const setDemand = usePlaygroundStore((s) => s.setDemand);
     const [isCompact, setIsCompact] = useState(() => window.innerWidth < COMPACT_BREAKPOINT);
     const [lessonHighlight, setLessonHighlight] = useState<LessonTarget | null>(null);
 
@@ -68,6 +105,15 @@ export default function App() {
         (target: LessonTarget) => `lesson-target ${lessonHighlight === target ? 'lesson-target--active' : ''}`,
         [lessonHighlight],
     );
+
+    useEffect(() => {
+        setDemand(deriveVisualizationDemand({
+            layout: effectiveLayout,
+            phase,
+            activeTabRight,
+            graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
+        }));
+    }, [activeTabRight, canvasNetworkGraph, effectiveLayout, phase, setDemand]);
 
     // Performance observer (dev only)
     useEffect(() => {
@@ -101,11 +147,7 @@ export default function App() {
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
-            if (
-                e.target instanceof HTMLInputElement ||
-                e.target instanceof HTMLSelectElement ||
-                e.target instanceof HTMLTextAreaElement
-            ) return;
+            if (shouldIgnoreGlobalShortcut(e.target)) return;
 
             if (e.code === 'Space') {
                 e.preventDefault();
@@ -355,23 +397,26 @@ function StatusBar({ effectiveLayout }: { effectiveLayout: LayoutVariant }) {
     const status = useTrainingStore((s) => s.status);
     const phase = useLayoutStore((s) => s.phase);
     const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const snapshot = useTrainingStore((s) => s.snapshot);
 
     return (
-        <div className="forge-statusbar" role="status" aria-label="Status bar">
+        <div
+            className="forge-statusbar"
+            role="status"
+            aria-label="Status bar"
+            data-status={status}
+        >
             <span>
-                <span className="forge-statusbar__accent">●</span>{' '}
+                <span className="forge-statusbar__dot" aria-hidden />
                 {status.toUpperCase()}
             </span>
             <span>LAYOUT: <span className="forge-statusbar__accent">{effectiveLayout}</span></span>
             {effectiveLayout === 'split' && (
                 <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
             )}
-            <span>DATA: {dataset}</span>
-            <span>ARCH: [{hiddenLayers.join(', ')}]</span>
+            <span>DATA: <span className="forge-statusbar__accent">{dataset}</span></span>
             <span className="forge-statusbar__spacer" />
-            <span>step {(snapshot?.step ?? 0).toLocaleString()}</span>
+            <span>STEP <span className="forge-statusbar__accent">{(snapshot?.step ?? 0).toLocaleString()}</span></span>
             <span>
                 Inspired by{' '}
                 <a

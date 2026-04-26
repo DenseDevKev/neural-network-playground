@@ -1,4 +1,4 @@
-import { afterEach } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 
@@ -57,4 +57,11 @@ if (typeof globalThis.Path2D === 'undefined') {
 // Cleanup after each test
 afterEach(() => {
   cleanup();
+  if (vi.isFakeTimers()) {
+    try {
+      vi.runOnlyPendingTimers();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
 });

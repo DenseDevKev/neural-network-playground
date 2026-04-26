@@ -30,6 +30,9 @@ export const DEFAULT_HUBER_DELTA = 1.0;
 
 /** Build a Huber loss with a configurable transition point δ. */
 function makeHuber(delta: number): LossFn {
+    if (!Number.isFinite(delta) || delta <= 0) {
+        throw new RangeError('huberDelta must be finite and greater than 0');
+    }
     return {
         loss: (p, t) => {
             const a = Math.abs(p - t);
@@ -53,8 +56,13 @@ const LOSSES: Record<LossType, LossFn> = { mse, crossEntropy, huber: DEFAULT_HUB
  * produces a delta-configured LossFn; if omitted, the module default is used.
  */
 export function getLoss(type: LossType, opts?: { huberDelta?: number }): LossFn {
-    if (type === 'huber' && opts?.huberDelta != null && opts.huberDelta !== DEFAULT_HUBER_DELTA) {
-        return makeHuber(opts.huberDelta);
+    if (type === 'huber' && opts?.huberDelta != null) {
+        if (!Number.isFinite(opts.huberDelta) || opts.huberDelta <= 0) {
+            throw new RangeError('huberDelta must be finite and greater than 0');
+        }
+        if (opts.huberDelta !== DEFAULT_HUBER_DELTA) {
+            return makeHuber(opts.huberDelta);
+        }
     }
     return LOSSES[type];
 }
@@ -65,6 +73,11 @@ export function batchLoss(
     predictions: number[],
     targets: number[],
 ): number {
+    if (predictions.length !== targets.length) {
+        throw new RangeError('predictions and targets must have the same batch length');
+    }
+    if (predictions.length === 0) return 0;
+
     let sum = 0;
     for (let i = 0; i < predictions.length; i++) {
         sum += fn.loss(predictions[i], targets[i]);

@@ -27,6 +27,7 @@ describe('useTrainingStore streamed snapshots', () => {
             frameVersion: 0,
             testMetricsStale: false,
             workerError: 'previous error',
+            pauseReason: 'manual',
         });
     });
 
@@ -38,7 +39,14 @@ describe('useTrainingStore streamed snapshots', () => {
 
         useTrainingStore.getState().applyStreamedSnapshot({
             snapshot: makeSnapshot(3),
-            frameVersion: 7,
+            frameVersions: {
+                frameVersion: 7,
+                outputGridVersion: 8,
+                neuronGridsVersion: 9,
+                paramsVersion: 10,
+                layerStatsVersion: 11,
+                confusionMatrixVersion: 12,
+            },
             testMetricsStale: true,
         });
 
@@ -48,8 +56,22 @@ describe('useTrainingStore streamed snapshots', () => {
         expect(publications).toBe(1);
         expect(state.snapshot?.step).toBe(3);
         expect(state.frameVersion).toBe(7);
+        expect(state.outputGridVersion).toBe(8);
+        expect(state.neuronGridsVersion).toBe(9);
+        expect(state.paramsVersion).toBe(10);
+        expect(state.layerStatsVersion).toBe(11);
+        expect(state.confusionMatrixVersion).toBe(12);
         expect(state.testMetricsStale).toBe(true);
         expect(state.workerError).toBeNull();
+        expect(state.pauseReason).toBe('manual');
         expect(readHistory().count).toBe(1);
+    });
+
+    it('sets and clears pause reason explicitly', () => {
+        useTrainingStore.getState().setPauseReason('diverged');
+        expect(useTrainingStore.getState().pauseReason).toBe('diverged');
+
+        useTrainingStore.getState().clearPauseReason();
+        expect(useTrainingStore.getState().pauseReason).toBeNull();
     });
 });

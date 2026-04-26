@@ -6,7 +6,7 @@
 // Edge / node colours mirror the SVG renderer so toggling between the two
 // implementations doesn't change perceived appearance.
 
-import { layerWeightOffset, layerBiasOffset } from '../../worker/frameBuffer.ts';
+import { layerWeightOffset, layerBiasOffset } from '../../worker/frameBufferLayout.ts';
 
 export interface NodePos {
     x: number;
@@ -164,6 +164,7 @@ export function paintEdges(
         for (let nodeIdx = 0; nodeIdx < layerNodes.length; nodeIdx++) {
             for (let prevIdx = 0; prevIdx < prevNodes.length; prevIdx++) {
                 const w = flat.weights[base + nodeIdx * fanIn + prevIdx];
+                if (!Number.isFinite(w)) continue;
                 addEdge(prevNodes[prevIdx], layerNodes[nodeIdx], w);
             }
         }
@@ -192,18 +193,18 @@ export function paintEdges(
         const layer = nodePositions[hovered.layerIdx];
         const prev = prevLayer?.[hovered.prevIdx];
         const node = layer?.[hovered.nodeIdx];
-        if (prev && node) {
-            const path = new Path2D();
+        if (prev && node && Number.isFinite(hovered.weight)) {
             const dx = cpX(prev, node);
-            path.moveTo(prev.x, prev.y);
-            path.bezierCurveTo(
+            ctx.beginPath();
+            ctx.moveTo(prev.x, prev.y);
+            ctx.bezierCurveTo(
                 prev.x + dx, prev.y,
                 node.x - dx, node.y,
                 node.x, node.y,
             );
             ctx.strokeStyle = edgeColor(hovered.weight, true);
             ctx.lineWidth = edgeWidth(hovered.weight, true);
-            ctx.stroke(path);
+            ctx.stroke();
         }
     }
 }
@@ -245,6 +246,7 @@ export function paintNodes(
         const isOutput = l === layerCount - 1;
         const target = isInput ? inputStroke : isOutput ? outputStroke : null;
         const layer = nodePositions[l];
+        const biasBase = flat && !target ? layerBiasOffset(flat.layerSizes, l - 1) : 0;
 
         for (let i = 0; i < layer.length; i++) {
             const n = layer[i];
@@ -254,9 +256,7 @@ export function paintNodes(
                 target.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
             } else {
                 // Hidden layer — bias-tinted; bucket by sign.
-                const bias = flat
-                    ? flat.biases[layerBiasOffset(flat.layerSizes, l - 1) + i]
-                    : 0;
+                const bias = flat ? flat.biases[biasBase + i] : 0;
                 const hiddenTarget = bias >= 0 ? hiddenPos : hiddenNeg;
                 hiddenTarget.moveTo(n.x + NODE_RADIUS, n.y);
                 hiddenTarget.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
@@ -355,6 +355,7 @@ export function hitTestEdge(
                     const d2 = pointSegmentDist2(x, y, ax, ay, bx, by);
                     if (d2 < threshold2 && (!best || d2 < best.dist2)) {
                         const weight = flat.weights[base + nodeIdx * fanIn + prevIdx];
+                        if (!Number.isFinite(weight)) continue;
                         best = {
                             ref: { layerIdx, nodeIdx, prevIdx, weight },
                             dist2: d2,

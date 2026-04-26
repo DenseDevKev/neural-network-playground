@@ -30,8 +30,16 @@ import type {
     HistoryPoint,
     Metrics,
 } from '@nn-playground/engine';
-import { GRID_SIZE, DEFAULT_DEMAND, isMainToWorkerCommand, structuralEqual, normalizeAppConfig } from '@nn-playground/shared';
+import {
+    GRID_SIZE,
+    DEFAULT_DEMAND,
+    isMainToWorkerCommand,
+    normalizeVisualizationDemand,
+    structuralEqual,
+    normalizeAppConfig,
+} from '@nn-playground/shared';
 import type {
+    PauseReason,
     VisualizationDemand,
     WorkerSnapshotMessage,
     WorkerStatusMessage,
@@ -48,12 +56,15 @@ import {
     type SharedSnapshotViews,
 } from './sharedSnapshot.ts';
 import {
-    createMiniBatchScratch,
-    fillMiniBatchScratch,
     getTrainingStepsForTick,
     normalizeTrainingSpeed,
-    type MiniBatchScratch,
 } from './trainingLoop.ts';
+import {
+    createInitialStopConditionState,
+    DEFAULT_RUNTIME_STOP_CONDITIONS,
+    evaluateStopConditions,
+    type StopConditionState,
+} from './stopConditions.ts';
 
 interface WorkerState {
     network: Network | null;
@@ -74,8 +85,6 @@ interface WorkerState {
     rafId: number | null;
     /** Shuffled index array — re-shuffled at the start of each epoch. */
     shuffledIndices: number[];
-    /** Reusable mini-batch views, filled with sample references each step. */
-    batchScratch: MiniBatchScratch | null;
     /** Separate PRNG for epoch shuffling, independent from network weights. */
     shufflePrng: PRNG | null;
     /** What visual data the UI currently needs. */
@@ -100,6 +109,10 @@ interface WorkerState {
     lossEmaAlpha: number;
     /** True when the most recent snapshot reused cached test metrics instead of re-evaluating. */
     testMetricsStale: boolean;
+    /** Runtime-only stop-condition tracking. Reset on new worker runs/rebuilds. */
+    stopConditionState: StopConditionState;
+    /** Monotonic identity for confusion matrix payload freshness. */
+    confusionMatrixVersion: number;
     /** Pre-allocated buffers for grid predictions. */
     outputGridBuffer: Float32Array | null;
     neuronGridsBuffer: Float32Array | null;
@@ -191,6 +204,19 @@ function postError(message: string): void {
     }
 }
 
+function postStatus(status: WorkerStatusMessage['status'], pauseReason?: PauseReason | null): void {
+    if (!state.streamPort) return;
+    const statusMsg: WorkerStatusMessage = {
+        type: 'status',
+        runId: state.runId,
+        status,
+    };
+    if (pauseReason !== undefined) {
+        statusMsg.pauseReason = pauseReason;
+    }
+    state.streamPort.postMessage(statusMsg);
+}
+
 /** Validate config compatibility — throws on incompatible loss/activation. */
 function validateConfigs(network: NetworkConfig, training: TrainingConfig): void {
     if (!isLossCompatible(training.lossType, network.outputActivation)) {
@@ -234,6 +260,19 @@ function normalizeWorkerConfig(
 // Keeping a local alias avoids touching every call site below.
 const configsEqual = structuralEqual;
 
+const WORKER_PERF_ENABLED = import.meta.env.DEV && import.meta.env.VITE_WORKER_PERF === '1';
+
+function workerPerfMark(name: string): void {
+    if (WORKER_PERF_ENABLED) performance.mark(name);
+}
+
+function workerPerfMeasure(name: string, startMark: string): void {
+    if (!WORKER_PERF_ENABLED) return;
+    performance.measure(name, startMark);
+    performance.clearMarks(startMark);
+    performance.clearMeasures(name);
+}
+
 const state: WorkerState = {
     network: null,
     networkConfig: null,
@@ -252,7 +291,6 @@ const state: WorkerState = {
     running: false,
     rafId: null,
     shuffledIndices: [],
-    batchScratch: null,
     shufflePrng: null,
     demand: { ...DEFAULT_DEMAND },
     snapshotsSinceLastTestEval: 0,
@@ -263,6 +301,8 @@ const state: WorkerState = {
     lossEma: null,
     lossEmaAlpha: 0.1,
     testMetricsStale: false,
+    stopConditionState: createInitialStopConditionState(),
+    confusionMatrixVersion: 0,
     outputGridBuffer: null,
     neuronGridsBuffer: null,
     gridStale: true,
@@ -370,6 +410,9 @@ function buildDataAndNetwork(): void {
     state.lastTrainMetrics = null;
     state.lossEma = null;
     state.gridStale = true;
+    state.testMetricsStale = false;
+    state.stopConditionState = createInitialStopConditionState();
+    state.confusionMatrixVersion++;
 
     // Increment run ID
     state.runId++;
@@ -386,7 +429,6 @@ function buildDataAndNetwork(): void {
     // Initialise shuffle state — seed is offset from data seed to stay independent.
     const n = state.trainInputs.length;
     state.shuffledIndices = Array.from({ length: n }, (_, i) => i);
-    state.batchScratch = createMiniBatchScratch(state.trainingConfig!.batchSize);
     state.shufflePrng = new PRNG((state.dataConfig!.seed ?? 42) + 1234);
     // Shuffle once up front so the very first epoch is not in generator order
     // (important for datasets whose generators emit class-sorted samples).
@@ -396,6 +438,43 @@ function buildDataAndNetwork(): void {
 }
 
 // ── GPU grid prediction (AS-4) ─────────────────────────────────────────────
+export const MAX_WEBGPU_NEURON_READBACK_BYTES = 256 * 1024;
+
+export type WebGpuGridReadbackMode = 'none' | 'outputOnly' | 'withNeurons' | 'cpu';
+
+export function estimateWebGpuNeuronReadbackBytes(neuronCount: number, gridLen: number): number {
+    return Math.max(0, neuronCount) * Math.max(0, gridLen) * Float32Array.BYTES_PER_ELEMENT;
+}
+
+export function selectWebGpuGridReadbackMode(args: {
+    needDecisionBoundary: boolean;
+    needNeuronGrids: boolean;
+    gridLen: number;
+    neuronCount: number;
+}): WebGpuGridReadbackMode {
+    if (!args.needDecisionBoundary && !args.needNeuronGrids) return 'none';
+    if (!args.needNeuronGrids) return 'outputOnly';
+
+    const neuronReadbackBytes = estimateWebGpuNeuronReadbackBytes(args.neuronCount, args.gridLen);
+    return neuronReadbackBytes <= MAX_WEBGPU_NEURON_READBACK_BYTES ? 'withNeurons' : 'cpu';
+}
+
+function gpuPredictorSignature(): string | null {
+    if (!state.network || !state.networkConfig || !state.gridInputsFlat) return null;
+    const layerSizes = [
+        state.networkConfig.inputSize,
+        ...state.networkConfig.hiddenLayers,
+        state.networkConfig.outputSize,
+    ];
+    return [
+        state.runId,
+        layerSizes.join(','),
+        state.gridInputs.length,
+        state.networkConfig.activation,
+        state.networkConfig.outputActivation,
+    ].join('|');
+}
+
 // Lazily allocate a WebGPUGridPredictor matching the current network shape.
 // The first call after a build (or after the user toggles GPU on) does the
 // async device + pipeline init; subsequent calls return the cached instance.
@@ -407,6 +486,10 @@ async function ensureGpuPredictor(): Promise<WebGPUGridPredictor | null> {
     if (state.gpuPredictor) return state.gpuPredictor;
     if (!state.network || !state.networkConfig || !state.gridInputsFlat) return null;
 
+    const runId = state.runId;
+    const signature = gpuPredictorSignature();
+    if (signature === null) return null;
+
     const layerSizes = [
         state.networkConfig.inputSize,
         ...state.networkConfig.hiddenLayers,
@@ -415,6 +498,7 @@ async function ensureGpuPredictor(): Promise<WebGPUGridPredictor | null> {
     if (exceedsGpuShape(layerSizes)) return null;
 
     const device = await detectWebGPU();
+    if (state.runId !== runId || gpuPredictorSignature() !== signature) return null;
     if (!device) return null;
 
     try {
@@ -428,6 +512,10 @@ async function ensureGpuPredictor(): Promise<WebGPUGridPredictor | null> {
         // Grid inputs are constant per shape — upload once and never again
         // until the next shape change disposes this predictor.
         predictor.setGridInputs(state.gridInputsFlat);
+        if (state.runId !== runId || gpuPredictorSignature() !== signature) {
+            predictor.dispose();
+            return null;
+        }
         state.gpuPredictor = predictor;
         return predictor;
     } catch (err) {
@@ -458,6 +546,14 @@ async function runGpuGridIfDue(): Promise<void> {
     if (!due) return;
     if (!state.outputGridBuffer || !state.neuronGridsBuffer) return;
 
+    const readbackMode = selectWebGpuGridReadbackMode({
+        needDecisionBoundary: demand.needDecisionBoundary,
+        needNeuronGrids: demand.needNeuronGrids,
+        gridLen: state.gridInputs.length,
+        neuronCount: state.network.getTotalNeuronCount(),
+    });
+    if (readbackMode === 'none' || readbackMode === 'cpu') return;
+
     const predictor = await ensureGpuPredictor();
     if (!predictor) return;
 
@@ -468,8 +564,8 @@ async function runGpuGridIfDue(): Promise<void> {
     predictor.updateWeights(flat.buffer, state.network.getBiasesFlat());
 
     try {
-        performance.mark('perf:worker:predictGridGpu:start');
-        if (demand.needNeuronGrids) {
+        workerPerfMark('perf:worker:predictGridGpu:start');
+        if (readbackMode === 'withNeurons') {
             await predictor.predictGridWithNeuronsInto(
                 state.outputGridBuffer,
                 state.neuronGridsBuffer,
@@ -477,7 +573,7 @@ async function runGpuGridIfDue(): Promise<void> {
         } else {
             await predictor.predictGridInto(state.outputGridBuffer);
         }
-        performance.measure('perf:worker:predictGridGpu', 'perf:worker:predictGridGpu:start');
+        workerPerfMeasure('perf:worker:predictGridGpu', 'perf:worker:predictGridGpu:start');
         state.gridFreshFromGpu = true;
     } catch (err) {
         console.warn('[worker] GPU grid prediction failed, falling back to CPU', err);
@@ -494,7 +590,7 @@ async function runGpuGridIfDue(): Promise<void> {
  * (see packSnapshotMessage), so nested copies are pure waste there.
  */
 function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot {
-    performance.mark('perf:worker:snapshot:start');
+    workerPerfMark('perf:worker:snapshot:start');
     if (!state.network || !state.trainingConfig || !state.dataConfig) {
         throw new Error('Not initialized');
     }
@@ -514,7 +610,7 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
 
     let trainMetrics: Metrics;
     if (shouldRunTrainEval) {
-        performance.mark('perf:worker:trainEval:start');
+        workerPerfMark('perf:worker:trainEval:start');
         trainMetrics = state.network.evaluate(
             state.trainInputs,
             state.trainTargets,
@@ -522,7 +618,7 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
             problemType,
             huberDelta,
         );
-        performance.measure('perf:worker:trainEval', 'perf:worker:trainEval:start');
+        workerPerfMeasure('perf:worker:trainEval', 'perf:worker:trainEval:start');
         state.lastTrainMetrics = { loss: trainMetrics.loss, accuracy: trainMetrics.accuracy };
         // Re-align EMA to the just-measured true loss so the next cycle's
         // EMA readings start from a known-good point.
@@ -546,7 +642,7 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
 
     let testMetrics;
     if (shouldRunTestEval) {
-        performance.mark('perf:worker:testEval:start');
+        workerPerfMark('perf:worker:testEval:start');
         testMetrics = state.network.evaluate(
             state.testInputs,
             state.testTargets,
@@ -554,12 +650,15 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
             problemType,
             huberDelta,
         );
-        performance.measure('perf:worker:testEval', 'perf:worker:testEval:start');
+        workerPerfMeasure('perf:worker:testEval', 'perf:worker:testEval:start');
         state.lastTestMetrics = {
             loss: testMetrics.loss,
             accuracy: testMetrics.accuracy,
             confusionMatrix: demand.needConfusionMatrix ? testMetrics.confusionMatrix : undefined,
         };
+        if (demand.needConfusionMatrix && testMetrics.confusionMatrix) {
+            state.confusionMatrixVersion++;
+        }
         state.snapshotsSinceLastTestEval = 0;
         state.testMetricsStale = false;
     } else {
@@ -595,21 +694,21 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         state.gridStale = false;
         state.gridFreshFromGpu = false;
     } else if (shouldRebuildGrid && demand.needNeuronGrids && state.outputGridBuffer && state.neuronGridsBuffer) {
-        performance.mark('perf:worker:predictGridNeurons:start');
+        workerPerfMark('perf:worker:predictGridNeurons:start');
         state.network.predictGridWithNeuronsInto(
             state.gridInputs,
             state.outputGridBuffer,
             state.neuronGridsBuffer,
         );
-        performance.measure('perf:worker:predictGridNeurons', 'perf:worker:predictGridNeurons:start');
+        workerPerfMeasure('perf:worker:predictGridNeurons', 'perf:worker:predictGridNeurons:start');
         outputGrid = state.outputGridBuffer;
         neuronGrids = state.neuronGridsBuffer;
         state.snapshotsSinceLastGrid = 0;
         state.gridStale = false;
     } else if (shouldRebuildGrid && demand.needDecisionBoundary && state.outputGridBuffer) {
-        performance.mark('perf:worker:predictGrid:start');
+        workerPerfMark('perf:worker:predictGrid:start');
         state.network.predictGridInto(state.gridInputs, state.outputGridBuffer);
-        performance.measure('perf:worker:predictGrid', 'perf:worker:predictGrid:start');
+        workerPerfMeasure('perf:worker:predictGrid', 'perf:worker:predictGrid:start');
         outputGrid = state.outputGridBuffer;
         state.snapshotsSinceLastGrid = 0;
         state.gridStale = false;
@@ -642,7 +741,7 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         snap.layerStats = state.network.getLayerStats();
     }
 
-    performance.measure('perf:worker:snapshot', 'perf:worker:snapshot:start');
+    workerPerfMeasure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
 }
 
@@ -651,7 +750,7 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
  * Returns { message, transferables }.
  */
 function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMessage; transferables: Transferable[] } {
-    performance.mark('perf:worker:snapshotPack:start');
+    workerPerfMark('perf:worker:snapshotPack:start');
 
     const transferables: Transferable[] = [];
     const gridSize = snap.gridSize;
@@ -773,11 +872,12 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         weightLayout: { layerSizes },
         layerStats: snap.layerStats,
         historyPoint,
-        confusionMatrix: snap.testMetrics?.confusionMatrix,
+        confusionMatrix: state.testMetricsStale ? undefined : snap.testMetrics?.confusionMatrix,
+        confusionMatrixVersion: state.confusionMatrixVersion,
         sharedSeq,
     };
 
-    performance.measure('perf:worker:snapshotPack', 'perf:worker:snapshotPack:start');
+    workerPerfMeasure('perf:worker:snapshotPack', 'perf:worker:snapshotPack:start');
     return { message, transferables };
 }
 
@@ -801,20 +901,16 @@ function trainOneStep(): void {
 
     const startIdx = batchSlot * bs;
     const endIdx = Math.min(startIdx + bs, n);
-    if (!state.batchScratch) {
-        state.batchScratch = createMiniBatchScratch(bs);
-    }
-    const batch = fillMiniBatchScratch(
-        state.batchScratch,
-        state.trainInputs,
-        state.trainTargets,
-        state.shuffledIndices,
-        startIdx,
-        endIdx,
-    );
 
-    if (batch.inputs.length > 0) {
-        const batchLoss = state.network.trainBatch(batch.inputs, batch.targets, state.trainingConfig);
+    if (startIdx < endIdx) {
+        const batchLoss = state.network.trainBatchIndexed(
+            state.trainInputs,
+            state.trainTargets,
+            state.shuffledIndices,
+            startIdx,
+            endIdx,
+            state.trainingConfig,
+        );
         // Feed the running EMA of batch loss. This is what the UI line
         // actually follows between full-dataset evaluations.
         if (Number.isFinite(batchLoss)) {
@@ -861,20 +957,29 @@ async function produceAndPostSnapshot(): Promise<void> {
     await runGpuGridIfDue();
 
     const snap = computeSnapshot({ lightweight: true });
-
-    // NaN / divergence guard — stop the loop and notify the UI. Training
-    // with NaN weights is a dead end; keep state readable for debugging.
-    if (!Number.isFinite(snap.trainLoss)) {
-        stopInternalLoop();
-        postError(
-            'Training diverged (non-finite loss). Try a smaller learning rate, ' +
-            'enable gradient clipping, or reset the network.',
-        );
-        return;
+    const stopEvaluation = state.running
+        ? evaluateStopConditions(
+            DEFAULT_RUNTIME_STOP_CONDITIONS,
+            {
+                step: snap.step,
+                trainLoss: snap.trainLoss,
+                testLoss: snap.testLoss,
+                trainAccuracy: snap.trainMetrics.accuracy,
+                testAccuracy: snap.testMetrics.accuracy,
+            },
+            state.stopConditionState,
+        )
+        : null;
+    if (stopEvaluation) {
+        state.stopConditionState = stopEvaluation.nextState;
     }
 
     const { message, transferables } = packSnapshotMessage(snap);
     state.streamPort.postMessage(message, transferables);
+    if (stopEvaluation?.pauseReason) {
+        stopInternalLoop();
+        postStatus('paused', stopEvaluation.pauseReason);
+    }
 }
 
 function trainTick(): void {
@@ -882,7 +987,7 @@ function trainTick(): void {
 
     try {
         if (state.streamPort) {
-            performance.mark('perf:worker:trainStep:start');
+            workerPerfMark('perf:worker:trainStep:start');
 
             // Keep the selected speed literal: each scheduled tick advances
             // by a bounded number of steps, then yields so pause/update
@@ -892,7 +997,7 @@ function trainTick(): void {
                 trainOneStep();
             }
 
-            performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
+            workerPerfMeasure('perf:worker:trainStep', 'perf:worker:trainStep:start');
 
             // Back-pressure: skip snapshot computation + posting while the main
             // thread hasn't yet applied the previous frame. Training still
@@ -938,6 +1043,22 @@ function stopInternalLoop(): void {
     resetAck();
 }
 
+function applyDemand(demand: VisualizationDemand): void {
+    const confusionDemandChanged = state.demand.needConfusionMatrix !== demand.needConfusionMatrix;
+    state.demand = { ...demand };
+    // Force the next snapshot to re-evaluate everything so the UI
+    // immediately reflects the new demand mix, rather than waiting
+    // up to one interval for the counters to roll over.
+    state.snapshotsSinceLastTestEval = demand.testEvalInterval;
+    state.snapshotsSinceLastTrainEval = demand.trainEvalInterval;
+    state.snapshotsSinceLastGrid = demand.gridInterval;
+    state.gridStale = true;
+    if (confusionDemandChanged) {
+        state.lastTestMetrics = null;
+        state.confusionMatrixVersion++;
+    }
+}
+
 // ── MessageChannel command handler ──
 
 function handleStreamCommand(cmd: unknown): void {
@@ -950,37 +1071,16 @@ function handleStreamCommand(cmd: unknown): void {
             case 'startTraining':
                 state.stepsPerFrame = normalizeTrainingSpeed(cmd.stepsPerFrame);
                 startInternalLoop();
-                if (state.streamPort) {
-                    const statusMsg: WorkerStatusMessage = {
-                        type: 'status',
-                        runId: state.runId,
-                        status: 'running',
-                    };
-                    state.streamPort.postMessage(statusMsg);
-                }
+                postStatus('running');
                 break;
 
             case 'stopTraining':
                 stopInternalLoop();
-                if (state.streamPort) {
-                    const statusMsg: WorkerStatusMessage = {
-                        type: 'status',
-                        runId: state.runId,
-                        status: 'paused',
-                    };
-                    state.streamPort.postMessage(statusMsg);
-                }
+                postStatus('paused');
                 break;
 
             case 'updateDemand':
-                state.demand = { ...cmd.demand };
-                // Force the next snapshot to re-evaluate everything so the UI
-                // immediately reflects the new demand mix, rather than waiting
-                // up to one interval for the counters to roll over.
-                state.snapshotsSinceLastTestEval = cmd.demand.testEvalInterval;
-                state.snapshotsSinceLastTrainEval = cmd.demand.trainEvalInterval;
-                state.snapshotsSinceLastGrid = cmd.demand.gridInterval;
-                state.gridStale = true;
+                applyDemand(normalizeVisualizationDemand(cmd.demand)!);
                 break;
 
             case 'updateSpeed':
@@ -1000,7 +1100,7 @@ function handleStreamCommand(cmd: unknown): void {
 
 // ── Comlink API ──
 
-const workerApi = {
+export const workerApi = {
     initialize(
         networkConfig: NetworkConfig,
         trainingConfig: TrainingConfig,
@@ -1058,10 +1158,6 @@ const workerApi = {
         return { snapshot: computeSnapshot(), runId: state.runId };
     },
 
-    getSnapshot(): NetworkSnapshot {
-        return computeSnapshot();
-    },
-
     getTrainPoints(): DataPoint[] {
         return state.trainPoints;
     },
@@ -1070,23 +1166,13 @@ const workerApi = {
         return state.testPoints;
     },
 
-    setRunning(running: boolean): void {
-        state.running = running;
-    },
-
-    isRunning(): boolean {
-        return state.running;
-    },
-
     /** Update what visual data the UI currently needs. */
     updateDemand(demand: VisualizationDemand): void {
-        state.demand = { ...demand };
-        // Match the streaming-path behaviour: force all counters to "due" so
-        // the next snapshot is fully fresh.
-        state.snapshotsSinceLastTestEval = demand.testEvalInterval;
-        state.snapshotsSinceLastTrainEval = demand.trainEvalInterval;
-        state.snapshotsSinceLastGrid = demand.gridInterval;
-        state.gridStale = true;
+        const normalized = normalizeVisualizationDemand(demand);
+        if (!normalized) {
+            throw new Error('Invalid visualization demand.');
+        }
+        applyDemand(normalized);
     },
 
     /**
@@ -1118,17 +1204,6 @@ const workerApi = {
         // init), deliver the handshake now so the main thread can install
         // its views before the first snapshot arrives.
         postSharedBuffersHandshake();
-    },
-
-    // Legacy: Run continuous training — called in a loop from main thread
-    trainAndSnapshot(stepsPerFrame: number): NetworkSnapshot {
-        performance.mark('perf:worker:trainStep:start');
-        const burst = getTrainingStepsForTick(stepsPerFrame);
-        for (let i = 0; i < burst; i++) {
-            trainOneStep();
-        }
-        performance.measure('perf:worker:trainStep', 'perf:worker:trainStep:start');
-        return computeSnapshot();
     },
 };
 

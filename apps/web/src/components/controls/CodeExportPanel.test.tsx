@@ -166,6 +166,33 @@ describe('CodeExportPanel', () => {
         expect(callArg.length).toBeGreaterThan(0);
     });
 
+    it('shows announced failure feedback when copying code fails', async () => {
+        (navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Denied'));
+        render(<CodeExportPanel />);
+
+        const copyBtn = screen.getByRole('button', { name: /copy code/i });
+        await act(async () => {
+            fireEvent.click(copyBtn);
+        });
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Could not copy code');
+    });
+
+    it('shows announced failure feedback when the Clipboard API is unavailable', async () => {
+        Object.defineProperty(navigator, 'clipboard', {
+            value: undefined,
+            configurable: true,
+        });
+        render(<CodeExportPanel />);
+
+        const copyBtn = screen.getByRole('button', { name: /copy code/i });
+        await act(async () => {
+            fireEvent.click(copyBtn);
+        });
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Could not copy code');
+    });
+
     it('passes the current tab code to clipboard.writeText', async () => {
         render(<CodeExportPanel />);
 

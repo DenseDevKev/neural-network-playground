@@ -200,6 +200,28 @@ describe('networkGraphPainter helpers', () => {
         expect(hit?.weight).toBeCloseTo(0.5);
     });
 
+    it('hitTestEdge reads weights from later flat-buffer layers', () => {
+        const multiLayerNodePositions = [
+            [{ x: 10, y: 100 }],
+            [{ x: 110, y: 100 }],
+            [{ x: 210, y: 100 }],
+        ];
+        const flat = {
+            weights: new Float32Array([0.25, -0.75]),
+            biases: new Float32Array([0.1, -0.2]),
+            layerSizes: [1, 1, 1],
+        };
+
+        const hit = hitTestEdge(160, 100, multiLayerNodePositions, flat);
+
+        expect(hit).toEqual({
+            layerIdx: 2,
+            nodeIdx: 0,
+            prevIdx: 0,
+            weight: expect.closeTo(-0.75),
+        });
+    });
+
     it('paintEdges / paintNodes / paintLabels do not throw on an empty network', () => {
         const ctx = createMockContext() as unknown as CanvasRenderingContext2D;
         expect(() => paintEdges(ctx, nodePositions, null, null)).not.toThrow();

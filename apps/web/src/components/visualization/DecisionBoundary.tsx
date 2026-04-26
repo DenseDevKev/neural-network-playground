@@ -236,6 +236,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 
     // Main paint callback – extracted so useEffect stays clean
     const paint = useCallback(() => {
+        void frameVersion;
         const canvas = canvasRef.current;
         if (!canvas) return;
 

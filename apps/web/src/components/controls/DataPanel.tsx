@@ -60,7 +60,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             {configError && configErrorSource === 'data' && (
                 <div className="config-feedback config-feedback--error" role="alert">
                     <span>{configError}</span>
-                    <button className="btn btn--ghost btn--sm" onClick={retryDataChange}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={retryDataChange}>
                         Retry
                     </button>
                 </div>
@@ -69,10 +69,12 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             {/* Problem type toggle */}
             <div className="control-row" style={{ marginBottom: 12 }}>
                 <span className="control-label">Problem</span>
-                <div className="chip-group">
+                <div className="chip-group" role="group" aria-label="Problem type">
                     <Tooltip content="Cause: classification uses class labels. Effect: the boundary view shows which region the model assigns to each class.">
                         <button
+                            type="button"
                             className={`chip ${problemType === 'classification' ? 'active' : ''}`}
+                            aria-pressed={problemType === 'classification'}
                             onClick={() => {
                                 beginDataChange();
                                 store.getState().setDataset('circle');
@@ -83,7 +85,9 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     </Tooltip>
                     <Tooltip content="Cause: regression predicts a continuous value. Effect: loss tracks distance from a surface instead of class mistakes.">
                         <button
+                            type="button"
                             className={`chip ${problemType === 'regression' ? 'active' : ''}`}
+                            aria-pressed={problemType === 'regression'}
                             onClick={() => {
                                 beginDataChange();
                                 store.getState().setDataset('reg-plane');
@@ -100,6 +104,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 {datasets.map((ds) => (
                     <Tooltip key={ds.id} content={DATASET_TOOLTIPS[ds.id]}>
                         <button
+                            type="button"
                             className={`chip ${dataset === ds.id ? 'active' : ''}`}
                             onClick={() => {
                                 beginDataChange();
@@ -151,13 +156,14 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 />
             </Tooltip>
 
-            <Tooltip content="Cause: regenerating samples redraws the same dataset pattern with the current settings. Effect: you can check whether behavior is robust or seed-specific." block>
+            <Tooltip content="Reset the model and regenerate the current dataset with the latest settings" block>
                 <button
+                    type="button"
                     className="btn btn--ghost btn--sm"
                     style={{ marginTop: 10, width: '100%' }}
                     onClick={onReset}
                 >
-                    ↻ Regenerate
+                    ↻ Reset model & data
                 </button>
             </Tooltip>
         </div>

@@ -107,7 +107,12 @@ fn apply_activation(x: f32, id: u32) -> f32 {
         case 4u: { return select(0.01 * x, x, x > 0.0); }         // leakyRelu
         case 5u: { return select(exp(x) - 1.0, x, x >= 0.0); }    // elu
         case 6u: { return x / (1.0 + exp(-x)); }                  // swish
-        case 7u: { return log(1.0 + exp(x)); }                    // softplus
+        case 7u: {                                                // softplus
+            if (x > 0.0) {
+                return x + log(1.0 + exp(-x));
+            }
+            return log(1.0 + exp(x));
+        }
         default: { return x; }
     }
 }

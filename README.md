@@ -80,12 +80,11 @@ pnpm test          # Run all tests
 pnpm test:engine   # Run engine tests only
 pnpm build         # Production build
 pnpm lint          # Lint all files
-pnpm format        # Format with Prettier
 ```
 
 ## 🚢 Deployment
 
-The app is a fully static SPA — no backend, no environment variables.
+The app is a fully static SPA — no backend and no runtime environment variables.
 Push to `main` and GitHub Actions deploys to GitHub Pages automatically.
 For self-hosting or custom base-path configuration, see
 [docs/deployment.md](docs/deployment.md).

@@ -27,7 +27,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
             {configError && configErrorSource === 'network' && (
                 <div className="config-feedback config-feedback--error" role="alert">
                     <span>{configError}</span>
-                    <button className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
                         Retry
                     </button>
                 </div>
@@ -35,11 +35,16 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
 
             {/* Hidden layers +/- */}
             <div className="control-row" style={{ marginBottom: 8 }}>
-                <span className="control-label">Hidden Layers</span>
-                <div className="layer-controls">
+                <span className="control-label">Hidden layers</span>
+                <div
+                    className="forge-stepper"
+                    role="group"
+                    aria-label="Hidden layer count"
+                >
                     <Tooltip content="Cause: removing a hidden layer lowers model capacity. Effect: the boundary becomes simpler and may underfit curved data.">
                         <button
-                            className="btn btn--ghost btn--icon btn--sm"
+                            type="button"
+                            className="forge-stepper__btn"
                             onClick={() => {
                                 beginNetworkChange();
                                 store.getState().removeLayer();
@@ -50,10 +55,13 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                             −
                         </button>
                     </Tooltip>
-                    <span className="layer-controls__count">{hiddenLayers.length}</span>
+                    <span className="forge-stepper__value" aria-live="polite">
+                        {hiddenLayers.length}
+                    </span>
                     <Tooltip content="Cause: adding a hidden layer adds another learned transformation. Effect: the boundary can bend more, but training may take longer.">
                         <button
-                            className="btn btn--ghost btn--icon btn--sm"
+                            type="button"
+                            className="forge-stepper__btn"
                             onClick={() => {
                                 beginNetworkChange();
                                 store.getState().addLayer();
@@ -68,6 +76,11 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
             </div>
 
             {/* Neurons per layer */}
+            {hiddenLayers.length > 0 && (
+                <div className="forge-section__label" style={{ marginTop: 8, marginBottom: 6 }}>
+                    Neurons per layer
+                </div>
+            )}
             {hiddenLayers.map((count, idx) => (
                 <div key={idx} className="neuron-row">
                     <span className="control-label" style={{ minWidth: 60 }}>Layer {idx + 1}</span>
