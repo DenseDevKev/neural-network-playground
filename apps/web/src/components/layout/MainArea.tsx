@@ -9,6 +9,7 @@ import { NetworkGraph } from '../visualization/NetworkGraph.tsx';
 import { DecisionBoundary } from '../visualization/DecisionBoundary.tsx';
 import type { DecisionOverlayMode } from '../visualization/DecisionBoundary.tsx';
 import { LossChart } from '../visualization/LossChart.tsx';
+import { TrainingExplanationPanel } from '../visualization/TrainingExplanationPanel.tsx';
 import { ConfusionMatrix } from '../visualization/ConfusionMatrix.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -91,7 +92,10 @@ export const BoundaryContent = memo(function BoundaryContent() {
 export const LossContent = memo(function LossContent() {
     return (
         <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-            <LossChart />
+            <>
+                <LossChart />
+                <TrainingExplanationPanel />
+            </>
         </ErrorBoundary>
     );
 });
@@ -160,6 +164,7 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                 </div>
                 <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
                     <LossChart />
+                    <TrainingExplanationPanel />
                 </ErrorBoundary>
                 <ErrorBoundary title="Confusion matrix unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
                     <ConfusionMatrix />

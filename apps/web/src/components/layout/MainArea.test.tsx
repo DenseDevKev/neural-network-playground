@@ -82,6 +82,7 @@ describe('MainArea right-panel content', () => {
             configErrorSource: null,
             configSyncNonce: 0,
             workerError: null,
+            pauseReason: null,
             testMetricsStale: false,
         });
     });
@@ -101,5 +102,14 @@ describe('MainArea right-panel content', () => {
         expect(screen.getByText('Loss chart')).toBeInTheDocument();
         expect(screen.getByText('Confusion matrix')).toBeInTheDocument();
         expect(screen.getByText('Training controls')).toBeInTheDocument();
+    });
+
+    it('renders the training explanation surface with the loss chart', () => {
+        useTrainingStore.setState({ pauseReason: 'diverged' });
+
+        render(<MainArea training={createTrainingMock()} />);
+
+        expect(screen.getByText('Why did this happen?')).toBeInTheDocument();
+        expect(screen.getByText('Training diverged')).toBeInTheDocument();
     });
 });

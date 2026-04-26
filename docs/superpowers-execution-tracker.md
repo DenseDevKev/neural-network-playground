@@ -15,20 +15,16 @@ blocker changes.
 - [x] P0B spec compliance review complete - [REQ-AGENTS](#req-agents), [REQ-P0B](#req-p0b)
 - [x] P0B code quality review complete - [REQ-AGENTS](#req-agents), [REQ-P0B](#req-p0b)
 - [x] P0B verification complete - [REQ-VERIFY](#req-verify)
-- [ ] Explicit approval received to start P0C - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+- [x] Explicit approval received to start P0C - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+- [x] P0C deterministic explanations implemented - [REQ-P0C](#req-p0c)
+- [x] P0C minimal UI implemented - [REQ-P0C](#req-p0c)
+- [x] P0C focused and full verification complete - [REQ-P0C](#req-p0c), [REQ-VERIFY](#req-verify)
+- [ ] Explicit approval received to start P1 - [REQ-AGENTS](#req-agents)
 
 ## Current Gate
 
-Do not start P0C until P0B passes:
-
-- targeted shared protocol tests
-- targeted web worker/store/hook tests
-- full shared tests
-- full web tests
-- lint
-- build
-- spec compliance review
-- code quality review
+P0C is complete. Do not start P1 until explicit approval is received and the
+P1 schema/content migration plan is written against a refreshed repo file map.
 
 ## Prompt Requirement Index
 
@@ -183,12 +179,13 @@ approval to proceed.
 
 ### P0C: Explanation Rules and Minimal UI
 
-- [ ] Confirm explicit approval to start P0C - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
-- [ ] Add deterministic explanation rules - [REQ-P0C](#req-p0c)
-- [ ] Add minimal "Why did this happen?" UI - [REQ-P0C](#req-p0c)
-- [ ] Test stable ordered explanation output - [REQ-P0C](#req-p0c), [REQ-TDD](#req-tdd)
-- [ ] Test top explanation rendering - [REQ-P0C](#req-p0c), [REQ-TDD](#req-tdd)
-- [ ] Run P0C verification - [REQ-VERIFY](#req-verify)
+- [x] Confirm explicit approval to start P0C - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+- [x] Add deterministic explanation rules - [REQ-P0C](#req-p0c)
+- [x] Add minimal "Why did this happen?" UI - [REQ-P0C](#req-p0c)
+- [x] Test stable ordered explanation output - [REQ-P0C](#req-p0c), [REQ-TDD](#req-tdd)
+- [x] Test top explanation rendering - [REQ-P0C](#req-p0c), [REQ-TDD](#req-tdd)
+- [x] Test related panel ids are safe when present - [REQ-P0C](#req-p0c), [REQ-TDD](#req-tdd)
+- [x] Run P0C verification - [REQ-VERIFY](#req-verify)
 
 ### P1: Lesson System
 
@@ -227,7 +224,8 @@ approval to proceed.
 
 ### Gate
 
-- [ ] Do not start P0C without explicit approval - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+- [x] Do not start P0C without explicit approval - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+- [ ] Do not start P1 without explicit approval - [REQ-AGENTS](#req-agents)
 
 ## Agent Review Log
 
@@ -241,6 +239,12 @@ approval to proceed.
 | Fermat | High | P0B code quality review | NEEDS_CHANGES | Code passed structurally; blocker was unrelated dirty files in the working tree. Resolved by staging only P0A/P0B/tracker files and leaving unrelated files unstaged. |
 | Plato | High | P0B staged merge-steward review | NEEDS_CHANGES | Staged files matched scope and unrelated files were excluded. Requested tracker checklist update and direct bridge coverage for queued final snapshot flush. Both were addressed before final verification rerun. |
 | Einstein | High | P0B final staged merge-steward review | APPROVED | Confirmed previous blockers resolved, staged diff clean, unrelated files excluded, and no serialization/persistence/UI controls/dependencies/snapshots staged. |
+| Hegel | High | P0C read-only rules/metrics reconnaissance | COMPLETED | Recommended a pure explanation module, existing metrics only, no worker protocol/store changes, and no LossChart parity claims. |
+| Schrodinger | High | P0C read-only UI reconnaissance | COMPLETED | Recommended placing a minimal explanation surface under the existing loss chart and avoiding stylesheet edits because unrelated CSS files are dirty. |
+| Harvey | High | P0C spec compliance review | NEEDS_CHANGES | Found invalid `relatedPanelIds` value `training` and requested regression coverage for safe panel ids. Fixed by constraining ids to `LeftTabId | RightTabId` and adding a regression test. |
+| Banach | High | P0C code quality review | APPROVED | Approved staged diff with non-blocking notes. Locale-sensitive tie-break and duplicated accessible label were addressed after review. Snapshot re-render note accepted as safe for the small P0C rule set. |
+| Boyle | High | P0C final spec compliance review | APPROVED | Confirmed deterministic explanations, minimal UI, existing metrics only, required tests, and no protocol/store/serialization/dependency/P1 scope creep. |
+| Huygens | High | P0C final merge-steward review | APPROVED | Confirmed staged files match the P0C allowlist, unrelated dirty files are unstaged, no public exports/protocol/config/store/persistence/dependency changes, no snapshots, and no P1 work. |
 
 ## Verification Log
 
@@ -266,10 +270,26 @@ approval to proceed.
 | `pnpm lint` | PASS | ESLint passed. |
 | `pnpm build` | PASS | Production build passed with existing Vite chunk-size warning. |
 
+### P0C
+
+| Command | Outcome | Notes |
+|---|---|---|
+| `pnpm --filter @nn-playground/web test src/explanations/trainingExplanations.test.ts src/components/visualization/TrainingExplanationPanel.test.tsx` | EXPECTED FAIL | Initial TDD red run failed because P0C implementation files did not exist yet. |
+| `pnpm --filter @nn-playground/web test src/explanations/trainingExplanations.test.ts src/components/visualization/TrainingExplanationPanel.test.tsx` | PASS | Initial P0C red/green after implementation: 2 files, 5 tests. |
+| `pnpm --filter @nn-playground/web test src/components/layout/MainArea.test.tsx src/explanations/trainingExplanations.test.ts src/components/visualization/TrainingExplanationPanel.test.tsx` | PASS | Adjacent layout wiring verification before review fix: 3 files, 8 tests. |
+| `pnpm --filter @nn-playground/web test src/explanations/trainingExplanations.test.ts src/components/visualization/TrainingExplanationPanel.test.tsx src/components/layout/MainArea.test.tsx` | PASS | Final focused P0C verification after review fixes and polish: 3 files, 9 tests. |
+| `pnpm --filter @nn-playground/web test` | PASS | Full web suite after P0C changes: 44 files, 251 tests. |
+| `pnpm --filter @nn-playground/shared test` | PASS | Full shared suite unchanged by P0C: 4 files, 59 tests. |
+| `pnpm lint` | PASS | ESLint passed. |
+| `pnpm build` | PASS | Production build passed with existing Vite chunk-size warning. |
+
 ## File Ownership And Collision Notes
 
 Current unrelated dirty/untracked files to avoid unless explicitly assigned:
 
+- `apps/web/src/App.tsx`
+- `apps/web/src/components/controls/NetworkConfigPanel.tsx`
+- `apps/web/src/styles/forge.css`
 - `apps/web/src/styles/index.css`
 - `.claude/settings.local.json`
 - `FEATURE_BRAINSTORM.md`
@@ -287,6 +307,15 @@ P0B high-risk files:
 - `apps/web/src/worker/training.worker.ts`
 - `apps/web/src/hooks/useTraining.ts`
 - `apps/web/src/store/useTrainingStore.ts`
+
+P0C files:
+
+- `apps/web/src/explanations/trainingExplanations.ts`
+- `apps/web/src/explanations/trainingExplanations.test.ts`
+- `apps/web/src/components/visualization/TrainingExplanationPanel.tsx`
+- `apps/web/src/components/visualization/TrainingExplanationPanel.test.tsx`
+- `apps/web/src/components/layout/MainArea.tsx`
+- `apps/web/src/components/layout/MainArea.test.tsx`
 
 No worker may edit outside its allowlist, change serialization unexpectedly, add
 dependencies, or perform unrelated cleanup.
