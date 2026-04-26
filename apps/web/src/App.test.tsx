@@ -34,6 +34,7 @@ vi.mock('./components/layout/MainArea.tsx', () => ({
     ConfusionContent:() => <div>Confusion</div>,
     InspectContent:  () => <div>Inspect</div>,
     CodeContent:     () => <div>Code</div>,
+    HistoryContent:  () => <div>History</div>,
 }));
 
 vi.mock('./components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
@@ -46,6 +47,7 @@ vi.mock('./components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel:
 vi.mock('./components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
 vi.mock('./components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
 vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));
+vi.mock('./components/controls/RunHistoryPanel.tsx',   () => ({ RunHistoryPanel: () => <div>RunHistory</div> }));
 
 describe('App accessibility shell', () => {
     beforeEach(() => {

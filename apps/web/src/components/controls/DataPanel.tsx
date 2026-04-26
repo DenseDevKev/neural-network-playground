@@ -45,6 +45,8 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
     const noise = usePlaygroundStore((s) => s.data.noise);
     const trainTestRatio = usePlaygroundStore((s) => s.data.trainTestRatio);
     const isLoading = useTrainingStore((s) => s.dataConfigLoading);
+    const trainCount = useTrainingStore((s) => s.trainPoints.length);
+    const testCount = useTrainingStore((s) => s.testPoints.length);
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const store = usePlaygroundStore;
@@ -135,6 +137,32 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     }}
                     aria-label="Train/test split percentage"
                 />
+            </Tooltip>
+
+            <div
+                className="control-row"
+                style={{ marginTop: 8 }}
+                aria-label={`Train/test split: ${trainCount} train, ${testCount} test`}
+                aria-live="polite"
+            >
+                <span className="control-label">Split</span>
+                <span className="control-value">Train {trainCount}</span>
+                <span className="control-value">Test {testCount}</span>
+            </div>
+
+            <Tooltip content="Cause: reshuffle changes the existing data seed. Effect: the generated examples and train/test split are rebuilt deterministically without adding a new schema field." block>
+                <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    style={{ marginTop: 8, width: '100%' }}
+                    disabled={isLoading}
+                    onClick={() => {
+                        beginDataChange();
+                        store.getState().reshuffleDataSeed();
+                    }}
+                >
+                    Reshuffle split
+                </button>
             </Tooltip>
 
             {/* Noise */}
