@@ -9,7 +9,6 @@ import { useLayoutStore } from './store/useLayoutStore.ts';
 import type { LayoutVariant } from './store/useLayoutStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
-import { DEFAULT_DEMAND, type VisualizationDemand } from '@nn-playground/shared';
 import { useTraining } from './hooks/useTraining.ts';
 import { Header } from './components/layout/Header.tsx';
 import { Panel } from './components/common/Panel.tsx';
@@ -38,43 +37,10 @@ import { ConfigPanel } from './components/controls/ConfigPanel.tsx';
 import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
+import { deriveVisualizationDemand } from './components/layout/deriveVisualizationDemand.ts';
 
 const COMPACT_BREAKPOINT = 900;
 const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
-
-function deriveVisualizationDemand(args: {
-    layout: LayoutVariant;
-    phase: 'build' | 'run';
-    activeTabRight: string;
-    graphRenderer: 'canvas' | 'svg';
-}): VisualizationDemand {
-    const rightTab = args.activeTabRight;
-    const allRightPanelsVisible = args.layout === 'focus' || args.layout === 'grid';
-    const selectedRightPanelVisible = args.layout === 'dock';
-    const splitRunVisible = args.layout === 'split' && args.phase === 'run';
-
-    const boundaryVisible =
-        allRightPanelsVisible ||
-        splitRunVisible ||
-        (selectedRightPanelVisible && rightTab === 'boundary');
-    const confusionVisible =
-        allRightPanelsVisible ||
-        splitRunVisible ||
-        (selectedRightPanelVisible && rightTab === 'confusion');
-    const inspectionVisible =
-        allRightPanelsVisible ||
-        splitRunVisible ||
-        (selectedRightPanelVisible && rightTab === 'inspection');
-    const graphConsumesNeuronGrids = args.graphRenderer === 'canvas' || args.graphRenderer === 'svg';
-
-    return {
-        ...DEFAULT_DEMAND,
-        needDecisionBoundary: boundaryVisible,
-        needNeuronGrids: graphConsumesNeuronGrids,
-        needLayerStats: inspectionVisible,
-        needConfusionMatrix: confusionVisible,
-    };
-}
 
 function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
     if (!(target instanceof Element)) return false;
