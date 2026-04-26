@@ -23,7 +23,10 @@ export const InspectionPanel = memo(function InspectionPanel() {
     }, []);
 
     const layerStats = useMemo(
-        () => getFrameBuffer().layerStats ?? snapshot?.layerStats,
+        () => {
+            void frameVersion;
+            return getFrameBuffer().layerStats ?? snapshot?.layerStats;
+        },
         [frameVersion, snapshot?.layerStats],
     );
 

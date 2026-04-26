@@ -215,6 +215,7 @@ export function NetworkGraphCanvas() {
 
     // Flat-buffer view, identical contract to the SVG renderer's `flat`.
     const flat = useMemo<FlatNetworkView | null>(() => {
+        void frameVersion;
         const fb = getFrameBuffer();
         if (fb.weights && fb.biases && fb.weightLayout) {
             return {
@@ -255,6 +256,7 @@ export function NetworkGraphCanvas() {
     // Output: array indexed [hidden1, hidden2, ..., output], one entry per
     // non-input neuron in render order.
     const neuronGrids = useMemo<NeuronGridEntry[] | null>(() => {
+        void frameVersion;
         const fb = getFrameBuffer();
         if (fb.neuronGrids && fb.neuronGridLayout) {
             const { count, gridSize } = fb.neuronGridLayout;
