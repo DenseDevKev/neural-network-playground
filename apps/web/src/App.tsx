@@ -397,23 +397,26 @@ function StatusBar({ effectiveLayout }: { effectiveLayout: LayoutVariant }) {
     const status = useTrainingStore((s) => s.status);
     const phase = useLayoutStore((s) => s.phase);
     const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const snapshot = useTrainingStore((s) => s.snapshot);
 
     return (
-        <div className="forge-statusbar" role="status" aria-label="Status bar">
+        <div
+            className="forge-statusbar"
+            role="status"
+            aria-label="Status bar"
+            data-status={status}
+        >
             <span>
-                <span className="forge-statusbar__accent">●</span>{' '}
+                <span className="forge-statusbar__dot" aria-hidden />
                 {status.toUpperCase()}
             </span>
             <span>LAYOUT: <span className="forge-statusbar__accent">{effectiveLayout}</span></span>
             {effectiveLayout === 'split' && (
                 <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
             )}
-            <span>DATA: {dataset}</span>
-            <span>ARCH: [{hiddenLayers.join(', ')}]</span>
+            <span>DATA: <span className="forge-statusbar__accent">{dataset}</span></span>
             <span className="forge-statusbar__spacer" />
-            <span>step {(snapshot?.step ?? 0).toLocaleString()}</span>
+            <span>STEP <span className="forge-statusbar__accent">{(snapshot?.step ?? 0).toLocaleString()}</span></span>
             <span>
                 Inspired by{' '}
                 <a
