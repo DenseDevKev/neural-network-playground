@@ -24,11 +24,8 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { getActiveFeatures } from '@nn-playground/engine';
 import { GRID_SIZE, writeNormalizedHeatmap } from '@nn-playground/shared';
-import {
-    extractNeuronGrid,
-    getFrameBuffer,
-    layerBiasOffset,
-} from '../../worker/frameBuffer.ts';
+import { getFrameBuffer } from '../../worker/frameBuffer.ts';
+import { extractNeuronGrid, layerBiasOffset } from '../../worker/frameBufferLayout.ts';
 import {
     type EdgeRef,
     type EdgeFilter,

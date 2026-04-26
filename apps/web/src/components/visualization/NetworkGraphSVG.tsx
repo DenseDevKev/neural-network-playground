@@ -12,12 +12,12 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { getActiveFeatures } from '@nn-playground/engine';
 import { GRID_SIZE, writeNormalizedHeatmap } from '@nn-playground/shared';
+import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import {
     extractNeuronGrid,
-    getFrameBuffer,
     layerBiasOffset,
     layerWeightOffset,
-} from '../../worker/frameBuffer.ts';
+} from '../../worker/frameBufferLayout.ts';
 
 // ── Flat-network view ──────────────────────────────────────────────────────
 // Stable reference to the packed weight/bias buffers plus layer sizes. The

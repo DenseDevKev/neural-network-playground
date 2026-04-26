@@ -147,16 +147,3 @@ export function resetFrameBuffer(): void {
         confusionMatrixVersion: _buffer.confusionMatrixVersion + 1,
     };
 }
-
-export {
-    extractNeuronGrid,
-    flattenBiases,
-    flattenNeuronGrids,
-    flattenWeights,
-    layerBiasOffset,
-    layerWeightOffset,
-    readBias,
-    readWeight,
-    unflattenBiases,
-    unflattenWeights,
-} from './frameBufferLayout.ts';
