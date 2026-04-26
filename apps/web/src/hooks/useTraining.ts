@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
-import { useTrainingStore } from '../store/useTrainingStore.ts';
+import { useTrainingStore, type TrainingStore } from '../store/useTrainingStore.ts';
 import {
     getWorkerApi,
     setupStreamChannel,
@@ -82,6 +82,13 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
         confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
     });
     return getFrameVersions();
+}
+
+function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot): void {
+    ts.setSnapshot(snapshot);
+    ts.resetHistory();
+    if (snapshot.historyPoint) ts.addHistoryPoint(snapshot.historyPoint);
+    ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
 }
 
 function createStreamSnapshot(
@@ -179,10 +186,7 @@ export function useTraining(): TrainingHook {
             config.features,
         );
         ts.clearWorkerError();
-        ts.setSnapshot(result.snapshot);
-        ts.resetHistory();
-        if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-        ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
+        applyFreshSnapshotToStore(ts, result.snapshot);
         newRunTo(result.runId);
 
         // Store points reactively so UI renders immediately
@@ -295,10 +299,7 @@ export function useTraining(): TrainingHook {
                 if (!isCurrentConfigSync(seq)) return;
                 // Sync to worker's runId AFTER updateConfig returns
                 newRunTo(result.runId);
-                ts.setSnapshot(result.snapshot);
-                ts.resetHistory();
-                if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-                ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
+                applyFreshSnapshotToStore(ts, result.snapshot);
 
                 // Update points reactively
                 const trainPts = await api.getTrainPoints();
@@ -413,10 +414,7 @@ export function useTraining(): TrainingHook {
             if (!isCurrentConfigSync(seq)) return;
             newRunTo(result.runId);
             const ts = useTrainingStore.getState();
-            ts.setSnapshot(result.snapshot);
-            ts.resetHistory();
-            if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-            ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
+            applyFreshSnapshotToStore(ts, result.snapshot);
             ts.setStatus('idle');
 
             // Refresh points

@@ -158,6 +158,39 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().paramsVersion).toBeGreaterThan(0);
     });
 
+    it('hydrates fresh worker snapshots in the existing store update order', async () => {
+        const callOrder: string[] = [];
+        const original = useTrainingStore.getState();
+        useTrainingStore.setState({
+            setSnapshot: (snapshot) => {
+                callOrder.push('setSnapshot');
+                original.setSnapshot(snapshot);
+            },
+            resetHistory: () => {
+                callOrder.push('resetHistory');
+                original.resetHistory();
+            },
+            addHistoryPoint: (point) => {
+                callOrder.push('addHistoryPoint');
+                original.addHistoryPoint(point);
+            },
+            setFrameVersions: (versions) => {
+                callOrder.push('setFrameVersions');
+                original.setFrameVersions(versions);
+            },
+        });
+
+        renderHook(() => useTraining());
+
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        expect(callOrder).toEqual([
+            'setSnapshot',
+            'resetHistory',
+            'addHistoryPoint',
+            'setFrameVersions',
+        ]);
+    });
+
     it('starts and stops the streaming training loop', async () => {
         const { result } = renderHook(() => useTraining());
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
