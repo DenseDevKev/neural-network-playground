@@ -62,8 +62,8 @@ describe('useLayoutStore', () => {
         useLayoutStore.getState().setActiveTabRight('loss');
         expect(useLayoutStore.getState().activeTabRight).toBe('loss');
 
-        useLayoutStore.getState().setActiveTabRight('code');
-        expect(useLayoutStore.getState().activeTabRight).toBe('code');
+        useLayoutStore.getState().setActiveTabRight('history');
+        expect(useLayoutStore.getState().activeTabRight).toBe('history');
     });
 
     it('persists the code export tab across panel remounts', () => {
@@ -91,7 +91,7 @@ describe('useLayoutStore', () => {
                     layout: 'focus',
                     phase: 'run',
                     activeTabLeft: 'features',
-                    activeTabRight: 'loss',
+                    activeTabRight: 'history',
                     codeExportTab: 'numpy',
                 },
                 version: 0,
@@ -104,7 +104,7 @@ describe('useLayoutStore', () => {
         expect(freshStore.getState().layout).toBe('focus');
         expect(freshStore.getState().phase).toBe('run');
         expect(freshStore.getState().activeTabLeft).toBe('features');
-        expect(freshStore.getState().activeTabRight).toBe('loss');
+        expect(freshStore.getState().activeTabRight).toBe('history');
         expect(freshStore.getState().codeExportTab).toBe('numpy');
     });
 

@@ -14,7 +14,7 @@ export type LayoutVariant = 'dock' | 'focus' | 'grid' | 'split';
 export type PhaseMode = 'build' | 'run';
 
 export type LeftTabId = 'presets' | 'data' | 'features' | 'network' | 'hyperparams' | 'config';
-export type RightTabId = 'boundary' | 'loss' | 'confusion' | 'inspection' | 'code';
+export type RightTabId = 'boundary' | 'loss' | 'confusion' | 'inspection' | 'code' | 'history';
 export type CodeExportTab = 'pseudocode' | 'numpy' | 'tfjs';
 
 const DEFAULT_LAYOUT_STATE = {
@@ -28,7 +28,7 @@ const DEFAULT_LAYOUT_STATE = {
 const VALID_LAYOUTS: readonly LayoutVariant[] = ['dock', 'focus', 'grid', 'split'];
 const VALID_PHASES: readonly PhaseMode[] = ['build', 'run'];
 const VALID_LEFT_TABS: readonly LeftTabId[] = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'];
-const VALID_RIGHT_TABS: readonly RightTabId[] = ['boundary', 'loss', 'confusion', 'inspection', 'code'];
+const VALID_RIGHT_TABS: readonly RightTabId[] = ['boundary', 'loss', 'confusion', 'inspection', 'code', 'history'];
 const VALID_CODE_EXPORT_TABS: readonly CodeExportTab[] = ['pseudocode', 'numpy', 'tfjs'];
 
 export interface LayoutStore {

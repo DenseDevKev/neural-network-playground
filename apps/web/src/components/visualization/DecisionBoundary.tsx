@@ -26,7 +26,7 @@ interface Props {
     overlayMode?: DecisionOverlayMode;
 }
 
-export type DecisionOverlayMode = 'none' | 'uncertainty' | 'misclassification';
+export type DecisionOverlayMode = 'none' | 'uncertainty' | 'misclassification' | 'split';
 
 // ── Drawing helpers (pure functions, no hooks) ──
 
@@ -312,7 +312,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         if (trainPoints.length > 0) {
             drawPoints(ctx, trainPoints, logicalW, logicalH, false);
         }
-        if (showTestData && testPoints.length > 0) {
+        if ((showTestData || overlayMode === 'split') && testPoints.length > 0) {
             drawPoints(ctx, testPoints, logicalW, logicalH, true);
         }
     }, [snapshot, frameVersion, trainPoints, testPoints, showTestData, discretize, canvasSize, overlayMode]);
@@ -349,6 +349,8 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                     ? 'Uncertainty'
                     : overlayMode === 'misclassification'
                         ? 'Misclassified'
+                        : overlayMode === 'split'
+                            ? 'Train/test split'
                         : 'Output'}
             </div>
             <div className="decision-boundary__legend">
