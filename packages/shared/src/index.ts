@@ -42,11 +42,16 @@ export {
     DEFAULT_TRAINING,
     DEFAULT_DATA,
 } from './constants.js';
+export {
+    PAUSE_REASONS,
+    isPauseReason,
+} from './types.js';
 export type {
     UIConfig,
     AppConfig,
     Preset,
     TrainingStatus,
+    PauseReason,
 } from './types.js';
 export {
     DEFAULT_DEMAND,

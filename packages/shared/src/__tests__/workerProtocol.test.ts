@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_DEMAND,
     isMainToWorkerCommand,
+    isWorkerToMainMessage,
 } from '../index.js';
 
 describe('isMainToWorkerCommand', () => {
@@ -55,5 +56,42 @@ describe('isMainToWorkerCommand', () => {
                 })).toBe(false);
             }
         }
+    });
+});
+
+describe('isWorkerToMainMessage', () => {
+    it('accepts status messages without a pause reason for backward compatibility', () => {
+        expect(isWorkerToMainMessage({
+            type: 'status',
+            runId: 1,
+            status: 'paused',
+        })).toBe(true);
+    });
+
+    it('accepts status messages with a valid pause reason', () => {
+        expect(isWorkerToMainMessage({
+            type: 'status',
+            runId: 1,
+            status: 'paused',
+            pauseReason: 'diverged',
+        })).toBe(true);
+    });
+
+    it('accepts status messages with a null pause reason', () => {
+        expect(isWorkerToMainMessage({
+            type: 'status',
+            runId: 1,
+            status: 'running',
+            pauseReason: null,
+        })).toBe(true);
+    });
+
+    it('rejects status messages with a malformed pause reason', () => {
+        expect(isWorkerToMainMessage({
+            type: 'status',
+            runId: 1,
+            status: 'paused',
+            pauseReason: 'because',
+        })).toBe(false);
     });
 });

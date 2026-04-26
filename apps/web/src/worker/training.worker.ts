@@ -39,6 +39,7 @@ import {
     normalizeAppConfig,
 } from '@nn-playground/shared';
 import type {
+    PauseReason,
     VisualizationDemand,
     WorkerSnapshotMessage,
     WorkerStatusMessage,
@@ -58,6 +59,12 @@ import {
     getTrainingStepsForTick,
     normalizeTrainingSpeed,
 } from './trainingLoop.ts';
+import {
+    createInitialStopConditionState,
+    DEFAULT_RUNTIME_STOP_CONDITIONS,
+    evaluateStopConditions,
+    type StopConditionState,
+} from './stopConditions.ts';
 
 interface WorkerState {
     network: Network | null;
@@ -102,6 +109,8 @@ interface WorkerState {
     lossEmaAlpha: number;
     /** True when the most recent snapshot reused cached test metrics instead of re-evaluating. */
     testMetricsStale: boolean;
+    /** Runtime-only stop-condition tracking. Reset on new worker runs/rebuilds. */
+    stopConditionState: StopConditionState;
     /** Monotonic identity for confusion matrix payload freshness. */
     confusionMatrixVersion: number;
     /** Pre-allocated buffers for grid predictions. */
@@ -195,6 +204,19 @@ function postError(message: string): void {
     }
 }
 
+function postStatus(status: WorkerStatusMessage['status'], pauseReason?: PauseReason | null): void {
+    if (!state.streamPort) return;
+    const statusMsg: WorkerStatusMessage = {
+        type: 'status',
+        runId: state.runId,
+        status,
+    };
+    if (pauseReason !== undefined) {
+        statusMsg.pauseReason = pauseReason;
+    }
+    state.streamPort.postMessage(statusMsg);
+}
+
 /** Validate config compatibility — throws on incompatible loss/activation. */
 function validateConfigs(network: NetworkConfig, training: TrainingConfig): void {
     if (!isLossCompatible(training.lossType, network.outputActivation)) {
@@ -279,6 +301,7 @@ const state: WorkerState = {
     lossEma: null,
     lossEmaAlpha: 0.1,
     testMetricsStale: false,
+    stopConditionState: createInitialStopConditionState(),
     confusionMatrixVersion: 0,
     outputGridBuffer: null,
     neuronGridsBuffer: null,
@@ -388,6 +411,7 @@ function buildDataAndNetwork(): void {
     state.lossEma = null;
     state.gridStale = true;
     state.testMetricsStale = false;
+    state.stopConditionState = createInitialStopConditionState();
     state.confusionMatrixVersion++;
 
     // Increment run ID
@@ -933,20 +957,29 @@ async function produceAndPostSnapshot(): Promise<void> {
     await runGpuGridIfDue();
 
     const snap = computeSnapshot({ lightweight: true });
-
-    // NaN / divergence guard — stop the loop and notify the UI. Training
-    // with NaN weights is a dead end; keep state readable for debugging.
-    if (!Number.isFinite(snap.trainLoss)) {
-        stopInternalLoop();
-        postError(
-            'Training diverged (non-finite loss). Try a smaller learning rate, ' +
-            'enable gradient clipping, or reset the network.',
-        );
-        return;
+    const stopEvaluation = state.running
+        ? evaluateStopConditions(
+            DEFAULT_RUNTIME_STOP_CONDITIONS,
+            {
+                step: snap.step,
+                trainLoss: snap.trainLoss,
+                testLoss: snap.testLoss,
+                trainAccuracy: snap.trainMetrics.accuracy,
+                testAccuracy: snap.testMetrics.accuracy,
+            },
+            state.stopConditionState,
+        )
+        : null;
+    if (stopEvaluation) {
+        state.stopConditionState = stopEvaluation.nextState;
     }
 
     const { message, transferables } = packSnapshotMessage(snap);
     state.streamPort.postMessage(message, transferables);
+    if (stopEvaluation?.pauseReason) {
+        stopInternalLoop();
+        postStatus('paused', stopEvaluation.pauseReason);
+    }
 }
 
 function trainTick(): void {
@@ -1038,26 +1071,12 @@ function handleStreamCommand(cmd: unknown): void {
             case 'startTraining':
                 state.stepsPerFrame = normalizeTrainingSpeed(cmd.stepsPerFrame);
                 startInternalLoop();
-                if (state.streamPort) {
-                    const statusMsg: WorkerStatusMessage = {
-                        type: 'status',
-                        runId: state.runId,
-                        status: 'running',
-                    };
-                    state.streamPort.postMessage(statusMsg);
-                }
+                postStatus('running');
                 break;
 
             case 'stopTraining':
                 stopInternalLoop();
-                if (state.streamPort) {
-                    const statusMsg: WorkerStatusMessage = {
-                        type: 'status',
-                        runId: state.runId,
-                        status: 'paused',
-                    };
-                    state.streamPort.postMessage(statusMsg);
-                }
+                postStatus('paused');
                 break;
 
             case 'updateDemand':

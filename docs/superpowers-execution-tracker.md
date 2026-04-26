@@ -1,0 +1,839 @@
+# Neural Network Playground 2.0 Superpowers Execution Tracker
+
+This artifact is the persistent source of truth for the Superpowers-aware
+roadmap execution. Update it whenever a task, review, verification command, or
+blocker changes.
+
+## Current Status
+
+- [x] Roadmap corrected into a Superpowers execution plan - [REQ-SUPERPOWERS](#req-superpowers), [REQ-AGENTS](#req-agents)
+- [x] P0A pure stop-condition evaluator implemented - [REQ-P0A](#req-p0a)
+- [x] P0A focused tests passed - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] P0A reviewed by subagent - [REQ-AGENTS](#req-agents)
+- [x] P0A staged/committed or otherwise integrated - [REQ-VERIFY](#req-verify)
+- [x] P0B runtime pause plumbing implemented - [REQ-P0B](#req-p0b)
+- [x] P0B spec compliance review complete - [REQ-AGENTS](#req-agents), [REQ-P0B](#req-p0b)
+- [x] P0B code quality review complete - [REQ-AGENTS](#req-agents), [REQ-P0B](#req-p0b)
+- [x] P0B verification complete - [REQ-VERIFY](#req-verify)
+- [ ] Explicit approval received to start P0C - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+
+## Current Gate
+
+Do not start P0C until P0B passes:
+
+- targeted shared protocol tests
+- targeted web worker/store/hook tests
+- full shared tests
+- full web tests
+- lint
+- build
+- spec compliance review
+- code quality review
+
+## Prompt Requirement Index
+
+<a id="req-superpowers"></a>
+### REQ-SUPERPOWERS
+
+Use the Superpowers methodology explicitly:
+
+- `superpowers:brainstorming` for product scope control.
+- `superpowers:writing-plans` for executable implementation plans.
+- `superpowers:dispatching-parallel-agents` for read-only recon and disjoint implementation slices only.
+- `superpowers:subagent-driven-development` as the preferred execution model.
+- `superpowers:test-driven-development` for behavior changes.
+- `superpowers:using-git-worktrees` when local worktrees are appropriate; use isolated branches/tasks otherwise.
+- `superpowers:verification-before-completion` before claiming any task, phase, test, build, or review complete.
+
+<a id="req-agents"></a>
+### REQ-AGENTS
+
+Use coordinator, read-only recon agents, implementation workers, reviewer
+agents, and a merge steward. Parallel agents are allowed only when ownership,
+state, contracts, and tests are disjoint. Implementation for P0B is serial-only.
+
+<a id="req-file-ownership"></a>
+### REQ-FILE-OWNERSHIP
+
+Maintain explicit file ownership and collision rules. Shared protocol,
+serialization/config, worker runtime, Zustand stores, visualization demand, and
+major layout files are locked unless assigned. Workers must stop rather than
+edit outside their allowlist.
+
+<a id="req-p0a"></a>
+### REQ-P0A
+
+Pure stop-condition foundation:
+
+- Define `PauseReason`.
+- Define `StopCondition`.
+- Add a pure stop-condition evaluator.
+- Unit-test target loss, target accuracy, unavailable accuracy, plateau,
+  divergence, max steps, NaN, Infinity, deterministic priority, and reset state.
+- No UI, protocol, store, or serialization changes unless explicitly assigned.
+
+<a id="req-p0b"></a>
+### REQ-P0B
+
+Runtime plumbing:
+
+- Connect the evaluator to the training runtime.
+- Add pause reason propagation.
+- Update store/runtime state as needed.
+- Manual pause uses `pauseReason: 'manual'`.
+- Automatic stop-condition pauses use matching non-manual reasons.
+- Reset clears pause reason and stop-condition tracking.
+- Resume after automatic pause requires explicit user resume.
+- Resume does not clear historical metrics unless reset is triggered.
+- Divergence catches `NaN` and `Infinity` immediately.
+- `targetAccuracy` is ignored when accuracy is unavailable.
+- If multiple stop conditions trigger, use deterministic priority.
+- In P0B, default runtime behavior is non-finite divergence only. Do not add new
+  user controls, share URL fields, persistence, or serialization.
+
+<a id="req-p0c"></a>
+### REQ-P0C
+
+Explanation rules and minimal UI:
+
+- Add deterministic explanation rules.
+- Add a minimal "Why did this happen?" surface.
+- Use existing metrics/diagnostics only.
+- Do not add lessons, custom datasets, or expensive worker data.
+
+<a id="req-tdd"></a>
+### REQ-TDD
+
+Every behavior change must follow TDD:
+
+1. Write the failing test first.
+2. Run the targeted command and confirm the expected failure.
+3. Implement the minimal code.
+4. Re-run the targeted command and confirm pass.
+5. Add regression coverage.
+6. Run package-level tests.
+7. Run coordinator final verification.
+
+<a id="req-verify"></a>
+### REQ-VERIFY
+
+Before phase completion, run the actual discovered verification commands:
+
+- `pnpm --filter @nn-playground/shared test`
+- `pnpm --filter @nn-playground/web test`
+- `pnpm lint`
+- `pnpm build`
+
+Use targeted package/file commands during TDD.
+
+<a id="req-no-p0c-without-approval"></a>
+### REQ-NO-P0C-WITHOUT-APPROVAL
+
+Do not start P0C until P0B has tests, review, verification, and explicit
+approval to proceed.
+
+## Linked Checklist
+
+### P0A: Pure Stop-Condition Foundation
+
+- [x] Define `PauseReason` - [REQ-P0A](#req-p0a)
+- [x] Define `StopCondition` - [REQ-P0A](#req-p0a)
+- [x] Add pure evaluator - [REQ-P0A](#req-p0a)
+- [x] Add deterministic pause priority - [REQ-P0A](#req-p0a)
+- [x] Test target loss - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test target accuracy - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test unavailable accuracy - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test plateau patience - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test divergence with `NaN` - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test divergence with `Infinity` - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test max steps - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test deterministic priority - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Test reset helper/fresh state - [REQ-P0A](#req-p0a), [REQ-TDD](#req-tdd)
+- [x] Run focused P0A verification - [REQ-VERIFY](#req-verify)
+- [x] Complete P0A read-only review - [REQ-AGENTS](#req-agents)
+- [x] Stage/commit or otherwise integrate P0A files - [REQ-VERIFY](#req-verify)
+
+### P0B: Runtime Plumbing
+
+- [x] Move/export protocol-facing `PauseReason` - [REQ-P0B](#req-p0b)
+- [x] Add optional `pauseReason` to worker status protocol - [REQ-P0B](#req-p0b)
+- [x] Validate pause reason in protocol guard - [REQ-P0B](#req-p0b), [REQ-TDD](#req-tdd)
+- [x] Update worker protocol documentation - [REQ-P0B](#req-p0b)
+- [x] Add training-store `pauseReason` state - [REQ-P0B](#req-p0b)
+- [x] Ensure streamed snapshots do not clear pause reason - [REQ-P0B](#req-p0b), [REQ-TDD](#req-tdd)
+- [x] Wire manual pause to `manual` - [REQ-P0B](#req-p0b)
+- [x] Keep config-sync stop reasonless - [REQ-P0B](#req-p0b)
+- [x] Clear pause reason on play/resume - [REQ-P0B](#req-p0b)
+- [x] Clear pause reason on reset - [REQ-P0B](#req-p0b)
+- [x] Reset worker stop-condition state on reset/rebuild - [REQ-P0B](#req-p0b)
+- [x] Evaluate runtime stop conditions only while running - [REQ-P0B](#req-p0b)
+- [x] Convert non-finite train loss to `diverged` pause - [REQ-P0B](#req-p0b)
+- [x] Convert non-finite test loss to `diverged` pause - [REQ-P0B](#req-p0b)
+- [x] Post final snapshot before paused status - [REQ-P0B](#req-p0b)
+- [x] Stop render loop on worker automatic pause - [REQ-P0B](#req-p0b)
+- [x] Set worker errors to `pauseReason: 'error'` - [REQ-P0B](#req-p0b)
+- [x] Add protocol tests first - [REQ-P0B](#req-p0b), [REQ-TDD](#req-tdd)
+- [x] Add store tests first - [REQ-P0B](#req-p0b), [REQ-TDD](#req-tdd)
+- [x] Add hook lifecycle tests first - [REQ-P0B](#req-p0b), [REQ-TDD](#req-tdd)
+- [x] Add runtime divergence tests first - [REQ-P0B](#req-p0b), [REQ-TDD](#req-tdd)
+- [x] Add bridge final-snapshot flush test - [REQ-P0B](#req-p0b), [REQ-TDD](#req-tdd)
+- [x] Complete P0B spec compliance review - [REQ-AGENTS](#req-agents)
+- [x] Complete P0B code quality review - [REQ-AGENTS](#req-agents)
+- [x] Run P0B final verification - [REQ-VERIFY](#req-verify)
+
+### P0C: Explanation Rules and Minimal UI
+
+- [ ] Confirm explicit approval to start P0C - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+- [ ] Add deterministic explanation rules - [REQ-P0C](#req-p0c)
+- [ ] Add minimal "Why did this happen?" UI - [REQ-P0C](#req-p0c)
+- [ ] Test stable ordered explanation output - [REQ-P0C](#req-p0c), [REQ-TDD](#req-tdd)
+- [ ] Test top explanation rendering - [REQ-P0C](#req-p0c), [REQ-TDD](#req-tdd)
+- [ ] Run P0C verification - [REQ-VERIFY](#req-verify)
+
+### P1: Lesson System
+
+- [ ] Define `LessonDefinition` and `LessonStep`
+- [ ] Migrate current XOR guided lesson
+- [ ] Add 2-3 lessons first
+- [ ] Verify schema before expanding lesson count
+
+### P2: Experiment Memory
+
+- [ ] Define typed run history record after repo export inspection
+- [ ] Add bounded versioned local persistence
+- [ ] Add restore run behavior
+- [ ] Add exportable experiment report
+
+### P3: Data Understanding
+
+- [ ] Add train/test split visualizer
+- [ ] Add reshuffle controls
+- [ ] Add dataset parameter lab
+- [ ] Defer custom dataset brush until later
+
+### P4: Interpretability
+
+- [ ] Add on-demand prediction trace
+- [ ] Add activation histograms
+- [ ] Add layer-level gradient-flow overlay
+- [ ] Defer neuron/edge histories until payload cost is controlled
+
+### P5: Advanced Labs
+
+- [ ] Defer side-by-side model arena to separate spec
+- [ ] Defer slow-motion backprop to separate spec
+- [ ] Defer multi-class mode to separate spec
+- [ ] Defer loss landscape probes to separate spec
+
+### Gate
+
+- [ ] Do not start P0C without explicit approval - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
+
+## Agent Review Log
+
+| Agent | Reasoning | Scope | Result | Blockers / Notes |
+|---|---|---|---|---|
+| Bernoulli | Not recorded | P0A read-only review | APPROVED | P0A coverage present. Non-blocking note: P0B config shape must avoid duplicate plateau/divergence conditions because P0A rejects duplicates. |
+| Curie | Not recorded | P0B read-only reconnaissance | COMPLETED | Identified required P0B edit map, protocol need, manual/config-sync distinction, and high-risk files. |
+| Euler | High | P0B spec/semantics review | NEEDS_CHANGES | Require shared protocol `pauseReason`, hook-local cleanup on automatic pause, manual/config-sync distinction, non-finite loss as `diverged`, reset/resume clearing tests. |
+| Hilbert | High | P0B quality/integration review | NEEDS_CHANGES | Require shared `PauseReason` guard/export, final snapshot before paused status, protocol validation tests, and store/hook lifecycle tests. |
+| Franklin | High | P0B spec compliance review | APPROVED | Confirmed P0B scope: shared protocol, runtime non-finite divergence pause, manual/config-sync distinction, reset/resume semantics, final snapshot ordering, and no serialization/persistence/UI controls. |
+| Fermat | High | P0B code quality review | NEEDS_CHANGES | Code passed structurally; blocker was unrelated dirty files in the working tree. Resolved by staging only P0A/P0B/tracker files and leaving unrelated files unstaged. |
+| Plato | High | P0B staged merge-steward review | NEEDS_CHANGES | Staged files matched scope and unrelated files were excluded. Requested tracker checklist update and direct bridge coverage for queued final snapshot flush. Both were addressed before final verification rerun. |
+| Einstein | High | P0B final staged merge-steward review | APPROVED | Confirmed previous blockers resolved, staged diff clean, unrelated files excluded, and no serialization/persistence/UI controls/dependencies/snapshots staged. |
+
+## Verification Log
+
+### P0A
+
+| Command | Outcome | Notes |
+|---|---|---|
+| `pnpm --filter @nn-playground/web test src/worker/stopConditions.test.ts src/worker/trainingLoop.test.ts` | PASS | 2 files, 17 tests. Focused verification run after P0A review. |
+| `pnpm --filter @nn-playground/web test` | PASS | Reported from prior P0A implementation turn: 42 files, 237 tests. Re-run before final integration if stale. |
+| `pnpm lint` | PASS | Reported from prior P0A implementation turn. Re-run before final integration if stale. |
+| `pnpm build` | PASS | Reported from prior P0A implementation turn with existing Vite chunk-size warning. Re-run before final integration if stale. |
+
+### P0B
+
+| Command | Outcome | Notes |
+|---|---|---|
+| `pnpm --filter @nn-playground/shared test src/__tests__/workerProtocol.test.ts` | PASS | Targeted shared protocol red/green and final rerun: 9 tests. |
+| `pnpm --filter @nn-playground/web test src/worker/stopConditions.test.ts src/store/useTrainingStore.test.ts src/hooks/useTraining.test.tsx` | PASS | Initial targeted P0B red/green: 30 tests. |
+| `pnpm --filter @nn-playground/web test src/worker/workerBridge.test.ts` | PASS | Added bridge-level final-snapshot flush coverage: 10 tests. |
+| `pnpm --filter @nn-playground/web test src/worker/stopConditions.test.ts src/store/useTrainingStore.test.ts src/hooks/useTraining.test.tsx src/worker/workerBridge.test.ts` | PASS | Expanded targeted final rerun: 40 tests. |
+| `pnpm --filter @nn-playground/shared test` | PASS | Full shared suite: 4 files, 59 tests. |
+| `pnpm --filter @nn-playground/web test` | PASS | Full web suite: 42 files, 244 tests. |
+| `pnpm lint` | PASS | ESLint passed. |
+| `pnpm build` | PASS | Production build passed with existing Vite chunk-size warning. |
+
+## File Ownership And Collision Notes
+
+Current unrelated dirty/untracked files to avoid unless explicitly assigned:
+
+- `apps/web/src/styles/index.css`
+- `.claude/settings.local.json`
+- `FEATURE_BRAINSTORM.md`
+
+Current P0A files:
+
+- `apps/web/src/worker/stopConditions.ts`
+- `apps/web/src/worker/stopConditions.test.ts`
+
+P0B high-risk files:
+
+- `packages/shared/src/workerProtocol.ts`
+- `packages/shared/src/types.ts`
+- `packages/shared/src/index.ts`
+- `apps/web/src/worker/training.worker.ts`
+- `apps/web/src/hooks/useTraining.ts`
+- `apps/web/src/store/useTrainingStore.ts`
+
+No worker may edit outside its allowlist, change serialization unexpectedly, add
+dependencies, or perform unrelated cleanup.
+
+## Canonical Prompt
+
+The canonical execution prompt follows. This is preserved as the source material
+for the checklist above.
+
+```md
+PLEASE IMPLEMENT THIS PLAN:
+# Neural Network Playground 2.0 Superpowers Execution Plan
+
+## 1. Superpowers Usage Strategy
+Applied skills:
+- `superpowers:brainstorming`: product scope control only.
+- `superpowers:writing-plans`: convert each roadmap slice into executable task plans.
+- `superpowers:dispatching-parallel-agents`: read-only recon and only disjoint implementation slices.
+- `superpowers:subagent-driven-development`: preferred implementation model.
+- `superpowers:test-driven-development`: required for all behavior changes.
+- `superpowers:using-git-worktrees`: use in local filesystem/Codex Desktop. In Codex Cloud or unsuitable environments, use isolated branches/tasks with the same ownership, review, and merge-steward rules.
+- `superpowers:verification-before-completion`: required before claiming any task, phase, test, build, or review is complete.
+
+Parallel agents are allowed only when file ownership, runtime state, protocol/API contracts, and tests are disjoint, and a coordinator owns integration.
+
+Parallel agents are forbidden when they would edit the same files, shared serialization/config schema, worker protocol, Zustand store shape, dependent unmerged work, or anything requiring whole-system design judgment.
+
+## 2. Agent Operating Model
+### Coordinator Agent
+Owns plan, sequencing, file ownership, task graph, merge order, and verification.
+
+Responsibilities:
+- Inspect repo state first.
+- Refresh the file map before assigning workers.
+- Create/update Superpowers plan files.
+- Assign narrow worker scopes.
+- Maintain file ownership table.
+- Decide parallelism.
+- Review every worker summary and diff.
+- Run final verification.
+
+The coordinator does not casually edit implementation code while workers are active.
+
+### Read-Only Recon Agents
+May inspect only. Use for:
+- Lesson/preset/config flow.
+- Worker/protocol/runtime state.
+- Visualization demand/frame-buffer flow.
+- Serialization/share-link/local persistence.
+- Test/build command discovery.
+
+Output must include files, existing patterns, risks, task boundaries, and files unsafe for parallel edits.
+
+### Implementation Worker Agents
+Each worker receives:
+- Goal.
+- Exact files allowed to modify.
+- Exact files allowed to inspect.
+- Forbidden files.
+- Required failing tests first.
+- Required commands.
+- Expected output format.
+- Stop conditions.
+
+Each returns:
+`DONE`, `DONE_WITH_CONCERNS`, `NEEDS_CONTEXT`, or `BLOCKED`, plus changed files, tests, commands/results, contract/API changes, and risks.
+
+### Reviewer Agents
+Use two read-only reviewers per task:
+1. Spec Compliance Reviewer: checks exact requested behavior, missing requirements, extra behavior, scope creep.
+2. Code Quality Reviewer: checks naming, cohesion, performance, test quality, maintainability, shared-state risk.
+
+### Merge Steward
+Runs after workers finish. Checks diffs, conflicts, contracts, serialization, store shape, persistence, tests, build, bundle-impacting imports, and unexpected dependencies.
+
+## 3. Current Last-Discovered Map, To Be Refreshed Before Execution
+- Stores: `apps/web/src/store/usePlaygroundStore.ts`, `apps/web/src/store/useTrainingStore.ts`, `apps/web/src/store/useLayoutStore.ts`.
+- Worker/runtime: `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/workerBridge.ts`, `apps/web/src/worker/trainingLoop.ts`, `apps/web/src/hooks/useTraining.ts`.
+- Protocol/contracts: `packages/shared/src/workerProtocol.ts`, `packages/shared/src/types.ts`, `packages/shared/src/index.ts`.
+- Serialization/config: `packages/shared/src/serialization.ts`, `packages/shared/src/constants.ts`.
+- Lessons/presets: `apps/web/src/components/controls/GuidedLessonPanel.tsx`, `packages/shared/src/presets.ts`.
+- Visualization demand/frame-buffer: `apps/web/src/components/layout/deriveVisualizationDemand.ts`, `apps/web/src/worker/frameBuffer.ts`, `apps/web/src/worker/sharedSnapshot.ts`, `apps/web/src/worker/frameBufferLayout.ts`.
+- Existing tests: `apps/web/src/worker/*.test.ts`, `apps/web/src/store/*.test.ts`, `apps/web/src/components/controls/GuidedLessonPanel.test.tsx`, `packages/shared/src/__tests__/serialization.test.ts`, `packages/shared/src/__tests__/workerProtocol.test.ts`, `packages/engine/src/__tests__/*.test.ts`.
+- Package scripts discovered: root `dev`, `build`, `test`, `test:engine`, `test:perf`, `bench`, `lint`, `clean`; web `dev`, `build`, `preview`, `test`; engine `test`, `test:watch`, `test:perf`, `bench`; shared `test`.
+
+No worker gets an allowlist based on stale or guessed paths.
+
+## 4. File Ownership and Collision Rules
+| Area | Classification | Rule |
+|---|---|---|
+| `packages/shared/src/workerProtocol.ts` | Locked | Coordinator-only or dedicated serial protocol task. |
+| `packages/shared/src/serialization.ts`, `types.ts`, `constants.ts` | Locked | Schema/default changes are coordinator-owned. |
+| `apps/web/src/worker/training.worker.ts`, `workerBridge.ts`, `useTraining.ts` | Locked | Serial runtime task only. |
+| `apps/web/src/store/usePlaygroundStore.ts`, `useTrainingStore.ts` | Locked | One store-shape task at a time. |
+| `frameBuffer.ts`, `sharedSnapshot.ts`, `deriveVisualizationDemand.ts` | Locked | Demand/buffer changes require tests and perf guardrails. |
+| App shell/layout composition | Locked | Coordinator-approved edits only. |
+| New isolated UI components | Owner | Parallel-safe after contracts land. |
+| Lesson content-only files | Owner | Parallel-safe if registry/schema files are not edited. |
+
+Rules:
+- No unrelated cleanup.
+- No broad export renames.
+- No broad snapshot/test churn without explanation.
+- No dependency additions unless assigned.
+- Only one active implementation worker may edit shared contract files.
+
+## 5. Agent Stop Conditions
+Workers must stop with `NEEDS_CONTEXT` or `BLOCKED` if:
+- They need to edit outside allowlist.
+- A path is wrong.
+- A command does not exist.
+- Shared serialization is needed unexpectedly.
+- Worker protocol changes are needed unexpectedly.
+- Store changes are needed unexpectedly.
+- Tests fail outside scope.
+- Another active worker owns the same file.
+- Product/design decisions are missing.
+
+Workers must not improvise around these constraints.
+
+## 6. Corrected Roadmap Sequencing
+### P0A: Pure Stop-Condition Foundation
+Scope:
+- Define `PauseReason`.
+- Define `StopCondition`.
+- Add pure stop-condition evaluator.
+- Unit-test evaluator behavior.
+
+Rules:
+- No UI changes.
+- No worker protocol changes unless absolutely required.
+- No serialization changes unless stop conditions are saved in config.
+- P0 stop conditions start as internal/default runtime behavior unless explicitly assigned as user-configurable controls.
+- Do not add new controls, share URL fields, or persistence for stop conditions in P0A/P0B unless assigned.
+
+Acceptance:
+- Evaluator handles target loss, target accuracy, plateau, divergence, max steps, NaN, and Infinity.
+- Tests prove each stop condition.
+- Deterministic priority is tested.
+- No unrelated files touched.
+
+### P0B: Runtime Plumbing
+Scope:
+- Connect evaluator to training runtime.
+- Add pause reason propagation.
+- Update store/runtime state as needed.
+
+Runtime semantics:
+- Stop conditions evaluate only while training is running.
+- Manual pause uses `pauseReason: 'manual'`.
+- Stop-condition pause uses the matching non-manual `PauseReason`.
+- Reset clears `pauseReason`, stop-condition counters, plateau tracking, and divergence tracking.
+- Resume after stop-condition pause is allowed only by explicit user resume.
+- Resume does not clear historical metrics unless reset is triggered.
+- Plateau requires enough steps to satisfy patience.
+- Divergence catches `NaN` and `Infinity` immediately.
+- `targetAccuracy` is ignored/disabled when accuracy is unavailable.
+- If multiple stop conditions trigger, use deterministic priority.
+
+Acceptance:
+- Training pauses with correct `pauseReason`.
+- Manual pause still works.
+- Resume/reset behavior is defined and tested.
+- Worker/store tests pass.
+
+### P0C: Explanation Rules and Minimal UI
+Scope:
+- Deterministic explanation rules.
+- Minimal "Why did this happen?" UI.
+- Existing metrics/diagnostics only.
+
+Rules:
+- No lesson system.
+- No custom datasets.
+- No expensive worker data.
+- Explanations are deterministic and testable.
+
+Acceptance:
+- Stable ordered output from fixed context.
+- UI displays top explanation.
+- Related panel ids are optional and safe if absent.
+- Component tests cover one stop reason and one diagnostic explanation.
+
+### P1: Lesson System
+- Define `LessonDefinition` and `LessonStep`.
+- Migrate current XOR guided lesson.
+- Add only 2-3 lessons first.
+- Add remaining lessons after schema proves stable.
+
+### P2: Experiment Memory
+- Run history records.
+- Restore run.
+- Bounded versioned local persistence.
+- Exportable experiment report.
+
+Typing rule:
+- Replace `unknown` in `RunHistoryRecord` with actual exported project types after repo inspection.
+- Do not ship persistent records with untyped `unknown` payloads unless wrapped in a versioned schema validator.
+
+### P3: Data Understanding
+- Train/test split visualizer.
+- Reshuffle controls.
+- Dataset parameter lab.
+- Custom dataset brush later.
+
+### P4: Interpretability
+- On-demand prediction trace.
+- Activation histograms.
+- Layer-level gradient-flow overlay.
+- Neuron/edge histories only if payload cost remains controlled.
+
+### P5: Advanced Labs
+Defer into separate specs:
+- Side-by-side model arena.
+- Slow-motion backprop.
+- Multi-class mode.
+- Loss landscape probes.
+
+## 7. Parallelization Map
+| Slice | Classification | Parallelism |
+|---|---|---|
+| P0A | `SERIAL_ONLY` implementation | Read-only recon first only. |
+| P0B | `SERIAL_ONLY` | Runtime/store/protocol risk. |
+| P0C | `SERIAL_ONLY` or `PARALLEL_READ_ONLY` | Serialize implementation. |
+| P1 | `PARALLEL_IMPLEMENTATION_RISKY` | Schema serial first; content-only later. |
+| P2 | `PARALLEL_IMPLEMENTATION_RISKY` | Data model/persistence serial first; UI/report later. |
+| P3 | `PARALLEL_READ_ONLY` first | Dataset/split contracts stabilize serially. |
+| P4 | `SERIAL_ONLY` for protocol/RPC | UI components parallel only after protocol lands. |
+| P5 | `SERIAL_ONLY` | Separate specs required. |
+
+## 8. Deterministic Pause Priority
+Automatic stop-condition priority:
+
+```ts
+const PAUSE_REASON_PRIORITY: PauseReason[] = [
+  'diverged',
+  'max-steps',
+  'target-loss-reached',
+  'target-accuracy-reached',
+  'plateau',
+];
+```
+
+`manual` and `error` are outside automatic priority:
+- `manual`: explicit user pause.
+- `error`: runtime/worker exception.
+
+P0A must test this priority.
+
+## 9. TypeScript Data Models
+P0A may keep these app-internal until P0B proves shared contract need.
+
+```ts
+export type PauseReason =
+  | 'target-loss-reached'
+  | 'target-accuracy-reached'
+  | 'plateau'
+  | 'diverged'
+  | 'max-steps'
+  | 'manual'
+  | 'error';
+
+export type StopCondition =
+  | { kind: 'targetLoss'; threshold: number }
+  | { kind: 'targetAccuracy'; threshold: number }
+  | { kind: 'plateau'; metric: 'loss' | 'accuracy'; minDelta: number; patienceSteps: number }
+  | { kind: 'divergence'; lossMultiplier?: number; nanOrInfinity?: boolean; patienceSteps?: number }
+  | { kind: 'maxSteps'; steps: number };
+
+export interface StopConditionContext {
+  step: number;
+  trainLoss: number;
+  testLoss: number;
+  trainAccuracy?: number;
+  testAccuracy?: number;
+}
+
+export interface StopConditionState {
+  bestLoss: number | null;
+  bestAccuracy: number | null;
+  plateauStartStep: number | null;
+  divergenceStartStep: number | null;
+}
+
+export interface StopConditionEvaluation {
+  pauseReason: Exclude<PauseReason, 'manual' | 'error'> | null;
+  nextState: StopConditionState;
+}
+
+export interface ExplanationContext {
+  trainLoss: number;
+  testLoss: number;
+  trainAccuracy?: number;
+  testAccuracy?: number;
+  pauseReason?: PauseReason;
+  testMetricsStale?: boolean;
+  step: number;
+}
+
+export interface ExplanationRuleDescriptor {
+  id: string;
+  priority: number;
+  title: string;
+  explanation: string;
+  suggestedAction?: string;
+  relatedPanelIds?: string[];
+}
+
+export interface RuntimeExplanationRule extends ExplanationRuleDescriptor {
+  when: (context: ExplanationContext) => boolean;
+}
+
+export interface LessonDefinition {
+  id: string;
+  title: string;
+  summary: string;
+  presetId?: string;
+  estimatedMinutes?: number;
+  steps: LessonStep[];
+}
+
+export interface LessonStep {
+  id: string;
+  title: string;
+  body: string;
+  targetPanelId?: string;
+  expectedOutcome?: string;
+  successCheck?: string;
+  explanationRuleIds?: string[];
+}
+
+export interface RunHistoryRecord {
+  id: string;
+  createdAt: number;
+  label?: string;
+  config: unknown;
+  finalMetrics: unknown;
+  bestMetrics?: unknown;
+  stepCount: number;
+  pauseReason?: PauseReason;
+  thumbnailDataUrl?: string;
+}
+
+export interface PredictionTraceResult {
+  sampleId?: string;
+  input: number[];
+  target: number[];
+  output: number[];
+  prediction: number | number[];
+  lossContribution: number;
+  layers: Array<{
+    layerIndex: number;
+    activations: number[];
+    preActivations?: number[];
+  }>;
+}
+```
+
+Lesson definitions may reference `explanationRuleIds`; they must not contain inline runtime predicate functions.
+
+## 10. TDD Requirements
+Every implementation task must:
+1. Write failing test first.
+2. Run targeted command and confirm expected failure.
+3. Implement minimal code.
+4. Run targeted command and confirm pass.
+5. Add regression coverage.
+6. Run package-level tests.
+7. Coordinator runs final verification.
+
+No implementation-first workers.
+
+## 11. Verified Command Matrix
+Commands discovered from root/package `package.json`, `pnpm-workspace.yaml`, CI, and test files.
+
+| Actual Command | Target Area | Owner | When | Proves |
+|---|---|---|---|---|
+| `pnpm lint` | Whole repo | Coordinator | Before merge | Matches CI lint step. |
+| `pnpm test` | All workspace tests | Coordinator | Before phase completion | Matches CI test step. |
+| `pnpm build` | Web production build | Coordinator | Before phase completion/deploy | Matches CI/deploy build step. |
+| `pnpm test:engine` | Engine package | Engine worker/coordinator | Engine changes | Root engine test script. |
+| `pnpm test:perf` | Engine perf tests | Coordinator | Perf-sensitive engine changes | Root perf script. |
+| `pnpm --filter @nn-playground/engine test` | Engine package | Worker | Engine task completion | Package script. |
+| `pnpm --filter @nn-playground/shared test` | Shared package | Worker | Shared contract changes | Package script. |
+| `pnpm --filter @nn-playground/web test` | Web package | Worker | Web/store/UI/worker changes | Package script. |
+| `pnpm --filter @nn-playground/engine test src/__tests__/network.test.ts` | Targeted engine test | Worker | TDD red/green | Verified targeted syntax. |
+| `pnpm --filter @nn-playground/shared test src/__tests__/serialization.test.ts` | Serialization | Worker/coordinator | Config/schema changes | Verified targeted syntax. |
+| `pnpm --filter @nn-playground/shared test src/__tests__/workerProtocol.test.ts` | Protocol guards | Worker/coordinator | Protocol changes | Actual targeted script form. |
+| `pnpm --filter @nn-playground/web test src/worker/workerBridge.test.ts` | Worker bridge | Worker | Runtime/bridge changes | Verified targeted syntax. |
+| `pnpm --filter @nn-playground/web test src/store/useTrainingStore.test.ts` | Training store | Worker | Store-shape changes | Actual targeted script form. |
+| `pnpm --filter @nn-playground/web test src/components/controls/GuidedLessonPanel.test.tsx` | Guided lesson UI | Worker | Lesson UI changes | Actual targeted script form. |
+| `pnpm --filter @nn-playground/web test src/worker/stopConditions.test.ts` | P0A stop evaluator | P0A worker | P0A red/green | New targeted test command. |
+
+Substitution note:
+- Do not use `pnpm --filter <pkg> test -- <file>` here. It did not narrow suites consistently.
+- Use `pnpm --filter <pkg> test <file>`.
+
+## 12. P0A Execution Plan
+Editable files:
+- Create `apps/web/src/worker/stopConditions.ts`.
+- Create `apps/web/src/worker/stopConditions.test.ts`.
+
+Inspect-only files:
+- `packages/engine/src/types.ts`
+- `apps/web/src/worker/training.worker.ts`
+- `apps/web/src/store/useTrainingStore.ts`
+- `apps/web/src/worker/*.test.ts`
+
+Forbidden for P0A:
+- `packages/shared/src/workerProtocol.ts`
+- `packages/shared/src/serialization.ts`
+- `packages/shared/src/types.ts`
+- `apps/web/src/store/*`
+- `apps/web/src/worker/training.worker.ts`
+- Any UI/component files
+
+TDD steps:
+1. Write failing tests for target loss, target accuracy, unavailable accuracy, plateau patience, NaN divergence, Infinity divergence, max steps, deterministic priority, and reset helper if included.
+2. Run:
+   `pnpm --filter @nn-playground/web test src/worker/stopConditions.test.ts`
+3. Implement minimal evaluator.
+4. Re-run:
+   `pnpm --filter @nn-playground/web test src/worker/stopConditions.test.ts`
+5. Run adjacent regression:
+   `pnpm --filter @nn-playground/web test src/worker/stopConditions.test.ts src/worker/trainingLoop.test.ts`
+6. Review: Spec Compliance, then Code Quality.
+7. Coordinator verification:
+   `pnpm --filter @nn-playground/web test`
+   `pnpm lint`
+   `pnpm build`
+
+Do not proceed to P0B until P0A passes tests, review, and verification.
+
+## 13. Performance Guardrails
+- No expensive interpretability data streamed by default.
+- New visualization demand flags default false.
+- Activation histograms compute only when visible/requested.
+- Prediction trace is on-demand RPC, not continuous stream.
+- Gradient overlay starts layer-level only.
+- New worker payloads must define size/frequency expectations.
+- New frame-buffer domains require targeted tests and perf sanity checks.
+- Track current main bundle chunk warning; advanced panels are code-splitting candidates.
+
+## 14. Compatibility and Migration
+- Existing share URLs must continue to load.
+- Existing serialized configs must normalize through defaults.
+- New config fields must be optional.
+- Stop conditions are not added to serialized app config unless user-configurable or required for share/restore.
+- If stop conditions are added to config later, they must be optional, defaulted through normalization, version-compatible, and covered by old/minimal config tests.
+- Run history/local persistence must be versioned and bounded.
+- No breaking public package APIs unless explicitly planned.
+
+## 15. Merge Steward Diff Checklist
+Before merge, inspect:
+- Changed files vs assigned allowlist.
+- Public exports changed.
+- Worker protocol changed.
+- Config/serialization changed.
+- Store shape changed.
+- Local persistence changed.
+- Bundle-impacting imports added.
+- Tests added for each behavior change.
+- Deleted or broadly updated snapshots.
+- Unexpected dependency additions.
+
+Any mismatch blocks merge until explained or fixed.
+
+## 16. Linear / Ticket-Ready Breakdown
+Do not create Linear tickets yet.
+
+| Epic | Task | Dependencies | Files | Tests | Risk |
+|---|---|---|---|---|---|
+| P0 Foundation | P0A pure evaluator | None | `apps/web/src/worker/stopConditions.ts` | `stopConditions.test.ts` | Medium |
+| P0 Foundation | P0B runtime plumbing | P0A | Worker/store/protocol only if assigned | Worker/store tests | High |
+| P0 Foundation | P0C explanations UI | P0B | Explanation module + minimal component | Unit/component tests | Medium |
+| P1 Lessons | Lesson schema + XOR migration | P0 stable | Lesson files + guided panel | Guided lesson tests | Medium |
+| P2 Memory | Run history persistence | P1 stable | Store/persistence module | Store/persistence tests | High |
+| P2 Memory | Export report | Run history | Report module/UI | Unit/component tests | Medium |
+| P3 Data | Split visualizer | P2 stable | Data/boundary UI | Component tests | Medium |
+| P4 Interpretability | Prediction trace RPC | Demand policy stable | Engine/worker/protocol/UI | Engine/worker/UI tests | High |
+
+## 17. First Execution Target
+Execute only P0A first after leaving Plan Mode.
+
+Sequence:
+1. Refresh file map.
+2. Set up local worktree or isolated branch/task depending on environment.
+3. Run P0A TDD.
+4. Spec Compliance Review.
+5. Code Quality Review.
+6. Coordinator verification.
+7. Stop. Do not start P0B without explicit approval.
+```
+
+## P0B Corrected Continuation Prompt
+
+This P0B correction supersedes the earlier P0B details where they conflict.
+
+```md
+# P0B Runtime Pause Reasons Plan
+
+## Summary
+High-reasoning subagents reviewed the prior P0B plan and both returned `NEEDS_CHANGES`. The corrected plan below resolves their blockers before implementation.
+
+P0B remains serial-only. It wires P0A's evaluator into runtime pause behavior without adding user controls, share URL fields, persistence, lesson logic, or UI panels.
+
+## Corrections From Review
+- `PauseReason` must be a shared protocol contract, not web-local only.
+- Worker-driven automatic pause must stop hook-local playback state, not just update Zustand.
+- Manual pause and config-sync stop must stay distinguishable.
+- Non-finite train/test loss should pause with `pauseReason: 'diverged'`, not use the fatal worker error overlay.
+- Worker should post the final snapshot first, then post paused status with the reason.
+- Reset/resume clearing semantics must be explicit and tested.
+
+## Implementation Plan
+1. Shared protocol
+   - Add `PauseReason` to `packages/shared/src/types.ts`.
+   - Export it from `packages/shared/src/index.ts`.
+   - Add `pauseReason?: PauseReason | null` to `WorkerStatusMessage`.
+   - Add protocol validation for valid/invalid pause reasons in `workerProtocol.ts`.
+   - Update `docs/worker-protocol.md`.
+
+2. Runtime behavior
+   - Keep P0B default runtime condition to non-finite divergence only.
+   - Use P0A evaluator so `NaN` or `Infinity` in train/test loss returns `diverged`.
+   - Do not activate target loss, target accuracy, plateau, or max steps at runtime yet.
+   - Evaluate only while worker training is running.
+   - When automatic divergence triggers, post the latest snapshot, then post status `{ status: 'paused', pauseReason: 'diverged' }`.
+
+3. Store and hook lifecycle
+   - Add `pauseReason: PauseReason | null` to the training store.
+   - Manual pause sets `manual` locally.
+   - Config-sync internal stops do not set `manual`.
+   - Worker automatic pause sets the received reason, clears `isPlayingRef`, and stops the render loop.
+   - Worker error sets `error`.
+   - Play/resume clears the visible pause reason.
+   - Reset clears pause reason and worker stop-condition state.
+   - Streamed snapshots must not clear pause reason.
+```
+
+## Update Rule
+
+After each task:
+
+- check off completed items only after verification;
+- add exact verification command results;
+- add reviewer results;
+- record blockers;
+- preserve the canonical prompt as the source of truth;
+- do not mark a phase complete before `superpowers:verification-before-completion`.

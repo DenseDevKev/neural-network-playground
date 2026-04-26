@@ -8,7 +8,7 @@ import type {
     HistoryPoint,
     DataPoint,
 } from '@nn-playground/engine';
-import type { TrainingStatus } from '@nn-playground/shared';
+import type { PauseReason, TrainingStatus } from '@nn-playground/shared';
 import {
     appendHistoryPoint,
     resetHistoryBuffer,
@@ -43,6 +43,7 @@ export interface TrainingStore {
     configErrorSource: ConfigChangeSource;
     configSyncNonce: number;
     workerError: string | null;
+    pauseReason: PauseReason | null;
     /** True when the most recent streamed snapshot reused cached test metrics. */
     testMetricsStale: boolean;
 
@@ -67,6 +68,8 @@ export interface TrainingStore {
     retryConfigSync: () => void;
     setWorkerError: (message: string) => void;
     clearWorkerError: () => void;
+    setPauseReason: (reason: PauseReason | null) => void;
+    clearPauseReason: () => void;
     setTestMetricsStale: (stale: boolean) => void;
 }
 
@@ -92,6 +95,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     configErrorSource: null,
     configSyncNonce: 0,
     workerError: null,
+    pauseReason: null,
     testMetricsStale: false,
 
     setStatus: (status) => set({ status }),
@@ -183,5 +187,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     }),
     setWorkerError: (message) => set({ workerError: message }),
     clearWorkerError: () => set({ workerError: null }),
+    setPauseReason: (pauseReason) => set({ pauseReason }),
+    clearPauseReason: () => set({ pauseReason: null }),
     setTestMetricsStale: (testMetricsStale) => set({ testMetricsStale }),
 }));

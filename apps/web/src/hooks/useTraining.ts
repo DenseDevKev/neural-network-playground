@@ -153,7 +153,10 @@ export function useTraining(): TrainingHook {
 
     const reportWorkerError = useCallback((error: unknown, fallback: string) => {
         const ts = useTrainingStore.getState();
+        isPlayingRef.current = false;
+        stopRenderLoop();
         ts.setWorkerError(getErrorMessage(error, fallback));
+        ts.setPauseReason('error');
         ts.setStatus('paused');
         initializedRef.current = false;
     }, []);
@@ -246,13 +249,27 @@ export function useTraining(): TrainingHook {
                     testMetricsStale: msg.scalars.testMetricsStale === true,
                 });
             } else if (msg.type === 'status') {
-                if (msg.status === 'paused' || msg.status === 'idle') {
+                if (msg.status === 'paused') {
+                    if (msg.pauseReason) {
+                        isPlayingRef.current = false;
+                        stopRenderLoop();
+                        ts.setPauseReason(msg.pauseReason);
+                    }
+                    ts.setStatus('paused');
+                } else if (msg.status === 'idle') {
+                    isPlayingRef.current = false;
+                    stopRenderLoop();
+                    ts.clearPauseReason();
                     ts.setStatus(msg.status);
                 } else if (msg.status === 'running') {
+                    ts.clearPauseReason();
                     ts.setStatus('running');
                 }
             } else if (msg.type === 'error') {
+                isPlayingRef.current = false;
+                stopRenderLoop();
                 ts.setWorkerError(msg.message);
+                ts.setPauseReason('error');
                 ts.setStatus('paused');
             }
         });
@@ -301,6 +318,7 @@ export function useTraining(): TrainingHook {
                 if (!isCurrentConfigSync(seq)) return;
                 // Sync to worker's runId AFTER updateConfig returns
                 newRunTo(result.runId);
+                ts.clearPauseReason();
                 applyFreshSnapshotToStore(ts, result.snapshot);
 
                 // Update points reactively
@@ -352,7 +370,9 @@ export function useTraining(): TrainingHook {
 
         const startTraining = () => {
             isPlayingRef.current = true;
-            useTrainingStore.getState().setStatus('running');
+            const ts = useTrainingStore.getState();
+            ts.clearPauseReason();
+            ts.setStatus('running');
             startRenderLoop();
             postStreamCommand({ type: 'startTraining', stepsPerFrame: stepsPerFrameRef.current });
         };
@@ -374,7 +394,9 @@ export function useTraining(): TrainingHook {
         isPlayingRef.current = false;
         postStreamCommand({ type: 'stopTraining' });
         stopRenderLoop();
-        useTrainingStore.getState().setStatus('paused');
+        const ts = useTrainingStore.getState();
+        ts.setPauseReason('manual');
+        ts.setStatus('paused');
     }, []);
 
     const step = useCallback(async () => {
@@ -403,6 +425,7 @@ export function useTraining(): TrainingHook {
             isPlayingRef.current = false;
         }
         const seq = beginConfigSync();
+        useTrainingStore.getState().clearPauseReason();
         try {
             if (!initializedRef.current) {
                 await initializeWorker();

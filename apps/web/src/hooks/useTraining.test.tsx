@@ -8,6 +8,7 @@ import {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
 } from '@nn-playground/shared';
+import type { WorkerToMainMessage } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
 import { resetFrameBuffer } from '../worker/frameBuffer.ts';
@@ -122,8 +123,15 @@ function resetStores(): void {
         configErrorSource: null,
         configSyncNonce: 0,
         workerError: null,
+        pauseReason: null,
         testMetricsStale: false,
     });
+}
+
+function getStreamHandler(): (msg: WorkerToMainMessage) => void {
+    const handler = bridge.onSnapshot.mock.calls[0]?.[0] as ((msg: WorkerToMainMessage) => void) | undefined;
+    expect(handler).toBeTypeOf('function');
+    return handler!;
 }
 
 describe('useTraining', () => {
@@ -211,8 +219,85 @@ describe('useTraining', () => {
         });
 
         expect(useTrainingStore.getState().status).toBe('paused');
+        expect(useTrainingStore.getState().pauseReason).toBe('manual');
         expect(bridge.stopRenderLoop).toHaveBeenCalledTimes(1);
         expect(bridge.postStreamCommand).toHaveBeenCalledWith({ type: 'stopTraining' });
+
+        act(() => {
+            result.current.play();
+        });
+
+        expect(useTrainingStore.getState().pauseReason).toBeNull();
+    });
+
+    it('records automatic worker pause reasons and stops the local render loop', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        act(() => {
+            result.current.play();
+        });
+        bridge.stopRenderLoop.mockClear();
+
+        act(() => {
+            getStreamHandler()({
+                type: 'status',
+                runId: 101,
+                status: 'paused',
+                pauseReason: 'diverged',
+            });
+        });
+
+        expect(useTrainingStore.getState().status).toBe('paused');
+        expect(useTrainingStore.getState().pauseReason).toBe('diverged');
+        expect(bridge.stopRenderLoop).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves the final streamed snapshot before applying automatic paused status', async () => {
+        renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        const handler = getStreamHandler();
+
+        act(() => {
+            handler({
+                type: 'snapshot',
+                runId: 101,
+                snapshotId: 2,
+                scalars: {
+                    step: 9,
+                    epoch: 0,
+                    trainLoss: 0.2,
+                    testLoss: 0.3,
+                    gridSize: 2,
+                },
+                historyPoint: { step: 9, trainLoss: 0.2, testLoss: 0.3 },
+            });
+            handler({
+                type: 'status',
+                runId: 101,
+                status: 'paused',
+                pauseReason: 'diverged',
+            });
+        });
+
+        expect(useTrainingStore.getState().snapshot?.step).toBe(9);
+        expect(useTrainingStore.getState().pauseReason).toBe('diverged');
+    });
+
+    it('does not mark config-sync internal stops as manual pauses', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        act(() => {
+            result.current.play();
+        });
+        act(() => {
+            useTrainingStore.getState().beginConfigChange('data');
+            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 1);
+        });
+
+        await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
+        expect(useTrainingStore.getState().pauseReason).toBeNull();
     });
 
     it('reports a worker error when a manual step fails', async () => {
@@ -226,6 +311,20 @@ describe('useTraining', () => {
 
         expect(useTrainingStore.getState().workerError).toBe('step exploded');
         expect(useTrainingStore.getState().status).toBe('paused');
+        expect(useTrainingStore.getState().pauseReason).toBe('error');
+    });
+
+    it('clears pause reason on reset', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        useTrainingStore.getState().setPauseReason('diverged');
+
+        await act(async () => {
+            await result.current.reset();
+        });
+
+        expect(useTrainingStore.getState().status).toBe('idle');
+        expect(useTrainingStore.getState().pauseReason).toBeNull();
     });
 
     it('syncs config changes successfully and clears config loading state', async () => {

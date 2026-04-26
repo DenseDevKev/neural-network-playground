@@ -7,6 +7,8 @@ import type {
     LayerStats,
     ConfusionMatrixData,
 } from '@nn-playground/engine';
+import { isPauseReason } from './types.js';
+import type { PauseReason } from './types.js';
 
 // ─────────────────────────────────────────────────────────
 // Visualization Demand
@@ -157,6 +159,7 @@ export interface WorkerStatusMessage {
     type: 'status';
     runId: number;
     status: 'idle' | 'running' | 'paused';
+    pauseReason?: PauseReason | null;
 }
 
 export interface WorkerErrorMessage {
@@ -263,9 +266,16 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
             );
         case 'status':
             return (
-                m['status'] === 'idle' ||
-                m['status'] === 'running' ||
-                m['status'] === 'paused'
+                (
+                    m['status'] === 'idle' ||
+                    m['status'] === 'running' ||
+                    m['status'] === 'paused'
+                ) &&
+                (
+                    !('pauseReason' in m) ||
+                    m['pauseReason'] === null ||
+                    isPauseReason(m['pauseReason'])
+                )
             );
         case 'error':
             return typeof m['message'] === 'string';

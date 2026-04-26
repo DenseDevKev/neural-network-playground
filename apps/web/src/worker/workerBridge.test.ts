@@ -66,6 +66,7 @@ import {
     onSnapshot,
     newRunTo,
     startRenderLoop,
+    stopRenderLoop,
     terminateWorker,
 } from './workerBridge';
 import { getFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
@@ -426,5 +427,41 @@ describe('workerBridge streamed snapshots', () => {
         expect(receivedMessages).toHaveLength(1);
         expect((receivedMessages[0].msg as WorkerSnapshotMessage).snapshotId).toBe(2);
         expect(fakePort1.postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('flushes a queued final snapshot when automatic paused status stops the render loop', () => {
+        unsubscribe();
+        receivedMessages = [];
+        unsubscribe = onSnapshot((msg) => {
+            receivedMessages.push({
+                msg: msg as WorkerToMainMessage,
+                frameVersion: getFrameBuffer().version,
+            });
+            if (msg.type === 'status' && msg.status === 'paused' && msg.pauseReason) {
+                stopRenderLoop();
+            }
+        });
+        const listener = getRegisteredStreamListener();
+
+        startRenderLoop();
+        listener({
+            data: makeSnapshotMessage(3, {
+                outputGrid: new Float32Array([3, 3, 3, 3]),
+            }),
+        } as MessageEvent);
+        listener({
+            data: {
+                type: 'status',
+                runId: 1,
+                status: 'paused',
+                pauseReason: 'diverged',
+            },
+        } as MessageEvent);
+
+        expect(receivedMessages.map(({ msg }) => msg.type)).toEqual(['status', 'snapshot']);
+        expect((receivedMessages[0].msg as { type: 'status'; pauseReason?: string }).pauseReason).toBe('diverged');
+        expect((receivedMessages[1].msg as WorkerSnapshotMessage).snapshotId).toBe(3);
+        expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([3, 3, 3, 3]));
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
     });
 });

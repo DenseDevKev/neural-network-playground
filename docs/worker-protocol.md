@@ -33,7 +33,7 @@ Main thread                          Worker (training.worker.ts)
     |<- port1: snapshot ... -------------------|
     |                                          |
     |-- port1: stopTraining ----------------> |
-    |<- port1: status { status: 'paused' } ----|
+    |<- port1: status { status: 'paused', pauseReason? } |
     |                                          |
     |-- Comlink: reset() --------------------> |
     |<- { snapshot, runId } ------------------|
@@ -94,19 +94,22 @@ into the frame buffer.
 
 ### `status`
 
-Posted immediately on `startTraining` (→ `'running'`) and `stopTraining`
-(→ `'paused'`).
+Posted immediately on `startTraining` (-> `'running'`) and `stopTraining`
+(-> `'paused'`). Automatic runtime stops may include `pauseReason`; manual
+main-thread pauses currently set their reason locally in `useTraining.ts`.
 
 | Field | Type | Description |
 |---|---|---|
 | `type` | `'status'` | Discriminator |
 | `runId` | `number` | Current run ID |
 | `status` | `'idle' \| 'running' \| 'paused'` | New training status |
+| `pauseReason` | `PauseReason \| null?` | Optional reason for a paused/idle status. P0B worker runtime uses `'diverged'` for non-finite loss. |
 
 ### `error`
 
-Posted by `postError()` inside the worker on any uncaught exception, NaN
-divergence, or unknown command.
+Posted by `postError()` inside the worker on uncaught exceptions, malformed
+commands, and transport/runtime failures. Non-finite training/test loss is an
+automatic paused status with `pauseReason: 'diverged'`, not an error message.
 
 | Field | Type | Description |
 |---|---|---|
