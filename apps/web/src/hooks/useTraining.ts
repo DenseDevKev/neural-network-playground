@@ -16,13 +16,15 @@ import {
     terminateWorker,
 } from '../worker/workerBridge.ts';
 import {
-    flattenBiases,
-    flattenNeuronGrids,
-    flattenWeights,
     getFrameVersions,
     updateFrameBuffer,
     type FrameVersions,
 } from '../worker/frameBuffer.ts';
+import {
+    flattenBiases,
+    flattenNeuronGrids,
+    flattenWeights,
+} from '../worker/frameBufferLayout.ts';
 import type { NetworkSnapshot } from '@nn-playground/engine';
 import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
 import { structuralEqual } from '@nn-playground/shared';

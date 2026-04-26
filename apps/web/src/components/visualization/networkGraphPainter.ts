@@ -6,7 +6,7 @@
 // Edge / node colours mirror the SVG renderer so toggling between the two
 // implementations doesn't change perceived appearance.
 
-import { layerWeightOffset, layerBiasOffset } from '../../worker/frameBuffer.ts';
+import { layerWeightOffset, layerBiasOffset } from '../../worker/frameBufferLayout.ts';
 
 export interface NodePos {
     x: number;

@@ -4,10 +4,12 @@ import {
     getFrameVersions,
     updateFrameBuffer,
     resetFrameBuffer,
+} from '../worker/frameBuffer';
+import {
     unflattenWeights,
     unflattenBiases,
     extractNeuronGrid
-} from '../worker/frameBuffer';
+} from '../worker/frameBufferLayout';
 
 describe('frameBuffer', () => {
     beforeEach(() => {

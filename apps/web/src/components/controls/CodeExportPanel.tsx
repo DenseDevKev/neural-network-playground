@@ -7,7 +7,8 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type CodeExportTab } from '../../store/useLayoutStore.ts';
 import { generatePseudocode, generateNumPy, generateTFJS } from '@nn-playground/shared';
 import { Tooltip } from '../common/Tooltip.tsx';
-import { getFrameBuffer, unflattenBiases, unflattenWeights } from '../../worker/frameBuffer.ts';
+import { getFrameBuffer } from '../../worker/frameBuffer.ts';
+import { unflattenBiases, unflattenWeights } from '../../worker/frameBufferLayout.ts';
 import { useTimedState } from '../../hooks/useTimedState.ts';
 
 const TABS: { id: CodeExportTab; label: string }[] = [
