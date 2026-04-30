@@ -1818,28 +1818,90 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .network-tooltip {
     position: absolute;
     pointer-events: none;
-    background: rgba(28, 32, 48, 0.96);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(124, 92, 252, 0.25);
-    border-radius: var(--radius-sm);
-    padding: 6px 10px;
-    z-index: 200;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    background: rgba(21, 24, 34, 0.7);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-lg), 0 0 16px rgba(124, 92, 252, 0.1);
     white-space: nowrap;
+    transform: translate(0, 0);
+    transition: opacity var(--duration-fast);
     animation: tooltip-in 120ms var(--ease-out);
 }
 
 .network-tooltip__title {
-    font-size: var(--text-xs);
     font-weight: 700;
-    color: var(--text-primary);
+    font-size: var(--text-sm);
+    margin-bottom: 2px;
+    color: var(--color-accent);
 }
 
 .network-tooltip__detail {
-    font-size: 10px;
+    font-size: var(--text-xs);
     color: var(--text-secondary);
     font-family: var(--font-mono);
     margin-top: 1px;
+}
+
+.network-graph-focus-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 20;
+}
+
+.network-graph-focus-target {
+    position: absolute;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+}
+
+.network-graph-focus-target--node {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+}
+
+.network-graph-focus-target--edge {
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+}
+
+.network-graph-focus-target:focus {
+    outline: none;
+}
+
+.network-graph-focus-target:focus-visible {
+    box-shadow:
+        0 0 0 2px var(--bg-surface),
+        0 0 0 4px var(--border-focus),
+        0 0 16px rgba(0, 229, 195, 0.35);
+}
+
+.network-edge-hit:focus {
+    outline: none;
+}
+
+.network-edge-hit:focus-visible {
+    stroke: var(--border-focus);
+    stroke-width: 16;
+}
+
+.network-node-hit:focus {
+    outline: none;
+}
+
+.network-node-hit:focus-visible .network-node-focus-ring {
+    stroke: var(--border-focus);
+    filter: url(#node-glow);
 }
 
 @keyframes tooltip-in {
@@ -2169,36 +2231,6 @@ input[type="range"]::-webkit-slider-thumb:hover {
         r: 18px;
     }
 }
-
-.network-tooltip {
-    position: absolute;
-    pointer-events: none;
-    z-index: 1000;
-    background: rgba(21, 24, 34, 0.7);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: var(--radius-md);
-    padding: var(--space-sm) var(--space-md);
-    color: var(--text-primary);
-    box-shadow: var(--shadow-lg), 0 0 16px rgba(124, 92, 252, 0.1);
-    transform: translate(0, 0);
-    transition: opacity var(--duration-fast);
-}
-
-.network-tooltip__title {
-    font-weight: 700;
-    font-size: var(--text-sm);
-    margin-bottom: 2px;
-    color: var(--color-accent);
-}
-
-.network-tooltip__detail {
-    font-size: var(--text-xs);
-    color: var(--text-secondary);
-    font-family: var(--font-mono);
-}
-
 
 /* Sidebar toggling */
 .sidebar {

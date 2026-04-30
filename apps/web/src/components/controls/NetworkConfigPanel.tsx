@@ -27,7 +27,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
             {configError && configErrorSource === 'network' && (
                 <div className="config-feedback config-feedback--error" role="alert">
                     <span>{configError}</span>
-                    <button className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
                         Retry
                     </button>
                 </div>
@@ -39,6 +39,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                 <div className="layer-controls">
                     <Tooltip content="Cause: removing a hidden layer lowers model capacity. Effect: the boundary becomes simpler and may underfit curved data.">
                         <button
+                            type="button"
                             className="btn btn--ghost btn--icon btn--sm"
                             onClick={() => {
                                 beginNetworkChange();
@@ -53,6 +54,7 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
                     <span className="layer-controls__count">{hiddenLayers.length}</span>
                     <Tooltip content="Cause: adding a hidden layer adds another learned transformation. Effect: the boundary can bend more, but training may take longer.">
                         <button
+                            type="button"
                             className="btn btn--ghost btn--icon btn--sm"
                             onClick={() => {
                                 beginNetworkChange();

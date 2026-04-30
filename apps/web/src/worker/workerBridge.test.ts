@@ -64,9 +64,19 @@ import {
     getWorkerApi,
     setupStreamChannel,
     onSnapshot,
+    newRunTo,
+    startRenderLoop,
+    stopRenderLoop,
     terminateWorker,
 } from './workerBridge';
-import type { WorkerToMainMessage } from '@nn-playground/shared';
+import { getFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
+import {
+    FLAG_NEURON_GRIDS,
+    FLAG_OUTPUT_GRID,
+    allocSharedSnapshotViews,
+    publishSharedSnapshot,
+} from './sharedSnapshot.ts';
+import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
 
 describe('workerBridge error paths', () => {
     let receivedMessages: WorkerToMainMessage[];
@@ -165,5 +175,293 @@ describe('workerBridge error paths', () => {
 
         expect(receivedMessages).toHaveLength(1);
         expect(receivedMessages[0].type).toBe('error');
+    });
+});
+
+function getRegisteredStreamListener(): (event: MessageEvent) => void {
+    const listenerCall = (fakePort1.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call: unknown[]) => call[0] === 'message',
+    );
+    expect(listenerCall).toBeTruthy();
+    if (!listenerCall) {
+        throw new Error('Expected stream port message listener to be registered');
+    }
+    return listenerCall[1] as (event: MessageEvent) => void;
+}
+
+function makeSnapshotMessage(
+    snapshotId: number,
+    overrides: Partial<WorkerSnapshotMessage> = {},
+): WorkerSnapshotMessage {
+    return {
+        type: 'snapshot',
+        runId: 1,
+        snapshotId,
+        scalars: {
+            step: snapshotId * 10,
+            epoch: snapshotId,
+            trainLoss: 0.4,
+            testLoss: 0.5,
+            trainAccuracy: 0.7,
+            testAccuracy: 0.6,
+            gridSize: 2,
+        },
+        outputGrid: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+        neuronGrids: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        neuronGridLayout: { count: 1, gridSize: 2 },
+        weights: new Float32Array([0.5, -0.25]),
+        biases: new Float32Array([0.1]),
+        weightLayout: { layerSizes: [2, 1] },
+        historyPoint: {
+            step: snapshotId * 10,
+            trainLoss: 0.4,
+            testLoss: 0.5,
+            trainAccuracy: 0.7,
+            testAccuracy: 0.6,
+        },
+        ...overrides,
+    };
+}
+
+describe('workerBridge streamed snapshots', () => {
+    let receivedMessages: Array<{ msg: WorkerToMainMessage; frameVersion: number }>;
+    let unsubscribe: () => void;
+    let rafCallback: FrameRequestCallback | null;
+    let originalRequestAnimationFrame: typeof globalThis.requestAnimationFrame;
+    let originalCancelAnimationFrame: typeof globalThis.cancelAnimationFrame;
+
+    beforeEach(async () => {
+        receivedMessages = [];
+        terminateWorker();
+        resetFrameBuffer();
+        fakeWorkerInstance = null;
+        rafCallback = null;
+
+        originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+        originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+        vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => {
+            rafCallback = callback;
+            return 42;
+        }));
+        vi.stubGlobal('cancelAnimationFrame', vi.fn());
+
+        unsubscribe = onSnapshot((msg) => {
+            receivedMessages.push({
+                msg: msg as WorkerToMainMessage,
+                frameVersion: getFrameBuffer().version,
+            });
+        });
+
+        getWorkerApi();
+        await setupStreamChannel();
+        newRunTo(1);
+    });
+
+    afterEach(() => {
+        unsubscribe();
+        terminateWorker();
+        resetFrameBuffer();
+        vi.stubGlobal('requestAnimationFrame', originalRequestAnimationFrame);
+        vi.stubGlobal('cancelAnimationFrame', originalCancelAnimationFrame);
+    });
+
+    function runNextAnimationFrame(): void {
+        const callback = rafCallback;
+        expect(callback).toBeTruthy();
+        if (!callback) {
+            throw new Error('Expected requestAnimationFrame callback');
+        }
+        rafCallback = null;
+        callback(performance.now());
+    }
+
+    it('applies the latest streamed snapshot on rAF, updates frame versions, and acks the frame', () => {
+        const listener = getRegisteredStreamListener();
+        const startVersion = getFrameBuffer().version;
+
+        startRenderLoop();
+        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.version).toBeGreaterThan(startVersion);
+        expect(frame.outputGrid).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
+        expect(frame.neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
+        expect(frame.weights).toEqual(new Float32Array([0.5, -0.25]));
+        expect(frame.biases).toEqual(new Float32Array([0.1]));
+        expect(receivedMessages).toHaveLength(1);
+        expect(receivedMessages[0].msg.type).toBe('snapshot');
+        expect(receivedMessages[0].frameVersion).toBe(frame.version);
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+    });
+
+    it('installs shared buffers and reads snapshot payloads from the SAB handshake', () => {
+        const listener = getRegisteredStreamListener();
+        const sharedViews = allocSharedSnapshotViews(2, 1);
+        const sharedSeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([0.8, 0.7, 0.6, 0.5]),
+            new Float32Array([0.1, 0.2, 0.3, 0.4]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 1,
+                control: sharedViews.controlSAB,
+                outputGrid: sharedViews.outputGridSAB,
+                neuronGrids: sharedViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+
+        startRenderLoop();
+        listener({
+            data: makeSnapshotMessage(1, {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.outputGrid).toEqual(new Float32Array([0.8, 0.7, 0.6, 0.5]));
+        expect(frame.neuronGrids).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
+        expect(frame.neuronGridLayout).toEqual({ count: 1, gridSize: 2 });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+    });
+
+    it('does not let stale shared buffers install or satisfy a later snapshot', () => {
+        const listener = getRegisteredStreamListener();
+        const staleViews = allocSharedSnapshotViews(2, 1);
+        const staleSeq = publishSharedSnapshot(
+            staleViews,
+            new Float32Array([9, 9, 9, 9]),
+            new Float32Array([8, 8, 8, 8]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+
+        newRunTo(2);
+        resetFrameBuffer();
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 1,
+                control: staleViews.controlSAB,
+                outputGrid: staleViews.outputGridSAB,
+                neuronGrids: staleViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+
+        startRenderLoop();
+        listener({
+            data: makeSnapshotMessage(1, {
+                runId: 2,
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq: staleSeq,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        let frame = getFrameBuffer();
+        expect(frame.outputGrid).toBeNull();
+        expect(frame.neuronGrids).toBeNull();
+
+        const currentViews = allocSharedSnapshotViews(2, 1);
+        const currentSeq = publishSharedSnapshot(
+            currentViews,
+            new Float32Array([0.2, 0.4, 0.6, 0.8]),
+            new Float32Array([0.8, 0.6, 0.4, 0.2]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 2,
+                control: currentViews.controlSAB,
+                outputGrid: currentViews.outputGridSAB,
+                neuronGrids: currentViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+        listener({
+            data: makeSnapshotMessage(2, {
+                runId: 2,
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq: currentSeq,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        frame = getFrameBuffer();
+        expect(frame.outputGrid).toEqual(new Float32Array([0.2, 0.4, 0.6, 0.8]));
+        expect(frame.neuronGrids).toEqual(new Float32Array([0.8, 0.6, 0.4, 0.2]));
+    });
+
+    it('drops stale out-of-order snapshots before they reach the frame buffer', () => {
+        const listener = getRegisteredStreamListener();
+
+        startRenderLoop();
+        listener({
+            data: makeSnapshotMessage(2, {
+                outputGrid: new Float32Array([2, 2, 2, 2]),
+            }),
+        } as MessageEvent);
+        listener({
+            data: makeSnapshotMessage(1, {
+                outputGrid: new Float32Array([1, 1, 1, 1]),
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([2, 2, 2, 2]));
+        expect(receivedMessages).toHaveLength(1);
+        expect((receivedMessages[0].msg as WorkerSnapshotMessage).snapshotId).toBe(2);
+        expect(fakePort1.postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('flushes a queued final snapshot when automatic paused status stops the render loop', () => {
+        unsubscribe();
+        receivedMessages = [];
+        unsubscribe = onSnapshot((msg) => {
+            receivedMessages.push({
+                msg: msg as WorkerToMainMessage,
+                frameVersion: getFrameBuffer().version,
+            });
+            if (msg.type === 'status' && msg.status === 'paused' && msg.pauseReason) {
+                stopRenderLoop();
+            }
+        });
+        const listener = getRegisteredStreamListener();
+
+        startRenderLoop();
+        listener({
+            data: makeSnapshotMessage(3, {
+                outputGrid: new Float32Array([3, 3, 3, 3]),
+            }),
+        } as MessageEvent);
+        listener({
+            data: {
+                type: 'status',
+                runId: 1,
+                status: 'paused',
+                pauseReason: 'diverged',
+            },
+        } as MessageEvent);
+
+        expect(receivedMessages.map(({ msg }) => msg.type)).toEqual(['status', 'snapshot']);
+        expect((receivedMessages[0].msg as { type: 'status'; pauseReason?: string }).pauseReason).toBe('diverged');
+        expect((receivedMessages[1].msg as WorkerSnapshotMessage).snapshotId).toBe(3);
+        expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([3, 3, 3, 3]));
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
     });
 });

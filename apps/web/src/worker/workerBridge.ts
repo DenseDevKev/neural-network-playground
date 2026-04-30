@@ -10,6 +10,7 @@ import type {
     WorkerToMainMessage,
     WorkerSharedBuffersMessage,
     MainToWorkerCommand,
+    WorkerSnapshotMessage,
 } from '@nn-playground/shared';
 import { isWorkerToMainMessage } from '@nn-playground/shared';
 import { updateFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
@@ -38,6 +39,7 @@ let _pendingSnapshot: WorkerToMainMessage | null = null;
 // renderer never observes torn state even if the worker publishes again
 // while React is mid-paint.
 let _sharedViews: SharedSnapshotViews | null = null;
+let _sharedViewsRunId: number | null = null;
 let _sharedOutputReadBuf: Float32Array | null = null;
 let _sharedNeuronReadBuf: Float32Array | null = null;
 let _sharedNeuronGridLayout: { count: number; gridSize: number } | null = null;
@@ -50,6 +52,7 @@ function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
         gridSize: msg.gridSize,
         neuronCount: msg.neuronGridLayout.count,
     });
+    _sharedViewsRunId = msg.runId;
     // Allocate reader-side destination arrays sized to the new shape.
     // These are regular (non-shared) Float32Arrays so downstream renderers
     // work on a stable copy; the cost is a single memcpy per snapshot.
@@ -62,9 +65,16 @@ function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
 
 function tearDownSharedBuffers(): void {
     _sharedViews = null;
+    _sharedViewsRunId = null;
     _sharedOutputReadBuf = null;
     _sharedNeuronReadBuf = null;
     _sharedNeuronGridLayout = null;
+}
+
+function clearSharedBuffersIfRunMismatch(): void {
+    if (_sharedViewsRunId !== null && _sharedViewsRunId !== _currentRunId) {
+        tearDownSharedBuffers();
+    }
 }
 
 // Callback for when a new snapshot is ready to be applied (called from rAF loop)
@@ -171,8 +181,18 @@ function handleWorkerMessage(msg: unknown): void {
 // that are actually present in the message are written — this is essential
 // for the cadence-gated snapshots, where the worker omits the grid on
 // reuse frames and the main thread must retain the previously cached one.
-function framePatchFrom(msg: import('@nn-playground/shared').WorkerSnapshotMessage) {
-    const patch: Parameters<typeof updateFrameBuffer>[0] = {};
+type FrameBufferPatch = Parameters<typeof updateFrameBuffer>[0];
+
+function buildSnapshotFramePatch(
+    msg: WorkerSnapshotMessage,
+    currentRunId: number,
+    sharedViews: SharedSnapshotViews | null,
+    sharedViewsRunId: number | null,
+    sharedOutputReadBuf: Float32Array | null,
+    sharedNeuronReadBuf: Float32Array | null,
+    sharedNeuronGridLayout: { count: number; gridSize: number } | null,
+): FrameBufferPatch {
+    const patch: FrameBufferPatch = {};
 
     // AS-3 fast path: grid payloads were published through SharedArrayBuffers;
     // read them via the seqlock into our stable, non-shared read buffers and
@@ -181,24 +201,26 @@ function framePatchFrom(msg: import('@nn-playground/shared').WorkerSnapshotMessa
     // ticks and can't tolerate the worker overwriting a view mid-paint.
     if (
         msg.sharedSeq !== undefined &&
-        _sharedViews &&
-        _sharedOutputReadBuf &&
-        _sharedNeuronReadBuf
+        sharedViews &&
+        sharedViewsRunId === msg.runId &&
+        sharedViewsRunId === currentRunId &&
+        sharedOutputReadBuf &&
+        sharedNeuronReadBuf
     ) {
         const result = readSharedSnapshot(
-            _sharedViews,
-            _sharedOutputReadBuf,
-            _sharedNeuronReadBuf,
+            sharedViews,
+            sharedOutputReadBuf,
+            sharedNeuronReadBuf,
         );
         if (result) {
             if ((result.flags & FLAG_OUTPUT_GRID) !== 0) {
-                patch.outputGrid = _sharedOutputReadBuf;
+                patch.outputGrid = sharedOutputReadBuf;
                 patch.gridSize = msg.scalars.gridSize;
             }
             if ((result.flags & FLAG_NEURON_GRIDS) !== 0) {
-                patch.neuronGrids = _sharedNeuronReadBuf;
+                patch.neuronGrids = sharedNeuronReadBuf;
                 patch.neuronGridLayout =
-                    msg.neuronGridLayout ?? _sharedNeuronGridLayout;
+                    msg.neuronGridLayout ?? sharedNeuronGridLayout;
             }
         }
         // If the seqlock read torn through all retries, skip the grid
@@ -233,7 +255,15 @@ function rafLoop(): void {
 
         // Write heavy arrays to frame buffer
         if (msg.type === 'snapshot') {
-            updateFrameBuffer(framePatchFrom(msg));
+            updateFrameBuffer(buildSnapshotFramePatch(
+                msg,
+                _currentRunId,
+                _sharedViews,
+                _sharedViewsRunId,
+                _sharedOutputReadBuf,
+                _sharedNeuronReadBuf,
+                _sharedNeuronGridLayout,
+            ));
         }
 
         // Notify the subscriber (typically updates useTrainingStore scalars)
@@ -270,7 +300,15 @@ export function stopRenderLoop(): void {
         const msg = _pendingSnapshot;
         _pendingSnapshot = null;
         if (msg.type === 'snapshot') {
-            updateFrameBuffer(framePatchFrom(msg));
+            updateFrameBuffer(buildSnapshotFramePatch(
+                msg,
+                _currentRunId,
+                _sharedViews,
+                _sharedViewsRunId,
+                _sharedOutputReadBuf,
+                _sharedNeuronReadBuf,
+                _sharedNeuronGridLayout,
+            ));
         }
         _onSnapshot(msg);
         if (msg.type === 'snapshot' && _streamPort) {
@@ -301,6 +339,7 @@ export function newRun(): number {
     _currentRunId++;
     _latestSnapshotId = -1;
     _pendingSnapshot = null;
+    clearSharedBuffersIfRunMismatch();
     return _currentRunId;
 }
 
@@ -311,6 +350,7 @@ export function newRunTo(targetRunId: number): void {
     _currentRunId = targetRunId;
     _latestSnapshotId = -1;
     _pendingSnapshot = null;
+    clearSharedBuffersIfRunMismatch();
 }
 
 /**

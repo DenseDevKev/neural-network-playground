@@ -35,6 +35,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     shortcut="Space"
                 >
                     <button
+                        type="button"
                         className={`btn btn--play btn--control ${isRunning ? 'running' : ''}`}
                         onClick={isRunning ? training.pause : training.play}
                         aria-label={isRunning ? 'Pause training' : 'Start training'}
@@ -46,6 +47,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                 </Tooltip>
                 <Tooltip content="Cause: step applies one update. Effect: you can connect a single weight change to the next boundary or loss movement." shortcut="→">
                     <button
+                        type="button"
                         className="btn btn--ghost btn--control"
                         onClick={training.step}
                         aria-label="Run one training step"
@@ -57,6 +59,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                 </Tooltip>
                 <Tooltip content="Cause: reset rebuilds weights and data from the current settings. Effect: you can tell whether a result was learned reliably or got lucky." shortcut="R">
                     <button
+                        type="button"
                         className="btn btn--ghost btn--control"
                         onClick={training.reset}
                         aria-label="Reset model and data"
@@ -78,6 +81,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     return (
                         <Tooltip key={opt.value} content={speedTooltip}>
                             <button
+                                type="button"
                                 className={`speed-btn ${stepsPerFrame === opt.value ? 'active' : ''}`}
                                 onClick={() => setStepsPerFrame(opt.value)}
                                 aria-pressed={stepsPerFrame === opt.value}

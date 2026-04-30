@@ -104,7 +104,7 @@ export function Tooltip({
         measurementIdRef.current = null;
       }
     }, delay);
-  }, [delay, updateTooltip]);
+  }, [delay, generatedId, updateTooltip]);
 
   const showImmediately = useCallback(() => {
     if (timeoutRef.current) {

@@ -6,14 +6,15 @@
 
 import { memo, type KeyboardEvent, type ReactNode } from 'react';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import type { LeftTabId, RightTabId } from '../../store/useLayoutStore.ts';
 
 // ─── Tab definitions ───────────────────────────────────────────────────────
-interface TabDef {
-    id: string;
+interface TabDef<TId extends string> {
+    id: TId;
     label: string;
 }
 
-export const LEFT_TABS: TabDef[] = [
+export const LEFT_TABS: TabDef<LeftTabId>[] = [
     { id: 'presets',     label: 'Presets' },
     { id: 'data',        label: 'Data' },
     { id: 'features',    label: 'Features' },
@@ -22,7 +23,7 @@ export const LEFT_TABS: TabDef[] = [
     { id: 'config',      label: 'Config' },
 ];
 
-export const RIGHT_TABS: TabDef[] = [
+export const RIGHT_TABS: TabDef<RightTabId>[] = [
     { id: 'boundary',   label: 'Boundary' },
     { id: 'loss',       label: 'Loss' },
     { id: 'confusion',  label: 'Confusion' },
@@ -31,15 +32,15 @@ export const RIGHT_TABS: TabDef[] = [
 ];
 
 // ─── Tab strip ────────────────────────────────────────────────────────────
-interface TabStripProps {
-    tabs: TabDef[];
-    active: string;
-    onSelect: (id: string) => void;
+interface TabStripProps<TId extends string> {
+    tabs: TabDef<TId>[];
+    active: TId;
+    onSelect: (id: TId) => void;
     idBase: string;
     ariaLabel: string;
 }
 
-function TabStrip({ tabs, active, onSelect, idBase, ariaLabel }: TabStripProps) {
+function TabStrip<TId extends string>({ tabs, active, onSelect, idBase, ariaLabel }: TabStripProps<TId>) {
     const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         const currentIndex = tabs.findIndex((tab) => tab.id === active);
         if (currentIndex < 0) return;
@@ -67,6 +68,7 @@ function TabStrip({ tabs, active, onSelect, idBase, ariaLabel }: TabStripProps) 
         <div className="forge-tabs" role="tablist" aria-label={ariaLabel} onKeyDown={handleKeyDown}>
             {tabs.map((t) => (
                 <button
+                    type="button"
                     key={t.id}
                     id={`${idBase}-tab-${t.id}`}
                     role="tab"
@@ -86,8 +88,8 @@ function TabStrip({ tabs, active, onSelect, idBase, ariaLabel }: TabStripProps) 
 
 // ─── DOCK ─────────────────────────────────────────────────────────────────
 interface DockProps {
-    leftTabContent: Record<string, ReactNode>;
-    rightTabContent: Record<string, ReactNode>;
+    leftTabContent: Record<LeftTabId, ReactNode>;
+    rightTabContent: Record<RightTabId, ReactNode>;
     canvasContent: ReactNode;
     transportContent: ReactNode;
     compact?: boolean;
@@ -118,6 +120,7 @@ export const DockShell = memo(function DockShell({
             <nav className="forge-rail" aria-label="Navigation rail">
                 {RAIL_ICONS.map((r) => (
                     <button
+                        type="button"
                         key={r.id}
                         className={`forge-rail__btn ${activeTabLeft === r.id ? 'forge-rail__btn--active' : ''}`}
                         title={r.label}
@@ -130,6 +133,7 @@ export const DockShell = memo(function DockShell({
                 ))}
                 <span className="forge-rail__spacer" />
                 <button
+                    type="button"
                     className={`forge-rail__btn ${activeTabLeft === 'presets' ? 'forge-rail__btn--active' : ''}`}
                     title="Presets"
                     aria-label="Presets"
@@ -145,7 +149,7 @@ export const DockShell = memo(function DockShell({
                 <TabStrip
                     tabs={LEFT_TABS}
                     active={activeTabLeft}
-                    onSelect={(id) => setTabLeft(id as any)}
+                    onSelect={setTabLeft}
                     idBase="forge-left"
                     ariaLabel="Configuration panels"
                 />
@@ -171,7 +175,7 @@ export const DockShell = memo(function DockShell({
                 <TabStrip
                     tabs={RIGHT_TABS}
                     active={activeTabRight}
-                    onSelect={(id) => setTabRight(id as any)}
+                    onSelect={setTabRight}
                     idBase="forge-right"
                     ariaLabel="Output panels"
                 />

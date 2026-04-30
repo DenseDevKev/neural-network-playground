@@ -7,7 +7,9 @@
     "types": "src/index.ts",
     "scripts": {
         "test": "vitest run",
-        "test:watch": "vitest"
+        "test:watch": "vitest",
+        "test:perf": "vitest run --config vitest.perf.config.ts",
+        "bench": "pnpm run test:perf"
     },
     "devDependencies": {
         "vitest": "^3.0.0",

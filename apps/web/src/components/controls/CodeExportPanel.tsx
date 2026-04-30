@@ -7,7 +7,8 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type CodeExportTab } from '../../store/useLayoutStore.ts';
 import { generatePseudocode, generateNumPy, generateTFJS } from '@nn-playground/shared';
 import { Tooltip } from '../common/Tooltip.tsx';
-import { getFrameBuffer, unflattenBiases, unflattenWeights } from '../../worker/frameBuffer.ts';
+import { getFrameBuffer } from '../../worker/frameBuffer.ts';
+import { unflattenBiases, unflattenWeights } from '../../worker/frameBufferLayout.ts';
 import { useTimedState } from '../../hooks/useTimedState.ts';
 
 const TABS: { id: CodeExportTab; label: string }[] = [
@@ -20,14 +21,20 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
     const activeTab = useLayoutStore((s) => s.codeExportTab);
     const setActiveTab = useLayoutStore((s) => s.setCodeExportTab);
     const [copied, setCopied] = useTimedState(false, 2000);
+    const [copyError, setCopyError] = useTimedState<string | null>(null, 2000);
 
     const network = usePlaygroundStore((s) => s.network);
     const training = usePlaygroundStore((s) => s.training);
     const features = usePlaygroundStore((s) => s.features);
-    const snapshot = useTrainingStore((s) => s.snapshot);
-    const frameVersion = useTrainingStore((s) => s.frameVersion);
+    const hasSnapshot = useTrainingStore((s) => s.snapshot !== null);
+    const paramsVersion = useTrainingStore((s) => s.paramsVersion);
 
     const exportSnapshot = useMemo(() => {
+        // These store selectors intentionally drive this mutable frame-buffer read.
+        void hasSnapshot;
+        void paramsVersion;
+
+        const snapshot = useTrainingStore.getState().snapshot;
         if (!snapshot) return null;
 
         const frameBuffer = getFrameBuffer();
@@ -40,7 +47,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         }
 
         return snapshot;
-    }, [snapshot, frameVersion]);
+    }, [hasSnapshot, paramsVersion]);
 
     const code = useMemo(() => {
         const config = {
@@ -58,17 +65,27 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         }
     }, [activeTab, network, training, features, exportSnapshot]);
 
-    const handleCopy = useCallback(() => {
-        navigator.clipboard.writeText(code).then(() => {
+    const handleCopy = useCallback(async () => {
+        try {
+            if (!navigator.clipboard?.writeText) {
+                throw new Error('Clipboard API unavailable');
+            }
+
+            await navigator.clipboard.writeText(code);
+            setCopyError(null);
             setCopied(true);
-        });
-    }, [code, setCopied]);
+        } catch {
+            setCopied(false);
+            setCopyError('Could not copy code.');
+        }
+    }, [code, setCopied, setCopyError]);
 
     return (
         <div className="code-export-panel">
             <div className="code-export__tabs">
                 {TABS.map((tab) => (
                     <button
+                        type="button"
                         key={tab.id}
                         className={`chip ${activeTab === tab.id ? 'active' : ''}`}
                         onClick={() => setActiveTab(tab.id)}
@@ -84,6 +101,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
 
             <Tooltip content="Cause: copy exports the code generated from the visible configuration. Effect: you can inspect or reuse the learned setup outside the playground." block>
                 <button
+                    type="button"
                     className="btn btn--ghost btn--sm"
                     style={{ marginTop: 6, width: '100%' }}
                     onClick={handleCopy}
@@ -91,6 +109,11 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
                     {copied ? '✓ Copied!' : '📋 Copy Code'}
                 </button>
             </Tooltip>
+            {copyError && (
+                <div className="config-feedback config-feedback--error" role="alert">
+                    {copyError}
+                </div>
+            )}
         </div>
     );
 });

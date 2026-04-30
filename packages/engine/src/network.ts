@@ -73,8 +73,20 @@ function actSwish(pre: Buf, out: Buf, n: number): void {
         out[i] = z / (1 + Math.exp(-z));
     }
 }
+function stableSoftplusScalar(x: number): number {
+    return x > 0
+        ? x + Math.log1p(Math.exp(-x))
+        : Math.log1p(Math.exp(x));
+}
+function stableSigmoidScalar(x: number): number {
+    if (x >= 0) {
+        return 1 / (1 + Math.exp(-x));
+    }
+    const ex = Math.exp(x);
+    return ex / (1 + ex);
+}
 function actSoftplus(pre: Buf, out: Buf, n: number): void {
-    for (let i = 0; i < n; i++) out[i] = Math.log(1 + Math.exp(pre[i]));
+    for (let i = 0; i < n; i++) out[i] = stableSoftplusScalar(pre[i]);
 }
 
 function pickAct(kind: ActivationType): LayerActFn {
@@ -129,7 +141,7 @@ function dActSwish(delta: Buf, pre: Buf, out: Buf, n: number): void {
 }
 function dActSoftplus(delta: Buf, pre: Buf, _out: Buf, n: number): void {
     for (let i = 0; i < n; i++) {
-        delta[i] *= 1 / (1 + Math.exp(-pre[i]));
+        delta[i] *= stableSigmoidScalar(pre[i]);
     }
 }
 
@@ -143,6 +155,175 @@ function pickDAct(kind: ActivationType): LayerDActFn {
         case 'elu': return dActElu;
         case 'swish': return dActSwish;
         case 'softplus': return dActSoftplus;
+    }
+}
+
+function assertLayerSize(value: number, name: string): void {
+    if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+        throw new RangeError(`${name} must be a finite positive integer`);
+    }
+}
+
+function validatedLayerSizes(config: NetworkConfig): number[] {
+    assertLayerSize(config.inputSize, 'inputSize');
+    if (!Array.isArray(config.hiddenLayers)) {
+        throw new RangeError('hiddenLayers must be an array');
+    }
+    for (let i = 0; i < config.hiddenLayers.length; i++) {
+        assertLayerSize(config.hiddenLayers[i], `hiddenLayers[${i}]`);
+    }
+    assertLayerSize(config.outputSize, 'outputSize');
+    return [config.inputSize, ...config.hiddenLayers, config.outputSize];
+}
+
+function assertFiniteValue(value: number, name: string): void {
+    if (!Number.isFinite(value)) {
+        throw new RangeError(`${name} must be finite`);
+    }
+}
+
+function assertFiniteInRange(
+    value: number,
+    name: string,
+    min: number,
+    max: number,
+    options: { minInclusive?: boolean; maxInclusive?: boolean } = {},
+): void {
+    const minOk = options.minInclusive === true ? value >= min : value > min;
+    const maxOk = options.maxInclusive === true ? value <= max : value < max;
+    if (!Number.isFinite(value) || !minOk || !maxOk) {
+        const minLabel = options.minInclusive === true ? `[${min}` : `(${min}`;
+        const maxLabel = options.maxInclusive === true ? `${max}]` : `${max})`;
+        throw new RangeError(`${name} must be finite and in range ${minLabel}, ${maxLabel}`);
+    }
+}
+
+function assertVectorShape(
+    vector: ArrayLike<number> | undefined,
+    expectedLen: number,
+    name: string,
+): asserts vector is ArrayLike<number> {
+    if (vector == null || vector.length !== expectedLen) {
+        throw new RangeError(`${name} must have length ${expectedLen}`);
+    }
+    for (let i = 0; i < expectedLen; i++) {
+        assertFiniteValue(vector[i], `${name}[${i}]`);
+    }
+}
+
+function assertBatchShapes(inputs: number[][], targets: number[][], inputSize: number, outputSize: number): void {
+    if (!Array.isArray(inputs) || !Array.isArray(targets)) {
+        throw new RangeError('inputs and targets must be arrays');
+    }
+    if (inputs.length !== targets.length) {
+        throw new RangeError('inputs and targets must have the same batch length');
+    }
+    for (let i = 0; i < inputs.length; i++) {
+        assertVectorShape(inputs[i], inputSize, `inputs[${i}]`);
+        assertVectorShape(targets[i], outputSize, `targets[${i}]`);
+    }
+}
+
+function assertIndexedBatchSelection(
+    inputs: number[][],
+    targets: number[][],
+    indices: ArrayLike<number> | undefined,
+    start: number,
+    end: number,
+    inputSize: number,
+    outputSize: number,
+): void {
+    if (!Array.isArray(inputs) || !Array.isArray(targets)) {
+        throw new RangeError('inputs and targets must be arrays');
+    }
+    if (inputs.length !== targets.length) {
+        throw new RangeError('inputs and targets must have the same batch length');
+    }
+    if (indices == null || !Number.isInteger(indices.length)) {
+        throw new RangeError('indices must be an array-like object');
+    }
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start || end > indices.length) {
+        throw new RangeError('start and end must describe a valid indices range');
+    }
+
+    for (let i = start; i < end; i++) {
+        const sampleIdx = indices[i];
+        if (!Number.isInteger(sampleIdx) || sampleIdx < 0 || sampleIdx >= inputs.length) {
+            throw new RangeError(`indices[${i}] must reference a valid sample`);
+        }
+        assertVectorShape(inputs[sampleIdx], inputSize, `inputs[${sampleIdx}]`);
+        assertVectorShape(targets[sampleIdx], outputSize, `targets[${sampleIdx}]`);
+    }
+}
+
+function assertSerializedParams(
+    weights: number[][][],
+    biases: number[][],
+    layerSizes: number[],
+): void {
+    const layerCount = layerSizes.length - 1;
+    if (!Array.isArray(weights) || weights.length !== layerCount) {
+        throw new RangeError(`serialized weights must have ${layerCount} layers`);
+    }
+    if (!Array.isArray(biases) || biases.length !== layerCount) {
+        throw new RangeError(`serialized biases must have ${layerCount} layers`);
+    }
+
+    for (let l = 0; l < layerCount; l++) {
+        const fanIn = layerSizes[l];
+        const fanOut = layerSizes[l + 1];
+        const layer = weights[l];
+        if (!Array.isArray(layer) || layer.length !== fanOut) {
+            throw new RangeError(`serialized weights[${l}] must have ${fanOut} rows`);
+        }
+        for (let n = 0; n < fanOut; n++) {
+            const row = layer[n];
+            if (!Array.isArray(row) || row.length !== fanIn) {
+                throw new RangeError(`serialized weights[${l}][${n}] must have ${fanIn} values`);
+            }
+            for (let k = 0; k < fanIn; k++) {
+                assertFiniteValue(row[k], `serialized weights[${l}][${n}][${k}]`);
+            }
+        }
+
+        const biasLayer = biases[l];
+        if (!Array.isArray(biasLayer) || biasLayer.length !== fanOut) {
+            throw new RangeError(`serialized biases[${l}] must have ${fanOut} values`);
+        }
+        for (let n = 0; n < fanOut; n++) {
+            assertFiniteValue(biasLayer[n], `serialized biases[${l}][${n}]`);
+        }
+    }
+}
+
+function assertTrainingHyperparams(training: TrainingConfig): void {
+    assertFiniteInRange(training.learningRate, 'learningRate', 0, Number.POSITIVE_INFINITY);
+    assertFiniteInRange(training.batchSize, 'batchSize', 0, Number.POSITIVE_INFINITY);
+    assertFiniteInRange(training.regularizationRate, 'regularizationRate', 0, Number.POSITIVE_INFINITY, {
+        minInclusive: true,
+    });
+    assertFiniteInRange(training.momentum, 'momentum', 0, 1, {
+        minInclusive: true,
+        maxInclusive: true,
+    });
+    assertFiniteInRange(training.adamBeta1 ?? 0.9, 'adamBeta1', 0, 1, { minInclusive: true });
+    assertFiniteInRange(training.adamBeta2 ?? 0.999, 'adamBeta2', 0, 1, { minInclusive: true });
+    assertFiniteInRange(training.adamEps ?? 1e-8, 'adamEps', 0, Number.POSITIVE_INFINITY);
+
+    const clip = training.gradientClip;
+    if (clip != null) {
+        assertFiniteInRange(clip, 'gradientClip', 0, Number.POSITIVE_INFINITY);
+    }
+
+    switch (training.optimizer) {
+        case 'sgd':
+            break;
+        case 'sgdMomentum':
+            break;
+        case 'adam':
+            break;
+        default:
+            throw new RangeError('optimizer must be one of sgd, sgdMomentum, or adam');
     }
 }
 
@@ -174,6 +355,8 @@ export class Network {
     private vBiases: Float64Array[] = [];
     private hasMomentumState = false;
     private hasAdamState = false;
+    private activeOptimizer: TrainingConfig['optimizer'] | null = null;
+    private optimizerStep = 0;
 
     // Forward-pass scratch — preallocated once, reused every call.
     private preActs: Float64Array[] = [];
@@ -190,20 +373,16 @@ export class Network {
     private currentStep = 0;
 
     constructor(config: NetworkConfig, seed?: number) {
-        this.config = { ...config };
-        const rng = new PRNG(seed ?? config.seed);
-
-        this.layerSizes = [
-            config.inputSize,
-            ...config.hiddenLayers,
-            config.outputSize,
-        ];
+        const layerSizes = validatedLayerSizes(config);
+        this.config = { ...config, hiddenLayers: [...config.hiddenLayers] };
+        this.layerSizes = layerSizes;
+        const rng = new PRNG(seed ?? this.config.seed);
 
         for (let l = 0; l < this.layerSizes.length - 1; l++) {
             const fanIn = this.layerSizes[l];
             const fanOut = this.layerSizes[l + 1];
             const w = new Float64Array(fanOut * fanIn);
-            initWeightsInto(w, fanIn, fanOut, config.weightInit, rng);
+            initWeightsInto(w, fanIn, fanOut, this.config.weightInit, rng);
             this.weights.push(w);
 
             const b = new Float64Array(fanOut);
@@ -219,12 +398,12 @@ export class Network {
             this.deltas.push(new Float64Array(fanOut));
         }
 
-        this.inputScratch = new Float64Array(config.inputSize);
+        this.inputScratch = new Float64Array(this.config.inputSize);
 
-        this.actFwdHidden = pickAct(config.activation);
-        this.actFwdOutput = pickAct(config.outputActivation);
-        this.actDHidden = pickDAct(config.activation);
-        this.actDOutput = pickDAct(config.outputActivation);
+        this.actFwdHidden = pickAct(this.config.activation);
+        this.actFwdOutput = pickAct(this.config.outputActivation);
+        this.actDHidden = pickDAct(this.config.activation);
+        this.actDOutput = pickDAct(this.config.outputActivation);
     }
 
     // ── Forward ──────────────────────────────────────────────────────────────
@@ -239,6 +418,7 @@ export class Network {
         const numLayers = this.weights.length;
         const scratch = this.inputScratch;
         const inLen = this.layerSizes[0];
+        assertVectorShape(input, inLen, 'input');
         for (let i = 0; i < inLen; i++) scratch[i] = input[i];
 
         let prev: Float64Array = scratch;
@@ -279,20 +459,28 @@ export class Network {
     // ── Backward ─────────────────────────────────────────────────────────────
 
     backward(target: number[], lossType: LossType, huberDelta?: number): void {
+        assertVectorShape(target, this.config.outputSize, 'target');
         const lossFn = getLoss(lossType, { huberDelta });
         const dloss = lossFn.dloss;
         const numLayers = this.weights.length;
         const outIdx = numLayers - 1;
+        const useSigmoidCrossEntropyDelta = (
+            lossType === 'crossEntropy' && this.config.outputActivation === 'sigmoid'
+        );
 
         // Seed output-layer delta = dloss(output, target).
         const outputs = this.outputs[outIdx];
         const outDelta = this.deltas[outIdx];
         const outLen = outputs.length;
         for (let i = 0; i < outLen; i++) {
-            outDelta[i] = dloss(outputs[i], target[i]);
+            outDelta[i] = useSigmoidCrossEntropyDelta
+                ? outputs[i] - target[i]
+                : dloss(outputs[i], target[i]);
         }
-        // Multiply by output activation derivative.
-        this.actDOutput(outDelta, this.preActs[outIdx], outputs, outLen);
+        if (!useSigmoidCrossEntropyDelta) {
+            // Multiply by output activation derivative.
+            this.actDOutput(outDelta, this.preActs[outIdx], outputs, outLen);
+        }
 
         // Walk backwards accumulating weight/bias grads and propagating delta.
         for (let l = outIdx; l >= 0; l--) {
@@ -339,7 +527,13 @@ export class Network {
      * but without the extra buffer copies).
      */
     applyGradients(training: TrainingConfig, batchSize: number): void {
+        if (!Number.isFinite(batchSize) || batchSize <= 0) {
+            throw new RangeError('gradient normalization count must be finite and greater than 0');
+        }
+        assertTrainingHyperparams(training);
+        this.prepareOptimizer(training.optimizer);
         const lr = computeLearningRate(training.learningRate, this.currentStep, training.lrSchedule);
+        assertFiniteInRange(lr, 'effective learningRate', 0, Number.POSITIVE_INFINITY);
         const invB = 1 / batchSize;
 
         // Pass 1: average grads, accumulate squared norm.
@@ -411,6 +605,23 @@ export class Network {
             this.biasGrads[l].fill(0);
         }
         this.currentStep++;
+        this.optimizerStep++;
+    }
+
+    private prepareOptimizer(optimizer: TrainingConfig['optimizer']): void {
+        if (this.activeOptimizer === optimizer) return;
+        this.clearOptimizerState();
+        this.optimizerStep = 0;
+        this.activeOptimizer = optimizer;
+    }
+
+    private clearOptimizerState(): void {
+        this.hasMomentumState = false;
+        this.hasAdamState = false;
+        this.mWeights = [];
+        this.mBiases = [];
+        this.vWeights = [];
+        this.vBiases = [];
     }
 
     private ensureMomentumState(): void {
@@ -517,7 +728,7 @@ export class Network {
     ): void {
         // Bias-corrected step counter starts at 1 on the first call
         // (matches legacy behaviour: `step + 1` inside the old optimizer).
-        const step = this.currentStep + 1;
+        const step = this.optimizerStep + 1;
         const b1c = 1 - Math.pow(beta1, step);
         const b2c = 1 - Math.pow(beta2, step);
         const oneMinusB1 = 1 - beta1;
@@ -564,14 +775,51 @@ export class Network {
     // ── Mini-batch train ─────────────────────────────────────────────────────
 
     trainBatch(inputs: number[][], targets: number[][], training: TrainingConfig): number {
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
+        if (inputs.length === 0) return 0;
+
+        return this.trainValidatedBatch(inputs, targets, 0, inputs.length, training);
+    }
+
+    trainBatchIndexed(
+        inputs: number[][],
+        targets: number[][],
+        indices: ArrayLike<number>,
+        start: number,
+        end: number,
+        training: TrainingConfig,
+    ): number {
+        assertIndexedBatchSelection(
+            inputs,
+            targets,
+            indices,
+            start,
+            end,
+            this.config.inputSize,
+            this.config.outputSize,
+        );
+        if (start === end) return 0;
+
+        return this.trainValidatedBatch(inputs, targets, start, end, training, indices);
+    }
+
+    private trainValidatedBatch(
+        inputs: number[][],
+        targets: number[][],
+        start: number,
+        end: number,
+        training: TrainingConfig,
+        indices?: ArrayLike<number>,
+    ): number {
         const lossFn = getLoss(training.lossType, { huberDelta: training.huberDelta });
         const lossScalar = lossFn.loss;
         let totalLoss = 0;
         let count = 0;
 
-        for (let s = 0, B = inputs.length; s < B; s++) {
-            const out = this.forwardInto(inputs[s]);
-            const tgt = targets[s];
+        for (let s = start; s < end; s++) {
+            const sampleIdx = indices == null ? s : indices[s];
+            const out = this.forwardInto(inputs[sampleIdx]);
+            const tgt = targets[sampleIdx];
             for (let o = 0, n = out.length; o < n; o++) {
                 totalLoss += lossScalar(out[o], tgt[o]);
                 count++;
@@ -579,7 +827,7 @@ export class Network {
             this.backward(tgt, training.lossType, training.huberDelta);
         }
 
-        this.applyGradients(training, inputs.length);
+        this.applyGradients(training, (end - start) * this.config.outputSize);
         return count > 0 ? totalLoss / count : 0;
     }
 
@@ -709,22 +957,18 @@ export class Network {
     ): Metrics {
         const lossFn = getLoss(lossType, { huberDelta });
         const lossScalar = lossFn.loss;
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
         const N = inputs.length;
+        const usePublicForward = this.forward !== Network.prototype.forward;
 
         let lossSum = 0;
         let lossCount = 0;
 
-        // Intentionally route through `this.forward(...)` — NOT the private
-        // `forwardInto` — so that tests can stub `net.forward` via
-        // `vi.spyOn(net, 'forward').mockImplementation(...)` and see the
-        // stub take effect here as well. Train batches bypass this method
-        // entirely via forwardInto, so the extra number[] allocation per
-        // sample here is confined to the (cadence-gated) evaluation path.
         if (problemType === 'classification' && this.config.outputSize === 1) {
             let correct = 0;
             let tp = 0, tn = 0, fp = 0, fn = 0;
             for (let i = 0; i < N; i++) {
-                const pred = this.forward(inputs[i]);
+                const pred = usePublicForward ? this.forward(inputs[i]) : this.forwardInto(inputs[i]);
                 const tgt = targets[i];
                 for (let o = 0, outLen = pred.length; o < outLen; o++) {
                     lossSum += lossScalar(pred[o], tgt[o]);
@@ -748,7 +992,7 @@ export class Network {
         if (problemType === 'classification') {
             let correct = 0;
             for (let i = 0; i < N; i++) {
-                const pred = this.forward(inputs[i]);
+                const pred = usePublicForward ? this.forward(inputs[i]) : this.forwardInto(inputs[i]);
                 const tgt = targets[i];
                 for (let o = 0, outLen = pred.length; o < outLen; o++) {
                     lossSum += lossScalar(pred[o], tgt[o]);
@@ -772,7 +1016,7 @@ export class Network {
 
         // Regression.
         for (let i = 0; i < N; i++) {
-            const pred = this.forward(inputs[i]);
+            const pred = usePublicForward ? this.forward(inputs[i]) : this.forwardInto(inputs[i]);
             const tgt = targets[i];
             for (let o = 0, outLen = pred.length; o < outLen; o++) {
                 lossSum += lossScalar(pred[o], tgt[o]);
@@ -864,6 +1108,7 @@ export class Network {
      *  `forward` / `forwardInto` call. Used by finite-difference gradient
      *  checks that need to perturb one parameter at a time. */
     setWeight(layerIdx: number, neuronIdx: number, prevIdx: number, value: number): void {
+        assertFiniteValue(value, 'weight');
         const fanIn = this.layerSizes[layerIdx];
         this.weights[layerIdx][neuronIdx * fanIn + prevIdx] = value;
     }
@@ -873,6 +1118,7 @@ export class Network {
     }
 
     setBias(layerIdx: number, neuronIdx: number, value: number): void {
+        assertFiniteValue(value, 'bias');
         this.biases[layerIdx][neuronIdx] = value;
     }
 
@@ -961,16 +1207,14 @@ export class Network {
             this.biasGrads[l].fill(0);
             this.recentWeightGrads[l].fill(0);
         }
-        this.hasMomentumState = false;
-        this.hasAdamState = false;
-        this.mWeights = [];
-        this.mBiases = [];
-        this.vWeights = [];
-        this.vBiases = [];
+        this.clearOptimizerState();
+        this.activeOptimizer = null;
+        this.optimizerStep = 0;
         this.currentStep = 0;
     }
 
     serialize(): SerializedNetwork {
+        assertSerializedParams(this.getWeights(), this.getBiases(), this.layerSizes);
         return {
             config: { ...this.config },
             weights: this.getWeights(),
@@ -979,7 +1223,11 @@ export class Network {
     }
 
     static deserialize(data: SerializedNetwork): Network {
+        if (data == null || typeof data !== 'object') {
+            throw new RangeError('serialized network must be an object');
+        }
         const net = new Network(data.config);
+        assertSerializedParams(data.weights, data.biases, net.layerSizes);
         for (let l = 0; l < net.weights.length; l++) {
             const fanIn = net.layerSizes[l];
             const fanOut = net.layerSizes[l + 1];
@@ -1006,6 +1254,10 @@ export function buildGridInputs(
     gridSize: number,
     activeFeatures: FeatureSpec[],
 ): number[][] {
+    if (!Number.isInteger(gridSize) || gridSize < 2) {
+        throw new RangeError('gridSize must be an integer greater than or equal to 2');
+    }
+
     const inputs: number[][] = [];
     for (let gy = 0; gy < gridSize; gy++) {
         for (let gx = 0; gx < gridSize; gx++) {

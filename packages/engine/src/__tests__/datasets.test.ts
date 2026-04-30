@@ -3,7 +3,18 @@ import { generateDataset, getDefaultProblemType } from '../datasets.js';
 import type { DatasetType } from '../types.js';
 
 describe('generateDataset', () => {
-    const DATASETS: DatasetType[] = ['circle', 'xor', 'gauss', 'spiral', 'moons'];
+    const DATASETS: DatasetType[] = [
+        'circle',
+        'xor',
+        'gauss',
+        'spiral',
+        'moons',
+        'checkerboard',
+        'rings',
+        'heart',
+        'reg-plane',
+        'reg-gauss',
+    ];
     const N = 200;
 
     for (const ds of DATASETS) {
@@ -30,12 +41,16 @@ describe('generateDataset', () => {
             });
 
             it('classification labels are 0 or 1', () => {
+                if (ds.startsWith('reg-')) return;
+
                 for (const p of [...split.train, ...split.test]) {
                     expect(p.label === 0 || p.label === 1).toBe(true);
                 }
             });
 
             it('has both classes', () => {
+                if (ds.startsWith('reg-')) return;
+
                 const allPoints = [...split.train, ...split.test];
                 const labels = new Set(allPoints.map((p) => p.label));
                 expect(labels.has(0)).toBe(true);
@@ -62,6 +77,62 @@ describe('generateDataset', () => {
         const total = split80.train.length + split80.test.length;
         const ratio = split80.train.length / total;
         expect(ratio).toBeCloseTo(0.8, 1);
+    });
+
+    describe('tiny sample counts', () => {
+        for (const ds of DATASETS) {
+            it(`${ds} returns no points for zero requested samples`, () => {
+                const split = generateDataset(ds, 0, 0, 0.5, 42);
+
+                expect(split.train).toHaveLength(0);
+                expect(split.test).toHaveLength(0);
+            });
+
+            it(`${ds} keeps a single requested sample in the train split`, () => {
+                const split = generateDataset(ds, 1, 0, 0.5, 42);
+
+                expect(split.train).toHaveLength(1);
+                expect(split.test).toHaveLength(0);
+            });
+
+            it(`${ds} keeps train and test non-empty for two requested samples`, () => {
+                const split = generateDataset(ds, 2, 0, 0.5, 42);
+
+                expect(split.train).toHaveLength(1);
+                expect(split.test).toHaveLength(1);
+            });
+        }
+    });
+
+    describe('defensive train ratio handling', () => {
+        for (const trainRatio of [0, 1, NaN, Infinity]) {
+            it(`keeps train and test non-empty for trainRatio ${String(trainRatio)}`, () => {
+                for (const ds of DATASETS) {
+                    const split = generateDataset(ds, 10, 0, trainRatio, 42);
+
+                    expect(split.train.length, `${ds} train`).toBeGreaterThan(0);
+                    expect(split.test.length, `${ds} test`).toBeGreaterThan(0);
+                }
+            });
+        }
+    });
+
+    describe('total sample counts', () => {
+        for (const count of [2, 10, 100, 200]) {
+            it(`xor returns exactly ${count} total samples`, () => {
+                const split = generateDataset('xor', count, 0, 0.5, 42);
+
+                expect(split.train.length + split.test.length).toBe(count);
+            });
+        }
+
+        it('rings does not round tiny non-zero sample requests down to zero', () => {
+            const one = generateDataset('rings', 1, 0, 0.5, 42);
+            const two = generateDataset('rings', 2, 0, 0.5, 42);
+
+            expect(one.train.length + one.test.length).toBe(1);
+            expect(two.train.length + two.test.length).toBe(2);
+        });
     });
 });
 

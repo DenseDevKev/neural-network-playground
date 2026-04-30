@@ -23,7 +23,10 @@ export const InspectionPanel = memo(function InspectionPanel() {
     }, []);
 
     const layerStats = useMemo(
-        () => getFrameBuffer().layerStats ?? snapshot?.layerStats,
+        () => {
+            void frameVersion;
+            return getFrameBuffer().layerStats ?? snapshot?.layerStats;
+        },
         [frameVersion, snapshot?.layerStats],
     );
 
@@ -36,6 +39,20 @@ export const InspectionPanel = memo(function InspectionPanel() {
         return names;
     }, [hiddenLayers]);
 
+    const layerStatMaxima = useMemo(() => {
+        if (!layerStats || layerStats.length === 0) {
+            return { maxGrad: 0.001, maxWeight: 0.001 };
+        }
+
+        let maxGrad = 0.001;
+        let maxWeight = 0.001;
+        for (const stats of layerStats) {
+            maxGrad = Math.max(maxGrad, stats.meanAbsGradient);
+            maxWeight = Math.max(maxWeight, stats.meanAbsWeight);
+        }
+        return { maxGrad, maxWeight };
+    }, [layerStats]);
+
     return (
         <div className="inspection-panel">
             {!layerStats || layerStats.length === 0 ? (
@@ -43,10 +60,8 @@ export const InspectionPanel = memo(function InspectionPanel() {
             ) : (
                 <div className="inspection__layers">
                     {layerStats.map((stats, idx) => {
-                        const maxGrad = Math.max(...layerStats.map((s) => s.meanAbsGradient), 0.001);
-                        const maxWeight = Math.max(...layerStats.map((s) => s.meanAbsWeight), 0.001);
-                        const gradPct = (stats.meanAbsGradient / maxGrad) * 100;
-                        const weightPct = (stats.meanAbsWeight / maxWeight) * 100;
+                        const gradPct = (stats.meanAbsGradient / layerStatMaxima.maxGrad) * 100;
+                        const weightPct = (stats.meanAbsWeight / layerStatMaxima.maxWeight) * 100;
 
                         return (
                             <div key={idx} className="inspection__layer">

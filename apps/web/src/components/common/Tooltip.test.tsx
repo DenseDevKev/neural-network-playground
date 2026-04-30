@@ -10,6 +10,7 @@ describe('Tooltip', () => {
   afterEach(() => {
     vi.clearAllTimers();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it('should render children', () => {
@@ -587,18 +588,29 @@ describe('Tooltip', () => {
     expect(tooltip.style.zIndex).toBe('1000');
   });
 
-  it('should clean up timeout on unmount', () => {
+  it('should clear a pending show timeout on unmount', () => {
+    const clearTimeoutSpy = vi.spyOn(window, 'clearTimeout');
     const { unmount } = render(
       <Tooltip content="Test tooltip" delay={500}>
         <button>Hover me</button>
       </Tooltip>
     );
 
+    const button = screen.getByRole('button', { name: 'Hover me' });
+    const trigger = button.parentElement!;
+
+    fireEvent.mouseEnter(trigger);
+    expect(vi.getTimerCount()).toBe(1);
+
     unmount();
-    
-    // Should not throw
-    vi.advanceTimersByTime(500);
-    expect(true).toBe(true);
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(document.querySelector('[role="tooltip"]')).not.toBeInTheDocument();
   });
 
   it('should remove resize and scroll listeners on unmount after becoming visible', () => {

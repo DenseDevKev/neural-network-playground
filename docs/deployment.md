@@ -1,8 +1,8 @@
 # Deployment Guide
 
 Neural Network Playground is a fully static single-page application (SPA).
-There is no backend, no environment variables, and no build-time secrets —
-the entire app runs in the browser.
+There is no backend, no runtime environment variables, and no build-time
+secrets — the entire app runs in the browser.
 
 ## GitHub Pages (recommended)
 
@@ -31,9 +31,10 @@ The deploy workflow runs automatically on every push to `main`.
 
 - The workflow uses **Node 20** and **pnpm 9** — these match the declared
   `engines` in `package.json`.
-- No environment variables or secrets are needed.
-- The `vite.config.ts` sets `base: './'`, so all asset paths are relative
-  and the app works correctly in any subdirectory URL.
+- No secrets are needed.
+- The `vite.config.ts` uses `VITE_BASE` when provided and defaults to
+  `base: './'`, so all asset paths are relative and the app works correctly
+  in any subdirectory URL.
 
 ## Self-hosting on any static file server
 
@@ -83,18 +84,15 @@ rewrites paths), override it at build time:
 VITE_BASE=/tools/nn-playground/ pnpm build
 ```
 
-Then update `vite.config.ts`:
-
-```ts
-base: process.env.VITE_BASE ?? './',
-```
+The build already reads `VITE_BASE`, so no config edit is needed.
 
 ## Environment
 
 - **No backend required.** All training runs entirely in the browser using
   a Web Worker. There is no API server, database, or authentication.
-- **No environment variables required.** The build works with default
-  settings out of the box.
+- **No runtime environment variables required.** The build works with default
+  settings out of the box. `VITE_BASE` is optional build-time configuration
+  for hosts that require an absolute asset base path.
 - **Privacy.** No data leaves the browser — training data, weights, and
   network configurations are never transmitted to any server.
 

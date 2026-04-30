@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
-import { useTrainingStore } from '../store/useTrainingStore.ts';
+import { useTrainingStore, type TrainingStore } from '../store/useTrainingStore.ts';
 import {
     getWorkerApi,
     setupStreamChannel,
@@ -16,12 +16,15 @@ import {
     terminateWorker,
 } from '../worker/workerBridge.ts';
 import {
+    getFrameVersions,
+    updateFrameBuffer,
+    type FrameVersions,
+} from '../worker/frameBuffer.ts';
+import {
     flattenBiases,
     flattenNeuronGrids,
     flattenWeights,
-    getFrameVersion,
-    updateFrameBuffer,
-} from '../worker/frameBuffer.ts';
+} from '../worker/frameBufferLayout.ts';
 import type { NetworkSnapshot } from '@nn-playground/engine';
 import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
 import { structuralEqual } from '@nn-playground/shared';
@@ -46,7 +49,7 @@ function getTotalNeuronCount(layerSizes: number[]): number {
     return total;
 }
 
-function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): number {
+function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
     const outputGrid = snapshot.outputGrid.length > 0
         ? (snapshot.outputGrid instanceof Float32Array ? snapshot.outputGrid : new Float32Array(snapshot.outputGrid))
         : null;
@@ -69,7 +72,7 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): number {
         }
     }
 
-    return updateFrameBuffer({
+    updateFrameBuffer({
         outputGrid,
         gridSize: snapshot.gridSize,
         neuronGrids,
@@ -80,6 +83,14 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): number {
         layerStats: snapshot.layerStats ?? null,
         confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
     });
+    return getFrameVersions();
+}
+
+function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot): void {
+    ts.setSnapshot(snapshot);
+    ts.resetHistory();
+    if (snapshot.historyPoint) ts.addHistoryPoint(snapshot.historyPoint);
+    ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
 }
 
 function createStreamSnapshot(
@@ -98,7 +109,7 @@ function createStreamSnapshot(
         testMetrics: {
             loss: msg.scalars.testLoss,
             accuracy: msg.scalars.testAccuracy,
-            confusionMatrix: msg.confusionMatrix,
+            confusionMatrix: msg.confusionMatrix ?? previousSnapshot?.testMetrics.confusionMatrix,
         },
         weights: previousSnapshot?.weights ?? [],
         biases: previousSnapshot?.biases ?? [],
@@ -124,6 +135,9 @@ export function useTraining(): TrainingHook {
     const prevConfigSyncNonceRef = useRef(0);
     const stepsPerFrameRef = useRef(5);
     const isPlayingRef = useRef(false);
+    const configSyncSeqRef = useRef(0);
+    const activeConfigSyncSeqRef = useRef(0);
+    const configSyncPendingRef = useRef(false);
 
     // Config selectors (from playground store — stable, rarely changes)
     const network = usePlaygroundStore((s) => s.network);
@@ -139,9 +153,30 @@ export function useTraining(): TrainingHook {
 
     const reportWorkerError = useCallback((error: unknown, fallback: string) => {
         const ts = useTrainingStore.getState();
+        isPlayingRef.current = false;
+        stopRenderLoop();
         ts.setWorkerError(getErrorMessage(error, fallback));
+        ts.setPauseReason('error');
         ts.setStatus('paused');
         initializedRef.current = false;
+    }, []);
+
+    const beginConfigSync = useCallback(() => {
+        const seq = configSyncSeqRef.current + 1;
+        configSyncSeqRef.current = seq;
+        activeConfigSyncSeqRef.current = seq;
+        configSyncPendingRef.current = true;
+        return seq;
+    }, []);
+
+    const isCurrentConfigSync = useCallback((seq: number) => (
+        configSyncPendingRef.current && activeConfigSyncSeqRef.current === seq
+    ), []);
+
+    const finishConfigSyncIfCurrent = useCallback((seq: number) => {
+        if (activeConfigSyncSeqRef.current === seq) {
+            configSyncPendingRef.current = false;
+        }
     }, []);
 
     const initializeWorker = useCallback(async () => {
@@ -156,10 +191,7 @@ export function useTraining(): TrainingHook {
             config.features,
         );
         ts.clearWorkerError();
-        ts.setSnapshot(result.snapshot);
-        ts.resetHistory();
-        if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-        ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+        applyFreshSnapshotToStore(ts, result.snapshot);
         newRunTo(result.runId);
 
         // Store points reactively so UI renders immediately
@@ -213,17 +245,31 @@ export function useTraining(): TrainingHook {
             if (msg.type === 'snapshot') {
                 ts.applyStreamedSnapshot({
                     snapshot: createStreamSnapshot(msg, ts.snapshot),
-                    frameVersion: getFrameVersion(),
+                    frameVersions: getFrameVersions(),
                     testMetricsStale: msg.scalars.testMetricsStale === true,
                 });
             } else if (msg.type === 'status') {
-                if (msg.status === 'paused' || msg.status === 'idle') {
+                if (msg.status === 'paused') {
+                    if (msg.pauseReason) {
+                        isPlayingRef.current = false;
+                        stopRenderLoop();
+                        ts.setPauseReason(msg.pauseReason);
+                    }
+                    ts.setStatus('paused');
+                } else if (msg.status === 'idle') {
+                    isPlayingRef.current = false;
+                    stopRenderLoop();
+                    ts.clearPauseReason();
                     ts.setStatus(msg.status);
                 } else if (msg.status === 'running') {
+                    ts.clearPauseReason();
                     ts.setStatus('running');
                 }
             } else if (msg.type === 'error') {
+                isPlayingRef.current = false;
+                stopRenderLoop();
                 ts.setWorkerError(msg.message);
+                ts.setPauseReason('error');
                 ts.setStatus('paused');
             }
         });
@@ -247,6 +293,7 @@ export function useTraining(): TrainingHook {
         const previousConfigSnapshot = prevConfigRef.current;
         prevConfigRef.current = nextSnapshot;
         prevConfigSyncNonceRef.current = configSyncNonce;
+        const seq = beginConfigSync();
 
         const sync = async () => {
             // Stop streaming before config change
@@ -268,28 +315,32 @@ export function useTraining(): TrainingHook {
                     config.features,
                     false,
                 );
+                if (!isCurrentConfigSync(seq)) return;
                 // Sync to worker's runId AFTER updateConfig returns
                 newRunTo(result.runId);
-                ts.setSnapshot(result.snapshot);
-                ts.resetHistory();
-                if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-                ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+                ts.clearPauseReason();
+                applyFreshSnapshotToStore(ts, result.snapshot);
 
                 // Update points reactively
                 const trainPts = await api.getTrainPoints();
+                if (!isCurrentConfigSync(seq)) return;
                 const testPts = await api.getTestPoints();
+                if (!isCurrentConfigSync(seq)) return;
                 ts.setTrainPoints(trainPts);
                 ts.setTestPoints(testPts);
 
                 ps.syncToUrl();
                 ts.finishConfigChange();
+                finishConfigSyncIfCurrent(seq);
             } catch (error) {
+                if (!isCurrentConfigSync(seq)) return;
                 prevConfigRef.current = previousConfigSnapshot;
                 ts.failConfigChange(error instanceof Error ? error.message : 'Failed to update configuration');
+                finishConfigSyncIfCurrent(seq);
             }
         };
         sync();
-    }, [network, training, data, features, configSyncNonce]);
+    }, [network, training, data, features, configSyncNonce, beginConfigSync, finishConfigSyncIfCurrent, isCurrentConfigSync]);
 
     // Sync demand changes to worker
     useEffect(() => {
@@ -313,9 +364,15 @@ export function useTraining(): TrainingHook {
     }, [webgpuGrid]);
 
     const play = useCallback(() => {
+        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+            return;
+        }
+
         const startTraining = () => {
             isPlayingRef.current = true;
-            useTrainingStore.getState().setStatus('running');
+            const ts = useTrainingStore.getState();
+            ts.clearPauseReason();
+            ts.setStatus('running');
             startRenderLoop();
             postStreamCommand({ type: 'startTraining', stepsPerFrame: stepsPerFrameRef.current });
         };
@@ -337,7 +394,9 @@ export function useTraining(): TrainingHook {
         isPlayingRef.current = false;
         postStreamCommand({ type: 'stopTraining' });
         stopRenderLoop();
-        useTrainingStore.getState().setStatus('paused');
+        const ts = useTrainingStore.getState();
+        ts.setPauseReason('manual');
+        ts.setStatus('paused');
     }, []);
 
     const step = useCallback(async () => {
@@ -352,7 +411,7 @@ export function useTraining(): TrainingHook {
             const snap = await api.step(1);
             const ts = useTrainingStore.getState();
             ts.setSnapshot(snap);
-            ts.setFrameVersion(syncSnapshotToFrameBuffer(snap));
+            ts.setFrameVersions(syncSnapshotToFrameBuffer(snap));
             if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
         } catch (error) {
             reportWorkerError(error, 'Failed to run a training step.');
@@ -365,35 +424,45 @@ export function useTraining(): TrainingHook {
             stopRenderLoop();
             isPlayingRef.current = false;
         }
+        const seq = beginConfigSync();
+        useTrainingStore.getState().clearPauseReason();
         try {
             if (!initializedRef.current) {
                 await initializeWorker();
+                if (!isCurrentConfigSync(seq)) return;
                 useTrainingStore.getState().setStatus('idle');
+                finishConfigSyncIfCurrent(seq);
                 return;
             }
             const api = getWorkerApi();
             const result = await api.reset();
+            if (!isCurrentConfigSync(seq)) return;
             newRunTo(result.runId);
             const ts = useTrainingStore.getState();
-            ts.setSnapshot(result.snapshot);
-            ts.resetHistory();
-            if (result.snapshot.historyPoint) ts.addHistoryPoint(result.snapshot.historyPoint);
-            ts.setFrameVersion(syncSnapshotToFrameBuffer(result.snapshot));
+            applyFreshSnapshotToStore(ts, result.snapshot);
             ts.setStatus('idle');
 
             // Refresh points
             const trainPts = await api.getTrainPoints();
+            if (!isCurrentConfigSync(seq)) return;
             const testPts = await api.getTestPoints();
+            if (!isCurrentConfigSync(seq)) return;
             ts.setTrainPoints(trainPts);
             ts.setTestPoints(testPts);
+            finishConfigSyncIfCurrent(seq);
         } catch (error) {
+            if (!isCurrentConfigSync(seq)) return;
             reportWorkerError(error, 'Failed to reset training.');
+            finishConfigSyncIfCurrent(seq);
         }
-    }, [initializeWorker, reportWorkerError]);
+    }, [beginConfigSync, finishConfigSyncIfCurrent, initializeWorker, isCurrentConfigSync, reportWorkerError]);
 
     // Cleanup on unmount
     useEffect(() => {
         return () => {
+            activeConfigSyncSeqRef.current = configSyncSeqRef.current + 1;
+            configSyncSeqRef.current = activeConfigSyncSeqRef.current;
+            configSyncPendingRef.current = false;
             isPlayingRef.current = false;
             terminateWorker();
         };

@@ -7,6 +7,8 @@ import type {
     LayerStats,
     ConfusionMatrixData,
 } from '@nn-playground/engine';
+import { isPauseReason } from './types.js';
+import type { PauseReason } from './types.js';
 
 // ─────────────────────────────────────────────────────────
 // Visualization Demand
@@ -51,6 +53,54 @@ export const DEFAULT_DEMAND: VisualizationDemand = {
     gridInterval: 2,
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value > 0;
+}
+
+function isBoolean(value: unknown): value is boolean {
+    return typeof value === 'boolean';
+}
+
+export function normalizeVisualizationDemand(value: unknown): VisualizationDemand | null {
+    if (!isRecord(value)) return null;
+
+    const {
+        needDecisionBoundary,
+        needNeuronGrids,
+        needLayerStats,
+        needConfusionMatrix,
+        testEvalInterval,
+        trainEvalInterval,
+        gridInterval,
+    } = value;
+
+    if (
+        !isBoolean(needDecisionBoundary) ||
+        !isBoolean(needNeuronGrids) ||
+        !isBoolean(needLayerStats) ||
+        !isBoolean(needConfusionMatrix) ||
+        !isPositiveInteger(testEvalInterval) ||
+        !isPositiveInteger(trainEvalInterval) ||
+        !isPositiveInteger(gridInterval)
+    ) {
+        return null;
+    }
+
+    return {
+        needDecisionBoundary,
+        needNeuronGrids,
+        needLayerStats,
+        needConfusionMatrix,
+        testEvalInterval,
+        trainEvalInterval,
+        gridInterval,
+    };
+}
+
 // ─────────────────────────────────────────────────────────
 // Worker → Main  (streamed snapshot messages)
 // ─────────────────────────────────────────────────────────
@@ -90,6 +140,7 @@ export interface WorkerSnapshotMessage {
 
     historyPoint: HistoryPoint;
     confusionMatrix?: ConfusionMatrixData;
+    confusionMatrixVersion?: number;
 
     /**
      * When the worker is publishing heavy buffers (outputGrid, neuronGrids,
@@ -108,6 +159,7 @@ export interface WorkerStatusMessage {
     type: 'status';
     runId: number;
     status: 'idle' | 'running' | 'paused';
+    pauseReason?: PauseReason | null;
 }
 
 export interface WorkerErrorMessage {
@@ -201,7 +253,7 @@ export type MainToWorkerCommand =
  * does not recurse into `layerStats` arrays to avoid per-frame overhead.
  */
 export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
-    if (x === null || typeof x !== 'object') return false;
+    if (!isRecord(x)) return false;
     const m = x as Record<string, unknown>;
     if (typeof m['type'] !== 'string') return false;
     if (typeof m['runId'] !== 'number') return false;
@@ -214,9 +266,16 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
             );
         case 'status':
             return (
-                m['status'] === 'idle' ||
-                m['status'] === 'running' ||
-                m['status'] === 'paused'
+                (
+                    m['status'] === 'idle' ||
+                    m['status'] === 'running' ||
+                    m['status'] === 'paused'
+                ) &&
+                (
+                    !('pauseReason' in m) ||
+                    m['pauseReason'] === null ||
+                    isPauseReason(m['pauseReason'])
+                )
             );
         case 'error':
             return typeof m['message'] === 'string';
@@ -245,7 +304,7 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
  * Validates the `type` discriminator and required primitive fields only.
  */
 export function isMainToWorkerCommand(x: unknown): x is MainToWorkerCommand {
-    if (x === null || typeof x !== 'object') return false;
+    if (!isRecord(x)) return false;
     const m = x as Record<string, unknown>;
     if (typeof m['type'] !== 'string') return false;
     switch (m['type']) {
@@ -254,7 +313,7 @@ export function isMainToWorkerCommand(x: unknown): x is MainToWorkerCommand {
         case 'stopTraining':
             return true;
         case 'updateDemand':
-            return m['demand'] !== null && typeof m['demand'] === 'object';
+            return normalizeVisualizationDemand(m['demand']) !== null;
         case 'updateSpeed':
             return typeof m['stepsPerFrame'] === 'number';
         case 'frameAck':
