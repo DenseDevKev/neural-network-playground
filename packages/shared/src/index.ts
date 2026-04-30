@@ -20,6 +20,15 @@ export {
     normalizeAppConfig,
 } from './serialization.js';
 export {
+    EXPERIMENT_MEMORY_SCHEMA_VERSION,
+    EXPERIMENT_MEMORY_MAX_RECORDS,
+    EXPERIMENT_MEMORY_MAX_HISTORY,
+    createExperimentMemoryEnvelope,
+    normalizeExperimentMemoryEnvelope,
+    sanitizeExperimentHistory,
+    validateExperimentRunRecord,
+} from './experimentMemory.js';
+export {
     DEFAULT_SEED,
     DEFAULT_NUM_SAMPLES,
     GRID_SIZE,
@@ -53,6 +62,11 @@ export type {
     TrainingStatus,
     PauseReason,
 } from './types.js';
+export type {
+    ExperimentRunSummary,
+    ExperimentRunRecordV1,
+    ExperimentMemoryEnvelopeV1,
+} from './experimentMemory.js';
 export {
     DEFAULT_DEMAND,
     isWorkerToMainMessage,

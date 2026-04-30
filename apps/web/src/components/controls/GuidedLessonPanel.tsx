@@ -1,73 +1,43 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { PRESETS, type Preset } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
-import { useLayoutStore, type LeftTabId, type PhaseMode } from '../../store/useLayoutStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import {
+    DEFAULT_LESSON_ID,
+    getLessonDefinition,
+    getLessonPreset,
+    LESSON_DEFINITIONS,
+    type LessonDefinition,
+    type LessonStep,
+    type LessonTarget,
+} from '../../lessons/lessonRegistry.ts';
 
-export type LessonTarget = 'data' | 'network' | 'hyperparams' | 'transport';
+export type { LessonTarget } from '../../lessons/lessonRegistry.ts';
 
 interface GuidedLessonPanelProps {
     onReset: () => void;
     onHighlightChange?: (target: LessonTarget | null) => void;
 }
 
-interface LessonStep {
-    title: string;
-    target: LessonTarget;
-    tab?: LeftTabId;
-    phase?: PhaseMode;
-    body: string;
-}
-
-const XOR_LESSON_PRESET_ID = 'xor-hidden';
-
-const XOR_LESSON_STEPS: LessonStep[] = [
-    {
-        title: 'Read the XOR pattern',
-        target: 'data',
-        tab: 'data',
-        phase: 'build',
-        body: 'The XOR preset alternates labels by quadrant, so no single straight line can separate every point.',
-    },
-    {
-        title: 'Give the model capacity',
-        target: 'network',
-        tab: 'network',
-        phase: 'build',
-        body: 'Two hidden layers let the network combine simple bends into the corners needed for XOR.',
-    },
-    {
-        title: 'Use steady updates',
-        target: 'hyperparams',
-        tab: 'hyperparams',
-        phase: 'build',
-        body: 'A moderate learning rate and small batches make the loss react without bouncing wildly.',
-    },
-    {
-        title: 'Train in small moves',
-        target: 'transport',
-        phase: 'run',
-        body: 'Step or play from the transport controls and watch the boundary change as weights update.',
-    },
-];
-
-function findLessonPreset(): Preset {
-    const preset = PRESETS.find((item) => item.id === XOR_LESSON_PRESET_ID);
-    if (!preset) {
-        throw new Error(`Missing guided lesson preset: ${XOR_LESSON_PRESET_ID}`);
+function getRequiredLesson(id: string): LessonDefinition {
+    const lesson = getLessonDefinition(id);
+    if (!lesson) {
+        throw new Error(`Missing guided lesson: ${id}`);
     }
-    return preset;
+    return lesson;
 }
 
 export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     onReset,
     onHighlightChange,
 }: GuidedLessonPanelProps) {
+    const [selectedLessonId, setSelectedLessonId] = useState(DEFAULT_LESSON_ID);
     const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
     const applyPreset = usePlaygroundStore((s) => s.applyPreset);
     const setActiveTabLeft = useLayoutStore((s) => s.setActiveTabLeft);
     const setPhase = useLayoutStore((s) => s.setPhase);
-    const lessonPreset = useMemo(findLessonPreset, []);
-    const activeStep = activeStepIndex === null ? null : XOR_LESSON_STEPS[activeStepIndex];
+    const activeLesson = useMemo(() => getRequiredLesson(selectedLessonId), [selectedLessonId]);
+    const lessonPreset = useMemo(() => getLessonPreset(activeLesson), [activeLesson]);
+    const activeStep = activeStepIndex === null ? null : activeLesson.steps[activeStepIndex];
 
     const focusStep = useCallback(
         (step: LessonStep) => {
@@ -86,12 +56,12 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         applyPreset(lessonPreset);
         onReset();
         setActiveStepIndex(0);
-        focusStep(XOR_LESSON_STEPS[0]);
+        focusStep(activeLesson.steps[0]);
     };
 
     const goToStep = (nextIndex: number) => {
         setActiveStepIndex(nextIndex);
-        focusStep(XOR_LESSON_STEPS[nextIndex]);
+        focusStep(activeLesson.steps[nextIndex]);
     };
 
     const finishLesson = () => {
@@ -107,7 +77,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
             {activeStep ? (
                 <>
                     <div className="guided-lesson__progress" aria-live="polite">
-                        Step {activeStepIndex! + 1} of {XOR_LESSON_STEPS.length}
+                        Step {activeStepIndex! + 1} of {activeLesson.steps.length}
                     </div>
                     <h2 className="guided-lesson__step-title">{activeStep.title}</h2>
                     <p className="guided-lesson__body">{activeStep.body}</p>
@@ -119,7 +89,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                         >
                             Back
                         </button>
-                        {activeStepIndex === XOR_LESSON_STEPS.length - 1 ? (
+                        {activeStepIndex === activeLesson.steps.length - 1 ? (
                             <button
                                 className="btn btn--accent btn--sm"
                                 onClick={finishLesson}
@@ -140,9 +110,37 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                 </>
             ) : (
                 <>
-                    <p className="guided-lesson__body">
-                        Load a preset-backed walkthrough that shows why XOR needs hidden layers.
-                    </p>
+                    <p className="guided-lesson__body">{activeLesson.summary}</p>
+                    {LESSON_DEFINITIONS.length > 1 && (
+                        <div
+                            role="group"
+                            aria-label="Available lessons"
+                            style={{
+                                display: 'grid',
+                                gap: 6,
+                                marginTop: 12,
+                            }}
+                        >
+                            {LESSON_DEFINITIONS.map((lesson) => (
+                                <button
+                                    key={lesson.id}
+                                    type="button"
+                                    className="btn btn--ghost btn--sm"
+                                    style={{
+                                        justifyContent: 'flex-start',
+                                        minWidth: 0,
+                                        whiteSpace: 'normal',
+                                        textAlign: 'left',
+                                    }}
+                                    aria-pressed={lesson.id === selectedLessonId}
+                                    aria-label={`Select lesson: ${lesson.title}`}
+                                    onClick={() => setSelectedLessonId(lesson.id)}
+                                >
+                                    {lesson.title}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                     <button
                         className="btn btn--accent btn--sm guided-lesson__start"
                         onClick={startLesson}

@@ -25,6 +25,7 @@ import {
     ConfusionContent,
     InspectContent,
     CodeContent,
+    HistoryContent,
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
@@ -184,6 +185,7 @@ export default function App() {
         confusion: <ConfusionContent />,
         inspection: <InspectContent />,
         code: <CodeContent />,
+        history: <HistoryContent onRestore={stableReset} />,
     };
 
     const transport = (
@@ -230,6 +232,12 @@ export default function App() {
         </Panel>
     );
 
+    const historyPanel = (
+        <Panel title="Run History" phase="both">
+            <HistoryContent onRestore={stableReset} />
+        </Panel>
+    );
+
     const gridConfigPanels = (
         <div className="forge-panel-stack">
             <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
@@ -245,6 +253,7 @@ export default function App() {
         <div className="forge-panel-stack">
             {inspectPanel}
             {codePanel}
+            {historyPanel}
         </div>
     );
 
@@ -354,6 +363,7 @@ export default function App() {
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
+                                    {historyPanel}
                                 </>
                             }
                             runLeft={
@@ -378,6 +388,7 @@ export default function App() {
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
+                                    {historyPanel}
                                 </>
                             }
                             transportContent={transport}
@@ -397,23 +408,26 @@ function StatusBar({ effectiveLayout }: { effectiveLayout: LayoutVariant }) {
     const status = useTrainingStore((s) => s.status);
     const phase = useLayoutStore((s) => s.phase);
     const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const snapshot = useTrainingStore((s) => s.snapshot);
 
     return (
-        <div className="forge-statusbar" role="status" aria-label="Status bar">
+        <div
+            className="forge-statusbar"
+            role="status"
+            aria-label="Status bar"
+            data-status={status}
+        >
             <span>
-                <span className="forge-statusbar__accent">●</span>{' '}
+                <span className="forge-statusbar__dot" aria-hidden />
                 {status.toUpperCase()}
             </span>
             <span>LAYOUT: <span className="forge-statusbar__accent">{effectiveLayout}</span></span>
             {effectiveLayout === 'split' && (
                 <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
             )}
-            <span>DATA: {dataset}</span>
-            <span>ARCH: [{hiddenLayers.join(', ')}]</span>
+            <span>DATA: <span className="forge-statusbar__accent">{dataset}</span></span>
             <span className="forge-statusbar__spacer" />
-            <span>step {(snapshot?.step ?? 0).toLocaleString()}</span>
+            <span>STEP <span className="forge-statusbar__accent">{(snapshot?.step ?? 0).toLocaleString()}</span></span>
             <span>
                 Inspired by{' '}
                 <a

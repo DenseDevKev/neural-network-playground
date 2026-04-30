@@ -137,7 +137,6 @@ function toFixedLabel(value: number | null | undefined, digits = 4): string {
     return Number.isFinite(value) ? value!.toFixed(digits) : 'n/a';
 }
 
-
 export function NetworkGraphCanvas() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const features = usePlaygroundStore((s) => s.features);

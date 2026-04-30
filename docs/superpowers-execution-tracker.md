@@ -19,12 +19,23 @@ blocker changes.
 - [x] P0C deterministic explanations implemented - [REQ-P0C](#req-p0c)
 - [x] P0C minimal UI implemented - [REQ-P0C](#req-p0c)
 - [x] P0C focused and full verification complete - [REQ-P0C](#req-p0c), [REQ-VERIFY](#req-verify)
-- [ ] Explicit approval received to start P1 - [REQ-AGENTS](#req-agents)
+- [x] Explicit approval received to start P1 - [REQ-AGENTS](#req-agents), [REQ-P1](#req-p1)
+- [x] P1 lesson schema/registry implemented - [REQ-P1](#req-p1)
+- [x] P1 XOR migration and conservative 3-lesson batch implemented - [REQ-P1](#req-p1)
+- [x] P1 final verification complete - [REQ-VERIFY](#req-verify)
+- [x] P1 final reviews complete - [REQ-AGENTS](#req-agents)
+- [x] P2-P4 read-only recon complete - [REQ-AGENTS](#req-agents), [REQ-P2](#req-p2), [REQ-P3](#req-p3), [REQ-P4](#req-p4)
+- [x] P2 experiment memory implemented - [REQ-P2](#req-p2)
+- [x] P3 data understanding implemented - [REQ-P3](#req-p3)
+- [x] P4 on-demand prediction trace implemented - [REQ-P4](#req-p4)
+- [x] P2-P4 final reviews complete - [REQ-AGENTS](#req-agents)
+- [x] P2-P4 final verification complete - [REQ-VERIFY](#req-verify)
 
 ## Current Gate
 
-P0C is complete. Do not start P1 until explicit approval is received and the
-P1 schema/content migration plan is written against a refreshed repo file map.
+P2-P4 are complete. Do not expand P2 into exact training continuation, P3 into
+dataset schema expansion/custom brush, or P4 into streamed interpretability
+payloads without a separate approved plan.
 
 ## Prompt Requirement Index
 
@@ -96,6 +107,51 @@ Explanation rules and minimal UI:
 - Add a minimal "Why did this happen?" surface.
 - Use existing metrics/diagnostics only.
 - Do not add lessons, custom datasets, or expensive worker data.
+
+<a id="req-p1"></a>
+### REQ-P1
+
+Lesson system:
+
+- Keep lesson schema/registry web-local under `apps/web/src/lessons/`.
+- Define `LessonDefinition`, `LessonStep`, and `LessonTarget`.
+- Migrate the existing XOR guided lesson into the registry.
+- Add only the conservative 3-lesson seed set: XOR, Single Neuron, Regression Plane.
+- Do not add Feature Engineering in P1.
+- Do not change shared exports, serialization, worker protocol, store shape, presets, or app-wide layout model.
+
+<a id="req-p2"></a>
+### REQ-P2
+
+Experiment memory:
+
+- Add local-first run history with typed, versioned records.
+- Use actual exported project types instead of persistent `unknown` payloads.
+- Persist bounded local history and recover corrupt/future-version storage as empty history.
+- Capture current config, summary metrics, bounded loss history, and serialized network parameters.
+- Restore means restore saved config and show saved metrics/history/report; it does not claim exact training continuation.
+- Export a report from saved run data.
+
+<a id="req-p3"></a>
+### REQ-P3
+
+Data understanding:
+
+- Make train/test split visible using existing runtime train/test arrays.
+- Reshuffle means changing existing `data.seed` through the existing config flow.
+- Do not add split-only seeds, split membership persistence, custom dataset brush, or dataset-specific schema expansion in this slice.
+- Keep the visualization textual/accessibility-safe and not color-only.
+
+<a id="req-p4"></a>
+### REQ-P4
+
+Interpretability:
+
+- Start with one safe on-demand prediction trace path.
+- Add engine pure-copy trace support.
+- Add a Comlink one-shot worker RPC only if it crosses worker/UI.
+- Add minimal inspection UI for a single sample trace.
+- Do not add streamed histograms, gradient payloads, frame-buffer domains, or SAB changes in this slice.
 
 <a id="req-tdd"></a>
 ### REQ-TDD
@@ -189,31 +245,67 @@ approval to proceed.
 
 ### P1: Lesson System
 
-- [ ] Define `LessonDefinition` and `LessonStep`
-- [ ] Migrate current XOR guided lesson
-- [ ] Add 2-3 lessons first
-- [ ] Verify schema before expanding lesson count
+#### P1A: Schema and Registry
+
+- [x] Define web-local `LessonDefinition` and `LessonStep` - [REQ-P1](#req-p1)
+- [x] Define `LessonTarget` as `data | network | hyperparams | transport` - [REQ-P1](#req-p1)
+- [x] Add `LESSON_DEFINITIONS` registry - [REQ-P1](#req-p1)
+- [x] Add `DEFAULT_LESSON_ID` - [REQ-P1](#req-p1)
+- [x] Add `getLessonDefinition` and `getLessonPreset` - [REQ-P1](#req-p1)
+- [x] Test registry ids, preset references, required text, valid targets, and no runtime predicates/config snapshots - [REQ-P1](#req-p1), [REQ-TDD](#req-tdd)
+
+#### P1B: XOR Migration
+
+- [x] Remove hardcoded XOR lesson constants from `GuidedLessonPanel` - [REQ-P1](#req-p1)
+- [x] Render guided lesson state from registry data - [REQ-P1](#req-p1)
+- [x] Preserve XOR preset application, reset, target order, tab/phase focus, finish, and unmount cleanup - [REQ-P1](#req-p1), [REQ-TDD](#req-tdd)
+
+#### P1C: Conservative Lesson Content
+
+- [x] Add `lesson-xor-hidden-layers` - [REQ-P1](#req-p1)
+- [x] Add `lesson-single-neuron-linear-separator` - [REQ-P1](#req-p1)
+- [x] Add `lesson-regression-plane-baseline` - [REQ-P1](#req-p1)
+- [x] Add minimal in-panel selector for the seed lessons - [REQ-P1](#req-p1)
+- [x] Test each lesson appears, starts, applies its preset, shows correct progress, and reaches run-phase transport - [REQ-P1](#req-p1), [REQ-TDD](#req-tdd)
+
+#### P1D: Verification and Gate
+
+- [x] Run full P1 verification - [REQ-VERIFY](#req-verify)
+- [x] Complete P1 read-only spec compliance review - [REQ-AGENTS](#req-agents)
+- [x] Complete P1 read-only code quality review - [REQ-AGENTS](#req-agents)
+- [x] Complete P1 read-only schema invariant review - [REQ-AGENTS](#req-agents)
+- [x] Complete P1 read-only merge-steward review - [REQ-AGENTS](#req-agents)
+- [x] Do not expand beyond conservative 3 lessons until schema gate remains stable - [REQ-P1](#req-p1)
 
 ### P2: Experiment Memory
 
-- [ ] Define typed run history record after repo export inspection
-- [ ] Add bounded versioned local persistence
-- [ ] Add restore run behavior
-- [ ] Add exportable experiment report
+- [x] Define typed `ExperimentRunRecordV1` using actual exported project types - [REQ-P2](#req-p2), [REQ-TDD](#req-tdd)
+- [x] Add versioned storage envelope and validators - [REQ-P2](#req-p2), [REQ-TDD](#req-tdd)
+- [x] Enforce bounded record and history lengths - [REQ-P2](#req-p2), [REQ-TDD](#req-tdd)
+- [x] Add corrupt/future-version localStorage recovery - [REQ-P2](#req-p2), [REQ-TDD](#req-tdd)
+- [x] Add run capture helper for config, summary, bounded history, and serialized network - [REQ-P2](#req-p2)
+- [x] Add run history UI panel - [REQ-P2](#req-p2)
+- [x] Add restore-config behavior without exact training continuation claims - [REQ-P2](#req-p2)
+- [x] Add Markdown report export - [REQ-P2](#req-p2)
 
 ### P3: Data Understanding
 
-- [ ] Add train/test split visualizer
-- [ ] Add reshuffle controls
-- [ ] Add dataset parameter lab
-- [ ] Defer custom dataset brush until later
+- [x] Add `data.seed` reshuffle action - [REQ-P3](#req-p3), [REQ-TDD](#req-tdd)
+- [x] Add DataPanel reshuffle control through existing config-change flow - [REQ-P3](#req-p3)
+- [x] Add accessible train/test count readout - [REQ-P3](#req-p3), [REQ-TDD](#req-tdd)
+- [x] Add minimal split overlay mode without new persistence - [REQ-P3](#req-p3)
+- [x] Defer dataset parameter lab/schema expansion - [REQ-P3](#req-p3)
+- [x] Defer custom dataset brush - [REQ-P3](#req-p3)
 
 ### P4: Interpretability
 
-- [ ] Add on-demand prediction trace
-- [ ] Add activation histograms
-- [ ] Add layer-level gradient-flow overlay
-- [ ] Defer neuron/edge histories until payload cost is controlled
+- [x] Add engine pure-copy prediction trace - [REQ-P4](#req-p4), [REQ-TDD](#req-tdd)
+- [x] Add on-demand worker `getPredictionTrace` RPC - [REQ-P4](#req-p4), [REQ-TDD](#req-tdd)
+- [x] Add minimal InspectionPanel trace UI - [REQ-P4](#req-p4), [REQ-TDD](#req-tdd)
+- [x] Avoid streamed diagnostics/frame-buffer/SAB expansion - [REQ-P4](#req-p4)
+- [x] Defer activation histograms - [REQ-P4](#req-p4)
+- [x] Defer layer-level gradient-flow overlay - [REQ-P4](#req-p4)
+- [x] Defer neuron/edge histories - [REQ-P4](#req-p4)
 
 ### P5: Advanced Labs
 
@@ -225,7 +317,9 @@ approval to proceed.
 ### Gate
 
 - [x] Do not start P0C without explicit approval - [REQ-NO-P0C-WITHOUT-APPROVAL](#req-no-p0c-without-approval)
-- [ ] Do not start P1 without explicit approval - [REQ-AGENTS](#req-agents)
+- [x] Do not start P1 without explicit approval - [REQ-AGENTS](#req-agents), [REQ-P1](#req-p1)
+- [x] Do not expand beyond conservative 3 lessons until schema gate remains stable - [REQ-P1](#req-p1)
+- [x] Do not expand P4 beyond on-demand trace in this slice - [REQ-P4](#req-p4)
 
 ## Agent Review Log
 
@@ -245,6 +339,32 @@ approval to proceed.
 | Banach | High | P0C code quality review | APPROVED | Approved staged diff with non-blocking notes. Locale-sensitive tie-break and duplicated accessible label were addressed after review. Snapshot re-render note accepted as safe for the small P0C rule set. |
 | Boyle | High | P0C final spec compliance review | APPROVED | Confirmed deterministic explanations, minimal UI, existing metrics only, required tests, and no protocol/store/serialization/dependency/P1 scope creep. |
 | Huygens | High | P0C final merge-steward review | APPROVED | Confirmed staged files match the P0C allowlist, unrelated dirty files are unstaged, no public exports/protocol/config/store/persistence/dependency changes, no snapshots, and no P1 work. |
+| Descartes | High | P1 schema/registry planning recon | COMPLETED | Recommended web-local lesson schema/registry because lessons depend on web layout, phase, and highlight concepts. |
+| Poincare | High | P1 schema/registry planning recon | COMPLETED | Confirmed `apps/web/src/lessons` ownership and warned against shared package exports for P1. |
+| Singer | High | P1 XOR migration planning recon | COMPLETED | Documented behavior to preserve: XOR preset, reset, target order, tab/phase focus, finish, and unmount cleanup. |
+| Dalton | High | P1 XOR migration planning recon | COMPLETED | Confirmed `transport` is a lesson target but not a layout tab, so lesson targets must remain UI-specific. |
+| Kant | High | P1 content planning recon | COMPLETED | Proposed Feature Engineering, but noted it requires a new `features` lesson target. Deferred by user choice. |
+| Averroes | High | P1 content planning recon | COMPLETED | Recommended conservative beginner lessons and a minimal in-panel selector. |
+| Epicurus | High | P1 verification gate planning recon | COMPLETED | Recommended web-local invariant tests, full verification commands, and review/merge-steward gates. |
+| Jason | High | P1 verification gate planning recon | COMPLETED | Confirmed verified command syntax and collision rules for P1. |
+| Noether | High | P1 schema/registry review | APPROVED | Confirmed web-local schema, four-value `LessonTarget`, registry exports, conservative 3 lessons, and invariant tests. |
+| Boole | High | P1 schema/registry review | APPROVED | Confirmed exact conservative lesson ids, no `features` target, and no shared/package contract churn. |
+| Godel | High | P1 XOR migration review | NEEDS_CHANGES | Found selector overflow risk from three long nowrap buttons in the fixed-width guided panel. Fixed with a vertical labelled button group and wrapped button text. |
+| Planck | High | P1 XOR migration review | APPROVED | Confirmed XOR behavior, target order, phase progression, finish/unmount cleanup, and no CSS/layout/store/shared changes. |
+| Euclid | High | P1 content review | APPROVED | Confirmed exact conservative 3-lesson set, no `features` target, local selector, per-lesson progress, and transport/run coverage. |
+| Sagan | High | P1 content review | APPROVED | Confirmed preset wiring, no Feature Engineering, no `features` target, and guided panel coverage for selection/start/progress. |
+| Dewey | High | P1 final checklist review | APPROVED | Confirmed staged files match P1 allowlist, no shared/store/worker/serialization/preset changes, and no P2 work. |
+| Hypatia | High | P1 merge-steward review | NEEDS_CHANGES | Requested tracker final-review checkboxes and schema-stability gate be marked complete. Code scope and verification evidence were otherwise clean. |
+| Kuhn | High | P1 final merge-steward re-review | APPROVED | Confirmed tracker gate fixes, staged allowlist, no shared/protocol/store/serialization/preset/dependency/snapshot changes, and clean cached diff. |
+| Bacon | High | P2 data/persistence recon | COMPLETED | Mapped typed shared model, validators, storage envelope, web persistence, capture helper, and restore/report risks. |
+| Ramanujan | High | P2 UI/report recon | COMPLETED | Recommended a right-region history/report panel after persistence contract lands and warned layout edits must be coordinator-owned. |
+| Anscombe | High | P3 data/schema lifecycle recon | COMPLETED | Confirmed P3 should reuse `data.seed`, avoid schema migration, and derive counts from existing train/test arrays. |
+| Carver | High | P3 visualization/UI recon | COMPLETED | Recommended accessible DataPanel split readout, disabled reshuffle during loading, and compact split visualization. |
+| Cicero | High | P4 engine/protocol recon | COMPLETED | Recommended engine pure-copy trace and one-shot Comlink RPC, avoiding `WorkerToMainMessage`, frame buffer, and SAB changes. |
+| Peirce | High | P4 UI recon | COMPLETED | Recommended extending `InspectionPanel`, local state, native controls, aria-live output, and in-flight gating. |
+| Aquinas | High | P2-P4 spec compliance review | APPROVED | Confirmed P2 local-first memory, P3 seed-based split understanding, and P4 on-demand trace match plan with no streamed/frame-buffer/SAB expansion. |
+| Zeno | High | P2-P4 code quality review | NEEDS_CHANGES -> APPROVED | Initially flagged restore wording, stale params, and localStorage write failures. Re-review approved after config-only restore copy, frame-buffer parameter capture, empty-param nulling, and guarded persistence writes. |
+| Leibniz | High | P2-P4 merge-steward review | NEEDS_CHANGES -> APPROVED | Initially blocked on restore semantics mismatch. Re-review approved after `Restore config` UI/copy aligned with locked P2 decision. |
 
 ## Verification Log
 
@@ -283,16 +403,65 @@ approval to proceed.
 | `pnpm lint` | PASS | ESLint passed. |
 | `pnpm build` | PASS | Production build passed with existing Vite chunk-size warning. |
 
+### P1
+
+| Command | Outcome | Notes |
+|---|---|---|
+| `pnpm --filter @nn-playground/web test src/lessons/lessonRegistry.test.ts` | EXPECTED FAIL | Initial TDD red run failed because `lessonRegistry.ts` did not exist. |
+| `pnpm --filter @nn-playground/web test src/components/controls/GuidedLessonPanel.test.tsx` | EXPECTED FAIL | Initial TDD red run failed because the registry import did not exist. |
+| `pnpm --filter @nn-playground/web test src/lessons/lessonRegistry.test.ts` | PASS | Registry invariants passed: 1 file, 6 tests. |
+| `pnpm --filter @nn-playground/web test src/components/controls/GuidedLessonPanel.test.tsx` | PASS | Guided lesson panel migration/content tests passed: 1 file, 3 tests. |
+| `pnpm --filter @nn-playground/web test src/lessons/lessonRegistry.test.ts src/components/controls/GuidedLessonPanel.test.tsx` | PASS | Combined P1 targeted suite passed: 2 files, 9 tests. |
+| `pnpm --filter @nn-playground/web test` | EXPECTED FAIL | First full-web run caught an accessibility regression in the lesson selector markup. |
+| `pnpm --filter @nn-playground/web test src/App.test.tsx` | PASS | Accessibility regression fixed by changing the selector container to a labelled group: 1 file, 10 tests. |
+| `pnpm --filter @nn-playground/web test` | PASS | Full web suite passed after the accessibility fix: 45 files, 259 tests. |
+| `pnpm --filter @nn-playground/shared test` | PASS | Full shared suite unchanged by P1: 4 files, 59 tests. |
+| `pnpm lint` | PASS | ESLint passed. |
+| `pnpm test` | PASS | Workspace test suite passed: engine 277 tests, shared 59 tests, web 259 tests. |
+| `pnpm build` | PASS | Production build passed with existing Vite chunk-size warning. |
+| `pnpm --filter @nn-playground/web test src/components/controls/GuidedLessonPanel.test.tsx src/lessons/lessonRegistry.test.ts src/App.test.tsx` | PASS | Focused rerun after reviewer-requested selector overflow fix: 3 files, 19 tests. |
+| `pnpm --filter @nn-playground/web test` | PASS | Full web rerun after selector overflow fix: 45 files, 259 tests. |
+| `pnpm lint` | PASS | ESLint rerun passed after selector overflow fix. |
+| `pnpm build` | PASS | Production build rerun passed after selector overflow fix with existing Vite chunk-size warning. |
+
+### P2-P4
+
+| Command | Outcome | Notes |
+|---|---|---|
+| `pnpm --filter @nn-playground/shared test src/__tests__/experimentMemory.test.ts` | EXPECTED FAIL | Initial P2 TDD red run failed because the shared experiment memory module did not exist. |
+| `pnpm --filter @nn-playground/shared test src/__tests__/experimentMemory.test.ts` | PASS | Shared P2 model/validator tests passed: 1 file, 5 tests. |
+| `pnpm --filter @nn-playground/web test src/store/experimentMemoryStore.test.ts src/store/experimentRunCapture.test.ts` | EXPECTED FAIL | Initial P2 TDD red run failed because web persistence/capture modules did not exist. |
+| `pnpm --filter @nn-playground/web test src/store/experimentMemoryStore.test.ts src/store/experimentRunCapture.test.ts` | PASS | Web persistence/capture tests passed: 2 files, 6 tests. |
+| `pnpm --filter @nn-playground/web test src/store/useLayoutStore.test.ts src/components/controls/RunHistoryPanel.test.tsx` | EXPECTED FAIL | Initial P2 UI red run failed because `history` tab/panel did not exist. |
+| `pnpm --filter @nn-playground/web test src/store/useLayoutStore.test.ts src/components/controls/RunHistoryPanel.test.tsx` | PASS | P2 history tab/panel tests passed: 2 files, 14 tests. |
+| `pnpm --filter @nn-playground/web test src/store/usePlaygroundStore.test.ts src/components/controls/DataPanel.test.tsx src/components/visualization/DecisionBoundary.test.tsx` | EXPECTED FAIL | Initial P3 red run failed because seed reshuffle and split readout controls did not exist. |
+| `pnpm --filter @nn-playground/web test src/store/usePlaygroundStore.test.ts src/components/controls/DataPanel.test.tsx src/components/visualization/DecisionBoundary.test.tsx` | PASS | P3 store/DataPanel/boundary tests passed: 3 files, 12 tests. |
+| `pnpm --filter @nn-playground/engine test src/__tests__/network.test.ts` | EXPECTED FAIL | Initial P4 engine red run failed because `tracePrediction` did not exist. |
+| `pnpm --filter @nn-playground/engine test src/__tests__/network.test.ts` | PASS | P4 engine trace tests passed: 55 network tests. |
+| `pnpm --filter @nn-playground/web test src/components/controls/InspectionPanel.test.tsx` | EXPECTED FAIL | Initial P4 UI red run failed because trace controls did not exist. |
+| `pnpm --filter @nn-playground/web test src/components/controls/InspectionPanel.test.tsx` | PASS | P4 inspection UI tests passed: 1 file, 3 tests. |
+| `pnpm --filter @nn-playground/web test src/worker/training.worker.test.ts src/components/controls/InspectionPanel.test.tsx` | PASS | P4 worker RPC and UI regression tests passed: 2 files, 5 tests. |
+| `pnpm --filter @nn-playground/web test src/store/experimentMemoryStore.test.ts src/store/experimentRunCapture.test.ts src/components/controls/RunHistoryPanel.test.tsx` | PASS | P2 targeted rerun passed: 3 files, 10 tests. |
+| `pnpm --filter @nn-playground/web test src/store/experimentRunCapture.test.ts src/store/experimentMemoryStore.test.ts src/components/controls/RunHistoryPanel.test.tsx` | EXPECTED FAIL | Review-fix TDD red run caught missing frame-buffer capture, uncaught storage writes, and restore-copy mismatch. |
+| `pnpm --filter @nn-playground/web test src/store/experimentRunCapture.test.ts src/store/experimentMemoryStore.test.ts src/components/controls/RunHistoryPanel.test.tsx` | PASS | Review-fix targeted rerun passed: 3 files, 13 tests. |
+| `pnpm --filter @nn-playground/shared test` | PASS | Full shared suite: 5 files, 64 tests. |
+| `pnpm --filter @nn-playground/engine test` | PASS | Full engine suite: 12 files, 279 tests. |
+| `pnpm --filter @nn-playground/web test` | EXPECTED FAIL | First full web run caught missing `HistoryContent` in an existing integration mock. |
+| `pnpm --filter @nn-playground/web test src/__tests__/training.integration.test.tsx` | PASS | Integration mock fixed: 1 file, 6 tests. |
+| `pnpm --filter @nn-playground/web test` | PASS | Full web suite passed after fixes: 49 files, 280 tests. |
+| `pnpm lint` | PASS | ESLint passed. |
+| `pnpm test` | PASS | Workspace test suite passed: engine 279 tests, shared 64 tests, web 280 tests. |
+| `pnpm build` | EXPECTED FAIL | First final build caught two TypeScript-only guard/narrowing issues. |
+| `pnpm build` | PASS | Production build passed after type guard fixes with existing Vite chunk-size warning. |
+| `git diff --check` | PASS | No whitespace errors. |
+| `pnpm lint` | PASS | Final lint rerun after TypeScript guard fixes passed. |
+| `pnpm test` | PASS | Final workspace test rerun after TypeScript guard fixes passed. |
+
 ## File Ownership And Collision Notes
 
 Current unrelated dirty/untracked files to avoid unless explicitly assigned:
 
-- `apps/web/src/App.tsx`
-- `apps/web/src/components/controls/NetworkConfigPanel.tsx`
-- `apps/web/src/styles/forge.css`
-- `apps/web/src/styles/index.css`
-- `.claude/settings.local.json`
-- `FEATURE_BRAINSTORM.md`
+- None at P1 start.
 
 Current P0A files:
 
@@ -316,6 +485,36 @@ P0C files:
 - `apps/web/src/components/visualization/TrainingExplanationPanel.test.tsx`
 - `apps/web/src/components/layout/MainArea.tsx`
 - `apps/web/src/components/layout/MainArea.test.tsx`
+
+P1 files:
+
+- `apps/web/src/lessons/types.ts`
+- `apps/web/src/lessons/lessonRegistry.ts`
+- `apps/web/src/lessons/lessonRegistry.test.ts`
+- `apps/web/src/components/controls/GuidedLessonPanel.tsx`
+- `apps/web/src/components/controls/GuidedLessonPanel.test.tsx`
+
+P2-P4 files:
+
+- `packages/shared/src/experimentMemory.ts`
+- `packages/shared/src/__tests__/experimentMemory.test.ts`
+- `apps/web/src/store/experimentMemoryStore.ts`
+- `apps/web/src/store/experimentMemoryStore.test.ts`
+- `apps/web/src/store/experimentRunCapture.ts`
+- `apps/web/src/store/experimentRunCapture.test.ts`
+- `apps/web/src/components/controls/RunHistoryPanel.tsx`
+- `apps/web/src/components/controls/RunHistoryPanel.test.tsx`
+- `apps/web/src/components/controls/DataPanel.tsx`
+- `apps/web/src/components/controls/DataPanel.test.tsx`
+- `apps/web/src/components/visualization/DecisionBoundary.tsx`
+- `apps/web/src/components/visualization/DecisionBoundary.test.tsx`
+- `packages/engine/src/network.ts`
+- `packages/engine/src/types.ts`
+- `packages/engine/src/__tests__/network.test.ts`
+- `apps/web/src/worker/training.worker.ts`
+- `apps/web/src/worker/training.worker.test.ts`
+- `apps/web/src/components/controls/InspectionPanel.tsx`
+- `apps/web/src/components/controls/InspectionPanel.test.tsx`
 
 No worker may edit outside its allowlist, change serialization unexpectedly, add
 dependencies, or perform unrelated cleanup.

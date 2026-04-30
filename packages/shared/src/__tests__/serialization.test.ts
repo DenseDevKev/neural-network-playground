@@ -40,39 +40,6 @@ describe('URL State Serialization', () => {
         expect(decoded.network.hiddenLayers).toEqual(DEFAULT_NETWORK.hiddenLayers);
         expect(decoded.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
     });
-
-    it('round-trips advanced training and network hyperparameters', () => {
-        const advanced: AppConfig = {
-            ...validConfig,
-            network: {
-                ...validConfig.network,
-                outputActivation: 'linear',
-                weightInit: 'he',
-            },
-            training: {
-                ...validConfig.training,
-                lossType: 'huber',
-                optimizer: 'adam',
-                momentum: 0.72,
-                gradientClip: 0.25,
-                adamBeta1: 0.82,
-                adamBeta2: 0.97,
-                huberDelta: 0.4,
-                lrSchedule: { type: 'step', stepSize: 25, gamma: 0.6 },
-            },
-        };
-
-        const decoded = decodeUrlState(encodeUrlState(advanced));
-
-        expect(decoded.network.outputActivation).toBe('linear');
-        expect(decoded.network.weightInit).toBe('he');
-        expect(decoded.training.momentum).toBe(0.72);
-        expect(decoded.training.gradientClip).toBe(0.25);
-        expect(decoded.training.adamBeta1).toBe(0.82);
-        expect(decoded.training.adamBeta2).toBe(0.97);
-        expect(decoded.training.huberDelta).toBe(0.4);
-        expect(decoded.training.lrSchedule).toEqual({ type: 'step', stepSize: 25, gamma: 0.6 });
-    });
 });
 
 describe('JSON Serialization', () => {

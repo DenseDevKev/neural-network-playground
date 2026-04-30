@@ -114,7 +114,7 @@ describe('DecisionBoundary', () => {
         expect(window.requestAnimationFrame).not.toHaveBeenCalled();
     });
 
-    it('renders uncertainty and misclassification overlay controls when requested', () => {
+    it('renders uncertainty, misclassification, and split overlay badges when requested', () => {
         const { rerender, container } = render(
             <DecisionBoundary
                 trainPoints={[{ x: 0, y: 0, label: 0 }]}
@@ -138,6 +138,18 @@ describe('DecisionBoundary', () => {
         );
 
         expect(container.querySelector('[data-overlay-mode="misclassification"]')).not.toBeNull();
+
+        rerender(
+            <DecisionBoundary
+                trainPoints={[{ x: 0, y: 0, label: 0 }]}
+                testPoints={[{ x: 0.5, y: 0.5, label: 1 }]}
+                showTestData={false}
+                discretize={false}
+                overlayMode="split"
+            />,
+        );
+
+        expect(container.querySelector('[data-overlay-mode="split"]')).not.toBeNull();
     });
 
     it('classifies a point from the nearest decision grid cell', () => {
