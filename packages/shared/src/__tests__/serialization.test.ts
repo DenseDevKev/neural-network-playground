@@ -397,4 +397,31 @@ describe('compatibility normalization', () => {
         expect(lenient.config?.training.adamBeta2).toBe(0.999);
         expect(lenient.config?.training.adamEps).toBe(1e-8);
     });
+
+    it('preserves optional training hyperparameters during strict import', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                lossType: 'huber',
+                momentum: 0.33,
+                gradientClip: 1.5,
+                adamBeta1: 0.7,
+                adamBeta2: 0.95,
+                huberDelta: 2.25,
+                lrSchedule: { type: 'cosine', totalSteps: 500, minLr: 0.0001 },
+            },
+        });
+
+        expect(result.error).toBeNull();
+        expect(result.config?.training).toMatchObject({
+            momentum: 0.33,
+            gradientClip: 1.5,
+            adamBeta1: 0.7,
+            adamBeta2: 0.95,
+            huberDelta: 2.25,
+            lrSchedule: { type: 'cosine', totalSteps: 500, minLr: 0.0001 },
+        });
+    });
 });

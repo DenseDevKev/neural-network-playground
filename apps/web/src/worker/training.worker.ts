@@ -1256,6 +1256,7 @@ export const workerApi = {
         };
     },
 
+
     /** Update what visual data the UI currently needs. */
     updateDemand(demand: VisualizationDemand): void {
         const normalized = normalizeVisualizationDemand(demand);
