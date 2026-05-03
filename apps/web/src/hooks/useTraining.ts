@@ -343,7 +343,7 @@ export function useTraining(): TrainingHook {
             }
         };
         sync();
-    }, [network, training, data, features, configSyncNonce]);
+    }, [network, training, data, features, configSyncNonce, beginConfigSync, isCurrentConfigSync, finishConfigSyncIfCurrent]);
 
     // Sync demand changes to worker
     useEffect(() => {
