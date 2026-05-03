@@ -25,6 +25,7 @@ import {
     ConfusionContent,
     InspectContent,
     CodeContent,
+    HistoryContent,
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
@@ -184,6 +185,7 @@ export default function App() {
         confusion: <ConfusionContent />,
         inspection: <InspectContent />,
         code: <CodeContent />,
+        history: <HistoryContent onRestore={stableReset} />,
     };
 
     const transport = (
@@ -230,6 +232,12 @@ export default function App() {
         </Panel>
     );
 
+    const historyPanel = (
+        <Panel title="Run History" phase="both">
+            <HistoryContent onRestore={stableReset} />
+        </Panel>
+    );
+
     const gridConfigPanels = (
         <div className="forge-panel-stack">
             <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
@@ -245,6 +253,7 @@ export default function App() {
         <div className="forge-panel-stack">
             {inspectPanel}
             {codePanel}
+            {historyPanel}
         </div>
     );
 
@@ -354,6 +363,7 @@ export default function App() {
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
+                                    {historyPanel}
                                 </>
                             }
                             runLeft={
@@ -378,6 +388,7 @@ export default function App() {
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
+                                    {historyPanel}
                                 </>
                             }
                             transportContent={transport}

@@ -14,6 +14,7 @@ describe('DataPanel loading feedback', () => {
                 problemType: 'classification',
                 noise: 0,
                 trainTestRatio: 0.5,
+                seed: 42,
             },
         }));
 
@@ -21,8 +22,8 @@ describe('DataPanel loading feedback', () => {
         useTrainingStore.setState({
             status: 'idle',
             snapshot: null,
-            trainPoints: [],
-            testPoints: [],
+            trainPoints: [{ x: 0, y: 0, label: 0 }, { x: 1, y: 1, label: 1 }],
+            testPoints: [{ x: -1, y: -1, label: 0 }],
             stepsPerFrame: 5,
             dataConfigLoading: false,
             networkConfigLoading: false,
@@ -67,5 +68,31 @@ describe('DataPanel loading feedback', () => {
 
         expect(screen.getByText('Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.')).toBeInTheDocument();
         expect(screen.getByText('Cause: more noise blurs class edges. Effect: training loss may flatten and test accuracy becomes harder to improve.')).toBeInTheDocument();
+    });
+
+    it('shows accessible train/test split counts from runtime points', () => {
+        render(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByLabelText('Train/test split: 2 train, 1 test')).toBeInTheDocument();
+        expect(screen.getByText('Train 2')).toBeInTheDocument();
+        expect(screen.getByText('Test 1')).toBeInTheDocument();
+    });
+
+    it('reshuffles by changing the data seed through the data config path', async () => {
+        const user = userEvent.setup();
+
+        render(<DataPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: 'Reshuffle split' }));
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
+        expect(usePlaygroundStore.getState().data.seed).toBe(43);
+    });
+
+    it('disables reshuffle while data config is loading', () => {
+        useTrainingStore.setState({ dataConfigLoading: true });
+
+        render(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByRole('button', { name: 'Reshuffle split' })).toBeDisabled();
     });
 });

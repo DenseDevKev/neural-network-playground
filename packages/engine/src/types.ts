@@ -136,6 +136,23 @@ export interface HistoryPoint {
     testAccuracy?: number;
 }
 
+/** Per-layer activations captured for one inspected prediction. */
+export interface PredictionTraceLayer {
+    layerIndex: number;
+    preActivations: number[];
+    activations: number[];
+}
+
+/** Pure-copy explanation of a single forward prediction. */
+export interface PredictionTrace {
+    input: number[];
+    target?: number[];
+    output: number[];
+    prediction: number | number[];
+    lossContribution?: number;
+    layers: PredictionTraceLayer[];
+}
+
 /** Serializable network state for save/restore. */
 export interface SerializedNetwork {
     config: NetworkConfig;

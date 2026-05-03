@@ -26,6 +26,9 @@ const InspectionPanel = lazy(() =>
 const CodeExportPanel = lazy(() =>
     import('../controls/CodeExportPanel.tsx').then((m) => ({ default: m.CodeExportPanel })),
 );
+const RunHistoryPanel = lazy(() =>
+    import('../controls/RunHistoryPanel.tsx').then((m) => ({ default: m.RunHistoryPanel })),
+);
 
 function Fallback({ msg }: { msg: string }) {
     return <LoadingState isLoading inline message={msg} />;
@@ -72,14 +75,14 @@ export const BoundaryContent = memo(function BoundaryContent() {
                         Discretize output
                     </label>
                     <div className="decision-overlay-controls" aria-label="Decision overlay controls">
-                        {(['none', 'uncertainty', 'misclassification'] as const).map((mode) => (
+                        {(['none', 'uncertainty', 'misclassification', 'split'] as const).map((mode) => (
                             <button
                                 key={mode}
                                 type="button"
                                 aria-pressed={overlayMode === mode}
                                 onClick={() => setOverlayMode(mode)}
                             >
-                                {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : 'Errors'}
+                                {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : mode === 'misclassification' ? 'Errors' : 'Split'}
                             </button>
                         ))}
                     </div>
@@ -124,6 +127,14 @@ export const CodeContent = memo(function CodeContent() {
     );
 });
 
+export const HistoryContent = memo(function HistoryContent({ onRestore }: { onRestore: () => void }) {
+    return (
+        <Suspense fallback={<Fallback msg="Loading run history…" />}>
+            <RunHistoryPanel onRestore={onRestore} />
+        </Suspense>
+    );
+});
+
 // ── Legacy MainArea (for direct-render tests and fallback contexts) ────────
 export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
     const showTestData = usePlaygroundStore((s) => s.ui.showTestData);
@@ -151,14 +162,14 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                     />
                 </ErrorBoundary>
                 <div className="decision-overlay-controls" aria-label="Decision overlay controls">
-                    {(['none', 'uncertainty', 'misclassification'] as const).map((mode) => (
+                    {(['none', 'uncertainty', 'misclassification', 'split'] as const).map((mode) => (
                         <button
                             key={mode}
                             type="button"
                             aria-pressed={overlayMode === mode}
                             onClick={() => setOverlayMode(mode)}
                         >
-                            {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : 'Errors'}
+                            {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : mode === 'misclassification' ? 'Errors' : 'Split'}
                         </button>
                     ))}
                 </div>
@@ -177,6 +188,11 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                 <Panel title="Code Export" phase="both">
                     <Suspense fallback={<Fallback msg="Loading code export…" />}>
                         <CodeExportPanel />
+                    </Suspense>
+                </Panel>
+                <Panel title="Run History" phase="both">
+                    <Suspense fallback={<Fallback msg="Loading run history…" />}>
+                        <RunHistoryPanel onRestore={training.reset} />
                     </Suspense>
                 </Panel>
             </aside>

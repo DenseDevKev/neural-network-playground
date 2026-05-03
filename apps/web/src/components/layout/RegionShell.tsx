@@ -29,6 +29,7 @@ export const RIGHT_TABS: TabDef<RightTabId>[] = [
     { id: 'confusion',  label: 'Confusion' },
     { id: 'inspection', label: 'Inspection' },
     { id: 'code',       label: 'Code' },
+    { id: 'history',    label: 'History' },
 ];
 
 // ─── Tab strip ────────────────────────────────────────────────────────────

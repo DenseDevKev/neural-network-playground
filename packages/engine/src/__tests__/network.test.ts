@@ -794,3 +794,29 @@ describe('getTotalNeuronCount', () => {
         expect(net.getTotalNeuronCount()).toBe(19);
     });
 });
+
+describe('prediction tracing', () => {
+    it('returns a pure-copy trace whose output matches forward', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3, 2] }));
+        const input = [0.25, -0.5];
+        const trace = net.tracePrediction(input, [1], 'crossEntropy');
+
+        expect(trace.input).toEqual(input);
+        expect(trace.output).toEqual(net.forward(input));
+        expect(trace.target).toEqual([1]);
+        expect(trace.lossContribution).toBeGreaterThan(0);
+        expect(trace.layers.map((layer) => layer.activations.length)).toEqual([3, 2, 1]);
+        expect(trace.layers.map((layer) => layer.preActivations.length)).toEqual([3, 2, 1]);
+
+        trace.layers[0].activations[0] = 999;
+        const nextTrace = net.tracePrediction(input);
+        expect(nextTrace.layers[0].activations[0]).not.toBe(999);
+    });
+
+    it('rejects invalid trace inputs and target shapes', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.tracePrediction([1])).toThrow(RangeError);
+        expect(() => net.tracePrediction([1, 2], [1, 0], 'crossEntropy')).toThrow(RangeError);
+    });
+});
