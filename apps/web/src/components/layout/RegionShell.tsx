@@ -276,11 +276,7 @@ export const GridShell = memo(function GridShell({
             <div className="forge-grid__confusion">{confusionContent}</div>
             <div className="forge-grid__inspect">{inspectContent}</div>
             <div className="forge-grid__transport">
-                <div className="forge-panel" style={{ flexDirection: 'row', height: '100%' }}>
-                    <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
-                        {transportContent}
-                    </div>
-                </div>
+                {transportContent}
             </div>
         </div>
     );
