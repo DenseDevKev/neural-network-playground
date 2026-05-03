@@ -58,6 +58,12 @@ import {
     type SharedSnapshotViews,
 } from './sharedSnapshot.ts';
 import {
+    DEFAULT_RUNTIME_STOP_CONDITIONS,
+    createInitialStopConditionState,
+    evaluateStopConditions,
+    type StopConditionState,
+} from './stopConditions.ts';
+import {
     createMiniBatchScratch,
     fillMiniBatchScratch,
     getTrainingStepsForTick,

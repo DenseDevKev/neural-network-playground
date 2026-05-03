@@ -5,7 +5,6 @@ import {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
     MAX_TRAIN_TEST_RATIO,
-    MIN_TRAIN_TEST_RATIO,
     decodeUrlState,
     validateImportedConfig,
     normalizeAppConfig,
@@ -251,5 +250,21 @@ describe('compatibility normalization', () => {
             huberDelta: 2.25,
             lrSchedule: { type: 'cosine', totalSteps: 500, minLr: 0.0001 },
         });
+    });
+
+    it('accepts zero-valued adam betas in strict import mode', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                adamBeta1: 0,
+                adamBeta2: 0,
+            },
+        });
+
+        expect(result.error).toBeNull();
+        expect(result.config?.training.adamBeta1).toBe(0);
+        expect(result.config?.training.adamBeta2).toBe(0);
     });
 });

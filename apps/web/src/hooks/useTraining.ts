@@ -243,9 +243,12 @@ export function useTraining(): TrainingHook {
             const ts = useTrainingStore.getState();
 
             if (msg.type === 'snapshot') {
+                const snapshot = createStreamSnapshot(msg, ts.snapshot);
+                const frameVersions = getFrameVersions();
                 ts.applyStreamedSnapshot({
-                    snapshot: createStreamSnapshot(msg, ts.snapshot),
-                    frameVersion: getFrameVersion(),
+                    snapshot,
+                    frameVersion: frameVersions.frameVersion,
+                    frameVersions,
                     testMetricsStale: msg.scalars.testMetricsStale === true,
                 });
             } else if (msg.type === 'status') {

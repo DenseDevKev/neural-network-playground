@@ -1,7 +1,7 @@
 // ── Advanced Inspection Panel ──
 // Displays per-layer gradient magnitudes, activation stats, and weight distributions.
 
-import { useEffect, useMemo, memo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';

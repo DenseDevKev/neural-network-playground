@@ -341,7 +341,7 @@ function normalizeOptionalUnitInterval(
     error: string,
 ): { value: number | undefined; error: string | null } {
     if (value === undefined) return { value: undefined, error: null };
-    if (!isFiniteNumber(value) || value <= 0 || value >= 1) {
+    if (!isFiniteNumber(value) || value < 0 || value >= 1) {
         return strict ? { value: undefined, error } : { value: undefined, error: null };
     }
     return { value, error: null };

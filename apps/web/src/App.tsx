@@ -85,6 +85,7 @@ export default function App() {
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const workerError = useTrainingStore((s) => s.workerError);
+    const demand = usePlaygroundStore((s) => s.demand);
     const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
     const setDemand = usePlaygroundStore((s) => s.setDemand);
     const [isCompact, setIsCompact] = useState(() => window.innerWidth < COMPACT_BREAKPOINT);
@@ -129,6 +130,24 @@ export default function App() {
         window.addEventListener('resize', updateCompactMode);
         return () => window.removeEventListener('resize', updateCompactMode);
     }, []);
+
+    useEffect(() => {
+        const nextDemand = deriveVisualizationDemand({
+            layout: effectiveLayout,
+            phase,
+            activeTabRight,
+            graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
+        });
+        if (
+            demand.needDecisionBoundary === nextDemand.needDecisionBoundary &&
+            demand.needNeuronGrids === nextDemand.needNeuronGrids &&
+            demand.needLayerStats === nextDemand.needLayerStats &&
+            demand.needConfusionMatrix === nextDemand.needConfusionMatrix
+        ) {
+            return;
+        }
+        setDemand(nextDemand);
+    }, [effectiveLayout, phase, activeTabRight, canvasNetworkGraph, demand, setDemand]);
 
     useEffect(() => {
         if (workerError) {
