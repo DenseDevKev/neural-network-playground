@@ -25,6 +25,7 @@ import {
     ConfusionContent,
     InspectContent,
     CodeContent,
+    HistoryContent,
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
@@ -84,6 +85,7 @@ export default function App() {
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const workerError = useTrainingStore((s) => s.workerError);
+    const demand = usePlaygroundStore((s) => s.demand);
     const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
     const setDemand = usePlaygroundStore((s) => s.setDemand);
     const [isCompact, setIsCompact] = useState(() => window.innerWidth < COMPACT_BREAKPOINT);
@@ -105,15 +107,6 @@ export default function App() {
         (target: LessonTarget) => `lesson-target ${lessonHighlight === target ? 'lesson-target--active' : ''}`,
         [lessonHighlight],
     );
-
-    useEffect(() => {
-        setDemand(deriveVisualizationDemand({
-            layout: effectiveLayout,
-            phase,
-            activeTabRight,
-            graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
-        }));
-    }, [activeTabRight, canvasNetworkGraph, effectiveLayout, phase, setDemand]);
 
     // Performance observer (dev only)
     useEffect(() => {
@@ -137,6 +130,24 @@ export default function App() {
         window.addEventListener('resize', updateCompactMode);
         return () => window.removeEventListener('resize', updateCompactMode);
     }, []);
+
+    useEffect(() => {
+        const nextDemand = deriveVisualizationDemand({
+            layout: effectiveLayout,
+            phase,
+            activeTabRight,
+            graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
+        });
+        if (
+            demand.needDecisionBoundary === nextDemand.needDecisionBoundary &&
+            demand.needNeuronGrids === nextDemand.needNeuronGrids &&
+            demand.needLayerStats === nextDemand.needLayerStats &&
+            demand.needConfusionMatrix === nextDemand.needConfusionMatrix
+        ) {
+            return;
+        }
+        setDemand(nextDemand);
+    }, [effectiveLayout, phase, activeTabRight, canvasNetworkGraph, demand, setDemand]);
 
     useEffect(() => {
         if (workerError) {
@@ -184,6 +195,7 @@ export default function App() {
         confusion: <ConfusionContent />,
         inspection: <InspectContent />,
         code: <CodeContent />,
+        history: <HistoryContent onRestore={stableReset} />,
     };
 
     const transport = (
@@ -230,6 +242,12 @@ export default function App() {
         </Panel>
     );
 
+    const historyPanel = (
+        <Panel title="Run History" phase="both">
+            <HistoryContent onRestore={stableReset} />
+        </Panel>
+    );
+
     const gridConfigPanels = (
         <div className="forge-panel-stack">
             <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
@@ -245,6 +263,7 @@ export default function App() {
         <div className="forge-panel-stack">
             {inspectPanel}
             {codePanel}
+            {historyPanel}
         </div>
     );
 
@@ -354,6 +373,7 @@ export default function App() {
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
+                                    {historyPanel}
                                 </>
                             }
                             runLeft={
@@ -378,6 +398,7 @@ export default function App() {
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
+                                    {historyPanel}
                                 </>
                             }
                             transportContent={transport}
@@ -397,23 +418,26 @@ function StatusBar({ effectiveLayout }: { effectiveLayout: LayoutVariant }) {
     const status = useTrainingStore((s) => s.status);
     const phase = useLayoutStore((s) => s.phase);
     const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const snapshot = useTrainingStore((s) => s.snapshot);
 
     return (
-        <div className="forge-statusbar" role="status" aria-label="Status bar">
+        <div
+            className="forge-statusbar"
+            role="status"
+            aria-label="Status bar"
+            data-status={status}
+        >
             <span>
-                <span className="forge-statusbar__accent">●</span>{' '}
+                <span className="forge-statusbar__dot" aria-hidden />
                 {status.toUpperCase()}
             </span>
             <span>LAYOUT: <span className="forge-statusbar__accent">{effectiveLayout}</span></span>
             {effectiveLayout === 'split' && (
                 <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
             )}
-            <span>DATA: {dataset}</span>
-            <span>ARCH: [{hiddenLayers.join(', ')}]</span>
+            <span>DATA: <span className="forge-statusbar__accent">{dataset}</span></span>
             <span className="forge-statusbar__spacer" />
-            <span>step {(snapshot?.step ?? 0).toLocaleString()}</span>
+            <span>STEP <span className="forge-statusbar__accent">{(snapshot?.step ?? 0).toLocaleString()}</span></span>
             <span>
                 Inspired by{' '}
                 <a

@@ -517,9 +517,9 @@ export function normalizeAppConfig(
         return { config: null, error: 'Gradient clip must be null or a positive number.' };
     }
 
-    const adamBeta1 = normalizeOptionalUnitInterval(training.adamBeta1, strict, 'Adam beta 1 must be at least 0 and less than 1.');
+    const adamBeta1 = normalizeOptionalUnitInterval(training.adamBeta1, strict, 'Adam beta 1 must be between 0 and 1.');
     if (adamBeta1.error) return { config: null, error: adamBeta1.error };
-    const adamBeta2 = normalizeOptionalUnitInterval(training.adamBeta2, strict, 'Adam beta 2 must be at least 0 and less than 1.');
+    const adamBeta2 = normalizeOptionalUnitInterval(training.adamBeta2, strict, 'Adam beta 2 must be between 0 and 1.');
     if (adamBeta2.error) return { config: null, error: adamBeta2.error };
     const adamEps = normalizeOptionalPositive(training.adamEps, strict, 'Adam epsilon must be a positive number.');
     if (adamEps.error) return { config: null, error: adamEps.error };

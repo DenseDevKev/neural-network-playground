@@ -14,6 +14,7 @@ describe('DataPanel loading feedback', () => {
                 problemType: 'classification',
                 noise: 0,
                 trainTestRatio: 0.5,
+                seed: 42,
             },
         }));
 
@@ -21,8 +22,8 @@ describe('DataPanel loading feedback', () => {
         useTrainingStore.setState({
             status: 'idle',
             snapshot: null,
-            trainPoints: [],
-            testPoints: [],
+            trainPoints: [{ x: 0, y: 0, label: 0 }, { x: 1, y: 1, label: 1 }],
+            testPoints: [{ x: -1, y: -1, label: 0 }],
             stepsPerFrame: 5,
             dataConfigLoading: false,
             networkConfigLoading: false,

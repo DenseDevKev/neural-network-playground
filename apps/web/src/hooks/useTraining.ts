@@ -243,9 +243,12 @@ export function useTraining(): TrainingHook {
             const ts = useTrainingStore.getState();
 
             if (msg.type === 'snapshot') {
+                const snapshot = createStreamSnapshot(msg, ts.snapshot);
+                const frameVersions = getFrameVersions();
                 ts.applyStreamedSnapshot({
-                    snapshot: createStreamSnapshot(msg, ts.snapshot),
-                    frameVersions: getFrameVersions(),
+                    snapshot,
+                    frameVersion: frameVersions.frameVersion,
+                    frameVersions,
                     testMetricsStale: msg.scalars.testMetricsStale === true,
                 });
             } else if (msg.type === 'status') {
@@ -340,7 +343,7 @@ export function useTraining(): TrainingHook {
             }
         };
         sync();
-    }, [network, training, data, features, configSyncNonce, beginConfigSync, finishConfigSyncIfCurrent, isCurrentConfigSync]);
+    }, [network, training, data, features, configSyncNonce, beginConfigSync, isCurrentConfigSync, finishConfigSyncIfCurrent]);
 
     // Sync demand changes to worker
     useEffect(() => {

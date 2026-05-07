@@ -18,6 +18,7 @@ import type {
     LossType,
     LayerStats,
     ActivationType,
+    PredictionTrace,
 } from './types.js';
 import { getLoss } from './losses.js';
 import { computeLearningRate } from './schedules.js';
@@ -454,6 +455,45 @@ export class Network {
         const copy = new Array<number>(out.length);
         for (let i = 0, n = out.length; i < n; i++) copy[i] = out[i];
         return copy;
+    }
+
+    /** Capture a pure-copy trace for one prediction without mutating training state. */
+    tracePrediction(
+        input: number[],
+        target?: number[],
+        lossType?: LossType,
+        huberDelta?: number,
+    ): PredictionTrace {
+        if (target != null) {
+            assertVectorShape(target, this.config.outputSize, 'target');
+        }
+        const out = this.forwardInto(input);
+
+        const output = new Array<number>(out.length);
+        for (let i = 0, n = out.length; i < n; i++) output[i] = out[i];
+
+        let lossContribution: number | undefined;
+        if (target != null && lossType != null) {
+            const lossFn = getLoss(lossType, { huberDelta });
+            let sum = 0;
+            for (let i = 0; i < output.length; i++) {
+                sum += lossFn.loss(output[i], target[i]);
+            }
+            lossContribution = output.length === 0 ? 0 : sum / output.length;
+        }
+
+        return {
+            input: [...input],
+            target: target == null ? undefined : [...target],
+            output,
+            prediction: output.length === 1 ? output[0] : [...output],
+            lossContribution,
+            layers: this.outputs.map((layerOutput, layerIndex) => ({
+                layerIndex,
+                preActivations: Array.from(this.preActs[layerIndex]),
+                activations: Array.from(layerOutput),
+            })),
+        };
     }
 
     // ── Backward ─────────────────────────────────────────────────────────────

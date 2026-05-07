@@ -11,6 +11,7 @@ import {
     buildGridInputs,
     generateDataset,
     getActiveFeatures,
+    transformPoint,
     transformDataset,
     countActiveFeatures,
     isLossCompatible,
@@ -29,6 +30,7 @@ import type {
     DataPoint,
     HistoryPoint,
     Metrics,
+    PredictionTrace,
 } from '@nn-playground/engine';
 import {
     GRID_SIZE,
@@ -56,15 +58,18 @@ import {
     type SharedSnapshotViews,
 } from './sharedSnapshot.ts';
 import {
-    getTrainingStepsForTick,
-    normalizeTrainingSpeed,
-} from './trainingLoop.ts';
-import {
-    createInitialStopConditionState,
     DEFAULT_RUNTIME_STOP_CONDITIONS,
+    createInitialStopConditionState,
     evaluateStopConditions,
     type StopConditionState,
 } from './stopConditions.ts';
+import {
+    createMiniBatchScratch,
+    fillMiniBatchScratch,
+    getTrainingStepsForTick,
+    normalizeTrainingSpeed,
+    type MiniBatchScratch,
+} from './trainingLoop.ts';
 
 interface WorkerState {
     network: Network | null;
@@ -85,6 +90,8 @@ interface WorkerState {
     rafId: number | null;
     /** Shuffled index array — re-shuffled at the start of each epoch. */
     shuffledIndices: number[];
+    /** Reusable mini-batch views, filled with sample references each step. */
+    batchScratch: MiniBatchScratch | null;
     /** Separate PRNG for epoch shuffling, independent from network weights. */
     shufflePrng: PRNG | null;
     /** What visual data the UI currently needs. */
@@ -157,6 +164,29 @@ interface WorkerState {
      * postMessage calls so the transferable queue doesn't grow unbounded.
      */
     awaitingAck: boolean;
+}
+
+export type PredictionTraceSampleSource = 'train' | 'test' | 'custom';
+
+export interface PredictionTraceRequest {
+    source: PredictionTraceSampleSource;
+    index?: number;
+    x?: number;
+    y?: number;
+    label?: number;
+}
+
+export interface PredictionTraceResponse {
+    runId: number;
+    step: number;
+    sample: {
+        source: PredictionTraceSampleSource;
+        index?: number;
+        x: number;
+        y: number;
+        label?: number;
+    };
+    trace: PredictionTrace;
 }
 
 // Helper: reset back-pressure state. Called when the consumer on the other
@@ -291,6 +321,7 @@ const state: WorkerState = {
     running: false,
     rafId: null,
     shuffledIndices: [],
+    batchScratch: null,
     shufflePrng: null,
     demand: { ...DEFAULT_DEMAND },
     snapshotsSinceLastTestEval: 0,
@@ -429,6 +460,7 @@ function buildDataAndNetwork(): void {
     // Initialise shuffle state — seed is offset from data seed to stay independent.
     const n = state.trainInputs.length;
     state.shuffledIndices = Array.from({ length: n }, (_, i) => i);
+    state.batchScratch = createMiniBatchScratch(state.trainingConfig!.batchSize);
     state.shufflePrng = new PRNG((state.dataConfig!.seed ?? 42) + 1234);
     // Shuffle once up front so the very first epoch is not in generator order
     // (important for datasets whose generators emit class-sorted samples).
@@ -901,16 +933,20 @@ function trainOneStep(): void {
 
     const startIdx = batchSlot * bs;
     const endIdx = Math.min(startIdx + bs, n);
+    if (!state.batchScratch) {
+        state.batchScratch = createMiniBatchScratch(bs);
+    }
+    const batch = fillMiniBatchScratch(
+        state.batchScratch,
+        state.trainInputs,
+        state.trainTargets,
+        state.shuffledIndices,
+        startIdx,
+        endIdx,
+    );
 
-    if (startIdx < endIdx) {
-        const batchLoss = state.network.trainBatchIndexed(
-            state.trainInputs,
-            state.trainTargets,
-            state.shuffledIndices,
-            startIdx,
-            endIdx,
-            state.trainingConfig,
-        );
+    if (batch.inputs.length > 0) {
+        const batchLoss = state.network.trainBatch(batch.inputs, batch.targets, state.trainingConfig);
         // Feed the running EMA of batch loss. This is what the UI line
         // actually follows between full-dataset evaluations.
         if (Number.isFinite(batchLoss)) {
@@ -1098,6 +1134,48 @@ function handleStreamCommand(cmd: unknown): void {
     }
 }
 
+function requireFiniteTraceValue(value: number | undefined, name: string): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new RangeError(`${name} must be finite`);
+    }
+    return value;
+}
+
+function resolveTraceSample(request: PredictionTraceRequest): {
+    source: PredictionTraceSampleSource;
+    index?: number;
+    x: number;
+    y: number;
+    label?: number;
+} {
+    if (request.source === 'train' || request.source === 'test') {
+        const points = request.source === 'train' ? state.trainPoints : state.testPoints;
+        const index = request.index ?? 0;
+        if (!Number.isInteger(index) || index < 0 || index >= points.length) {
+            throw new RangeError(`${request.source} sample index is out of range`);
+        }
+        const point = points[index];
+        return {
+            source: request.source,
+            index,
+            x: point.x,
+            y: point.y,
+            label: point.label,
+        };
+    }
+
+    if (request.source === 'custom') {
+        const x = requireFiniteTraceValue(request.x, 'x');
+        const y = requireFiniteTraceValue(request.y, 'y');
+        const label = request.label === undefined
+            ? undefined
+            : requireFiniteTraceValue(request.label, 'label');
+        return { source: 'custom', x, y, label };
+    }
+
+    throw new RangeError('trace source must be train, test, or custom');
+}
+
 // ── Comlink API ──
 
 export const workerApi = {
@@ -1164,6 +1242,29 @@ export const workerApi = {
 
     getTestPoints(): DataPoint[] {
         return state.testPoints;
+    },
+
+    getPredictionTrace(request: PredictionTraceRequest): PredictionTraceResponse {
+        if (!state.network || !state.trainingConfig || !state.features) {
+            throw new Error('Not initialized');
+        }
+
+        const sample = resolveTraceSample(request);
+        const input = transformPoint(sample.x, sample.y, state.activeFeatures);
+        const target = sample.label === undefined ? undefined : [sample.label];
+        const trace = state.network.tracePrediction(
+            input,
+            target,
+            target ? state.trainingConfig.lossType : undefined,
+            state.trainingConfig.huberDelta,
+        );
+
+        return {
+            runId: state.runId,
+            step: state.network.getStep(),
+            sample,
+            trace,
+        };
     },
 
     /** Update what visual data the UI currently needs. */

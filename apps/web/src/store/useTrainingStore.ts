@@ -53,7 +53,8 @@ export interface TrainingStore {
     addHistoryPoint: (point: HistoryPoint) => void;
     applyStreamedSnapshot: (payload: {
         snapshot: NetworkSnapshot;
-        frameVersions: FrameVersions;
+        frameVersion: number;
+        frameVersions?: FrameVersions;
         testMetricsStale: boolean;
     }) => void;
     resetHistory: () => void;
@@ -100,20 +101,29 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
 
     setStatus: (status) => set({ status }),
     setSnapshot: (snapshot) => set({ snapshot }),
-    applyStreamedSnapshot: ({ snapshot, frameVersions, testMetricsStale }) => {
+    applyStreamedSnapshot: ({ snapshot, frameVersion, frameVersions, testMetricsStale }) => {
         set((state) => {
+            const versions = frameVersions ?? {
+                frameVersion,
+                outputGridVersion: state.outputGridVersion,
+                neuronGridsVersion: state.neuronGridsVersion,
+                paramsVersion: state.paramsVersion,
+                layerStatsVersion: state.layerStatsVersion,
+                confusionMatrixVersion: state.confusionMatrixVersion,
+            };
+
             const historyVersion = snapshot.historyPoint
                 ? appendHistoryPoint(snapshot.historyPoint)
                 : state.historyVersion;
 
             return {
                 snapshot,
-                frameVersion: frameVersions.frameVersion,
-                outputGridVersion: frameVersions.outputGridVersion,
-                neuronGridsVersion: frameVersions.neuronGridsVersion,
-                paramsVersion: frameVersions.paramsVersion,
-                layerStatsVersion: frameVersions.layerStatsVersion,
-                confusionMatrixVersion: frameVersions.confusionMatrixVersion,
+                frameVersion: versions.frameVersion,
+                outputGridVersion: versions.outputGridVersion,
+                neuronGridsVersion: versions.neuronGridsVersion,
+                paramsVersion: versions.paramsVersion,
+                layerStatsVersion: versions.layerStatsVersion,
+                confusionMatrixVersion: versions.confusionMatrixVersion,
                 historyVersion,
                 testMetricsStale,
                 workerError: null,

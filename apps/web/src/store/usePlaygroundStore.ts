@@ -79,6 +79,7 @@ export interface PlaygroundStore {
     setNoise: (noise: number) => void;
     setTrainTestRatio: (ratio: number) => void;
     setNumSamples: (n: number) => void;
+    reshuffleDataSeed: () => void;
     toggleFeature: (feature: keyof FeatureFlags) => void;
     setHiddenLayers: (layers: number[]) => void;
     addLayer: () => void;
@@ -193,6 +194,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         setNoise: (noise) => set((s) => ({ data: { ...s.data, noise } })),
         setTrainTestRatio: (trainTestRatio) => set((s) => ({ data: { ...s.data, trainTestRatio } })),
         setNumSamples: (numSamples) => set((s) => ({ data: { ...s.data, numSamples } })),
+        reshuffleDataSeed: () => set((s) => ({ data: { ...s.data, seed: s.data.seed + 1 } })),
 
         toggleFeature: (feature) => {
             set((s) => {
