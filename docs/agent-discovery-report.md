@@ -30,6 +30,11 @@ Baseline evidence gathered so far:
 - Final verification run status is tracked in the final handoff. At the time
   this report was updated, `pnpm test`, `pnpm lint`, and `pnpm build` had all
   exited 0 in the coordinator session.
+- Decision-boundary explainer TDD: `pnpm --filter @nn-playground/web test -- DecisionBoundary.test.tsx MainArea.test.tsx`
+  first failed on the missing canvas `role="img"`/`aria-describedby` and
+  missing visible overlay helper text. After implementation, the expanded
+  targeted web run with `DecisionBoundary.test.tsx`, `MainArea.test.tsx`, and
+  `appShell.integration.test.tsx` passed with 50 test files and 308 tests.
 
 ## Architecture Map
 
@@ -131,7 +136,13 @@ Current changes from this run:
 - `apps/web/src/lessons/types.ts` and `apps/web/src/App.tsx` updated so
   feature-focused lesson steps can highlight the existing Features panel.
 - `apps/web/src/__tests__/appShell.integration.test.tsx` updated to cover the
-  Features-panel lesson highlight path.
+  Features-panel lesson highlight path and keep the decision-boundary partial
+  mock aligned with the new overlay-copy helper.
+- `apps/web/src/components/visualization/DecisionBoundary.tsx` now exposes
+  overlay copy and describes the selected overlay mode through the canvas'
+  accessible description.
+- `apps/web/src/components/layout/MainArea.tsx` now renders live helper text
+  for the existing decision-boundary overlay controls.
 - `docs/agent-discovery-report.md` added/updated as this temporary handoff
   artifact.
 
@@ -254,6 +265,7 @@ Rollback plan:
 
 ## Recommendation
 
-Slice A was implemented in this run. The next feature slice should wait for
-explicit approval and should prefer either Slice B or Slice C unless the team
-chooses to harden worker-demand/WebGPU test coverage first.
+Slice A was implemented in the initial run, and Slice C was implemented as the
+follow-up low-risk continuation. The next feature slice should wait for
+explicit approval and should prefer Slice B, unless the team chooses to harden
+worker-demand/WebGPU test coverage first.

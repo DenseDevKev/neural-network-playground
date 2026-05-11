@@ -6,7 +6,7 @@
 import { lazy, memo, Suspense, useState } from 'react';
 import { TrainingControls } from '../controls/TrainingControls.tsx';
 import { NetworkGraph } from '../visualization/NetworkGraph.tsx';
-import { DecisionBoundary } from '../visualization/DecisionBoundary.tsx';
+import { DecisionBoundary, getDecisionOverlayCopy } from '../visualization/DecisionBoundary.tsx';
 import type { DecisionOverlayMode } from '../visualization/DecisionBoundary.tsx';
 import { LossChart } from '../visualization/LossChart.tsx';
 import { TrainingExplanationPanel } from '../visualization/TrainingExplanationPanel.tsx';
@@ -29,6 +29,27 @@ const CodeExportPanel = lazy(() =>
 const RunHistoryPanel = lazy(() =>
     import('../controls/RunHistoryPanel.tsx').then((m) => ({ default: m.RunHistoryPanel })),
 );
+
+const DECISION_OVERLAY_MODES: readonly DecisionOverlayMode[] = [
+    'none',
+    'uncertainty',
+    'misclassification',
+    'split',
+];
+
+function getDecisionOverlayButtonLabel(mode: DecisionOverlayMode): string {
+    switch (mode) {
+        case 'uncertainty':
+            return 'Uncertain';
+        case 'misclassification':
+            return 'Errors';
+        case 'split':
+            return 'Split';
+        case 'none':
+        default:
+            return 'Output';
+    }
+}
 
 function Fallback({ msg }: { msg: string }) {
     return <LoadingState isLoading inline message={msg} />;
@@ -53,6 +74,7 @@ export const BoundaryContent = memo(function BoundaryContent() {
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
     const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');
+    const overlayCopy = getDecisionOverlayCopy(overlayMode, showTestData, discretize);
     return (
         <ErrorBoundary title="Decision boundary unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
             <>
@@ -75,17 +97,20 @@ export const BoundaryContent = memo(function BoundaryContent() {
                         Discretize output
                     </label>
                     <div className="decision-overlay-controls" aria-label="Decision overlay controls">
-                        {(['none', 'uncertainty', 'misclassification', 'split'] as const).map((mode) => (
+                        {DECISION_OVERLAY_MODES.map((mode) => (
                             <button
                                 key={mode}
                                 type="button"
                                 aria-pressed={overlayMode === mode}
                                 onClick={() => setOverlayMode(mode)}
                             >
-                                {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : mode === 'misclassification' ? 'Errors' : 'Split'}
+                                {getDecisionOverlayButtonLabel(mode)}
                             </button>
                         ))}
                     </div>
+                    <p className="decision-overlay-note" aria-live="polite">
+                        {overlayCopy.description}
+                    </p>
                 </div>
             </>
         </ErrorBoundary>
@@ -142,6 +167,7 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
     const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');
+    const overlayCopy = getDecisionOverlayCopy(overlayMode, showTestData, discretize);
 
     return (
         <>
@@ -162,17 +188,20 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                     />
                 </ErrorBoundary>
                 <div className="decision-overlay-controls" aria-label="Decision overlay controls">
-                    {(['none', 'uncertainty', 'misclassification', 'split'] as const).map((mode) => (
+                    {DECISION_OVERLAY_MODES.map((mode) => (
                         <button
                             key={mode}
                             type="button"
                             aria-pressed={overlayMode === mode}
                             onClick={() => setOverlayMode(mode)}
                         >
-                            {mode === 'none' ? 'Output' : mode === 'uncertainty' ? 'Uncertain' : mode === 'misclassification' ? 'Errors' : 'Split'}
+                            {getDecisionOverlayButtonLabel(mode)}
                         </button>
                     ))}
                 </div>
+                <p className="decision-overlay-note" aria-live="polite">
+                    {overlayCopy.description}
+                </p>
                 <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
                     <LossChart />
                     <TrainingExplanationPanel />

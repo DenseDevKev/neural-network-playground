@@ -46,7 +46,8 @@ vi.mock('../components/controls/CodeExportPanel.tsx', () => ({
 vi.mock('../components/visualization/NetworkGraph.tsx', () => ({
     NetworkGraph: () => <div>Mock Topology Graph</div>,
 }));
-vi.mock('../components/visualization/DecisionBoundary.tsx', () => ({
+vi.mock('../components/visualization/DecisionBoundary.tsx', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../components/visualization/DecisionBoundary.tsx')>()),
     DecisionBoundary: () => <div>Mock Boundary</div>,
 }));
 vi.mock('../components/visualization/LossChart.tsx', () => ({

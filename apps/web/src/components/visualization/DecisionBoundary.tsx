@@ -2,7 +2,7 @@
 // Renders the neural network's prediction grid as a smooth heatmap
 // with training/test data points overlaid.
 
-import { useRef, useEffect, useCallback, useState, memo } from 'react';
+import { useRef, useEffect, useCallback, useState, memo, useId } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { writeGridToImageData, HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
 import type { DataPoint } from '@nn-playground/engine';
@@ -27,6 +27,47 @@ interface Props {
 }
 
 export type DecisionOverlayMode = 'none' | 'uncertainty' | 'misclassification' | 'split';
+
+export interface DecisionOverlayCopy {
+    label: string;
+    description: string;
+}
+
+export function getDecisionOverlayCopy(
+    mode: DecisionOverlayMode,
+    showTestData: boolean,
+    discretize: boolean,
+): DecisionOverlayCopy {
+    switch (mode) {
+        case 'uncertainty':
+            return {
+                label: 'Uncertainty',
+                description:
+                    'Uncertainty mode brightens regions near 50% probability, where the model is least sure which class to predict.',
+            };
+        case 'misclassification':
+            return {
+                label: 'Misclassified',
+                description: showTestData
+                    ? 'Errors mode marks training and visible test points whose predicted class does not match the label.'
+                    : 'Errors mode marks training points whose predicted class does not match the label.',
+            };
+        case 'split':
+            return {
+                label: 'Train/test split',
+                description:
+                    'Split mode keeps held-out test points visible beside training points so you can compare fit against generalization.',
+            };
+        case 'none':
+        default:
+            return {
+                label: 'Output',
+                description: discretize
+                    ? 'Output mode shows hard class regions: blue for negative predictions and orange for positive predictions.'
+                    : 'Output mode shows predicted probability as a smooth field from negative blue to positive orange.',
+            };
+    }
+}
 
 // ── Drawing helpers (pure functions, no hooks) ──
 
@@ -197,6 +238,8 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const descriptionId = useId();
+    const overlayCopy = getDecisionOverlayCopy(overlayMode, showTestData, discretize);
 
     // Off-screen resources (reused between frames)
     const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -342,16 +385,15 @@ export const DecisionBoundary = memo(function DecisionBoundary({
             <canvas
                 ref={canvasRef}
                 style={{ width: '100%', height: '100%' }}
+                role="img"
                 aria-label="Decision boundary visualization showing the neural network's classification regions"
+                aria-describedby={descriptionId}
             />
+            <p id={descriptionId} className="sr-only">
+                {overlayCopy.description}
+            </p>
             <div className="decision-boundary__overlay-badge" data-overlay-mode={overlayMode}>
-                {overlayMode === 'uncertainty'
-                    ? 'Uncertainty'
-                    : overlayMode === 'misclassification'
-                        ? 'Misclassified'
-                        : overlayMode === 'split'
-                            ? 'Train/test split'
-                        : 'Output'}
+                {overlayCopy.label}
             </div>
             <div className="decision-boundary__legend">
                 <div className="decision-boundary__legend-item">

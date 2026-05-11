@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { DecisionBoundary } from './DecisionBoundary.tsx';
 import { classifyPointFromGrid } from './DecisionBoundary.tsx';
 import { resetFrameBuffer, updateFrameBuffer, getFrameVersion } from '../../worker/frameBuffer.ts';
@@ -150,6 +150,38 @@ describe('DecisionBoundary', () => {
         );
 
         expect(container.querySelector('[data-overlay-mode="split"]')).not.toBeNull();
+    });
+
+    it('describes the selected overlay mode for assistive technology', () => {
+        const { rerender } = render(
+            <DecisionBoundary
+                trainPoints={[{ x: 0, y: 0, label: 0 }]}
+                testPoints={[]}
+                showTestData={false}
+                discretize={false}
+                overlayMode="uncertainty"
+            />,
+        );
+
+        const canvas = screen.getByRole('img', {
+            name: /decision boundary visualization/i,
+        });
+        const descriptionId = canvas.getAttribute('aria-describedby');
+
+        expect(descriptionId).toBeTruthy();
+        expect(document.getElementById(descriptionId ?? '')).toHaveTextContent(/least sure/i);
+
+        rerender(
+            <DecisionBoundary
+                trainPoints={[{ x: 0, y: 0, label: 0 }]}
+                testPoints={[{ x: 0.5, y: 0.5, label: 1 }]}
+                showTestData={true}
+                discretize={false}
+                overlayMode="misclassification"
+            />,
+        );
+
+        expect(document.getElementById(descriptionId ?? '')).toHaveTextContent(/visible test points/i);
     });
 
     it('classifies a point from the nearest decision grid cell', () => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MainArea } from './MainArea.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -20,7 +21,8 @@ vi.mock('../visualization/NetworkGraph.tsx', () => ({
     NetworkGraph: () => <div>Network graph</div>,
 }));
 
-vi.mock('../visualization/DecisionBoundary.tsx', () => ({
+vi.mock('../visualization/DecisionBoundary.tsx', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../visualization/DecisionBoundary.tsx')>()),
     DecisionBoundary: () => <div>Decision boundary</div>,
 }));
 
@@ -102,6 +104,19 @@ describe('MainArea right-panel content', () => {
         expect(screen.getByText('Loss chart')).toBeInTheDocument();
         expect(screen.getByText('Confusion matrix')).toBeInTheDocument();
         expect(screen.getByText('Training controls')).toBeInTheDocument();
+    });
+
+    it('updates the decision overlay explanation when controls change', async () => {
+        const user = userEvent.setup();
+        render(<MainArea training={createTrainingMock()} />);
+
+        expect(screen.getByText(/output mode shows/i)).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Uncertain' }));
+        expect(screen.getByText(/least sure/i)).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Errors' }));
+        expect(screen.getByText(/training points whose predicted class does not match/i)).toBeInTheDocument();
     });
 
     it('renders the training explanation surface with the loss chart', () => {
