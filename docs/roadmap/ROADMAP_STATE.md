@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `c901130` before Wave 2 lesson content commit
+- Last verified commit: `e822187` before Wave 3 QA infrastructure docs
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -16,8 +16,8 @@
 
 ## Current Position
 
-- Wave: Wave 2
-- Slice: Lesson tuning/failure-mode content batch
+- Wave: Wave 3
+- Slice: QA checklist and browser evidence template
 - Risk: Low
 - Status: In progress
 
@@ -33,6 +33,7 @@
 | 2026-05-11 | Wave 1 | Explanation action focus targets | `b8ff638` | `pnpm --filter @nn-playground/web test -- src/explanations/explanationActionFocus.test.ts` passed with 51 files and 314 tests in the web run | `apps/web/src/explanations/explanationActionFocus.test.ts` |
 | 2026-05-11 | Wave 1 | Explanation action card UI | `1a3c734` | Targeted web run passed with 51 files and 319 tests, including component, integration, focus helper, action metadata, and axe coverage | `apps/web/src/components/visualization/TrainingExplanationPanel.test.tsx`, `apps/web/src/__tests__/appShell.integration.test.tsx` |
 | 2026-05-11 | Wave 1 | Explanation action QA/state | `c901130` | `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B all passed | `docs/qa/browser-qa/wave-1-explanation-actions.md` |
+| 2026-05-11 | Wave 2 | Tuning/failure-mode lesson content | `e822187` | `pnpm test`, `pnpm lint`, `pnpm build`, Browser QA Mode B all passed | `docs/qa/browser-qa/wave-2-lesson-depth.md` |
 
 ## Current Verification Status
 
@@ -99,7 +100,7 @@
 
 ## Next Recommended Slice
 
-Commit Wave 2 lesson content with `feat(wave2,education): add tuning lessons`, then continue Wave 2 with any remaining small lesson depth work or move to Wave 3 QA infrastructure if lesson coverage is considered sufficient.
+Commit Wave 3 QA infrastructure with `docs(wave3,qa): add verification checklist`, then continue to Wave 4 visualization inspection improvements.
 
 ## Handoff Notes
 
