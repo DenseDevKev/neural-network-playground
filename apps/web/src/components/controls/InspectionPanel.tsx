@@ -36,17 +36,6 @@ export const InspectionPanel = memo(function InspectionPanel() {
         return () => enableLayerStats(false);
     }, []);
 
-    useEffect(() => {
-        const enableLayerStats = (needLayerStats: boolean) => {
-            const { demand, setDemand } = usePlaygroundStore.getState();
-            if (demand.needLayerStats === needLayerStats) return;
-            setDemand({ ...demand, needLayerStats });
-        };
-
-        enableLayerStats(true);
-        return () => enableLayerStats(false);
-    }, []);
-
     const layerStats = useMemo(
         () => {
             void frameVersion;

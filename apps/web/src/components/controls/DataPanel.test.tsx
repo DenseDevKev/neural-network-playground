@@ -83,4 +83,30 @@ describe('DataPanel loading feedback', () => {
         expect(screen.queryByRole('status')).not.toBeInTheDocument();
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
     });
+
+    it('shows accessible train/test split counts from runtime points', () => {
+        render(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByLabelText('Train/test split: 2 train, 1 test')).toBeInTheDocument();
+        expect(screen.getByText('Train 2')).toBeInTheDocument();
+        expect(screen.getByText('Test 1')).toBeInTheDocument();
+    });
+
+    it('reshuffles by changing the data seed through the data config path', async () => {
+        const user = userEvent.setup();
+
+        render(<DataPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: 'Reshuffle split' }));
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
+        expect(usePlaygroundStore.getState().data.seed).toBe(43);
+    });
+
+    it('disables reshuffle while data config is loading', () => {
+        useTrainingStore.setState({ dataConfigLoading: true });
+
+        render(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByRole('button', { name: 'Reshuffle split' })).toBeDisabled();
+    });
 });

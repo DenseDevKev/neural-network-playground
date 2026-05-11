@@ -73,4 +73,18 @@ describe('usePlaygroundStore compatibility guards', () => {
         store.setLRSchedule({ type: 'constant' } as any);
         expect(usePlaygroundStore.getState().training.lrSchedule).toBeUndefined();
     });
+
+    it('reshuffles data by changing only the existing data seed', () => {
+        const before = usePlaygroundStore.getState();
+
+        before.reshuffleDataSeed();
+
+        const after = usePlaygroundStore.getState();
+        expect(after.data.seed).toBe(before.data.seed + 1);
+        expect(after.data.dataset).toBe(before.data.dataset);
+        expect(after.data.noise).toBe(before.data.noise);
+        expect(after.data.numSamples).toBe(before.data.numSamples);
+        expect(after.data.trainTestRatio).toBe(before.data.trainTestRatio);
+        expect(after.network.seed).toBe(before.network.seed);
+    });
 });

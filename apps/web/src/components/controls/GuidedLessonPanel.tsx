@@ -10,6 +10,8 @@ import {
     type LessonTarget,
 } from '../../lessons/lessonRegistry.ts';
 
+export type { LessonTarget } from '../../lessons/lessonRegistry.ts';
+
 interface GuidedLessonPanelProps {
     onReset: () => void;
     onHighlightChange?: (target: LessonTarget | null) => void;

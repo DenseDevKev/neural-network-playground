@@ -310,4 +310,31 @@ describe('compatibility normalization', () => {
         expect(result.config).toBeNull();
         expect(result.error).toBe('Cosine schedule minimum learning rate cannot exceed the base learning rate.');
     });
+
+    it('preserves optional training hyperparameters during strict import', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                optimizer: 'adam',
+                lossType: 'huber',
+                momentum: 0.33,
+                gradientClip: 1.5,
+                adamBeta1: 0.7,
+                adamBeta2: 0.95,
+                huberDelta: 2.25,
+                lrSchedule: { type: 'cosine', totalSteps: 500, minLr: 0.0001 },
+            },
+        });
+
+        expect(result.error).toBeNull();
+        expect(result.config?.training).toMatchObject({
+            momentum: 0.33,
+            gradientClip: 1.5,
+            adamBeta1: 0.7,
+            adamBeta2: 0.95,
+            huberDelta: 2.25,
+            lrSchedule: { type: 'cosine', totalSteps: 500, minLr: 0.0001 },
+        });
+    });
 });
