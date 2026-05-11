@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { NetworkSnapshot } from '@nn-playground/engine';
 import App from '../App.tsx';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
@@ -64,6 +65,23 @@ function setViewportWidth(width: number) {
         value: width,
     });
     window.dispatchEvent(new Event('resize'));
+}
+
+function makeSnapshot(overrides: Partial<NetworkSnapshot> = {}): NetworkSnapshot {
+    return {
+        step: 20,
+        epoch: 2,
+        weights: [],
+        biases: [],
+        trainLoss: 0.2,
+        testLoss: 0.6,
+        trainMetrics: { loss: 0.2, accuracy: 0.8 },
+        testMetrics: { loss: 0.6, accuracy: 0.7 },
+        outputGrid: [],
+        gridSize: 40,
+        historyPoint: { step: 20, trainLoss: 0.2, testLoss: 0.6 },
+        ...overrides,
+    };
 }
 
 describe('App shell integration', () => {
@@ -146,6 +164,26 @@ describe('App shell integration', () => {
         expect(useLayoutStore.getState().activeTabLeft).toBe('features');
         expect(screen.getByText('Mock Features')).toBeInTheDocument();
         expect(container.querySelector('[data-lesson-target="features"]')).toHaveClass('lesson-target--active');
+    });
+
+    it('uses explanation action cards to focus existing dock panels', async () => {
+        const user = userEvent.setup();
+        useTrainingStore.setState({
+            snapshot: makeSnapshot(),
+            pauseReason: 'diverged',
+        });
+        render(<App />);
+
+        await user.click(screen.getByRole('tab', { name: 'Loss' }));
+        await user.click(screen.getByRole('button', { name: 'Tune learning rate & clipping' }));
+
+        expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
+        expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Read the loss spike' }));
+
+        expect(useLayoutStore.getState().activeTabRight).toBe('loss');
+        expect(screen.getByText('Mock Loss Chart')).toBeInTheDocument();
     });
 
     it('restores split build parity with network and config editors', async () => {

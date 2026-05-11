@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { axe } from 'jest-axe';
 import type { NetworkSnapshot } from '@nn-playground/engine';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { TrainingExplanationPanel } from './TrainingExplanationPanel.tsx';
 
@@ -28,6 +31,14 @@ describe('TrainingExplanationPanel', () => {
             pauseReason: null,
             testMetricsStale: false,
         });
+        useLayoutStore.setState({
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'boundary',
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
     });
 
     it('renders the top stop-reason explanation', () => {
@@ -50,5 +61,67 @@ describe('TrainingExplanationPanel', () => {
 
         expect(screen.getByText('Test metrics are catching up')).toBeInTheDocument();
         expect(screen.getByText(/test set is evaluated less often/i)).toBeInTheDocument();
+    });
+
+    it('renders semantic action buttons for the top explanation', () => {
+        useTrainingStore.setState({ pauseReason: 'diverged' });
+
+        render(<TrainingExplanationPanel />);
+
+        expect(screen.getByRole('group', { name: 'Suggested explanation actions' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Tune learning rate & clipping' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Read the loss spike' })).toBeInTheDocument();
+    });
+
+    it('has no obvious accessibility violations with action cards rendered', async () => {
+        useTrainingStore.setState({ pauseReason: 'diverged' });
+
+        const { container } = render(<TrainingExplanationPanel />);
+
+        const results = await axe(container);
+        expect(results.violations).toHaveLength(0);
+    });
+
+    it('focuses the selected action target when an action button is clicked', async () => {
+        const user = userEvent.setup();
+        useTrainingStore.setState({ pauseReason: 'diverged' });
+        document.body.innerHTML = '<button id="forge-left-tab-hyperparams">Hyperparams</button>';
+        const host = document.createElement('div');
+        document.body.append(host);
+
+        render(<TrainingExplanationPanel />, { container: host });
+
+        await user.click(screen.getByRole('button', { name: 'Tune learning rate & clipping' }));
+
+        expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
+        await waitFor(() => {
+            expect(document.activeElement).toBe(document.getElementById('forge-left-tab-hyperparams'));
+        });
+    });
+
+    it('activates from the keyboard without bubbling global shortcut keys', async () => {
+        const user = userEvent.setup();
+        const keydownEvents: string[] = [];
+        useTrainingStore.setState({ pauseReason: 'diverged' });
+        document.body.innerHTML = '<button id="forge-right-tab-loss">Loss</button>';
+        const host = document.createElement('div');
+        document.body.append(host);
+
+        render(
+            <div onKeyDown={(event) => keydownEvents.push(event.key)}>
+                <TrainingExplanationPanel />
+            </div>,
+            { container: host },
+        );
+
+        const action = screen.getByRole('button', { name: 'Read the loss spike' });
+        action.focus();
+        await user.keyboard('{Enter}');
+
+        expect(useLayoutStore.getState().activeTabRight).toBe('loss');
+        await waitFor(() => {
+            expect(document.activeElement).toBe(document.getElementById('forge-right-tab-loss'));
+        });
+        expect(keydownEvents).toEqual([]);
     });
 });

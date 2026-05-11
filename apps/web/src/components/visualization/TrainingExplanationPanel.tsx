@@ -1,8 +1,15 @@
-import { memo } from 'react';
+import { memo, type KeyboardEvent } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { selectTrainingExplanations } from '../../explanations/trainingExplanations.ts';
+import { focusExplanationActionTarget } from '../../explanations/explanationActionFocus.ts';
 
 const PANEL_TITLE_ID = 'training-explanation-panel-title';
+
+function stopShortcutPropagation(event: KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.stopPropagation();
+    }
+}
 
 export const TrainingExplanationPanel = memo(function TrainingExplanationPanel() {
     const snapshot = useTrainingStore((state) => state.snapshot);
@@ -48,6 +55,38 @@ export const TrainingExplanationPanel = memo(function TrainingExplanationPanel()
                 <p style={{ margin: '4px 0 0', fontSize: 12, lineHeight: 1.45, color: 'var(--text-secondary)' }}>
                     {explanation.suggestedAction}
                 </p>
+            )}
+            {explanation.actions && explanation.actions.length > 0 && (
+                <div
+                    className="training-explanation-actions"
+                    role="group"
+                    aria-label="Suggested explanation actions"
+                >
+                    {explanation.actions.map((action, index) => {
+                        const descriptionId = `training-explanation-action-${index}-description`;
+                        return (
+                            <button
+                                type="button"
+                                key={`${action.targetPanelId}-${action.label}`}
+                                className="training-explanation-action"
+                                aria-label={action.label}
+                                aria-describedby={descriptionId}
+                                onClick={() => focusExplanationActionTarget(action.targetPanelId)}
+                                onKeyDown={stopShortcutPropagation}
+                            >
+                                <span className="training-explanation-action__label">
+                                    {action.label}
+                                </span>
+                                <span
+                                    id={descriptionId}
+                                    className="training-explanation-action__reason"
+                                >
+                                    {action.learningReason}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
             )}
         </section>
     );

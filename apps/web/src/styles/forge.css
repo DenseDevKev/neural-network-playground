@@ -412,6 +412,47 @@
     padding: 12px;
 }
 
+.training-explanation-actions {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.training-explanation-action {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 9px;
+    border: 1px solid rgba(108, 240, 199, 0.22);
+    border-radius: 6px;
+    background: rgba(108, 240, 199, 0.07);
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.training-explanation-action:hover {
+    border-color: rgba(108, 240, 199, 0.38);
+    background: rgba(108, 240, 199, 0.11);
+}
+
+.training-explanation-action:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.training-explanation-action__label {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.training-explanation-action__reason {
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+}
+
 .forge-transport-cluster {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(290px, 360px);
