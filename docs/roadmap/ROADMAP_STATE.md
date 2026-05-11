@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `d9cc432` before Wave 4 activation histogram design note
+- Last verified commit: `590114d` for Wave 4 activation histogram implementation
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 4
-- Slice: Activation histogram design note
-- Risk: High if implemented
-- Status: Approval gate reached
+- Slice: Activation histogram explorer
+- Risk: High, approved
+- Status: Implemented in `590114d`; QA/state evidence recorded
 
 ## Completed Slices
 
@@ -35,33 +35,38 @@
 | 2026-05-11 | Wave 1 | Explanation action QA/state | `c901130` | `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B all passed | `docs/qa/browser-qa/wave-1-explanation-actions.md` |
 | 2026-05-11 | Wave 2 | Tuning/failure-mode lesson content | `e822187` | `pnpm test`, `pnpm lint`, `pnpm build`, Browser QA Mode B all passed | `docs/qa/browser-qa/wave-2-lesson-depth.md` |
 | 2026-05-11 | Wave 3 | QA checklist and browser evidence template | `d9cc432` | Docs-only commit after prior `pnpm test`, `pnpm lint`, and `pnpm build` passed | `docs/qa/QA_CHECKLIST.md`, `docs/qa/browser-qa/TEMPLATE.md` |
+| 2026-05-11 | Wave 4 | Activation histogram explorer | `590114d` | `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, targeted worker/shared/web tests, Browser QA Mode B all passed with dev perf warnings only | `docs/qa/browser-qa/wave-4-activation-histogram.md`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/worker-protocol.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-11 after Wave 2 content with engine 270 tests, shared 62 tests, and web 319 tests.
-- Lint: `pnpm lint` passed on 2026-05-11 after Wave 2 content.
-- Build: `pnpm build` passed on 2026-05-11 after Wave 2 content with the existing Vite chunk-size warning.
-- Browser QA: Wave 0, Wave 1, and Wave 2 Mode B passed on 2026-05-11 against `http://127.0.0.1:5173/` with no console errors.
-- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Browser QA verified native button keyboard activation.
-- Performance: `pnpm test:perf` passed on 2026-05-11 with 2 benchmark files and 4 benchmark tests after Wave 1.
+- Tests: `pnpm test` passed on 2026-05-11 after Wave 4 activation histogram explorer with engine 273 tests, shared 65 tests, and web 326 tests.
+- Lint: `pnpm lint` passed on 2026-05-11 after Wave 4 activation histogram explorer.
+- Build: `pnpm build` passed on 2026-05-11 after Wave 4 activation histogram explorer with the existing Vite chunk-size warning.
+- Browser QA: Wave 0, Wave 1, Wave 2, and Wave 4 Mode B passed on 2026-05-11. Wave 4 used `http://127.0.0.1:5176/`; no console errors were reported for the fresh URL, only dev perf warnings.
+- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA.
+- Performance: `pnpm test:perf` passed on 2026-05-11 after Wave 4 with 2 benchmark files and 4 benchmark tests.
 
 ## Browser QA Evidence
 
 - `docs/qa/browser-qa/wave-0-baseline.md`
 - `docs/qa/browser-qa/wave-1-explanation-actions.md`
 - `docs/qa/browser-qa/wave-2-lesson-depth.md`
+- `docs/qa/browser-qa/wave-4-activation-histogram.md`
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
 - Wave 1 action-card screenshot: `/private/tmp/nn-playground-wave1-action-card.png`
 - Wave 1 compact action-card screenshot: `/private/tmp/nn-playground-wave1-action-card-compact.png`
 - Wave 2 learning-rate lesson screenshot: `/private/tmp/nn-playground-wave2-learning-rate-lesson.png`
+- Wave 4 activation histogram screenshot: `/private/tmp/nn-playground-wave4-activation-histogram.png`
 
 ## Performance Evidence
 
 - `docs/perf/PERFORMANCE_BASELINE.md`
 - Wave 1 post-change `pnpm test:perf` passed. Observed values: `predictGrid` 1299.7205 ms, `predictGridInto` 1277.3120 ms, `predictGridWithNeurons` 820.7586 ms, `predictGridWithNeuronsInto` 719.5801 ms, Adam/L2/Clip applyGradients 4.6340 ms, SGD applyGradients 1.7477 ms.
 - Wave 1 build main bundle changed from 351.56 kB to 354.89 kB, below the 10% build-size warning threshold.
+- Wave 4 post-change `pnpm test:perf` passed. Observed values: `predictGrid` 1083.7991 ms, `predictGridInto` 1060.3090 ms, `predictGridWithNeurons` 673.5523 ms, `predictGridWithNeuronsInto` 576.1459 ms, Adam/L2/Clip applyGradients 3.7961 ms, SGD applyGradients 1.4921 ms.
+- Wave 4 build main bundle changed from 351.56 kB at Wave 0 to 360.52 kB, about 2.5%, and worker changed from 68.66 kB to 71.53 kB, about 4.2%.
 
 ## Design Decisions
 
@@ -73,6 +78,8 @@
 | 2026-05-11 | Keep action cards as native buttons with `aria-describedby` reasons | Preserves keyboard semantics and keeps action labels concise while retaining educational context | Wave 1 implementation |
 | 2026-05-11 | Use existing layout store tabs/phase plus DOM focus targets for action cards | Navigates existing UI only and avoids persistence/schema changes | Wave 1 implementation |
 | 2026-05-11 | Add Wave 2 lesson depth as content-only registry entries first | Reuses existing presets and lesson engine without schema, persistence, or runtime changes | Wave 2 implementation |
+| 2026-05-11 | Ship activation histograms as bounded layer-level bins in the frame buffer | Satisfies the approved high-risk slice without raw activation streaming, React large-array state, persistence, URL/config, or dependency changes | `docs/design-notes/activation-histogram-explorer.md`, `590114d` |
+| 2026-05-11 | Gate histogram computation only on `needActivationHistograms` | Spec review found the layer-stat fallback too broad; explicit demand preserves the approved compute gate | Wave 4 review |
 
 ## Known Issues
 
@@ -80,16 +87,17 @@
 - `.claude/worktrees/` existed before Wave 0 as untracked local agent state and is intentionally ignored.
 - Vite build has an existing large chunk warning; this is not a Wave 0 regression unless the warning changes materially.
 - Browser QA exercised the live `test-metrics-stale` action card. Hyperparams/loss action targeting is covered by component and app integration tests.
+- Wave 4 Browser QA on the fresh `5176` URL reported development-only perf warnings for slow interactions, but no console errors.
 
 ## Blocked Items
 
-- Wave 4 activation histogram implementation is blocked pending approval because it likely requires worker/protocol, frame-buffer, runtime snapshot, or engine activation data changes.
+- No current blocker for the completed Wave 4 activation histogram slice.
 
 ## Deferred Items
 
 - Wave 2 lesson depth.
 - Wave 3 QA infrastructure beyond the Wave 0/Wave 1 records.
-- Wave 4 visualization inspection improvements.
+- Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 5 runtime and performance hardening.
 - Wave 6A-6D experiment workflows.
 - Wave 6E checkpoints and timeline scrubber, pending mandatory approval.
@@ -97,11 +105,11 @@
 
 ## Approval Gates Reached
 
-- Wave 4 activation histogram explorer requires approval before implementation if it changes worker protocol, frame-buffer domains, runtime snapshot fields, or engine activation collection.
+- Wave 4 activation histogram explorer was approved by the user on 2026-05-11 and implemented in `590114d`.
 
 ## Next Recommended Slice
 
-Review `docs/design-notes/activation-histogram-explorer.md` and decide whether to approve a high-risk activation histogram data path, or defer it and continue with another existing-data-only visualization/accessibility slice.
+Continue Wave 4 only with another small approved slice. Candidate: improve decision-boundary and inspection text alternatives using existing data only, or write a separate design note for gradient-flow overlay before requesting approval for any new runtime/protocol data.
 
 ## Handoff Notes
 

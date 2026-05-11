@@ -62,3 +62,41 @@ No dedicated Wave 0 measurement. Current Wave 0 changes do not touch frame buffe
 - Wave 0 is docs and repository packaging only.
 - Wave 1 planned action cards are web-local navigation/focus UI only.
 - Performance-sensitive runtime, worker, visualization data, or engine changes remain approval-gated by the roadmap.
+
+## Wave 4 Activation Histogram Comparison
+
+Date: 2026-05-11
+
+Scope: approved activation histogram explorer using demand-gated, bounded layer-level bins.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the histogram slice. Relevant production output:
+
+- `dist/assets/training.worker--UxrksoV.js`: 71.53 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/InspectionPanel-D2P7wqJz.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/index-Do23QsAR.js`: 360.52 kB, gzip 109.51 kB
+
+Compared with the Wave 0 baseline:
+
+- Main app bundle increased from 351.56 kB to 360.52 kB, about 2.5%.
+- Training worker bundle increased from 68.66 kB to 71.53 kB, about 4.2%.
+- Inspection panel lazy chunk increased from 5.57 kB to 8.31 kB because it now renders the histogram explorer.
+- The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the histogram slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1083.7991 ms total for 100 iterations
+- `predictGridInto`: 1060.3090 ms total for 100 iterations
+- `predictGridWithNeurons`: 673.5523 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 576.1459 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.7961 ms
+- Average `applyGradients` time (SGD): 1.4921 ms
+
+These benchmark values remain within the roadmap warning thresholds compared with the Wave 0 baseline. The existing benchmark suite does not directly time activation histogram computation; runtime protection for this slice is covered by demand/cadence tests and by keeping compact bins in the frame buffer instead of React state.
