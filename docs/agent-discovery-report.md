@@ -35,6 +35,12 @@ Baseline evidence gathered so far:
   missing visible overlay helper text. After implementation, the expanded
   targeted web run with `DecisionBoundary.test.tsx`, `MainArea.test.tsx`, and
   `appShell.integration.test.tsx` passed with 50 test files and 308 tests.
+- Browser QA follow-up used the Browser plugin against `http://127.0.0.1:5173/`.
+  The live app loaded with title `Neural Network Playground 2.0`; the
+  decision-boundary overlay controls updated visible helper text and the canvas
+  accessible description for `Uncertain` and `Errors`; `tab.dev.logs` returned
+  no console errors. Screenshot evidence was saved at
+  `/private/tmp/nn-playground-decision-overlay-errors.png`.
 
 ## Architecture Map
 
