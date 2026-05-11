@@ -67,4 +67,48 @@ describe('selectTrainingExplanations', () => {
             }
         }
     });
+
+    it('exposes deterministic action metadata for each explanation rule', () => {
+        const actionsByRule = Object.fromEntries(
+            TRAINING_EXPLANATION_RULES.map((rule) => [
+                rule.id,
+                rule.actions?.map((action) => ({
+                    label: action.label,
+                    targetPanelId: action.targetPanelId,
+                })),
+            ]),
+        );
+
+        expect(actionsByRule).toMatchObject({
+            'pause-diverged': [
+                { label: 'Tune learning rate & clipping', targetPanelId: 'hyperparams' },
+                { label: 'Read the loss spike', targetPanelId: 'loss' },
+            ],
+            'pause-error': [
+                { label: 'Review run settings', targetPanelId: 'hyperparams' },
+            ],
+            'pause-plateau': [
+                { label: 'Inspect the plateau', targetPanelId: 'loss' },
+                { label: 'Adjust model capacity', targetPanelId: 'network' },
+            ],
+            'test-metrics-stale': [
+                { label: 'Open loss & accuracy', targetPanelId: 'loss' },
+            ],
+            'generalization-gap': [
+                { label: 'Tune regularization', targetPanelId: 'hyperparams' },
+                { label: 'Compare train vs test', targetPanelId: 'loss' },
+            ],
+        });
+    });
+
+    it('keeps explanation action targets constrained to known layout panels', () => {
+        const valid = new Set<string>(VALID_RELATED_PANEL_IDS);
+
+        for (const rule of TRAINING_EXPLANATION_RULES) {
+            expect(rule.actions?.length, `${rule.id} has actions`).toBeGreaterThan(0);
+            for (const action of rule.actions ?? []) {
+                expect(valid.has(action.targetPanelId), `${rule.id} action ${action.label} targets ${action.targetPanelId}`).toBe(true);
+            }
+        }
+    });
 });

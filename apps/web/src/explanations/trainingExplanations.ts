@@ -27,6 +27,12 @@ export interface ExplanationContext {
     testMetricsStale?: boolean;
 }
 
+export interface ExplanationActionDescriptor {
+    label: string;
+    targetPanelId: RelatedPanelId;
+    learningReason: string;
+}
+
 export interface ExplanationRuleDescriptor {
     id: string;
     priority: number;
@@ -34,6 +40,7 @@ export interface ExplanationRuleDescriptor {
     explanation: string;
     suggestedAction?: string;
     relatedPanelIds?: RelatedPanelId[];
+    actions?: readonly ExplanationActionDescriptor[];
 }
 
 export interface RuntimeExplanationRule extends ExplanationRuleDescriptor {
@@ -54,6 +61,18 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
         explanation: 'A loss value became non-finite, so training paused before the model state became harder to inspect.',
         suggestedAction: 'Try lowering the learning rate, enabling gradient clipping, or resetting the network.',
         relatedPanelIds: ['hyperparams', 'loss'],
+        actions: [
+            {
+                label: 'Tune learning rate & clipping',
+                targetPanelId: 'hyperparams',
+                learningReason: 'Lowering update size or enabling clipping helps stabilize runaway gradients.',
+            },
+            {
+                label: 'Read the loss spike',
+                targetPanelId: 'loss',
+                learningReason: 'The loss chart shows when divergence began and whether it was abrupt.',
+            },
+        ],
         when: (context) => context.pauseReason === 'diverged',
     },
     {
@@ -63,6 +82,13 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
         explanation: 'The worker reported a runtime error and paused the training loop.',
         suggestedAction: 'Reset the run after checking the current settings.',
         relatedPanelIds: ['hyperparams'],
+        actions: [
+            {
+                label: 'Review run settings',
+                targetPanelId: 'hyperparams',
+                learningReason: 'Training settings are the safest place to inspect before restarting a failed run.',
+            },
+        ],
         when: (context) => context.pauseReason === 'error',
     },
     {
@@ -72,6 +98,18 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
         explanation: 'Recent metrics stopped improving enough to satisfy the plateau stop condition.',
         suggestedAction: 'Try a different learning rate, more hidden units, or a fresh initialization.',
         relatedPanelIds: ['loss', 'network'],
+        actions: [
+            {
+                label: 'Inspect the plateau',
+                targetPanelId: 'loss',
+                learningReason: 'A flat loss curve makes the plateau visible before changing the setup.',
+            },
+            {
+                label: 'Adjust model capacity',
+                targetPanelId: 'network',
+                learningReason: 'Hidden layers and neurons are the most direct capacity controls.',
+            },
+        ],
         when: (context) => context.pauseReason === 'plateau',
     },
     {
@@ -81,6 +119,13 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
         explanation: 'The test set is evaluated less often than training updates, so the latest test value may be a cached reading.',
         suggestedAction: 'Pause briefly or wait for the next full test evaluation before judging generalization.',
         relatedPanelIds: ['loss'],
+        actions: [
+            {
+                label: 'Open loss & accuracy',
+                targetPanelId: 'loss',
+                learningReason: 'The chart keeps training and held-out readings in one place.',
+            },
+        ],
         when: (context) => context.testMetricsStale === true,
     },
     {
@@ -90,6 +135,18 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
         explanation: 'The model is fitting the training data better than the held-out test data.',
         suggestedAction: 'Try more regularization, less training time, or a simpler architecture.',
         relatedPanelIds: ['loss', 'hyperparams'],
+        actions: [
+            {
+                label: 'Tune regularization',
+                targetPanelId: 'hyperparams',
+                learningReason: 'Regularization and training settings help reduce overfitting pressure.',
+            },
+            {
+                label: 'Compare train vs test',
+                targetPanelId: 'loss',
+                learningReason: 'The loss chart makes the generalization gap easier to compare.',
+            },
+        ],
         when: (context) => (
             context.step > 0 &&
             finite(context.trainLoss) &&
