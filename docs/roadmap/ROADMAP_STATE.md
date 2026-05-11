@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `e822187` before Wave 3 QA infrastructure docs
+- Last verified commit: `d9cc432` before Wave 4 activation histogram design note
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -16,10 +16,10 @@
 
 ## Current Position
 
-- Wave: Wave 3
-- Slice: QA checklist and browser evidence template
-- Risk: Low
-- Status: In progress
+- Wave: Wave 4
+- Slice: Activation histogram design note
+- Risk: High if implemented
+- Status: Approval gate reached
 
 ## Completed Slices
 
@@ -34,6 +34,7 @@
 | 2026-05-11 | Wave 1 | Explanation action card UI | `1a3c734` | Targeted web run passed with 51 files and 319 tests, including component, integration, focus helper, action metadata, and axe coverage | `apps/web/src/components/visualization/TrainingExplanationPanel.test.tsx`, `apps/web/src/__tests__/appShell.integration.test.tsx` |
 | 2026-05-11 | Wave 1 | Explanation action QA/state | `c901130` | `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B all passed | `docs/qa/browser-qa/wave-1-explanation-actions.md` |
 | 2026-05-11 | Wave 2 | Tuning/failure-mode lesson content | `e822187` | `pnpm test`, `pnpm lint`, `pnpm build`, Browser QA Mode B all passed | `docs/qa/browser-qa/wave-2-lesson-depth.md` |
+| 2026-05-11 | Wave 3 | QA checklist and browser evidence template | `d9cc432` | Docs-only commit after prior `pnpm test`, `pnpm lint`, and `pnpm build` passed | `docs/qa/QA_CHECKLIST.md`, `docs/qa/browser-qa/TEMPLATE.md` |
 
 ## Current Verification Status
 
@@ -82,7 +83,7 @@
 
 ## Blocked Items
 
-- None currently.
+- Wave 4 activation histogram implementation is blocked pending approval because it likely requires worker/protocol, frame-buffer, runtime snapshot, or engine activation data changes.
 
 ## Deferred Items
 
@@ -96,11 +97,11 @@
 
 ## Approval Gates Reached
 
-- None.
+- Wave 4 activation histogram explorer requires approval before implementation if it changes worker protocol, frame-buffer domains, runtime snapshot fields, or engine activation collection.
 
 ## Next Recommended Slice
 
-Commit Wave 3 QA infrastructure with `docs(wave3,qa): add verification checklist`, then continue to Wave 4 visualization inspection improvements.
+Review `docs/design-notes/activation-histogram-explorer.md` and decide whether to approve a high-risk activation histogram data path, or defer it and continue with another existing-data-only visualization/accessibility slice.
 
 ## Handoff Notes
 
