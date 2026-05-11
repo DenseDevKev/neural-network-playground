@@ -19,6 +19,9 @@ import type {
     LayerStats,
     ActivationType,
     PredictionTrace,
+    ActivationHistogramOptions,
+    ActivationHistogramResult,
+    ActivationHistogramLayer,
 } from './types.js';
 import { getLoss } from './losses.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
@@ -326,6 +329,34 @@ function assertTrainingHyperparams(training: TrainingConfig): void {
             break;
         default:
             throw new RangeError('optimizer must be one of sgd, sgdMomentum, or adam');
+    }
+}
+
+function normalizePositiveIntegerOption(
+    value: number | undefined,
+    name: string,
+    fallback: number,
+    max: number,
+): number {
+    const next = value ?? fallback;
+    if (!Number.isInteger(next) || next <= 0 || next > max) {
+        throw new RangeError(`${name} must be a positive integer no greater than ${max}`);
+    }
+    return next;
+}
+
+function activationKindForLayer(config: NetworkConfig, layerIndex: number): ActivationType {
+    return layerIndex === config.hiddenLayers.length ? config.outputActivation : config.activation;
+}
+
+function isSaturatedActivation(value: number, kind: ActivationType, threshold: number): boolean {
+    switch (kind) {
+        case 'sigmoid':
+            return value <= 1 - threshold || value >= threshold;
+        case 'tanh':
+            return Math.abs(value) >= threshold;
+        default:
+            return false;
     }
 }
 
@@ -1233,6 +1264,103 @@ export class Network {
             stats.push({ meanActivation, activationStd, meanAbsWeight, meanAbsGradient });
         }
         return stats;
+    }
+
+    computeActivationHistograms(
+        inputs: readonly ArrayLike<number>[],
+        options: ActivationHistogramOptions = {},
+    ): ActivationHistogramResult {
+        if (!Array.isArray(inputs)) {
+            throw new RangeError('inputs must be an array');
+        }
+
+        const binCount = normalizePositiveIntegerOption(options.binCount, 'binCount', 12, 64);
+        const maxSamples = normalizePositiveIntegerOption(options.maxSamples, 'maxSamples', 128, 4096);
+        const zeroThreshold = options.zeroThreshold ?? 0.05;
+        const saturationThreshold = options.saturationThreshold ?? 0.95;
+        assertFiniteInRange(zeroThreshold, 'zeroThreshold', 0, Number.POSITIVE_INFINITY, {
+            minInclusive: true,
+        });
+        assertFiniteInRange(saturationThreshold, 'saturationThreshold', 0, 1, {
+            minInclusive: true,
+            maxInclusive: true,
+        });
+
+        const layerCount = this.outputs.length;
+        const sampleCount = Math.min(inputs.length, maxSamples);
+        const mins = new Array<number>(layerCount).fill(Number.POSITIVE_INFINITY);
+        const maxes = new Array<number>(layerCount).fill(Number.NEGATIVE_INFINITY);
+        const totals = new Array<number>(layerCount).fill(0);
+        const nearZeroCounts = new Array<number>(layerCount).fill(0);
+        const saturatedCounts = new Array<number>(layerCount).fill(0);
+
+        const sampleIndexFor = (ordinal: number): number => (
+            sampleCount === inputs.length
+                ? ordinal
+                : Math.floor((ordinal * inputs.length) / sampleCount)
+        );
+
+        for (let sampleOrdinal = 0; sampleOrdinal < sampleCount; sampleOrdinal++) {
+            const sampleIndex = sampleIndexFor(sampleOrdinal);
+            const input = inputs[sampleIndex];
+            assertVectorShape(input, this.config.inputSize, `inputs[${sampleIndex}]`);
+            this.forwardInto(input);
+
+            for (let layerIndex = 0; layerIndex < layerCount; layerIndex++) {
+                const out = this.outputs[layerIndex];
+                const activationKind = activationKindForLayer(this.config, layerIndex);
+                for (let i = 0; i < out.length; i++) {
+                    const value = out[i];
+                    if (value < mins[layerIndex]) mins[layerIndex] = value;
+                    if (value > maxes[layerIndex]) maxes[layerIndex] = value;
+                    if (Math.abs(value) <= zeroThreshold) nearZeroCounts[layerIndex]++;
+                    if (isSaturatedActivation(value, activationKind, saturationThreshold)) {
+                        saturatedCounts[layerIndex]++;
+                    }
+                    totals[layerIndex]++;
+                }
+            }
+        }
+
+        const layers: ActivationHistogramLayer[] = [];
+        const bins = new Float32Array(layerCount * binCount);
+        for (let layerIndex = 0; layerIndex < layerCount; layerIndex++) {
+            const hasValues = totals[layerIndex] > 0;
+            const minActivation = hasValues ? mins[layerIndex] : 0;
+            const maxActivation = hasValues ? maxes[layerIndex] : 0;
+            const range = maxActivation - minActivation;
+            const binStart = range === 0 ? minActivation - 0.5 : minActivation;
+            const binWidth = (range === 0 ? 1 : range) / binCount;
+            layers.push({
+                layerIndex,
+                binCount,
+                binStart,
+                binWidth,
+                minActivation,
+                maxActivation,
+                totalCount: totals[layerIndex],
+                nearZeroCount: nearZeroCounts[layerIndex],
+                saturatedCount: saturatedCounts[layerIndex],
+            });
+        }
+
+        for (let sampleOrdinal = 0; sampleOrdinal < sampleCount; sampleOrdinal++) {
+            const sampleIndex = sampleIndexFor(sampleOrdinal);
+            this.forwardInto(inputs[sampleIndex]);
+
+            for (let layerIndex = 0; layerIndex < layerCount; layerIndex++) {
+                const layer = layers[layerIndex];
+                const out = this.outputs[layerIndex];
+                const offset = layerIndex * binCount;
+                for (let i = 0; i < out.length; i++) {
+                    const rawBin = Math.floor((out[i] - layer.binStart) / layer.binWidth);
+                    const binIndex = Math.min(binCount - 1, Math.max(0, rawBin));
+                    bins[offset + binIndex]++;
+                }
+            }
+        }
+
+        return { layers, bins };
     }
 
     /** Re-initialize weights/biases from the configured seed (or a new one)

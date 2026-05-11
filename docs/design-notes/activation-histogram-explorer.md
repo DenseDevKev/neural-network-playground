@@ -113,4 +113,12 @@ Yes, if implementation requires new worker protocol fields, frame-buffer domains
 
 ## Decision
 
-Do not implement yet. Current public runtime data is not enough to confidently ship activation histograms without adding or reshaping runtime data. Stop for approval before any protocol, frame-buffer, worker, engine, or large-array transport changes.
+Approved by the user on 2026-05-11 for a small high-risk slice using demand-gated, bounded layer-level histogram bins only.
+
+Implementation constraints:
+
+- Do not stream or store raw activation arrays in React state.
+- Keep histogram bins bounded and layer-level.
+- Use worker demand/cadence gating.
+- Preserve URL/config serialization, persistence/run-history schema, public config shape, and dependencies.
+- Do not combine this slice with gradient-flow overlay, checkpoints, timeline scrubber, or other Wave 4+ features.

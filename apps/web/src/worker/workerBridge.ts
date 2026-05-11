@@ -242,6 +242,12 @@ function buildSnapshotFramePatch(
     if (msg.biases !== undefined) patch.biases = msg.biases;
     if (msg.weightLayout !== undefined) patch.weightLayout = msg.weightLayout;
     if (msg.layerStats !== undefined) patch.layerStats = msg.layerStats;
+    if (msg.activationHistogramBins !== undefined) {
+        patch.activationHistogramBins = msg.activationHistogramBins;
+    }
+    if (msg.activationHistogramLayout !== undefined) {
+        patch.activationHistogramLayout = msg.activationHistogramLayout;
+    }
     if (msg.confusionMatrix !== undefined) patch.confusionMatrix = msg.confusionMatrix;
     return patch;
 }

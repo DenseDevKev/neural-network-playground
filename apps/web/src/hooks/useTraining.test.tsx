@@ -11,7 +11,7 @@ import {
 import type { WorkerToMainMessage } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
-import { resetFrameBuffer } from '../worker/frameBuffer.ts';
+import { getFrameBuffer, resetFrameBuffer } from '../worker/frameBuffer.ts';
 
 const bridge = vi.hoisted(() => {
     const workerApi = {
@@ -70,6 +70,28 @@ function makeSnapshot(step: number): NetworkSnapshot {
             testLoss: 0.5 - step * 0.01,
             trainAccuracy: 0.7,
             testAccuracy: 0.6,
+        },
+    };
+}
+
+function withActivationHistograms(snapshot: NetworkSnapshot): NetworkSnapshot {
+    return {
+        ...snapshot,
+        activationHistograms: {
+            bins: new Float32Array([1, 3, 0, 2]),
+            layers: [
+                {
+                    layerIndex: 0,
+                    binCount: 4,
+                    binStart: -1,
+                    binWidth: 0.5,
+                    minActivation: -0.5,
+                    maxActivation: 0.8,
+                    totalCount: 6,
+                    nearZeroCount: 1,
+                    saturatedCount: 2,
+                },
+            ],
         },
     };
 }
@@ -200,6 +222,44 @@ describe('useTraining', () => {
             'addHistoryPoint',
             'setFrameVersions',
         ]);
+    });
+
+    it('keeps bounded activation histogram arrays in the frame buffer only', async () => {
+        bridge.workerApi.initialize.mockResolvedValue({
+            snapshot: withActivationHistograms(makeSnapshot(1)),
+            runId: 101,
+        });
+
+        renderHook(() => useTraining());
+
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        expect(getFrameBuffer().activationHistogramBins).toEqual(new Float32Array([1, 3, 0, 2]));
+        expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(1);
+        expect(useTrainingStore.getState().snapshot?.activationHistograms).toBeUndefined();
+    });
+
+    it('retains the last activation histogram frame data across cadence-skipped snapshots', async () => {
+        bridge.workerApi.initialize.mockResolvedValue({
+            snapshot: withActivationHistograms(makeSnapshot(1)),
+            runId: 101,
+        });
+        bridge.workerApi.step.mockResolvedValue(makeSnapshot(2));
+
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        const histogramBins = getFrameBuffer().activationHistogramBins;
+        expect(histogramBins).toEqual(new Float32Array([1, 3, 0, 2]));
+
+        await act(async () => {
+            await result.current.step();
+        });
+
+        expect(getFrameBuffer().activationHistogramBins).toBe(histogramBins);
+        expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(1);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(2);
+        expect(useTrainingStore.getState().snapshot?.activationHistograms).toBeUndefined();
     });
 
     it('starts and stops the streaming training loop', async () => {

@@ -31,6 +31,7 @@ import type {
     HistoryPoint,
     Metrics,
     PredictionTrace,
+    ActivationHistogramResult,
 } from '@nn-playground/engine';
 import {
     GRID_SIZE,
@@ -103,6 +104,8 @@ interface WorkerState {
     snapshotsSinceLastTrainEval: number;
     /** Counter for grid-rebuild frequency gating. */
     snapshotsSinceLastGrid: number;
+    /** Counter for activation histogram frequency gating. */
+    snapshotsSinceLastActivationHistogram: number;
     /** Cached last test metrics to reuse when skipping test evaluation. */
     lastTestMetrics: { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null;
     /** Cached last train metrics (full-dataset evaluation). Between
@@ -120,6 +123,8 @@ interface WorkerState {
     stopConditionState: StopConditionState;
     /** Monotonic identity for confusion matrix payload freshness. */
     confusionMatrixVersion: number;
+    /** Monotonic identity for activation histogram payload freshness. */
+    activationHistogramVersion: number;
     /** Pre-allocated buffers for grid predictions. */
     outputGridBuffer: Float32Array | null;
     neuronGridsBuffer: Float32Array | null;
@@ -291,6 +296,8 @@ function normalizeWorkerConfig(
 const configsEqual = structuralEqual;
 
 const WORKER_PERF_ENABLED = import.meta.env.DEV && import.meta.env.VITE_WORKER_PERF === '1';
+const ACTIVATION_HISTOGRAM_BIN_COUNT = 12;
+const ACTIVATION_HISTOGRAM_MAX_SAMPLES = 128;
 
 function workerPerfMark(name: string): void {
     if (WORKER_PERF_ENABLED) performance.mark(name);
@@ -327,6 +334,7 @@ const state: WorkerState = {
     snapshotsSinceLastTestEval: 0,
     snapshotsSinceLastTrainEval: 0,
     snapshotsSinceLastGrid: 0,
+    snapshotsSinceLastActivationHistogram: 0,
     lastTestMetrics: null,
     lastTrainMetrics: null,
     lossEma: null,
@@ -334,6 +342,7 @@ const state: WorkerState = {
     testMetricsStale: false,
     stopConditionState: createInitialStopConditionState(),
     confusionMatrixVersion: 0,
+    activationHistogramVersion: 0,
     outputGridBuffer: null,
     neuronGridsBuffer: null,
     gridStale: true,
@@ -437,6 +446,9 @@ function buildDataAndNetwork(): void {
     state.snapshotsSinceLastTestEval = 0;
     state.snapshotsSinceLastTrainEval = 0;
     state.snapshotsSinceLastGrid = 0;
+    state.snapshotsSinceLastActivationHistogram = state.demand.needActivationHistograms
+        ? state.demand.activationHistogramInterval
+        : 0;
     state.lastTestMetrics = null;
     state.lastTrainMetrics = null;
     state.lossEma = null;
@@ -444,6 +456,7 @@ function buildDataAndNetwork(): void {
     state.testMetricsStale = false;
     state.stopConditionState = createInitialStopConditionState();
     state.confusionMatrixVersion++;
+    state.activationHistogramVersion++;
 
     // Increment run ID
     state.runId++;
@@ -773,6 +786,23 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         snap.layerStats = state.network.getLayerStats();
     }
 
+    const wantsActivationHistograms = demand.needActivationHistograms;
+    const shouldComputeActivationHistograms =
+        wantsActivationHistograms &&
+        state.snapshotsSinceLastActivationHistogram >= demand.activationHistogramInterval;
+    if (shouldComputeActivationHistograms) {
+        snap.activationHistograms = state.network.computeActivationHistograms(
+            state.trainInputs,
+            {
+                binCount: ACTIVATION_HISTOGRAM_BIN_COUNT,
+                maxSamples: ACTIVATION_HISTOGRAM_MAX_SAMPLES,
+            },
+        );
+        state.snapshotsSinceLastActivationHistogram = 0;
+    } else if (wantsActivationHistograms) {
+        state.snapshotsSinceLastActivationHistogram++;
+    }
+
     workerPerfMeasure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
 }
@@ -802,6 +832,9 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     let outputGrid: Float32Array | undefined;
     let neuronGrids: Float32Array | undefined;
     let neuronGridLayout: { count: number; gridSize: number } | undefined;
+    let activationHistogramBins: Float32Array | undefined;
+    let activationHistogramLayout: WorkerSnapshotMessage['activationHistogramLayout'] | undefined;
+    let activationHistogramVersion: number | undefined;
 
     if (sharedViews) {
         let flags = 0;
@@ -873,6 +906,18 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     const biasesFlat = state.network!.getBiasesFlat();
     transferables.push(biasesFlat.buffer);
 
+    if (snap.activationHistograms) {
+        const histograms: ActivationHistogramResult = snap.activationHistograms;
+        activationHistogramBins = histograms.bins;
+        activationHistogramLayout = {
+            binCount: histograms.layers[0]?.binCount ?? ACTIVATION_HISTOGRAM_BIN_COUNT,
+            layers: histograms.layers,
+        };
+        state.activationHistogramVersion++;
+        activationHistogramVersion = state.activationHistogramVersion;
+        transferables.push(activationHistogramBins.buffer);
+    }
+
     // History point
     const historyPoint: HistoryPoint = {
         step: snap.step,
@@ -903,6 +948,9 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         biases: biasesFlat,
         weightLayout: { layerSizes },
         layerStats: snap.layerStats,
+        activationHistogramBins,
+        activationHistogramLayout,
+        activationHistogramVersion,
         historyPoint,
         confusionMatrix: state.testMetricsStale ? undefined : snap.testMetrics?.confusionMatrix,
         confusionMatrixVersion: state.confusionMatrixVersion,
@@ -1088,6 +1136,7 @@ function applyDemand(demand: VisualizationDemand): void {
     state.snapshotsSinceLastTestEval = demand.testEvalInterval;
     state.snapshotsSinceLastTrainEval = demand.trainEvalInterval;
     state.snapshotsSinceLastGrid = demand.gridInterval;
+    state.snapshotsSinceLastActivationHistogram = demand.activationHistogramInterval;
     state.gridStale = true;
     if (confusionDemandChanged) {
         state.lastTestMetrics = null;

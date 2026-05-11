@@ -82,6 +82,9 @@ posting while awaiting a `frameAck`.
 | `biases` | `Float32Array?` | Flat bias buffer (transferred) |
 | `weightLayout` | `{ layerSizes }?` | Describes `weights` shape |
 | `layerStats` | `LayerStats[]?` | Per-layer statistics (only when `needLayerStats`) |
+| `activationHistogramBins` | `Float32Array?` | Bounded activation histogram counts, flattened by layer (only when `needActivationHistograms` and cadence permits) |
+| `activationHistogramLayout` | `{ binCount, layers }?` | Per-layer histogram ranges and summary counts |
+| `activationHistogramVersion` | `number?` | Worker-side freshness counter for histogram payloads |
 | `historyPoint` | `HistoryPoint` | One point appended to the loss-history chart |
 | `confusionMatrix` | `ConfusionMatrixData?` | Only when `needConfusionMatrix` |
 | `sharedSeq` | `number?` | Present when grid payloads were published to SharedArrayBuffers instead of inline fields |
@@ -151,13 +154,18 @@ being processed by the worker's `handleStreamCommand`.
 `updateDemand` is runtime-validated by `isMainToWorkerCommand`, which delegates
 to `normalizeVisualizationDemand`. Every boolean demand flag must be present,
 and `testEvalInterval`, `trainEvalInterval`, and `gridInterval` must be finite
-positive integers. The worker applies the same normalization on the Comlink
-`updateDemand` RPC and throws `Invalid visualization demand.` if validation
-fails.
+positive integers. `activationHistogramInterval` must also be a finite positive
+integer. The worker applies the same normalization on the Comlink `updateDemand`
+RPC and throws `Invalid visualization demand.` if validation fails.
 
 Applying valid demand resets the cadence counters to their interval values and
 marks grids stale. This makes the next snapshot recompute newly requested data
 instead of waiting for the previous cadence schedule to expire.
+
+Activation histograms are runtime inspection data only. They are computed when
+`needActivationHistograms` is true, throttled by `activationHistogramInterval`,
+and published as bounded bin counts rather than raw per-sample activations.
+The main thread stores those bins in the frame buffer, outside React state.
 
 ### `updateSpeed`
 
@@ -203,6 +211,7 @@ counter:
 | `paramsVersion` | `weights`, `biases`, or `weightLayout` is written |
 | `layerStatsVersion` | `layerStats` is written |
 | `confusionMatrixVersion` | `confusionMatrix` is written |
+| `activationHistogramsVersion` | `activationHistogramBins` or `activationHistogramLayout` is written |
 
 React components subscribe to the narrow version counter for the domain they
 read, then imperatively read the current frame buffer during render/memo/paint.

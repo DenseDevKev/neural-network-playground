@@ -6,6 +6,7 @@ import type {
     HistoryPoint,
     LayerStats,
     ConfusionMatrixData,
+    ActivationHistogramLayer,
 } from '@nn-playground/engine';
 import { isPauseReason } from './types.js';
 import type { PauseReason } from './types.js';
@@ -25,6 +26,8 @@ export interface VisualizationDemand {
     needNeuronGrids: boolean;
     /** Whether to compute per-layer weight/gradient/activation statistics. */
     needLayerStats: boolean;
+    /** Whether to compute bounded layer-level activation histogram bins. */
+    needActivationHistograms: boolean;
     /** Whether to evaluate the confusion matrix on the test set. */
     needConfusionMatrix: boolean;
     /** How many snapshots between full test-set evaluations. */
@@ -36,6 +39,8 @@ export interface VisualizationDemand {
     /** How many snapshots between decision-boundary / neuron-grid rebuilds.
      *  Between these, the previously-computed grids are reused. */
     gridInterval: number;
+    /** How many snapshots between bounded activation histogram rebuilds. */
+    activationHistogramInterval: number;
 }
 
 /**
@@ -47,10 +52,12 @@ export const DEFAULT_DEMAND: VisualizationDemand = {
     needDecisionBoundary: true,
     needNeuronGrids: true,
     needLayerStats: false,     // InspectionPanel starts collapsed
+    needActivationHistograms: false,
     needConfusionMatrix: true,
     testEvalInterval: 10,
     trainEvalInterval: 5,
     gridInterval: 2,
+    activationHistogramInterval: 5,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -61,8 +68,68 @@ function isPositiveInteger(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value > 0;
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+    return isFiniteNumber(value) && value > 0;
+}
+
 function isBoolean(value: unknown): value is boolean {
     return typeof value === 'boolean';
+}
+
+function isFloat32Array(value: unknown): value is Float32Array {
+    return value instanceof Float32Array;
+}
+
+function isActivationHistogramLayer(value: unknown): value is ActivationHistogramLayer {
+    if (!isRecord(value)) return false;
+    return (
+        isNonNegativeInteger(value['layerIndex']) &&
+        isPositiveInteger(value['binCount']) &&
+        isFiniteNumber(value['binStart']) &&
+        isPositiveFiniteNumber(value['binWidth']) &&
+        isFiniteNumber(value['minActivation']) &&
+        isFiniteNumber(value['maxActivation']) &&
+        isNonNegativeInteger(value['totalCount']) &&
+        isNonNegativeInteger(value['nearZeroCount']) &&
+        isNonNegativeInteger(value['saturatedCount']) &&
+        value['nearZeroCount'] <= value['totalCount'] &&
+        value['saturatedCount'] <= value['totalCount']
+    );
+}
+
+function isActivationHistogramLayout(value: unknown): value is ActivationHistogramLayout {
+    if (!isRecord(value)) return false;
+    if (!isPositiveInteger(value['binCount'])) return false;
+    if (!Array.isArray(value['layers'])) return false;
+    if (!value['layers'].every(isActivationHistogramLayer)) return false;
+    return (
+        value['layers'].every((layer) => layer.binCount === value['binCount'])
+    );
+}
+
+function hasMalformedActivationHistogramPayload(m: Record<string, unknown>): boolean {
+    const hasBins = 'activationHistogramBins' in m;
+    const hasLayout = 'activationHistogramLayout' in m;
+    const hasVersion = 'activationHistogramVersion' in m;
+    if (!hasBins && !hasLayout && !hasVersion) return false;
+    if (!isFloat32Array(m['activationHistogramBins'])) return true;
+    if (!isActivationHistogramLayout(m['activationHistogramLayout'])) return true;
+    if (!isNonNegativeInteger(m['activationHistogramVersion'])) return true;
+    const expectedBins = m['activationHistogramLayout'].layers.reduce(
+        (sum, layer) => sum + layer.binCount,
+        0,
+    );
+    return (
+        m['activationHistogramBins'].length < expectedBins
+    );
 }
 
 export function normalizeVisualizationDemand(value: unknown): VisualizationDemand | null {
@@ -72,20 +139,24 @@ export function normalizeVisualizationDemand(value: unknown): VisualizationDeman
         needDecisionBoundary,
         needNeuronGrids,
         needLayerStats,
+        needActivationHistograms,
         needConfusionMatrix,
         testEvalInterval,
         trainEvalInterval,
         gridInterval,
+        activationHistogramInterval,
     } = value;
 
     if (
         !isBoolean(needDecisionBoundary) ||
         !isBoolean(needNeuronGrids) ||
         !isBoolean(needLayerStats) ||
+        !isBoolean(needActivationHistograms) ||
         !isBoolean(needConfusionMatrix) ||
         !isPositiveInteger(testEvalInterval) ||
         !isPositiveInteger(trainEvalInterval) ||
-        !isPositiveInteger(gridInterval)
+        !isPositiveInteger(gridInterval) ||
+        !isPositiveInteger(activationHistogramInterval)
     ) {
         return null;
     }
@@ -94,10 +165,12 @@ export function normalizeVisualizationDemand(value: unknown): VisualizationDeman
         needDecisionBoundary,
         needNeuronGrids,
         needLayerStats,
+        needActivationHistograms,
         needConfusionMatrix,
         testEvalInterval,
         trainEvalInterval,
         gridInterval,
+        activationHistogramInterval,
     };
 }
 
@@ -137,6 +210,9 @@ export interface WorkerSnapshotMessage {
     biases?: Float32Array;
     weightLayout?: { layerSizes: number[] };
     layerStats?: LayerStats[];
+    activationHistogramBins?: Float32Array;
+    activationHistogramLayout?: ActivationHistogramLayout;
+    activationHistogramVersion?: number;
 
     historyPoint: HistoryPoint;
     confusionMatrix?: ConfusionMatrixData;
@@ -153,6 +229,11 @@ export interface WorkerSnapshotMessage {
      * reused from a previous frame (cadence gating).
      */
     sharedSeq?: number;
+}
+
+export interface ActivationHistogramLayout {
+    binCount: number;
+    layers: ActivationHistogramLayer[];
 }
 
 export interface WorkerStatusMessage {
@@ -262,7 +343,8 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
             return (
                 typeof m['snapshotId'] === 'number' &&
                 m['scalars'] !== null &&
-                typeof m['scalars'] === 'object'
+                typeof m['scalars'] === 'object' &&
+                !hasMalformedActivationHistogramPayload(m)
             );
         case 'status':
             return (

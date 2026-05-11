@@ -31,6 +31,7 @@ export function deriveVisualizationDemand(args: {
         needDecisionBoundary: boundaryVisible,
         needNeuronGrids: graphConsumesNeuronGrids,
         needLayerStats: inspectionVisible,
+        needActivationHistograms: inspectionVisible,
         needConfusionMatrix: confusionVisible,
     };
 }

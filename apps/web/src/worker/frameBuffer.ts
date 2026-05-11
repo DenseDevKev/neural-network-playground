@@ -5,6 +5,7 @@
 // in useTrainingStore as a render trigger, then read from here imperatively.
 
 import type { LayerStats, ConfusionMatrixData } from '@nn-playground/engine';
+import type { ActivationHistogramLayout } from '@nn-playground/shared';
 
 export interface FrameVersions {
     frameVersion: number;
@@ -13,6 +14,7 @@ export interface FrameVersions {
     paramsVersion: number;
     layerStatsVersion: number;
     confusionMatrixVersion: number;
+    activationHistogramsVersion: number;
 }
 
 export interface FrameBuffer {
@@ -32,6 +34,10 @@ export interface FrameBuffer {
     // Layer statistics (small enough to keep here)
     layerStats: LayerStats[] | null;
 
+    // Bounded activation histograms (flattened bins + compact layer layout)
+    activationHistogramBins: Float32Array | null;
+    activationHistogramLayout: ActivationHistogramLayout | null;
+
     // Confusion matrix
     confusionMatrix: ConfusionMatrixData | null;
 
@@ -42,6 +48,7 @@ export interface FrameBuffer {
     paramsVersion: number;
     layerStatsVersion: number;
     confusionMatrixVersion: number;
+    activationHistogramsVersion: number;
 }
 
 let _buffer: FrameBuffer = {
@@ -53,6 +60,8 @@ let _buffer: FrameBuffer = {
     biases: null,
     weightLayout: null,
     layerStats: null,
+    activationHistogramBins: null,
+    activationHistogramLayout: null,
     confusionMatrix: null,
     version: 0,
     outputGridVersion: 0,
@@ -60,6 +69,7 @@ let _buffer: FrameBuffer = {
     paramsVersion: 0,
     layerStatsVersion: 0,
     confusionMatrixVersion: 0,
+    activationHistogramsVersion: 0,
 };
 
 /** Get a readonly view of the current frame buffer. */
@@ -81,6 +91,7 @@ export function getFrameVersions(): FrameVersions {
         paramsVersion: _buffer.paramsVersion,
         layerStatsVersion: _buffer.layerStatsVersion,
         confusionMatrixVersion: _buffer.confusionMatrixVersion,
+        activationHistogramsVersion: _buffer.activationHistogramsVersion,
     };
 }
 
@@ -92,6 +103,7 @@ type FrameBufferPatch = Partial<Omit<
     | 'paramsVersion'
     | 'layerStatsVersion'
     | 'confusionMatrixVersion'
+    | 'activationHistogramsVersion'
 >>;
 
 function hasOwn(patch: FrameBufferPatch, key: keyof FrameBufferPatch): boolean {
@@ -107,12 +119,16 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         hasOwn(patch, 'weights') || hasOwn(patch, 'biases') || hasOwn(patch, 'weightLayout');
     const layerStatsChanged = hasOwn(patch, 'layerStats');
     const confusionMatrixChanged = hasOwn(patch, 'confusionMatrix');
+    const activationHistogramsChanged =
+        hasOwn(patch, 'activationHistogramBins') ||
+        hasOwn(patch, 'activationHistogramLayout');
     const anyDomainChanged =
         outputGridChanged ||
         neuronGridsChanged ||
         paramsChanged ||
         layerStatsChanged ||
-        confusionMatrixChanged;
+        confusionMatrixChanged ||
+        activationHistogramsChanged;
 
     _buffer = {
         ..._buffer,
@@ -123,6 +139,8 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         paramsVersion: _buffer.paramsVersion + (paramsChanged ? 1 : 0),
         layerStatsVersion: _buffer.layerStatsVersion + (layerStatsChanged ? 1 : 0),
         confusionMatrixVersion: _buffer.confusionMatrixVersion + (confusionMatrixChanged ? 1 : 0),
+        activationHistogramsVersion:
+            _buffer.activationHistogramsVersion + (activationHistogramsChanged ? 1 : 0),
     };
     return _buffer.version;
 }
@@ -138,6 +156,8 @@ export function resetFrameBuffer(): void {
         biases: null,
         weightLayout: null,
         layerStats: null,
+        activationHistogramBins: null,
+        activationHistogramLayout: null,
         confusionMatrix: null,
         version: _buffer.version + 1,
         outputGridVersion: _buffer.outputGridVersion + 1,
@@ -145,5 +165,6 @@ export function resetFrameBuffer(): void {
         paramsVersion: _buffer.paramsVersion + 1,
         layerStatsVersion: _buffer.layerStatsVersion + 1,
         confusionMatrixVersion: _buffer.confusionMatrixVersion + 1,
+        activationHistogramsVersion: _buffer.activationHistogramsVersion + 1,
     };
 }

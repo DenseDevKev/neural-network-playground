@@ -71,8 +71,7 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
             neuronGridLayout = flattened.layout;
         }
     }
-
-    updateFrameBuffer({
+    const framePatch: Parameters<typeof updateFrameBuffer>[0] = {
         outputGrid,
         gridSize: snapshot.gridSize,
         neuronGrids,
@@ -82,12 +81,28 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
         weightLayout: { layerSizes },
         layerStats: snapshot.layerStats ?? null,
         confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
-    });
+    };
+
+    if (snapshot.activationHistograms) {
+        framePatch.activationHistogramBins = snapshot.activationHistograms.bins;
+        framePatch.activationHistogramLayout = {
+            binCount: snapshot.activationHistograms.layers[0]?.binCount ?? 0,
+            layers: snapshot.activationHistograms.layers,
+        };
+    }
+
+    updateFrameBuffer(framePatch);
     return getFrameVersions();
 }
 
+function snapshotForReactState(snapshot: NetworkSnapshot): NetworkSnapshot {
+    if (!snapshot.activationHistograms) return snapshot;
+    const { activationHistograms: _activationHistograms, ...rest } = snapshot;
+    return rest;
+}
+
 function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot): void {
-    ts.setSnapshot(snapshot);
+    ts.setSnapshot(snapshotForReactState(snapshot));
     ts.resetHistory();
     if (snapshot.historyPoint) ts.addHistoryPoint(snapshot.historyPoint);
     ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
@@ -348,8 +363,14 @@ export function useTraining(): TrainingHook {
     // Sync demand changes to worker
     useEffect(() => {
         if (!initializedRef.current) return;
-        postStreamCommand({ type: 'updateDemand', demand });
-    }, [demand]);
+        if (isPlayingRef.current) {
+            postStreamCommand({ type: 'updateDemand', demand });
+            return;
+        }
+        void getWorkerApi().updateDemand(demand).catch((error: unknown) => {
+            reportWorkerError(error, 'Failed to update visualization demand.');
+        });
+    }, [demand, reportWorkerError]);
 
     // AS-4: live-toggle the WebGPU grid path when the user flips the
     // featuresUI flag. Disabling immediately disposes the GPU predictor
@@ -419,7 +440,7 @@ export function useTraining(): TrainingHook {
             const api = getWorkerApi();
             const snap = await api.step(1);
             const ts = useTrainingStore.getState();
-            ts.setSnapshot(snap);
+            ts.setSnapshot(snapshotForReactState(snap));
             ts.setFrameVersions(syncSnapshotToFrameBuffer(snap));
             if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
         } catch (error) {

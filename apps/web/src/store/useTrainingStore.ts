@@ -30,6 +30,7 @@ export interface TrainingStore {
     paramsVersion: number;
     layerStatsVersion: number;
     confusionMatrixVersion: number;
+    activationHistogramsVersion: number;
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     /** Steps of training to run per animation frame. */
@@ -85,6 +86,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     paramsVersion: 0,
     layerStatsVersion: 0,
     confusionMatrixVersion: 0,
+    activationHistogramsVersion: 0,
     trainPoints: [],
     testPoints: [],
     stepsPerFrame: 5,
@@ -112,6 +114,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 paramsVersion: state.paramsVersion,
                 layerStatsVersion: state.layerStatsVersion,
                 confusionMatrixVersion: state.confusionMatrixVersion,
+                activationHistogramsVersion: state.activationHistogramsVersion,
             };
 
             const historyVersion = snapshot.historyPoint
@@ -126,6 +129,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 paramsVersion: versions.paramsVersion,
                 layerStatsVersion: versions.layerStatsVersion,
                 confusionMatrixVersion: versions.confusionMatrixVersion,
+                activationHistogramsVersion: versions.activationHistogramsVersion,
                 historyVersion,
                 testMetricsStale,
                 workerError: null,
@@ -151,6 +155,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         paramsVersion: versions.paramsVersion,
         layerStatsVersion: versions.layerStatsVersion,
         confusionMatrixVersion: versions.confusionMatrixVersion,
+        activationHistogramsVersion: versions.activationHistogramsVersion,
     }),
     setTrainPoints: (trainPoints) => set({ trainPoints }),
     setTestPoints: (testPoints) => set({ testPoints }),

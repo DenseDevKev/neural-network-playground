@@ -25,6 +25,7 @@ describe('frameBuffer', () => {
             expect(typeof versions.paramsVersion).toBe('number');
             expect(typeof versions.layerStatsVersion).toBe('number');
             expect(typeof versions.confusionMatrixVersion).toBe('number');
+            expect(typeof versions.activationHistogramsVersion).toBe('number');
         });
 
         it('updateFrameBuffer({}) should not bump any version', () => {
@@ -74,6 +75,41 @@ describe('frameBuffer', () => {
             expect(getFrameBuffer().biases).toBe(biases);
         });
 
+        it('activation histogram patch should bump only histogram and broad frame versions', () => {
+            const initialVersions = getFrameVersions();
+            const activationHistogramBins = new Float32Array([2, 1, 0, 3]);
+            const activationHistogramLayout = {
+                binCount: 2,
+                layers: [
+                    {
+                        layerIndex: 0,
+                        binCount: 2,
+                        binStart: -1,
+                        binWidth: 1,
+                        minActivation: -1,
+                        maxActivation: 1,
+                        totalCount: 3,
+                        nearZeroCount: 1,
+                        saturatedCount: 0,
+                    },
+                ],
+            };
+
+            const newVersion = updateFrameBuffer({
+                activationHistogramBins,
+                activationHistogramLayout,
+            });
+
+            expect(newVersion).toBe(initialVersions.frameVersion + 1);
+            expect(getFrameVersions()).toEqual({
+                ...initialVersions,
+                frameVersion: initialVersions.frameVersion + 1,
+                activationHistogramsVersion: initialVersions.activationHistogramsVersion + 1,
+            });
+            expect(getFrameBuffer().activationHistogramBins).toBe(activationHistogramBins);
+            expect(getFrameBuffer().activationHistogramLayout).toBe(activationHistogramLayout);
+        });
+
         it('resetFrameBuffer should bump all versions', () => {
             const initialVersions = getFrameVersions();
 
@@ -86,6 +122,7 @@ describe('frameBuffer', () => {
                 paramsVersion: initialVersions.paramsVersion + 1,
                 layerStatsVersion: initialVersions.layerStatsVersion + 1,
                 confusionMatrixVersion: initialVersions.confusionMatrixVersion + 1,
+                activationHistogramsVersion: initialVersions.activationHistogramsVersion + 1,
             });
         });
     });

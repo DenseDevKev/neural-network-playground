@@ -212,6 +212,24 @@ function makeSnapshotMessage(
         weights: new Float32Array([0.5, -0.25]),
         biases: new Float32Array([0.1]),
         weightLayout: { layerSizes: [2, 1] },
+        activationHistogramBins: new Float32Array([1, 2]),
+        activationHistogramLayout: {
+            binCount: 2,
+            layers: [
+                {
+                    layerIndex: 0,
+                    binCount: 2,
+                    binStart: 0,
+                    binWidth: 0.5,
+                    minActivation: 0,
+                    maxActivation: 1,
+                    totalCount: 3,
+                    nearZeroCount: 1,
+                    saturatedCount: 0,
+                },
+            ],
+        },
+        activationHistogramVersion: 1,
         historyPoint: {
             step: snapshotId * 10,
             trainLoss: 0.4,
@@ -289,6 +307,8 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
         expect(frame.weights).toEqual(new Float32Array([0.5, -0.25]));
         expect(frame.biases).toEqual(new Float32Array([0.1]));
+        expect(frame.activationHistogramBins).toEqual(new Float32Array([1, 2]));
+        expect(frame.activationHistogramLayout?.layers).toHaveLength(1);
         expect(receivedMessages).toHaveLength(1);
         expect(receivedMessages[0].msg.type).toBe('snapshot');
         expect(receivedMessages[0].frameVersion).toBe(frame.version);

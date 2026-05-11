@@ -127,6 +127,37 @@ export interface LayerStats {
     meanAbsGradient: number;
 }
 
+/** Runtime-only options for compact activation histogram inspection. */
+export interface ActivationHistogramOptions {
+    /** Number of fixed-width bins per layer. Defaults to 12. */
+    binCount?: number;
+    /** Maximum samples to scan. Defaults to 128. */
+    maxSamples?: number;
+    /** Values with absolute magnitude at or below this count as near-zero. */
+    zeroThreshold?: number;
+    /** Bounded activations at or beyond this threshold count as saturated. */
+    saturationThreshold?: number;
+}
+
+/** Per-layer metadata for compact activation histogram bins. */
+export interface ActivationHistogramLayer {
+    layerIndex: number;
+    binCount: number;
+    binStart: number;
+    binWidth: number;
+    minActivation: number;
+    maxActivation: number;
+    totalCount: number;
+    nearZeroCount: number;
+    saturatedCount: number;
+}
+
+/** Bounded activation histogram payload. `bins` is flattened by layer. */
+export interface ActivationHistogramResult {
+    layers: ActivationHistogramLayer[];
+    bins: Float32Array;
+}
+
 /** A single training history entry. */
 export interface HistoryPoint {
     step: number;
@@ -185,6 +216,9 @@ export interface NetworkSnapshot {
 
     /** Per-layer statistics for inspection panel. */
     layerStats?: LayerStats[];
+
+    /** Compact, demand-gated activation histograms for inspection. */
+    activationHistograms?: ActivationHistogramResult;
 
     historyPoint: HistoryPoint;
 }

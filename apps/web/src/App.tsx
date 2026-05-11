@@ -143,6 +143,7 @@ export default function App() {
             demand.needDecisionBoundary === nextDemand.needDecisionBoundary &&
             demand.needNeuronGrids === nextDemand.needNeuronGrids &&
             demand.needLayerStats === nextDemand.needLayerStats &&
+            demand.needActivationHistograms === nextDemand.needActivationHistograms &&
             demand.needConfusionMatrix === nextDemand.needConfusionMatrix
         ) {
             return;

@@ -2582,6 +2582,38 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     background: linear-gradient(90deg, #3b82f6, #f97316);
 }
 
+.inspection__histogram {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 72px;
+    padding: 8px 6px 4px;
+    margin-top: var(--space-xs);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.18);
+}
+
+.inspection__histogram-bin {
+    flex: 1 1 0;
+    min-width: 3px;
+    border-radius: 2px 2px 0 0;
+    background: linear-gradient(180deg, var(--color-accent), #3b82f6);
+}
+
+.inspection__histogram-summary {
+    display: grid;
+    gap: 2px;
+    margin-top: var(--space-xs);
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
+.inspection__histogram-summary strong {
+    color: var(--text-secondary);
+    font-size: 10px;
+}
+
 /* ── Network Graph Visual Enhancements ── */
 .network-flow-anim {
     animation: network-flow-forward 1.2s linear infinite;
