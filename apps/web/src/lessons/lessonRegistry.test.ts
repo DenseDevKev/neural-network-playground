@@ -35,6 +35,9 @@ describe('lesson registry invariants', () => {
             'lesson-circle-hidden-layer',
             'lesson-feature-engineering-circle',
             'lesson-spiral-depth',
+            'lesson-learning-rate-tuning',
+            'lesson-regularization-overfitting',
+            'lesson-noisy-data-robustness',
         ]);
     });
 
