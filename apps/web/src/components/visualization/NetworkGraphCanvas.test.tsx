@@ -182,8 +182,11 @@ describe('NetworkGraphCanvas', () => {
 
         render(<NetworkGraphCanvas />);
 
-        expect(screen.getByLabelText('Architecture summary')).toHaveTextContent('x, y -> [4] -> [4] -> 1 output');
+        const summary = screen.getByLabelText('Architecture summary');
+        const story = screen.getByText('X₁, X₂ -> [4] -> [4] -> 1 output');
+        expect(summary).toContainElement(story);
         expect(screen.getByText('Moderate capacity')).toBeInTheDocument();
+        expect(summary.querySelector('.network-graph-summary__hint')).toHaveTextContent('Gaussian blobs');
     });
 
     it('shows dataset topology hints only for clear mismatches', () => {
@@ -202,11 +205,13 @@ describe('NetworkGraphCanvas', () => {
 
         expect(screen.getByText('XOR is not linearly separable, so add a hidden layer before training.')).toBeInTheDocument();
 
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [4],
-            },
+        act(() => {
+            usePlaygroundStore.setState({
+                network: {
+                    ...usePlaygroundStore.getState().network,
+                    hiddenLayers: [4],
+                },
+            });
         });
         rerender(<NetworkGraphCanvas />);
 

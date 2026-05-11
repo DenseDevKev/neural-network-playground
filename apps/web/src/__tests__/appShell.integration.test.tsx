@@ -132,6 +132,21 @@ describe('App shell integration', () => {
         expect(await screen.findByText('Mock Code Export')).toBeInTheDocument();
     });
 
+    it('highlights the Features panel for feature-focused lesson steps', async () => {
+        const user = userEvent.setup();
+        const { container } = render(<App />);
+
+        await user.selectOptions(
+            screen.getByRole('combobox', { name: 'Guided lesson' }),
+            'lesson-feature-engineering-circle',
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+
+        expect(useLayoutStore.getState().activeTabLeft).toBe('features');
+        expect(screen.getByText('Mock Features')).toBeInTheDocument();
+        expect(container.querySelector('[data-lesson-target="features"]')).toHaveClass('lesson-target--active');
+    });
+
     it('restores split build parity with network and config editors', async () => {
         const user = userEvent.setup();
         render(<App />);

@@ -27,11 +27,14 @@ describe('lesson registry invariants', () => {
         });
     });
 
-    it('keeps the conservative P1 seed set explicit', () => {
+    it('keeps the expanded lesson library explicit', () => {
         expect(LESSON_DEFINITIONS.map((lesson) => lesson.id)).toEqual([
             'lesson-xor-hidden-layers',
             'lesson-single-neuron-linear-separator',
             'lesson-regression-plane-baseline',
+            'lesson-circle-hidden-layer',
+            'lesson-feature-engineering-circle',
+            'lesson-spiral-depth',
         ]);
     });
 
@@ -74,6 +77,18 @@ describe('lesson registry invariants', () => {
                 expect(validTargets.has(step.target), `${lesson.id}:${step.id}`).toBe(true);
                 if (step.phase) {
                     expect(['build', 'run']).toContain(step.phase);
+                }
+            }
+        }
+    });
+
+    it('keeps highlighted lesson targets aligned with the opened build tab', () => {
+        const highlightedTabs = new Set(['data', 'features', 'network', 'hyperparams']);
+
+        for (const lesson of LESSON_DEFINITIONS) {
+            for (const step of lesson.steps) {
+                if (step.tab && highlightedTabs.has(step.tab)) {
+                    expect(step.target, `${lesson.id}:${step.id}`).toBe(step.tab);
                 }
             }
         }

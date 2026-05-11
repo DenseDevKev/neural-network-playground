@@ -184,7 +184,7 @@ export default function App() {
     const leftTabContent = {
         presets: <PresetPanel onReset={stableReset} />,
         data: <div className={lessonTargetClass('data')} data-lesson-target="data"><DataPanel onReset={stableReset} /></div>,
-        features: <FeaturesPanel />,
+        features: <div className={lessonTargetClass('features')} data-lesson-target="features"><FeaturesPanel /></div>,
         network: <div className={lessonTargetClass('network')} data-lesson-target="network"><NetworkConfigPanel /></div>,
         hyperparams: <div className={lessonTargetClass('hyperparams')} data-lesson-target="hyperparams"><HyperparamPanel /></div>,
         config: <ConfigPanel onReset={stableReset} />,
@@ -256,7 +256,7 @@ export default function App() {
         <div className="forge-panel-stack">
             <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
             <Panel title="Data" phase="build" className={lessonTargetClass('data')}><DataPanel onReset={stableReset} /></Panel>
-            <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
+            <Panel title="Features" phase="build" className={lessonTargetClass('features')}><FeaturesPanel /></Panel>
             <Panel title="Network" phase="build" className={lessonTargetClass('network')}><NetworkConfigPanel /></Panel>
             <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
             <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
@@ -373,7 +373,7 @@ export default function App() {
                             }
                             buildRight={
                                 <>
-                                    <Panel title="Features" phase="build"><FeaturesPanel /></Panel>
+                                    <Panel title="Features" phase="build" className={lessonTargetClass('features')}><FeaturesPanel /></Panel>
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}

@@ -1,7 +1,7 @@
 import type { Preset } from '@nn-playground/shared';
 import type { LeftTabId, PhaseMode } from '../store/useLayoutStore.ts';
 
-export type LessonTarget = 'data' | 'network' | 'hyperparams' | 'transport';
+export type LessonTarget = 'data' | 'features' | 'network' | 'hyperparams' | 'transport';
 
 export interface LessonStep {
     id: string;
