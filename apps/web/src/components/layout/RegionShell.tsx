@@ -211,7 +211,14 @@ export const FocusShell = memo(function FocusShell({
         <div className="forge-focus">
             <div className="forge-focus__left forge-panel-stack" aria-label="Configuration panels">
                 {LEFT_TABS.map((tab) => (
-                    <section className="forge-panel" key={tab.id} aria-label={tab.label}>
+                    <section
+                        className="forge-panel"
+                        key={tab.id}
+                        id={`forge-left-panel-${tab.id}`}
+                        data-forge-panel-targets={tab.id}
+                        tabIndex={-1}
+                        aria-label={tab.label}
+                    >
                         <div className="forge-panel__head">
                             <span className="forge-panel__grip" aria-hidden />
                             <span className="forge-panel__title">{tab.label}</span>
@@ -229,7 +236,14 @@ export const FocusShell = memo(function FocusShell({
 
             <div className="forge-focus__right forge-panel-stack" aria-label="Output panels">
                 {RIGHT_TABS.map((tab) => (
-                    <section className="forge-panel" key={tab.id} aria-label={tab.label}>
+                    <section
+                        className="forge-panel"
+                        key={tab.id}
+                        id={`forge-right-panel-${tab.id}`}
+                        data-forge-panel-targets={tab.id}
+                        tabIndex={-1}
+                        aria-label={tab.label}
+                    >
                         <div className="forge-panel__head">
                             <span className="forge-panel__grip" aria-hidden />
                             <span className="forge-panel__title">{tab.label}</span>
@@ -270,12 +284,12 @@ export const GridShell = memo(function GridShell({
 }: GridProps) {
     return (
         <div className="forge-grid">
-            <div className="forge-grid__topology">{topologyContent}</div>
-            <div className="forge-grid__boundary">{boundaryContent}</div>
-            <div className="forge-grid__config">{configContent}</div>
-            <div className="forge-grid__loss">{lossContent}</div>
-            <div className="forge-grid__confusion">{confusionContent}</div>
-            <div className="forge-grid__inspect">{inspectContent}</div>
+            <div className="forge-grid__topology" id="forge-left-panel-network" data-forge-panel-targets="network" tabIndex={-1}>{topologyContent}</div>
+            <div className="forge-grid__boundary" id="forge-right-panel-boundary" data-forge-panel-targets="boundary" tabIndex={-1}>{boundaryContent}</div>
+            <div className="forge-grid__config" data-forge-panel-targets="presets data features hyperparams config" tabIndex={-1}>{configContent}</div>
+            <div className="forge-grid__loss" id="forge-right-panel-loss" data-forge-panel-targets="loss" tabIndex={-1}>{lossContent}</div>
+            <div className="forge-grid__confusion" id="forge-right-panel-confusion" data-forge-panel-targets="confusion" tabIndex={-1}>{confusionContent}</div>
+            <div className="forge-grid__inspect" data-forge-panel-targets="inspection code history" tabIndex={-1}>{inspectContent}</div>
             <div className="forge-grid__transport">
                 {transportContent}
             </div>
