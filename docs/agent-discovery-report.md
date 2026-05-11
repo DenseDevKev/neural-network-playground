@@ -1,9 +1,12 @@
-# Temporary Agent Discovery Report
+# Agent Discovery Report
 
 Date: 2026-05-11
 
-This is a temporary handoff note for the autonomous Neural Network Playground
-2.0 run. It is a planning aid, not a substitute for tests.
+This report is retained as Wave 0 discovery evidence for the autonomous Neural
+Network Playground 2.0 roadmap. Persistent roadmap progress, verification
+status, and next-slice ownership now live in
+`docs/roadmap/ROADMAP_STATE.md`. This report remains a planning aid, not a
+substitute for tests.
 
 ## Verification Commands and Current Status
 
