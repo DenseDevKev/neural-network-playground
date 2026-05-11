@@ -21,7 +21,7 @@ import type {
     PredictionTrace,
 } from './types.js';
 import { getLoss } from './losses.js';
-import { computeLearningRate } from './schedules.js';
+import { computeLearningRate, validateLRSchedule } from './schedules.js';
 import { initWeightsInto, initBiasesInto } from './initialization.js';
 import { transformPoint } from './features.js';
 import type { FeatureSpec } from './features.js';
@@ -315,6 +315,7 @@ function assertTrainingHyperparams(training: TrainingConfig): void {
     if (clip != null) {
         assertFiniteInRange(clip, 'gradientClip', 0, Number.POSITIVE_INFINITY);
     }
+    validateLRSchedule(training.lrSchedule);
 
     switch (training.optimizer) {
         case 'sgd':

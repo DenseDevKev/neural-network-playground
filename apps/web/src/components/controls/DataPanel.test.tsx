@@ -27,6 +27,9 @@ describe('DataPanel loading feedback', () => {
             stepsPerFrame: 5,
             dataConfigLoading: false,
             networkConfigLoading: false,
+            featuresConfigLoading: false,
+            trainingConfigLoading: false,
+            presetConfigLoading: false,
             pendingConfigSource: null,
             configError: null,
             configErrorSource: null,
@@ -68,5 +71,16 @@ describe('DataPanel loading feedback', () => {
 
         expect(screen.getByText('Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.')).toBeInTheDocument();
         expect(screen.getByText('Cause: more noise blurs class edges. Effect: training loss may flatten and test accuracy becomes harder to improve.')).toBeInTheDocument();
+    });
+
+    it('does not start a data transaction for the already-active dataset', async () => {
+        const user = userEvent.setup();
+
+        render(<DataPanel onReset={vi.fn()} />);
+
+        await user.click(screen.getByRole('button', { name: 'Circle' }));
+
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
     });
 });

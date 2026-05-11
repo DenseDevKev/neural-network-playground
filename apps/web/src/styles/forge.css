@@ -8,7 +8,11 @@
     grid-template-rows: 52px 1fr 24px;
     height: 100vh;
     overflow: hidden;
-    background: var(--bg-base);
+    background:
+        radial-gradient(circle at 18% 0%, rgba(129, 236, 255, 0.075), transparent 30%),
+        radial-gradient(circle at 90% 8%, rgba(234, 179, 8, 0.05), transparent 24%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 38%),
+        var(--bg-base);
     color: var(--text-primary);
 }
 
@@ -18,8 +22,11 @@
     align-items: center;
     gap: var(--space-sm);
     padding: 0 var(--space-md);
-    background: var(--bg-surface);
-    border-bottom: 1px solid var(--border-subtle);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012)),
+        rgba(12, 13, 15, 0.96);
+    border-bottom: 1px solid rgba(129, 236, 255, 0.13);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
     flex-shrink: 0;
     z-index: 100;
     position: relative;
@@ -42,9 +49,9 @@
 .forge-topbar__brand-dot {
     width: 10px;
     height: 10px;
-    background: var(--color-primary);
+    background: linear-gradient(135deg, var(--color-primary), rgba(234, 179, 8, 0.9));
     border-radius: 2px;
-    box-shadow: 0 0 8px var(--color-primary-glow);
+    box-shadow: 0 0 12px var(--color-primary-glow), 0 0 28px rgba(234, 179, 8, 0.18);
 }
 
 .forge-topbar__divider {
@@ -120,11 +127,14 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    padding: 4px 10px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
+    padding: 5px 10px 4px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.008)),
+        rgba(9, 10, 12, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.075);
     border-radius: var(--radius-sm);
     min-width: 72px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
 }
 .forge-metric__label {
     font-family: var(--font-mono);
@@ -273,7 +283,9 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--bg-surface);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 28%),
+        var(--bg-surface);
     overflow: hidden;
 }
 .forge-dock__left  { border-right: 1px solid var(--border-subtle); }
@@ -284,7 +296,10 @@
     grid-row: 1;
     min-height: 0;
     min-width: 0;
-    background: var(--bg-base);
+    background:
+        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px) 0 0 / 26px 26px,
+        linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px) 0 0 / 26px 26px,
+        var(--bg-base);
     padding: var(--space-sm);
     display: flex;
     flex-direction: column;
@@ -295,13 +310,16 @@
 .forge-dock__bottom {
     grid-column: 2 / span 3;
     grid-row: 2;
-    background: var(--bg-surface);
-    border-top: 1px solid var(--border-subtle);
+    background:
+        linear-gradient(180deg, rgba(129, 236, 255, 0.065), rgba(255, 255, 255, 0.014)),
+        rgba(13, 14, 17, 0.98);
+    border-top: 1px solid rgba(129, 236, 255, 0.14);
     padding: 8px var(--space-md);
     display: flex;
     align-items: center;
     gap: var(--space-sm);
     flex-shrink: 0;
+    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .forge-dock--compact .forge-dock__left {
@@ -349,7 +367,7 @@
     align-items: center;
     gap: 6px;
     padding: 0 10px;
-    height: 34px;
+    height: 32px;
     background: transparent;
     border: 0;
     border-bottom: 2px solid transparent;
@@ -370,6 +388,7 @@
 .forge-tab--active {
     color: var(--text-primary);
     border-bottom-color: var(--color-primary);
+    background: linear-gradient(180deg, rgba(129, 236, 255, 0.07), transparent);
 }
 .forge-tab__dot {
     width: 5px;
@@ -390,7 +409,32 @@
     overflow-x: hidden;
 }
 .forge-tabs__content {
-    padding: var(--space-md);
+    padding: 12px;
+}
+
+.forge-transport-cluster {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 360px);
+    align-items: stretch;
+    gap: var(--space-sm);
+    width: 100%;
+    min-width: 0;
+}
+
+.forge-transport-cluster > .lesson-target {
+    min-width: 0;
+}
+
+.forge-transport-cluster .training-bar {
+    height: 100%;
+    min-height: 74px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01)),
+        rgba(9, 10, 12, 0.58);
+    border-radius: var(--radius-md);
+    padding: 8px 10px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 /* ─── GRID layout ───────────────────────────────────────────────── */
@@ -407,8 +451,10 @@
         var(--bg-base);
 }
 .forge-grid__transport {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
+    background:
+        linear-gradient(180deg, rgba(129, 236, 255, 0.05), rgba(255, 255, 255, 0.012)),
+        var(--bg-surface);
+    border: 1px solid rgba(129, 236, 255, 0.12);
     border-radius: var(--radius-md);
     padding: 8px var(--space-md);
     display: flex;
@@ -475,8 +521,10 @@
 }
 .forge-focus__bottom {
     grid-column: 1 / -1;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
+    background:
+        linear-gradient(180deg, rgba(129, 236, 255, 0.05), rgba(255, 255, 255, 0.012)),
+        var(--bg-surface);
+    border: 1px solid rgba(129, 236, 255, 0.12);
     border-radius: var(--radius-md);
     padding: 8px var(--space-md);
     display: flex;
@@ -844,6 +892,13 @@
     margin-bottom: 8px;
 }
 
+.control-note {
+    margin: 2px 0 10px;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
 /* ─── Progress bar (attached to dock bottom) ────────────────────── */
 .forge-progress {
     height: 2px;
@@ -872,6 +927,10 @@
 
 /* ─── Responsive guards ─────────────────────────────────────────── */
 @media (max-width: 1100px) {
+    .forge-transport-cluster {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .forge-dock {
         grid-template-columns: 40px 260px 1fr 320px;
     }

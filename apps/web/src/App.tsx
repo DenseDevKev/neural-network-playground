@@ -29,7 +29,8 @@ import {
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
-import { GuidedLessonPanel, type LessonTarget } from './components/controls/GuidedLessonPanel.tsx';
+import { GuidedLessonPanel } from './components/controls/GuidedLessonPanel.tsx';
+import type { LessonTarget } from './lessons/lessonRegistry.ts';
 import { DataPanel } from './components/controls/DataPanel.tsx';
 import { FeaturesPanel } from './components/controls/FeaturesPanel.tsx';
 import { NetworkConfigPanel } from './components/controls/NetworkConfigPanel.tsx';
@@ -199,8 +200,11 @@ export default function App() {
     };
 
     const transport = (
-        <div className={lessonTargetClass('transport')} data-lesson-target="transport">
-            <TrainingControls training={training} />
+        <div className="forge-transport-cluster">
+            <div className={lessonTargetClass('transport')} data-lesson-target="transport">
+                <TrainingControls training={training} />
+            </div>
+            <GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} />
         </div>
     );
 
@@ -406,8 +410,6 @@ export default function App() {
                     )}
                 </ErrorBoundary>
             </main>
-
-            <GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} />
 
             <StatusBar effectiveLayout={effectiveLayout} />
         </div>

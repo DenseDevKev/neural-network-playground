@@ -3,6 +3,7 @@ import { memo } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
+import { getTrainingLifecycleUi } from './trainingLifecycle.ts';
 
 interface Props {
     training: TrainingHook;
@@ -21,7 +22,11 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
     const snapshot = useTrainingStore((s) => s.snapshot);
     const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
     const setStepsPerFrame = useTrainingStore((s) => s.setStepsPerFrame);
+    const pauseReason = useTrainingStore((s) => s.pauseReason);
+    const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const isRunning = status === 'running';
+    const lifecycle = getTrainingLifecycleUi({ status, pauseReason, pendingConfigSource });
+    const blockConfigAction = lifecycle.isBlocked;
 
     return (
         <div className="training-bar">
@@ -30,7 +35,9 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     content={
                         isRunning
                             ? 'Cause: pause stops the update loop. Effect: the current boundary stays frozen so you can inspect metrics and weights.'
-                            : 'Cause: play repeats weight updates continuously. Effect: the boundary and metrics evolve until you pause or reset.'
+                            : lifecycle.disabledReason
+                                ? 'Configuration is syncing. Training can resume when the current settings reach the worker.'
+                                : 'Cause: play repeats weight updates continuously. Effect: the boundary and metrics evolve until you pause or reset.'
                     }
                     shortcut="Space"
                 >
@@ -38,10 +45,11 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         type="button"
                         className={`btn btn--play btn--control ${isRunning ? 'running' : ''}`}
                         onClick={isRunning ? training.pause : training.play}
-                        aria-label={isRunning ? 'Pause training' : 'Start training'}
+                        aria-label={lifecycle.primaryAriaLabel}
+                        disabled={!isRunning && blockConfigAction}
                     >
                         <span className="btn__icon" aria-hidden="true">{isRunning ? '⏸' : '▶'}</span>
-                        <span className="btn__label">{isRunning ? 'Pause' : 'Play'}</span>
+                        <span className="btn__label">{lifecycle.primaryLabel}</span>
                         <span className="btn__shortcut">Space</span>
                     </button>
                 </Tooltip>
@@ -51,6 +59,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         className="btn btn--ghost btn--control"
                         onClick={training.step}
                         aria-label="Run one training step"
+                        disabled={blockConfigAction}
                     >
                         <span className="btn__icon" aria-hidden="true">→</span>
                         <span className="btn__label">Step</span>
@@ -63,6 +72,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         className="btn btn--ghost btn--control"
                         onClick={training.reset}
                         aria-label="Reset model and data"
+                        disabled={blockConfigAction}
                     >
                         <span className="btn__icon" aria-hidden="true">↺</span>
                         <span className="btn__label">Reset</span>
@@ -99,6 +109,11 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     <span className="training-status">
                         <span className="training-status__dot" aria-hidden="true" />
                         Training...
+                    </span>
+                )}
+                {!isRunning && lifecycle.statusText && (
+                    <span className="training-status training-status--muted">
+                        {lifecycle.statusText}
                     </span>
                 )}
                 {snapshot && (

@@ -12,7 +12,7 @@ import {
     MOMENTUM_VALUES,
     REGULARIZATION_RATES,
 } from '@nn-playground/shared';
-import { ACTIVATION_LABELS, isLossCompatible, LOSS_LABELS } from '@nn-playground/engine';
+import { ACTIVATION_LABELS, computeLearningRate, isLossCompatible, LOSS_LABELS } from '@nn-playground/engine';
 import type {
     ActivationType,
     LossType,
@@ -30,6 +30,30 @@ const WEIGHT_INITS: Array<{ value: WeightInitType; label: string }> = [
     { value: 'uniform', label: 'Uniform' },
     { value: 'zeros', label: 'Zeros' },
 ];
+
+const OPTIMIZER_EXPLANATIONS: Record<OptimizerType, string> = {
+    sgd: 'Plain SGD uses the current gradient directly. It is simple and easy to inspect step by step.',
+    sgdMomentum: 'Momentum remembers recent gradients, so updates can keep moving through shallow valleys.',
+    adam: 'Adam adapts each weight update from moving averages, often making noisy gradients easier to train.',
+};
+
+function formatLr(value: number): string {
+    return Number.isFinite(value) ? value.toPrecision(3).replace(/\.?0+$/, '') : 'n/a';
+}
+
+function scheduleSummary(
+    learningRate: number,
+    schedule: ReturnType<typeof usePlaygroundStore.getState>['training']['lrSchedule'],
+): string {
+    if (!schedule || schedule.type === 'constant') {
+        return `Uses ${formatLr(learningRate)} every update.`;
+    }
+    if (schedule.type === 'step') {
+        return `Starts at ${formatLr(learningRate)}; multiplies by ${formatLr(schedule.gamma)} every ${schedule.stepSize} updates.`;
+    }
+    const midStep = Math.max(1, Math.floor(schedule.totalSteps / 2));
+    return `Anneals from ${formatLr(learningRate)} to ${formatLr(schedule.minLr)} over ${schedule.totalSteps} updates; midpoint is about ${formatLr(computeLearningRate(learningRate, midStep, schedule))}.`;
+}
 
 export const HyperparamPanel = memo(function HyperparamPanel() {
     // Granular selectors — only re-render when the specific field changes
@@ -50,6 +74,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
 
     const scheduleType = lrSchedule?.type ?? 'constant';
     const compatibleOutputActivations = OUTPUT_ACTIVATIONS.filter((act) => isLossCompatible(lossType, act));
+    const lrSummary = scheduleSummary(learningRate, lrSchedule);
 
     return (
         <div>
@@ -182,6 +207,8 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                     </>
                 )}
 
+                <p className="control-note" aria-live="polite">{lrSummary}</p>
+
                 {/* Loss */}
                 <div className="control-row">
                     <span className="control-label">Loss</span>
@@ -238,22 +265,26 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                     </Tooltip>
                 </div>
 
+                <p className="control-note" aria-live="polite">{OPTIMIZER_EXPLANATIONS[optimizer]}</p>
+
                 {/* Momentum */}
-                <div className="control-row">
-                    <span className="control-label">Momentum</span>
-                    <Tooltip content="Set the momentum coefficient used by SGD + Momentum">
-                        <select
-                            className="select"
-                            aria-label="Momentum"
-                            value={momentum}
-                            onChange={(e) => usePlaygroundStore.getState().setMomentum(Number(e.target.value))}
-                        >
-                            {MOMENTUM_VALUES.map((m) => (
-                                <option key={m} value={m}>{m}</option>
-                            ))}
-                        </select>
-                    </Tooltip>
-                </div>
+                {optimizer === 'sgdMomentum' && (
+                    <div className="control-row">
+                        <span className="control-label">Momentum</span>
+                        <Tooltip content="Set the momentum coefficient used by SGD + Momentum">
+                            <select
+                                className="select"
+                                aria-label="Momentum"
+                                value={momentum}
+                                onChange={(e) => usePlaygroundStore.getState().setMomentum(Number(e.target.value))}
+                            >
+                                {MOMENTUM_VALUES.map((m) => (
+                                    <option key={m} value={m}>{m}</option>
+                                ))}
+                            </select>
+                        </Tooltip>
+                    </div>
+                )}
 
                 {optimizer === 'adam' && (
                     <>

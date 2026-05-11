@@ -162,6 +162,22 @@ describe('Network training', () => {
         expect(loss).toBeGreaterThanOrEqual(0);
     });
 
+    it('rejects invalid learning-rate schedules before applying a batch update', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.trainBatch(
+            [[0, 0], [1, 1]],
+            [[0], [1]],
+            { ...defaultTraining, lrSchedule: { type: 'step', stepSize: 0, gamma: 0.5 } as any },
+        )).toThrow(RangeError);
+
+        expect(() => net.trainBatch(
+            [[0, 0], [1, 1]],
+            [[0], [1]],
+            { ...defaultTraining, lrSchedule: { type: 'cosine', totalSteps: 10, minLr: -1 } as any },
+        )).toThrow(RangeError);
+    });
+
     it('preserves recent gradient magnitudes for layer stats after a batch update', () => {
         const net = new Network(makeConfig());
 

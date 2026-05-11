@@ -23,6 +23,8 @@ const DEFAULT_LAYOUT_STATE = {
     activeTabLeft: 'data' as LeftTabId,
     activeTabRight: 'boundary' as RightTabId,
     codeExportTab: 'pseudocode' as CodeExportTab,
+    activeLessonId: null as string | null,
+    activeLessonStepIndex: null as number | null,
 };
 
 const VALID_LAYOUTS: readonly LayoutVariant[] = ['dock', 'focus', 'grid', 'split'];
@@ -37,12 +39,16 @@ export interface LayoutStore {
     activeTabLeft: LeftTabId;
     activeTabRight: RightTabId;
     codeExportTab: CodeExportTab;
+    activeLessonId: string | null;
+    activeLessonStepIndex: number | null;
 
     setLayout: (layout: LayoutVariant) => void;
     setPhase: (phase: PhaseMode) => void;
     setActiveTabLeft: (tab: LeftTabId) => void;
     setActiveTabRight: (tab: RightTabId) => void;
     setCodeExportTab: (tab: CodeExportTab) => void;
+    setActiveLessonStep: (lessonId: string, stepIndex: number) => void;
+    clearActiveLessonStep: () => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -69,6 +75,8 @@ function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STA
         codeExportTab: isOneOf(state.codeExportTab, VALID_CODE_EXPORT_TABS)
             ? state.codeExportTab
             : DEFAULT_LAYOUT_STATE.codeExportTab,
+        activeLessonId: null,
+        activeLessonStepIndex: null,
     };
 }
 
@@ -83,9 +91,24 @@ export function createLayoutStore() {
                 setActiveTabLeft: (activeTabLeft) => set({ activeTabLeft }),
                 setActiveTabRight: (activeTabRight) => set({ activeTabRight }),
                 setCodeExportTab: (codeExportTab) => set({ codeExportTab }),
+                setActiveLessonStep: (activeLessonId, activeLessonStepIndex) => set({
+                    activeLessonId,
+                    activeLessonStepIndex,
+                }),
+                clearActiveLessonStep: () => set({
+                    activeLessonId: null,
+                    activeLessonStepIndex: null,
+                }),
             }),
             {
                 name: LAYOUT_STORAGE_KEY,
+                partialize: (state) => ({
+                    layout: state.layout,
+                    phase: state.phase,
+                    activeTabLeft: state.activeTabLeft,
+                    activeTabRight: state.activeTabRight,
+                    codeExportTab: state.codeExportTab,
+                }),
                 merge: (persistedState, currentState) => ({
                     ...currentState,
                     ...sanitizePersistedLayoutState(persistedState),

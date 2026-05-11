@@ -24,7 +24,7 @@ import {
     MAX_TRAIN_TEST_RATIO,
     MIN_TRAIN_TEST_RATIO,
 } from './constants.js';
-import { countActiveFeatures, isLossCompatible } from '@nn-playground/engine';
+import { countActiveFeatures, isLossCompatible, sanitizeLRSchedule } from '@nn-playground/engine';
 
 const VALID_DATASETS = new Set<DatasetType>([
     'circle',
@@ -358,6 +358,11 @@ function normalizeLRSchedule(value: unknown, strict: boolean): { value: LRSchedu
     if (value.type === 'constant') return { value: undefined, error: null };
 
     if (value.type === 'step') {
+        const candidate = {
+            type: 'step' as const,
+            stepSize: Number(value.stepSize),
+            gamma: Number(value.gamma),
+        };
         if (
             !isFiniteNumber(value.stepSize) ||
             !Number.isInteger(value.stepSize) ||
@@ -368,11 +373,16 @@ function normalizeLRSchedule(value: unknown, strict: boolean): { value: LRSchedu
         ) {
             return strict
                 ? { value: undefined, error: 'Step schedule requires a positive integer interval and gamma between 0 and 1.' }
-                : { value: undefined, error: null };
+                : { value: sanitizeLRSchedule(candidate), error: null };
         }
-        return { value: { type: 'step', stepSize: value.stepSize, gamma: value.gamma }, error: null };
+        return { value: candidate, error: null };
     }
 
+    const candidate = {
+        type: 'cosine' as const,
+        totalSteps: Number(value.totalSteps),
+        minLr: Number(value.minLr),
+    };
     if (
         !isFiniteNumber(value.totalSteps) ||
         !Number.isInteger(value.totalSteps) ||
@@ -382,9 +392,9 @@ function normalizeLRSchedule(value: unknown, strict: boolean): { value: LRSchedu
     ) {
         return strict
             ? { value: undefined, error: 'Cosine schedule requires positive total steps and a non-negative minimum learning rate.' }
-            : { value: undefined, error: null };
+            : { value: sanitizeLRSchedule(candidate), error: null };
     }
-    return { value: { type: 'cosine', totalSteps: value.totalSteps, minLr: value.minLr }, error: null };
+    return { value: candidate, error: null };
 }
 
 function validateFeatureFlags(value: unknown): value is FeatureFlags {
@@ -595,6 +605,12 @@ export function normalizeAppConfig(
             momentum: lenientNumber(training.momentum, DEFAULT_TRAINING.momentum, 0, 1),
             regularizationRate: lenientNumber(training.regularizationRate, DEFAULT_TRAINING.regularizationRate, 0, 1),
         };
+    if (strict && lrSchedule.value?.type === 'cosine' && lrSchedule.value.minLr > safeTraining.learningRate) {
+        return { config: null, error: 'Cosine schedule minimum learning rate cannot exceed the base learning rate.' };
+    }
+    const safeLRSchedule = strict
+        ? lrSchedule.value
+        : sanitizeLRSchedule(lrSchedule.value, { baseLearningRate: safeTraining.learningRate });
 
     return {
         config: {
@@ -630,7 +646,7 @@ export function normalizeAppConfig(
                 ...(adamBeta2.value !== undefined ? { adamBeta2: adamBeta2.value } : {}),
                 ...(adamEps.value !== undefined ? { adamEps: adamEps.value } : {}),
                 ...(huberDelta.value !== undefined ? { huberDelta: huberDelta.value } : {}),
-                ...(lrSchedule.value !== undefined ? { lrSchedule: lrSchedule.value } : {}),
+                ...(safeLRSchedule !== undefined ? { lrSchedule: safeLRSchedule } : {}),
             },
             features,
             ui: normalizedUi,

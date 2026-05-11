@@ -12,7 +12,7 @@ export {
 } from './losses.js';
 export { getOptimizer, createOptimizerState } from './optimizers.js';
 export type { OptimizerHyperparams } from './optimizers.js';
-export { computeLearningRate } from './schedules.js';
+export { computeLearningRate, sanitizeLRSchedule, validateLRSchedule } from './schedules.js';
 export type { LRSchedule, LRScheduleType } from './schedules.js';
 export { generateDataset, getDefaultProblemType } from './datasets.js';
 export {

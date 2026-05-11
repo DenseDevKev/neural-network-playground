@@ -32,12 +32,14 @@ export interface NodeRef {
 }
 
 export type EdgeFilter = 'all' | 'strong' | 'positive' | 'negative';
+export type GraphViewMode = 'weights' | 'activations';
+export type NodeHealth = 'low' | 'saturated';
 
 export const edgeFilterOptions: ReadonlyArray<{ id: EdgeFilter; label: string }> = [
     { id: 'all', label: 'All' },
     { id: 'strong', label: 'Strong' },
-    { id: 'positive', label: '+' },
-    { id: 'negative', label: '-' },
+    { id: 'positive', label: 'Positive' },
+    { id: 'negative', label: 'Negative' },
 ];
 
 const STRONG_EDGE_THRESHOLD = 1.5;
@@ -77,6 +79,27 @@ function edgeColor(weight: number, isHovered: boolean): string {
 function edgeWidth(weight: number, isHovered: boolean): number {
     const w = Math.max(0.5, Math.min(3, Math.abs(weight) * 1.5));
     return isHovered ? w * 2 : w;
+}
+
+function modeEdgeColor(weight: number, isHovered: boolean, mode: GraphViewMode): string {
+    if (mode === 'weights' || isHovered) return edgeColor(weight, isHovered);
+    const abs = Math.min(Math.abs(weight), 3) / 3;
+    const alpha = 0.14 + abs * 0.18;
+    if (weight > 0) return `rgba(129, 236, 255, ${alpha.toFixed(3)})`;
+    return `rgba(188, 135, 254, ${alpha.toFixed(3)})`;
+}
+
+function modeEdgeWidth(weight: number, isHovered: boolean, mode: GraphViewMode): number {
+    const width = edgeWidth(weight, isHovered);
+    return mode === 'activations' && !isHovered ? Math.max(0.35, width * 0.55) : width;
+}
+
+export function edgeRefKey(layerIdx: number, nodeIdx: number, prevIdx: number): string {
+    return `${layerIdx}:${nodeIdx}:${prevIdx}`;
+}
+
+export function nodeRefKey(layerIdx: number, nodeIdx: number): string {
+    return `${layerIdx}:${nodeIdx}`;
 }
 
 // ── Bezier helpers ─────────────────────────────────────────────────────────
@@ -125,65 +148,132 @@ export function paintEdges(
     flat: FlatNetworkView | null,
     hovered: EdgeRef | null,
     filter: EdgeFilter = 'all',
+    options: {
+        viewMode?: GraphViewMode;
+        changedEdgeKeys?: ReadonlySet<string>;
+        nodeActivationByKey?: ReadonlyMap<string, number>;
+    } = {},
 ): void {
     if (!flat) return;
+    const viewMode = options.viewMode ?? 'weights';
 
-    // Bucket edges by sign × magnitude band. 3 bands per sign = 6 total.
-    // Each bucket gets a single beginPath / strokeStyle / lineWidth /
-    // stroke triplet — the cheapest possible Canvas2D edge render.
-    const bandsPos: Path2D[] = [new Path2D(), new Path2D(), new Path2D()];
-    const bandsNeg: Path2D[] = [new Path2D(), new Path2D(), new Path2D()];
-    // We want a representative weight per band so the colour mid-tone
-    // matches the underlying weight magnitude. Track running max-magnitude
-    // per band and recolor at stroke time.
-    const bandMagsPos = [0, 0, 0];
-    const bandMagsNeg = [0, 0, 0];
+    if (viewMode === 'activations') {
+        for (let layerIdx = 1; layerIdx < nodePositions.length; layerIdx++) {
+            const prevNodes = nodePositions[layerIdx - 1];
+            const layerNodes = nodePositions[layerIdx];
+            const base = layerWeightOffset(flat.layerSizes, layerIdx - 1);
+            const fanIn = flat.layerSizes[layerIdx - 1];
+            for (let nodeIdx = 0; nodeIdx < layerNodes.length; nodeIdx++) {
+                const activation = Math.max(0, Math.min(1, options.nodeActivationByKey?.get(nodeRefKey(layerIdx, nodeIdx)) ?? 0));
+                for (let prevIdx = 0; prevIdx < prevNodes.length; prevIdx++) {
+                    const weight = flat.weights[base + nodeIdx * fanIn + prevIdx];
+                    if (!Number.isFinite(weight) || !shouldRenderEdge(weight, filter)) continue;
+                    const prev = prevNodes[prevIdx];
+                    const node = layerNodes[nodeIdx];
+                    const dx = cpX(prev, node);
+                    ctx.beginPath();
+                    ctx.moveTo(prev.x, prev.y);
+                    ctx.bezierCurveTo(
+                        prev.x + dx, prev.y,
+                        node.x - dx, node.y,
+                        node.x, node.y,
+                    );
+                    ctx.strokeStyle = `rgba(249, 115, 22, ${(0.12 + activation * 0.72).toFixed(3)})`;
+                    ctx.lineWidth = Math.max(0.35, 0.5 + activation * 2.2);
+                    ctx.stroke();
+                }
+            }
+        }
+    } else {
 
-    const addEdge = (prev: NodePos, node: NodePos, weight: number) => {
-        if (!shouldRenderEdge(weight, filter)) return;
-        const dx = cpX(prev, node);
-        const abs = Math.abs(weight);
-        const band = abs < 0.5 ? 0 : abs < 1.5 ? 1 : 2;
-        const arr = weight >= 0 ? bandsPos : bandsNeg;
-        const mags = weight >= 0 ? bandMagsPos : bandMagsNeg;
-        const path = arr[band];
-        path.moveTo(prev.x, prev.y);
-        path.bezierCurveTo(
-            prev.x + dx, prev.y,
-            node.x - dx, node.y,
-            node.x, node.y,
-        );
-        if (abs > mags[band]) mags[band] = abs;
-    };
+        // Bucket edges by sign × magnitude band. 3 bands per sign = 6 total.
+        // Each bucket gets a single beginPath / strokeStyle / lineWidth /
+        // stroke triplet — the cheapest possible Canvas2D edge render.
+        const bandsPos: Path2D[] = [new Path2D(), new Path2D(), new Path2D()];
+        const bandsNeg: Path2D[] = [new Path2D(), new Path2D(), new Path2D()];
+        // We want a representative weight per band so the colour mid-tone
+        // matches the underlying weight magnitude. Track running max-magnitude
+        // per band and recolor at stroke time.
+        const bandMagsPos = [0, 0, 0];
+        const bandMagsNeg = [0, 0, 0];
 
-    for (let layerIdx = 1; layerIdx < nodePositions.length; layerIdx++) {
-        const prevNodes = nodePositions[layerIdx - 1];
-        const layerNodes = nodePositions[layerIdx];
-        const base = layerWeightOffset(flat.layerSizes, layerIdx - 1);
-        const fanIn = flat.layerSizes[layerIdx - 1];
-        for (let nodeIdx = 0; nodeIdx < layerNodes.length; nodeIdx++) {
-            for (let prevIdx = 0; prevIdx < prevNodes.length; prevIdx++) {
-                const w = flat.weights[base + nodeIdx * fanIn + prevIdx];
-                if (!Number.isFinite(w)) continue;
-                addEdge(prevNodes[prevIdx], layerNodes[nodeIdx], w);
+        const addEdge = (prev: NodePos, node: NodePos, weight: number) => {
+            if (!shouldRenderEdge(weight, filter)) return;
+            const dx = cpX(prev, node);
+            const abs = Math.abs(weight);
+            const band = abs < 0.5 ? 0 : abs < 1.5 ? 1 : 2;
+            const arr = weight >= 0 ? bandsPos : bandsNeg;
+            const mags = weight >= 0 ? bandMagsPos : bandMagsNeg;
+            const path = arr[band];
+            path.moveTo(prev.x, prev.y);
+            path.bezierCurveTo(
+                prev.x + dx, prev.y,
+                node.x - dx, node.y,
+                node.x, node.y,
+            );
+            if (abs > mags[band]) mags[band] = abs;
+        };
+
+        for (let layerIdx = 1; layerIdx < nodePositions.length; layerIdx++) {
+            const prevNodes = nodePositions[layerIdx - 1];
+            const layerNodes = nodePositions[layerIdx];
+            const base = layerWeightOffset(flat.layerSizes, layerIdx - 1);
+            const fanIn = flat.layerSizes[layerIdx - 1];
+            for (let nodeIdx = 0; nodeIdx < layerNodes.length; nodeIdx++) {
+                for (let prevIdx = 0; prevIdx < prevNodes.length; prevIdx++) {
+                    const w = flat.weights[base + nodeIdx * fanIn + prevIdx];
+                    if (!Number.isFinite(w)) continue;
+                    addEdge(prevNodes[prevIdx], layerNodes[nodeIdx], w);
+                }
+            }
+        }
+
+        // Stroke each non-empty band with the colour matching its weight band.
+        // Band representative weights: 0.25, 1.0, 2.5 — chosen mid-band.
+        const REP = [0.25, 1.0, 2.5];
+        for (let i = 0; i < 3; i++) {
+            if (bandMagsPos[i] > 0) {
+                ctx.strokeStyle = modeEdgeColor(REP[i], false, viewMode);
+                ctx.lineWidth = modeEdgeWidth(REP[i], false, viewMode);
+                ctx.stroke(bandsPos[i]);
+            }
+            if (bandMagsNeg[i] > 0) {
+                ctx.strokeStyle = modeEdgeColor(-REP[i], false, viewMode);
+                ctx.lineWidth = modeEdgeWidth(-REP[i], false, viewMode);
+                ctx.stroke(bandsNeg[i]);
             }
         }
     }
 
-    // Stroke each non-empty band with the colour matching its weight band.
-    // Band representative weights: 0.25, 1.0, 2.5 — chosen mid-band.
-    const REP = [0.25, 1.0, 2.5];
-    for (let i = 0; i < 3; i++) {
-        if (bandMagsPos[i] > 0) {
-            ctx.strokeStyle = edgeColor(REP[i], false);
-            ctx.lineWidth = edgeWidth(REP[i], false);
-            ctx.stroke(bandsPos[i]);
+    if (options.changedEdgeKeys?.size) {
+        ctx.save();
+        for (let layerIdx = 1; layerIdx < nodePositions.length; layerIdx++) {
+            const prevNodes = nodePositions[layerIdx - 1];
+            const layerNodes = nodePositions[layerIdx];
+            const base = layerWeightOffset(flat.layerSizes, layerIdx - 1);
+            const fanIn = flat.layerSizes[layerIdx - 1];
+            for (let nodeIdx = 0; nodeIdx < layerNodes.length; nodeIdx++) {
+                for (let prevIdx = 0; prevIdx < prevNodes.length; prevIdx++) {
+                    const weight = flat.weights[base + nodeIdx * fanIn + prevIdx];
+                    if (!Number.isFinite(weight) || !shouldRenderEdge(weight, filter)) continue;
+                    if (!options.changedEdgeKeys.has(edgeRefKey(layerIdx, nodeIdx, prevIdx))) continue;
+                    const prev = prevNodes[prevIdx];
+                    const node = layerNodes[nodeIdx];
+                    const dx = cpX(prev, node);
+                    ctx.beginPath();
+                    ctx.moveTo(prev.x, prev.y);
+                    ctx.bezierCurveTo(
+                        prev.x + dx, prev.y,
+                        node.x - dx, node.y,
+                        node.x, node.y,
+                    );
+                    ctx.strokeStyle = weight >= 0 ? 'rgba(129, 236, 255, 0.95)' : 'rgba(188, 135, 254, 0.95)';
+                    ctx.lineWidth = Math.max(2, modeEdgeWidth(weight, false, viewMode) * 1.6);
+                    ctx.stroke();
+                }
+            }
         }
-        if (bandMagsNeg[i] > 0) {
-            ctx.strokeStyle = edgeColor(-REP[i], false);
-            ctx.lineWidth = edgeWidth(-REP[i], false);
-            ctx.stroke(bandsNeg[i]);
-        }
+        ctx.restore();
     }
 
     // Hovered edge gets its own stroke on top with the exact weight, so the
@@ -202,8 +292,8 @@ export function paintEdges(
                 node.x - dx, node.y,
                 node.x, node.y,
             );
-            ctx.strokeStyle = edgeColor(hovered.weight, true);
-            ctx.lineWidth = edgeWidth(hovered.weight, true);
+            ctx.strokeStyle = modeEdgeColor(hovered.weight, true, viewMode);
+            ctx.lineWidth = modeEdgeWidth(hovered.weight, true, viewMode);
             ctx.stroke();
         }
     }
@@ -219,6 +309,7 @@ export function paintNodes(
     ctx: CanvasRenderingContext2D,
     nodePositions: NodePos[][],
     flat: FlatNetworkView | null,
+    options: { nodeHealthByKey?: ReadonlyMap<string, NodeHealth> } = {},
 ): void {
     const layerCount = nodePositions.length;
 
@@ -269,6 +360,27 @@ export function paintNodes(
     ctx.strokeStyle = '#7c5cfc'; ctx.stroke(outputStroke);
     ctx.strokeStyle = nodeColor(1); ctx.stroke(hiddenPos);
     ctx.strokeStyle = nodeColor(-1); ctx.stroke(hiddenNeg);
+
+    if (options.nodeHealthByKey?.size) {
+        ctx.save();
+        for (let l = 1; l < layerCount; l++) {
+            for (let i = 0; i < nodePositions[l].length; i++) {
+                const health = options.nodeHealthByKey.get(nodeRefKey(l, i));
+                if (!health) continue;
+                const node = nodePositions[l][i];
+                ctx.beginPath();
+                ctx.arc(node.x, node.y, NODE_RADIUS + 4, 0, Math.PI * 2);
+                ctx.strokeStyle = health === 'low'
+                    ? 'rgba(239, 68, 68, 0.78)'
+                    : 'rgba(234, 179, 8, 0.82)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash?.(health === 'low' ? [3, 3] : [1, 3]);
+                ctx.stroke();
+                ctx.setLineDash?.([]);
+            }
+        }
+        ctx.restore();
+    }
 }
 
 /**

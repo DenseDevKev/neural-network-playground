@@ -5,6 +5,7 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import type { DatasetType } from '@nn-playground/engine';
 import { LoadingState } from '../common/LoadingState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
+import { DATASET_TOOLTIPS } from '../../data/datasetInsights.ts';
 
 const CLASSIFICATION_DATASETS: { id: DatasetType; label: string }[] = [
     { id: 'circle', label: 'Circle' },
@@ -21,19 +22,6 @@ const REGRESSION_DATASETS: { id: DatasetType; label: string }[] = [
     { id: 'reg-plane', label: 'Plane' },
     { id: 'reg-gauss', label: 'Multi-Gauss' },
 ];
-
-const DATASET_TOOLTIPS: Record<DatasetType, string> = {
-    circle: 'Cause: circle data wraps one class around another. Effect: hidden layers or squared features help make a curved boundary.',
-    xor: 'Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.',
-    gauss: 'Cause: Gaussian blobs are mostly separable clusters. Effect: simple models learn quickly unless noise overlaps the classes.',
-    spiral: 'Cause: spiral arms twist around each other. Effect: deeper networks usually need more training steps to untangle the boundary.',
-    moons: 'Cause: moon shapes curve past each other. Effect: extra neurons help bend the decision boundary between the arcs.',
-    checkerboard: 'Cause: checkerboard labels alternate in many small regions. Effect: the model needs more local bends and may train slowly.',
-    rings: 'Cause: rings stack circular bands. Effect: curved features or hidden layers make the class transitions easier to fit.',
-    heart: 'Cause: the heart outline has tight curves and a notch. Effect: low-capacity networks underfit the shape.',
-    'reg-plane': 'Cause: plane regression is almost linear. Effect: a simple network can fit it without hidden layers.',
-    'reg-gauss': 'Cause: multi-Gauss regression has several smooth bumps. Effect: hidden layers help approximate the changing surface.',
-};
 
 interface DataPanelProps {
     onReset: () => void;
@@ -78,6 +66,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                             className={`chip ${problemType === 'classification' ? 'active' : ''}`}
                             aria-pressed={problemType === 'classification'}
                             onClick={() => {
+                                if (problemType === 'classification' && dataset === 'circle') return;
                                 beginDataChange();
                                 store.getState().setDataset('circle');
                             }}
@@ -91,6 +80,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                             className={`chip ${problemType === 'regression' ? 'active' : ''}`}
                             aria-pressed={problemType === 'regression'}
                             onClick={() => {
+                                if (problemType === 'regression' && dataset === 'reg-plane') return;
                                 beginDataChange();
                                 store.getState().setDataset('reg-plane');
                             }}
@@ -109,6 +99,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                             type="button"
                             className={`chip ${dataset === ds.id ? 'active' : ''}`}
                             onClick={() => {
+                                if (dataset === ds.id) return;
                                 beginDataChange();
                                 store.getState().setDataset(ds.id);
                             }}
@@ -132,8 +123,10 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     max="90"
                     value={Math.round(trainTestRatio * 100)}
                     onChange={(e) => {
+                        const nextRatio = Number(e.target.value) / 100;
+                        if (nextRatio === trainTestRatio) return;
                         beginDataChange();
-                        store.getState().setTrainTestRatio(Number(e.target.value) / 100);
+                        store.getState().setTrainTestRatio(nextRatio);
                     }}
                     aria-label="Train/test split percentage"
                 />
@@ -177,8 +170,10 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     max="50"
                     value={noise}
                     onChange={(e) => {
+                        const nextNoise = Number(e.target.value);
+                        if (nextNoise === noise) return;
                         beginDataChange();
-                        store.getState().setNoise(Number(e.target.value));
+                        store.getState().setNoise(nextNoise);
                     }}
                     aria-label="Noise level"
                 />

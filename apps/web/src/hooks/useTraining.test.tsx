@@ -118,6 +118,9 @@ function resetStores(): void {
         stepsPerFrame: 5,
         dataConfigLoading: false,
         networkConfigLoading: false,
+        featuresConfigLoading: false,
+        trainingConfigLoading: false,
+        presetConfigLoading: false,
         pendingConfigSource: null,
         configError: null,
         configErrorSource: null,
@@ -228,6 +231,22 @@ describe('useTraining', () => {
         });
 
         expect(useTrainingStore.getState().pauseReason).toBeNull();
+    });
+
+    it('does not pause when training is not running', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        bridge.stopRenderLoop.mockClear();
+        bridge.postStreamCommand.mockClear();
+
+        act(() => {
+            result.current.pause();
+        });
+
+        expect(useTrainingStore.getState().status).toBe('idle');
+        expect(useTrainingStore.getState().pauseReason).toBeNull();
+        expect(bridge.stopRenderLoop).not.toHaveBeenCalled();
+        expect(bridge.postStreamCommand).not.toHaveBeenCalled();
     });
 
     it('records automatic worker pause reasons and stops the local render loop', async () => {
@@ -460,5 +479,25 @@ describe('useTraining', () => {
             await pending.promise;
         });
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(30));
+    });
+
+    it('does not step or reset while config sync is pending', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        bridge.workerApi.step.mockClear();
+        bridge.workerApi.reset.mockClear();
+
+        act(() => {
+            useTrainingStore.setState({ pendingConfigSource: 'training', trainingConfigLoading: true });
+        });
+
+        await act(async () => {
+            await result.current.step();
+            await result.current.reset();
+        });
+
+        expect(bridge.workerApi.step).not.toHaveBeenCalled();
+        expect(bridge.workerApi.reset).not.toHaveBeenCalled();
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
     });
 });

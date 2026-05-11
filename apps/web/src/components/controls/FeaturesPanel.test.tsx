@@ -32,6 +32,7 @@ describe('FeaturesPanel loading feedback', () => {
             networkConfigLoading: false,
             featuresConfigLoading: false,
             trainingConfigLoading: false,
+            presetConfigLoading: false,
             pendingConfigSource: null,
             configError: null,
             configErrorSource: null,

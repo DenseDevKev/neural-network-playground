@@ -24,4 +24,12 @@ describe('forge compact dock CSS', () => {
         expect(css).toContain('overflow-y: auto');
         expect(css).not.toContain('.forge-grid .forge-panel { height: 100%; }');
     });
+
+    it('docks the lesson drawer inside the transport cluster with a compact breakpoint', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-transport-cluster');
+        expect(css).toContain('grid-template-columns: minmax(0, 1fr) minmax(290px, 360px)');
+        expect(css).toContain('grid-template-columns: minmax(0, 1fr)');
+    });
 });

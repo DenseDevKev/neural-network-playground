@@ -21,6 +21,7 @@ import {
     generateDataset,
     getDefaultProblemType,
     isLossCompatible,
+    sanitizeLRSchedule,
 } from '@nn-playground/engine';
 import type { UIConfig, AppConfig, VisualizationDemand } from '@nn-playground/shared';
 import type { Preset } from '@nn-playground/shared';
@@ -244,7 +245,11 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         })),
 
         setLearningRate: (learningRate) => set((s) => ({
-            training: { ...s.training, learningRate },
+            training: {
+                ...s.training,
+                learningRate,
+                lrSchedule: sanitizeLRSchedule(s.training.lrSchedule, { baseLearningRate: learningRate }),
+            },
         })),
 
         setBatchSize: (batchSize) => set((s) => ({
@@ -279,11 +284,16 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
             training: { ...s.training, huberDelta },
         })),
 
-        setLRSchedule: (lrSchedule) => set((s) => ({
-            training: lrSchedule
-                ? { ...s.training, lrSchedule }
-                : { ...s.training, lrSchedule: undefined },
-        })),
+        setLRSchedule: (lrSchedule) => set((s) => {
+            const safeSchedule = sanitizeLRSchedule(lrSchedule, {
+                baseLearningRate: s.training.learningRate,
+            });
+            return {
+                training: safeSchedule
+                    ? { ...s.training, lrSchedule: safeSchedule }
+                    : { ...s.training, lrSchedule: undefined },
+            };
+        }),
 
         setWeightInit: (weightInit) => set((s) => ({
             network: { ...s.network, weightInit },

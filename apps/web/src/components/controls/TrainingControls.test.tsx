@@ -23,6 +23,16 @@ describe('TrainingControls', () => {
       trainPoints: [],
       testPoints: [],
       stepsPerFrame: 5,
+      dataConfigLoading: false,
+      networkConfigLoading: false,
+      featuresConfigLoading: false,
+      trainingConfigLoading: false,
+      presetConfigLoading: false,
+      pendingConfigSource: null,
+      configError: null,
+      configErrorSource: null,
+      configSyncNonce: 0,
+      pauseReason: null,
     });
   });
 
@@ -91,5 +101,25 @@ describe('TrainingControls', () => {
 
     expect(screen.getByText('Cause: play repeats weight updates continuously. Effect: the boundary and metrics evolve until you pause or reset.')).toBeInTheDocument();
     expect(screen.getByText('Cause: higher speed runs more updates per animation frame. Effect: learning completes sooner, but individual changes are harder to inspect.')).toBeInTheDocument();
+  });
+
+  it('blocks lifecycle-sensitive actions during config sync but keeps speed editable', async () => {
+    const user = userEvent.setup();
+    const training = createTrainingMock();
+    useTrainingStore.setState({ pendingConfigSource: 'preset', presetConfigLoading: true });
+
+    render(<TrainingControls training={training} />);
+
+    expect(screen.getByRole('button', { name: 'Start training' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Run one training step' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset model and data' })).toBeDisabled();
+    expect(screen.getByText('Updating preset config...')).toBeInTheDocument();
+
+    const speed25 = screen.getByRole('button', { name: '25 steps per frame' });
+    expect(speed25).toBeEnabled();
+
+    await user.click(speed25);
+
+    expect(useTrainingStore.getState().stepsPerFrame).toBe(25);
   });
 });

@@ -394,6 +394,9 @@ export function useTraining(): TrainingHook {
     }, [initializeWorker, reportWorkerError]);
 
     const pause = useCallback(() => {
+        if (!isPlayingRef.current && useTrainingStore.getState().status !== 'running') {
+            return;
+        }
         isPlayingRef.current = false;
         postStreamCommand({ type: 'stopTraining' });
         stopRenderLoop();
@@ -403,6 +406,9 @@ export function useTraining(): TrainingHook {
     }, []);
 
     const step = useCallback(async () => {
+        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+            return;
+        }
         if (isPlayingRef.current) {
             pause();
         }
@@ -422,6 +428,9 @@ export function useTraining(): TrainingHook {
     }, [initializeWorker, pause, reportWorkerError]);
 
     const reset = useCallback(async () => {
+        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+            return;
+        }
         if (isPlayingRef.current) {
             postStreamCommand({ type: 'stopTraining' });
             stopRenderLoop();

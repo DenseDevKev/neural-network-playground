@@ -42,6 +42,16 @@ describe('Header', () => {
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,
+            dataConfigLoading: false,
+            networkConfigLoading: false,
+            featuresConfigLoading: false,
+            trainingConfigLoading: false,
+            presetConfigLoading: false,
+            pendingConfigSource: null,
+            configError: null,
+            configErrorSource: null,
+            configSyncNonce: 0,
+            pauseReason: null,
         });
         useLayoutStore.setState({
             layout: 'dock',
@@ -93,6 +103,21 @@ describe('Header', () => {
 
         await user.click(screen.getByRole('button', { name: 'Pause training' }));
         expect(training.pause).toHaveBeenCalledTimes(1);
+    });
+
+    it('disables the mobile start control while config sync is pending', async () => {
+        const user = userEvent.setup();
+        const training = createTrainingMock();
+        useTrainingStore.setState({ pendingConfigSource: 'preset', presetConfigLoading: true });
+
+        renderHeader({ training });
+
+        const button = screen.getByRole('button', { name: 'Start training' });
+        expect(button).toBeDisabled();
+
+        await user.click(button);
+
+        expect(training.play).not.toHaveBeenCalled();
     });
 
     it('renders the layout picker with dock, focus, grid, and split options', () => {

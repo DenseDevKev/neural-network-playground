@@ -22,20 +22,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { getActiveFeatures } from '@nn-playground/engine';
-import { GRID_SIZE, writeNormalizedHeatmap } from '@nn-playground/shared';
+import type { ActivationType, DatasetType, LayerStats } from '@nn-playground/engine';
+import {
+    GRID_SIZE,
+    MAX_HIDDEN_LAYERS,
+    MAX_NEURONS_PER_LAYER,
+    MIN_NEURONS_PER_LAYER,
+    writeNormalizedHeatmap,
+} from '@nn-playground/shared';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import { extractNeuronGrid, layerBiasOffset } from '../../worker/frameBufferLayout.ts';
+import { getDatasetTopologyHint } from '../../data/datasetInsights.ts';
+import { getLessonDefinition } from '../../lessons/lessonRegistry.ts';
 import {
     type EdgeRef,
     type EdgeFilter,
     type FlatNetworkView,
+    type GraphViewMode,
+    type NodeHealth,
     type NodePos,
     type NodeRef,
     NODE_RADIUS,
+    edgeRefKey,
     edgeFilterOptions,
     hitTestEdge,
     hitTestNode,
+    nodeRefKey,
     paintEdges,
     paintLabels,
     paintNodes,
@@ -56,6 +70,11 @@ interface TooltipData {
     x: number;
     y: number;
     text: string[];
+}
+
+interface ChangedEdgeDelta {
+    key: string;
+    delta: number;
 }
 
 // ── Persistent source canvas for heatmap upscale (one per process) ─────────
@@ -137,22 +156,142 @@ function toFixedLabel(value: number | null | undefined, digits = 4): string {
     return Number.isFinite(value) ? value!.toFixed(digits) : 'n/a';
 }
 
+function featureLabel(feature: { label?: string; id?: string }, fallbackIndex: number): string {
+    return feature.label ?? feature.id ?? `x${fallbackIndex + 1}`;
+}
+
+export function formatArchitectureStory(
+    inputLabels: readonly string[],
+    hiddenLayers: readonly number[],
+): string {
+    const inputStory = inputLabels.length > 0 ? inputLabels.join(', ') : 'inputs';
+    const hiddenStory = hiddenLayers.map((count) => `[${count}]`).join(' -> ');
+    if (!hiddenStory) return `${inputStory} -> 1 output (linear)`;
+    return `${inputStory} -> ${hiddenStory} -> 1 output`;
+}
+
+export function getCapacityLabel(hiddenLayers: readonly number[]): string {
+    const totalNeurons = hiddenLayers.reduce((sum, count) => sum + count, 0);
+    if (hiddenLayers.length === 0) return 'Linear model';
+    if (hiddenLayers.length === 1 && hiddenLayers[0] <= 4) return 'Low capacity';
+    if (totalNeurons > 32) return 'Overfit risk';
+    return 'Moderate capacity';
+}
+
+export function classifyNeuronActivity(
+    grid: ArrayLike<number>,
+    activation: ActivationType,
+): NodeHealth | null {
+    const len = grid.length;
+    if (len === 0) return null;
+    let valid = 0;
+    let nearZero = 0;
+    let nearSaturated = 0;
+    for (let i = 0; i < len; i++) {
+        const value = grid[i];
+        if (!Number.isFinite(value)) continue;
+        valid++;
+        if (Math.abs(value) <= 0.04) nearZero++;
+        const saturationThreshold = activation === 'tanh' ? 0.92 : 0.96;
+        if (Math.abs(value) >= saturationThreshold || value >= 0.98) nearSaturated++;
+    }
+    if (valid === 0) return null;
+    if (nearZero / valid > 0.75) return 'low';
+    if (['sigmoid', 'tanh', 'relu', 'leakyRelu'].includes(activation) && nearSaturated / valid > 0.75) {
+        return 'saturated';
+    }
+    return null;
+}
+
+function getNeuronActivationIntensity(grid: ArrayLike<number>): number {
+    if (grid.length === 0) return 0;
+    let valid = 0;
+    let sum = 0;
+    for (let i = 0; i < grid.length; i++) {
+        const value = grid[i];
+        if (!Number.isFinite(value)) continue;
+        valid++;
+        sum += Math.min(1, Math.abs(value));
+    }
+    return valid > 0 ? sum / valid : 0;
+}
+
+export function computeChangedEdgeKeys(
+    previousWeights: Float32Array | null,
+    currentWeights: Float32Array,
+    layerSizes: readonly number[],
+): Set<string> {
+    if (!previousWeights || previousWeights.length !== currentWeights.length) return new Set();
+    const deltas: ChangedEdgeDelta[] = [];
+    for (let layerIdx = 1; layerIdx < layerSizes.length; layerIdx++) {
+        const fanIn = layerSizes[layerIdx - 1];
+        const fanOut = layerSizes[layerIdx];
+        let base = 0;
+        for (let l = 1; l < layerIdx; l++) {
+            base += layerSizes[l] * layerSizes[l - 1];
+        }
+        for (let nodeIdx = 0; nodeIdx < fanOut; nodeIdx++) {
+            for (let prevIdx = 0; prevIdx < fanIn; prevIdx++) {
+                const offset = base + nodeIdx * fanIn + prevIdx;
+                const delta = Math.abs(currentWeights[offset] - previousWeights[offset]);
+                if (delta > 0) deltas.push({ key: edgeRefKey(layerIdx, nodeIdx, prevIdx), delta });
+            }
+        }
+    }
+    deltas.sort((a, b) => b.delta - a.delta);
+    const take = Math.max(1, Math.ceil(deltas.length * 0.05));
+    return new Set(deltas.slice(0, take).map((item) => item.key));
+}
+
+function getLayerStatsHint(layerStats: readonly LayerStats[] | null): string | null {
+    if (!layerStats?.length) return null;
+    if (layerStats.some((stats) => stats.meanAbsGradient > 0 && stats.meanAbsGradient < 0.0001)) {
+        return 'Some gradients are nearly flat; topology changes may help learning move again.';
+    }
+    return null;
+}
+
 export function NetworkGraphCanvas() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
     const features = usePlaygroundStore((s) => s.features);
     const activation = usePlaygroundStore((s) => s.network.activation);
+    const dataset = usePlaygroundStore((s) => s.data.dataset);
     const snapshot = useTrainingStore((s) => s.snapshot);
     const frameVersion = useTrainingStore((s) => s.frameVersion);
+    const layerStatsVersion = useTrainingStore((s) => s.layerStatsVersion);
+    const activeLessonId = useLayoutStore((s) => s.activeLessonId);
+    const activeLessonStepIndex = useLayoutStore((s) => s.activeLessonStepIndex);
 
     const [tooltip, setTooltip] = useState<TooltipData | null>(null);
     const [hoveredEdge, setHoveredEdge] = useState<EdgeRef | null>(null);
     const [hoveredNode, setHoveredNode] = useState<NodeRef | null>(null);
     const [edgeFilter, setEdgeFilter] = useState<EdgeFilter>('all');
+    const [viewMode, setViewMode] = useState<GraphViewMode>('weights');
     const [viewport, setViewport] = useState<Viewport>({ zoom: 1, panX: 0, panY: 0 });
     const dragRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+    const previousWeightsRef = useRef<Float32Array | null>(null);
 
     const activeFeatures = useMemo(() => getActiveFeatures(features), [features]);
+    const activeFeatureLabels = useMemo(
+        () => activeFeatures.map((feature, index) => featureLabel(feature, index)),
+        [activeFeatures],
+    );
     const inputSize = activeFeatures.length;
+    const architectureStory = useMemo(
+        () => formatArchitectureStory(activeFeatureLabels, hiddenLayers),
+        [activeFeatureLabels, hiddenLayers],
+    );
+    const capacityLabel = useMemo(() => getCapacityLabel(hiddenLayers), [hiddenLayers]);
+    const datasetTopologyHint = useMemo(
+        () => getDatasetTopologyHint(dataset as DatasetType, hiddenLayers),
+        [dataset, hiddenLayers],
+    );
+    const activeLessonStep = useMemo(() => {
+        if (!activeLessonId || activeLessonStepIndex == null) return null;
+        const lesson = getLessonDefinition(activeLessonId);
+        return lesson?.steps[activeLessonStepIndex] ?? null;
+    }, [activeLessonId, activeLessonStepIndex]);
+    const networkLessonStep = activeLessonStep?.target === 'network' ? activeLessonStep : null;
 
     const layers = useMemo(() => [inputSize, ...hiddenLayers, 1], [inputSize, hiddenLayers]);
     const maxNodes = Math.max(...layers);
@@ -296,6 +435,43 @@ export function NetworkGraphCanvas() {
         [neuronGrids, layers],
     );
 
+    const nodeHealthByKey = useMemo(() => {
+        void frameVersion;
+        const health = new Map<string, NodeHealth>();
+        if (!neuronGrids) return health;
+        for (let layerIdx = 1; layerIdx < layers.length; layerIdx++) {
+            for (let nodeIdx = 0; nodeIdx < layers[layerIdx]; nodeIdx++) {
+                const gridIndex = getNeuronGridIndex(layerIdx, nodeIdx);
+                const entry = gridIndex == null ? null : neuronGrids[gridIndex];
+                if (!entry) continue;
+                const classification = classifyNeuronActivity(entry.grid, activation);
+                if (classification) health.set(nodeRefKey(layerIdx, nodeIdx), classification);
+            }
+        }
+        return health;
+    }, [activation, frameVersion, getNeuronGridIndex, layers, neuronGrids]);
+
+    const nodeActivationByKey = useMemo(() => {
+        void frameVersion;
+        const activations = new Map<string, number>();
+        if (!neuronGrids) return activations;
+        for (let layerIdx = 1; layerIdx < layers.length; layerIdx++) {
+            for (let nodeIdx = 0; nodeIdx < layers[layerIdx]; nodeIdx++) {
+                const gridIndex = getNeuronGridIndex(layerIdx, nodeIdx);
+                const entry = gridIndex == null ? null : neuronGrids[gridIndex];
+                if (!entry) continue;
+                activations.set(nodeRefKey(layerIdx, nodeIdx), getNeuronActivationIntensity(entry.grid));
+            }
+        }
+        return activations;
+    }, [frameVersion, getNeuronGridIndex, layers, neuronGrids]);
+
+    const layerStats = useMemo<readonly LayerStats[] | null>(() => {
+        void layerStatsVersion;
+        return getFrameBuffer().layerStats ?? snapshot?.layerStats ?? null;
+    }, [layerStatsVersion, snapshot?.layerStats]);
+    const layerStatsHint = useMemo(() => getLayerStatsHint(layerStats), [layerStats]);
+
     const fitGraphToView = useCallback(() => {
         const fitZoom = clampZoom(Math.min(
             containerSize.width / canvasWidth,
@@ -354,9 +530,12 @@ export function NetworkGraphCanvas() {
                 if (bias != null) lines.push(`Bias: ${toFixedLabel(bias)}`);
                 lines.push(`Activation: ${activation}`);
             }
+            const health = nodeHealthByKey.get(nodeRefKey(layerIdx, nodeIdx));
+            if (health === 'low') lines.push('Low activity: most samples produce near-zero activation here');
+            if (health === 'saturated') lines.push('Saturated: most samples push this neuron near its activation limit');
             return lines;
         },
-        [layers, activeFeatures, activation, flat],
+        [layers, activeFeatures, activation, flat, nodeHealthByKey],
     );
 
     // ── Paint pass ───────────────────────────────────────────────────────────
@@ -381,11 +560,20 @@ export function NetworkGraphCanvas() {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, logicalW, logicalH);
 
+        const changedEdgeKeys = flat
+            ? computeChangedEdgeKeys(previousWeightsRef.current, flat.weights, flat.layerSizes)
+            : new Set<string>();
+        previousWeightsRef.current = flat ? new Float32Array(flat.weights) : null;
+
         ctx.save();
         ctx.translate(viewport.panX, viewport.panY);
         ctx.scale(viewport.zoom, viewport.zoom);
-        paintEdges(ctx, nodePositions, flat, hoveredEdge, edgeFilter);
-        paintNodes(ctx, nodePositions, flat);
+        paintEdges(ctx, nodePositions, flat, hoveredEdge, edgeFilter, {
+            viewMode,
+            changedEdgeKeys,
+            nodeActivationByKey,
+        });
+        paintNodes(ctx, nodePositions, flat, { nodeHealthByKey });
         paintLabels(ctx, nodePositions, layerLabels);
         ctx.restore();
     }, [
@@ -397,6 +585,9 @@ export function NetworkGraphCanvas() {
         flat,
         hoveredEdge,
         edgeFilter,
+        viewMode,
+        nodeHealthByKey,
+        nodeActivationByKey,
         layerLabels,
         viewport,
         // re-paint on every snapshot even if `flat` reference is stable —
@@ -526,6 +717,30 @@ export function NetworkGraphCanvas() {
         setTooltip(null);
     }, []);
 
+    const beginNetworkChange = useCallback(() => {
+        useTrainingStore.getState().beginConfigChange('network');
+    }, []);
+
+    const changeLayerNeuronCount = useCallback((layerIndex: number, delta: 1 | -1) => {
+        const current = hiddenLayers[layerIndex] ?? 0;
+        const next = Math.max(MIN_NEURONS_PER_LAYER, Math.min(MAX_NEURONS_PER_LAYER, current + delta));
+        if (next === current) return;
+        beginNetworkChange();
+        usePlaygroundStore.getState().setNeuronsInLayer(layerIndex, next);
+    }, [beginNetworkChange, hiddenLayers]);
+
+    const addHiddenLayer = useCallback(() => {
+        if (hiddenLayers.length >= MAX_HIDDEN_LAYERS) return;
+        beginNetworkChange();
+        usePlaygroundStore.getState().addLayer();
+    }, [beginNetworkChange, hiddenLayers.length]);
+
+    const removeHiddenLayer = useCallback(() => {
+        if (hiddenLayers.length === 0) return;
+        beginNetworkChange();
+        usePlaygroundStore.getState().removeLayer();
+    }, [beginNetworkChange, hiddenLayers.length]);
+
     // ── Render ──────────────────────────────────────────────────────────────
     const heatmapTiles: { key: string; x: number; y: number; entry: NeuronGridEntry }[] = [];
     if (neuronGrids) {
@@ -545,6 +760,37 @@ export function NetworkGraphCanvas() {
             }
         }
     }
+
+    const hiddenLayerControls = hiddenLayers.map((count, layerIndex) => {
+        const layerIdx = layerIndex + 1;
+        const layer = nodePositions[layerIdx] ?? [];
+        const x = layer[0]?.x ?? 0;
+        const ys = layer.map((node) => node.y);
+        const top = Math.min(...ys);
+        const bottom = Math.max(...ys);
+        return {
+            key: `layer-controls-${layerIndex}`,
+            layerIndex,
+            count,
+            x: x * viewport.zoom + viewport.panX,
+            top: top * viewport.zoom + viewport.panY,
+            bottom: bottom * viewport.zoom + viewport.panY,
+        };
+    });
+
+    const ghostLayerX = (() => {
+        if (hiddenLayers.length >= MAX_HIDDEN_LAYERS) return null;
+        const sourceLayerIdx = hiddenLayers.length;
+        const targetLayerIdx = hiddenLayers.length + 1;
+        const source = nodePositions[sourceLayerIdx]?.[0];
+        const target = nodePositions[targetLayerIdx]?.[0];
+        if (!source || !target) return null;
+        return ((source.x + target.x) / 2) * viewport.zoom + viewport.panX;
+    })();
+
+    const ghostLayerTop = PAD_Y * viewport.zoom + viewport.panY;
+    const ghostLayerHeight = Math.max(80, (canvasHeight - PAD_Y * 2) * viewport.zoom);
+    const showLessonGhostLayer = networkLessonStep?.id === 'give-model-capacity' && hiddenLayers.length === 0;
 
     const accessibilitySummary = useMemo(() => {
         return `Neural network: ${activeFeatures.length} input${activeFeatures.length === 1 ? '' : 's'}, ` +
@@ -577,6 +823,98 @@ export function NetworkGraphCanvas() {
                 onWheel={handleWheel}
             />
 
+            <div className="network-graph-summary" aria-label="Architecture summary">
+                <div className="network-graph-summary__row">
+                    <span className="network-graph-summary__story">{architectureStory}</span>
+                    <span className="network-graph-summary__badge">{capacityLabel}</span>
+                </div>
+                {datasetTopologyHint && (
+                    <div className="network-graph-summary__hint">{datasetTopologyHint}</div>
+                )}
+                {layerStatsHint && (
+                    <div className="network-graph-summary__hint network-graph-summary__hint--stats">{layerStatsHint}</div>
+                )}
+            </div>
+
+            {networkLessonStep && (
+                <div className="network-graph-lesson-callout" role="note">
+                    <span className="network-graph-lesson-callout__label">Lesson</span>
+                    <span>{networkLessonStep.body}</span>
+                </div>
+            )}
+
+            {showLessonGhostLayer && ghostLayerX != null && (
+                <div
+                    className="network-graph-ghost-layer network-graph-ghost-layer--lesson"
+                    style={{
+                        left: ghostLayerX,
+                        top: ghostLayerTop,
+                        height: ghostLayerHeight,
+                    }}
+                    aria-hidden="true"
+                >
+                    <span>Add hidden layer here</span>
+                </div>
+            )}
+
+            {hiddenLayerControls.map((control) => (
+                <div
+                    key={control.key}
+                    className="network-graph-layer-controls"
+                    style={{ left: control.x, top: control.top }}
+                    aria-label={`Hidden layer ${control.layerIndex + 1} shortcuts`}
+                >
+                    <button
+                        type="button"
+                        className="network-graph-layer-controls__pill"
+                        onClick={() => changeLayerNeuronCount(control.layerIndex, 1)}
+                        disabled={control.count >= MAX_NEURONS_PER_LAYER}
+                        aria-label={`Add neuron to hidden layer ${control.layerIndex + 1}`}
+                    >
+                        + neuron
+                    </button>
+                    <button
+                        type="button"
+                        className="network-graph-layer-controls__pill"
+                        onClick={() => changeLayerNeuronCount(control.layerIndex, -1)}
+                        disabled={control.count <= MIN_NEURONS_PER_LAYER}
+                        aria-label={`Remove neuron from hidden layer ${control.layerIndex + 1}`}
+                    >
+                        - neuron
+                    </button>
+                    {control.layerIndex === hiddenLayers.length - 1 && (
+                        <button
+                            type="button"
+                            className="network-graph-layer-controls__pill network-graph-layer-controls__pill--remove"
+                            onClick={removeHiddenLayer}
+                            aria-label="Remove last hidden layer"
+                        >
+                            remove
+                        </button>
+                    )}
+                </div>
+            ))}
+
+            {ghostLayerX != null && (
+                <div
+                    className="network-graph-ghost-layer"
+                    style={{
+                        left: ghostLayerX,
+                        top: ghostLayerTop,
+                        height: ghostLayerHeight,
+                    }}
+                >
+                    <button
+                        type="button"
+                        className="network-graph-ghost-layer__button"
+                        onClick={addHiddenLayer}
+                        aria-label="Add hidden layer from topology"
+                    >
+                        + layer
+                    </button>
+                </div>
+            )}
+
             <div className="network-graph-controls" aria-label="Graph view controls">
                 <button
                     type="button"
@@ -603,6 +941,20 @@ export function NetworkGraphCanvas() {
                 >
                     Fit
                 </button>
+            </div>
+
+            <div className="network-graph-mode-toggle" role="group" aria-label="Topology view mode">
+                {(['weights', 'activations'] as const).map((mode) => (
+                    <button
+                        key={mode}
+                        type="button"
+                        className={viewMode === mode ? 'network-graph-mode-toggle__button network-graph-mode-toggle__button--active' : 'network-graph-mode-toggle__button'}
+                        aria-pressed={viewMode === mode}
+                        onClick={() => setViewMode(mode)}
+                    >
+                        {mode === 'weights' ? 'Weights' : 'Activations'}
+                    </button>
+                ))}
             </div>
 
             <div className="network-graph-legend" aria-label="Edge weight legend">

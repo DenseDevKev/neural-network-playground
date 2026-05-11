@@ -27,6 +27,15 @@ describe('useTrainingStore streamed snapshots', () => {
             frameVersion: 0,
             testMetricsStale: false,
             workerError: 'previous error',
+            dataConfigLoading: false,
+            networkConfigLoading: false,
+            featuresConfigLoading: false,
+            trainingConfigLoading: false,
+            presetConfigLoading: false,
+            pendingConfigSource: null,
+            configError: null,
+            configErrorSource: null,
+            configSyncNonce: 0,
         });
     });
 
@@ -51,5 +60,26 @@ describe('useTrainingStore streamed snapshots', () => {
         expect(state.testMetricsStale).toBe(true);
         expect(state.workerError).toBeNull();
         expect(readHistory().count).toBe(1);
+    });
+
+    it('tracks preset config transactions and retries with preset loading state', () => {
+        useTrainingStore.getState().beginConfigChange('preset');
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('preset');
+        expect(useTrainingStore.getState().presetConfigLoading).toBe(true);
+        expect(useTrainingStore.getState().dataConfigLoading).toBe(false);
+
+        useTrainingStore.getState().failConfigChange('Preset failed', 'preset');
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+        expect(useTrainingStore.getState().presetConfigLoading).toBe(false);
+        expect(useTrainingStore.getState().configError).toBe('Preset failed');
+        expect(useTrainingStore.getState().configErrorSource).toBe('preset');
+
+        useTrainingStore.getState().retryConfigSync();
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('preset');
+        expect(useTrainingStore.getState().presetConfigLoading).toBe(true);
+        expect(useTrainingStore.getState().configError).toBeNull();
     });
 });

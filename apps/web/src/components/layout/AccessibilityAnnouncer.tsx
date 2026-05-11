@@ -8,6 +8,7 @@ interface AccessibilityAnnouncerProps {
     networkConfigLoading: boolean;
     featuresConfigLoading?: boolean;
     trainingConfigLoading?: boolean;
+    presetConfigLoading?: boolean;
     configError: string | null;
     configErrorSource: ConfigChangeSource;
 }
@@ -18,19 +19,23 @@ export function AccessibilityAnnouncer({
     networkConfigLoading,
     featuresConfigLoading,
     trainingConfigLoading,
+    presetConfigLoading,
     configError,
     configErrorSource,
 }: AccessibilityAnnouncerProps) {
     const storeFeaturesConfigLoading = useTrainingStore((s) => s.featuresConfigLoading);
     const storeTrainingConfigLoading = useTrainingStore((s) => s.trainingConfigLoading);
+    const storePresetConfigLoading = useTrainingStore((s) => s.presetConfigLoading);
     const activeFeaturesConfigLoading = featuresConfigLoading ?? storeFeaturesConfigLoading;
     const activeTrainingConfigLoading = trainingConfigLoading ?? storeTrainingConfigLoading;
+    const activePresetConfigLoading = presetConfigLoading ?? storePresetConfigLoading;
     const [message, setMessage] = useState('');
     const previousStatusRef = useRef(status);
     const previousDataLoadingRef = useRef(dataConfigLoading);
     const previousNetworkLoadingRef = useRef(networkConfigLoading);
     const previousFeaturesLoadingRef = useRef(activeFeaturesConfigLoading);
     const previousTrainingLoadingRef = useRef(activeTrainingConfigLoading);
+    const previousPresetLoadingRef = useRef(activePresetConfigLoading);
     const previousErrorRef = useRef<string | null>(configError);
 
     useEffect(() => {
@@ -82,12 +87,21 @@ export function AccessibilityAnnouncer({
     }, [activeTrainingConfigLoading]);
 
     useEffect(() => {
+        if (activePresetConfigLoading && !previousPresetLoadingRef.current) {
+            setMessage('Applying preset');
+        }
+
+        previousPresetLoadingRef.current = activePresetConfigLoading;
+    }, [activePresetConfigLoading]);
+
+    useEffect(() => {
         if (configError && configError !== previousErrorRef.current) {
             const scope = {
                 data: 'Data',
                 network: 'Network',
                 features: 'Features',
                 training: 'Training',
+                preset: 'Preset',
             }[configErrorSource ?? 'data'];
             setMessage(`${scope} error: ${configError}`);
         }

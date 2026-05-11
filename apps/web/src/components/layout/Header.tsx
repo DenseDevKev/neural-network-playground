@@ -4,6 +4,7 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type LayoutVariant } from '../../store/useLayoutStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { TrainingProgressBar } from './TrainingProgressBar.tsx';
+import { getTrainingLifecycleUi } from '../controls/trainingLifecycle.ts';
 
 interface HeaderProps {
     training: Pick<TrainingHook, 'play' | 'pause'>;
@@ -29,6 +30,8 @@ function useFlash(value: string) {
 export const Header = memo(function Header({ training, effectiveLayout, isCompact }: HeaderProps) {
     const snapshot = useTrainingStore((s) => s.snapshot);
     const status = useTrainingStore((s) => s.status);
+    const pauseReason = useTrainingStore((s) => s.pauseReason);
+    const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const stale = useTrainingStore((s) => s.testMetricsStale);
     const phase = useLayoutStore((s) => s.phase);
     const setLayout = useLayoutStore((s) => s.setLayout);
@@ -45,6 +48,7 @@ export const Header = memo(function Header({ training, effectiveLayout, isCompac
     const flashTest = useFlash(testLoss);
     const flashAcc = useFlash(accStr);
     const isRunning = status === 'running';
+    const lifecycle = getTrainingLifecycleUi({ status, pauseReason, pendingConfigSource });
     const showPhaseControls = effectiveLayout === 'split';
 
     return (
@@ -144,7 +148,8 @@ export const Header = memo(function Header({ training, effectiveLayout, isCompac
                     type="button"
                     className={`btn btn--play header__mobile-play ${isRunning ? 'running' : ''}`}
                     onClick={isRunning ? training.pause : training.play}
-                    aria-label={isRunning ? 'Pause training' : 'Start training'}
+                    aria-label={lifecycle.primaryAriaLabel}
+                    disabled={!isRunning && lifecycle.isBlocked}
                 >
                     {isRunning ? '⏸' : '▶'}
                 </button>

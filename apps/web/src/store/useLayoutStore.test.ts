@@ -9,6 +9,8 @@ describe('useLayoutStore', () => {
             phase: 'build',
             activeTabLeft: 'data',
             activeTabRight: 'boundary',
+            activeLessonId: null,
+            activeLessonStepIndex: null,
         });
     });
 
@@ -77,10 +79,23 @@ describe('useLayoutStore', () => {
     it('persists state to localStorage under nn-playground-layout', () => {
         useLayoutStore.getState().setLayout('grid');
         useLayoutStore.getState().setPhase('run');
+        useLayoutStore.getState().setActiveLessonStep('lesson-xor-hidden-layers', 1);
 
         const stored = JSON.parse(window.localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}');
         expect(stored.state?.layout).toBe('grid');
         expect(stored.state?.phase).toBe('run');
+        expect(stored.state?.activeLessonId).toBeUndefined();
+        expect(stored.state?.activeLessonStepIndex).toBeUndefined();
+    });
+
+    it('tracks active lesson step as transient UI state', () => {
+        useLayoutStore.getState().setActiveLessonStep('lesson-xor-hidden-layers', 1);
+        expect(useLayoutStore.getState().activeLessonId).toBe('lesson-xor-hidden-layers');
+        expect(useLayoutStore.getState().activeLessonStepIndex).toBe(1);
+
+        useLayoutStore.getState().clearActiveLessonStep();
+        expect(useLayoutStore.getState().activeLessonId).toBeNull();
+        expect(useLayoutStore.getState().activeLessonStepIndex).toBeNull();
     });
 
     it('rehydrates state from localStorage with a fresh store instance', async () => {

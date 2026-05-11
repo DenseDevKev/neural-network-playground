@@ -52,4 +52,25 @@ describe('usePlaygroundStore compatibility guards', () => {
         expect(usePlaygroundStore.getState().network.outputActivation).toBe('linear');
         expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual(DEFAULT_NETWORK.hiddenLayers);
     });
+
+    it('sanitizes learning-rate schedules before they enter store state', () => {
+        const store = usePlaygroundStore.getState();
+
+        store.setLRSchedule({ type: 'step', stepSize: 0, gamma: 2 } as any);
+        expect(usePlaygroundStore.getState().training.lrSchedule).toEqual({
+            type: 'step',
+            stepSize: 1,
+            gamma: 0.5,
+        });
+
+        store.setLRSchedule({ type: 'cosine', totalSteps: 0, minLr: 0.1 } as any);
+        expect(usePlaygroundStore.getState().training.lrSchedule).toEqual({
+            type: 'cosine',
+            totalSteps: 1,
+            minLr: DEFAULT_TRAINING.learningRate,
+        });
+
+        store.setLRSchedule({ type: 'constant' } as any);
+        expect(usePlaygroundStore.getState().training.lrSchedule).toBeUndefined();
+    });
 });

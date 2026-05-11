@@ -191,6 +191,22 @@ describe('decodeUrlState', () => {
         expect(decoded.network.seed).toBe(DEFAULT_NETWORK.seed);
         expect(decoded.network.hiddenLayers).toEqual([32]);
     });
+
+    it('sanitizes invalid learning-rate schedule URL values instead of dropping old URLs', () => {
+        const step = decodeUrlState('lrs=step&lrss=0&lrsg=2');
+        expect(step.training.lrSchedule).toEqual({
+            type: 'step',
+            stepSize: 1,
+            gamma: 0.5,
+        });
+
+        const cosine = decodeUrlState('lr=0.01&lrs=cosine&lrst=0&lrsm=0.03');
+        expect(cosine.training.lrSchedule).toEqual({
+            type: 'cosine',
+            totalSteps: 1,
+            minLr: 0.01,
+        });
+    });
 });
 
 describe('compatibility normalization', () => {
@@ -266,5 +282,32 @@ describe('compatibility normalization', () => {
         expect(result.error).toBeNull();
         expect(result.config?.training.adamBeta1).toBe(0);
         expect(result.config?.training.adamBeta2).toBe(0);
+    });
+
+    it('strictly rejects invalid learning-rate schedule values', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                lrSchedule: { type: 'step', stepSize: 0, gamma: 2 },
+            },
+        });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('Step schedule requires a positive integer interval and gamma between 0 and 1.');
+    });
+
+    it('strictly rejects cosine schedules whose minimum exceeds the base learning rate', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            training: {
+                ...validConfig.training,
+                learningRate: 0.01,
+                lrSchedule: { type: 'cosine', totalSteps: 100, minLr: 0.03 },
+            },
+        });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('Cosine schedule minimum learning rate cannot exceed the base learning rate.');
     });
 });

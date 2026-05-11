@@ -16,7 +16,7 @@ import {
 import { normalizeTrainingSpeed } from '../worker/trainingLoop.ts';
 import type { FrameVersions } from '../worker/frameBuffer.ts';
 
-export type ConfigChangeSource = 'data' | 'network' | 'features' | 'training' | null;
+export type ConfigChangeSource = 'data' | 'network' | 'features' | 'training' | 'preset' | null;
 
 export interface TrainingStore {
     // ── Runtime State ──
@@ -38,6 +38,7 @@ export interface TrainingStore {
     networkConfigLoading: boolean;
     featuresConfigLoading: boolean;
     trainingConfigLoading: boolean;
+    presetConfigLoading: boolean;
     pendingConfigSource: ConfigChangeSource;
     configError: string | null;
     configErrorSource: ConfigChangeSource;
@@ -91,6 +92,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     networkConfigLoading: false,
     featuresConfigLoading: false,
     trainingConfigLoading: false,
+    presetConfigLoading: false,
     pendingConfigSource: null,
     configError: null,
     configErrorSource: null,
@@ -159,6 +161,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         networkConfigLoading: source === 'network',
         featuresConfigLoading: source === 'features',
         trainingConfigLoading: source === 'training',
+        presetConfigLoading: source === 'preset',
         configError: null,
         configErrorSource: null,
         workerError: null,
@@ -169,6 +172,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         networkConfigLoading: false,
         featuresConfigLoading: false,
         trainingConfigLoading: false,
+        presetConfigLoading: false,
     }),
     failConfigChange: (message) => set((state) => ({
         pendingConfigSource: null,
@@ -176,6 +180,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         networkConfigLoading: false,
         featuresConfigLoading: false,
         trainingConfigLoading: false,
+        presetConfigLoading: false,
         configError: message,
         configErrorSource: state.pendingConfigSource,
     })),
@@ -190,6 +195,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
             networkConfigLoading: state.configErrorSource === 'network',
             featuresConfigLoading: state.configErrorSource === 'features',
             trainingConfigLoading: state.configErrorSource === 'training',
+            presetConfigLoading: state.configErrorSource === 'preset',
             configError: null,
             configErrorSource: null,
             configSyncNonce: state.configSyncNonce + 1,

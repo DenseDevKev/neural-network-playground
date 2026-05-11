@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { AccessibilityAnnouncer } from './AccessibilityAnnouncer';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 
 describe('AccessibilityAnnouncer', () => {
+    beforeEach(() => {
+        useTrainingStore.setState({ presetConfigLoading: false });
+    });
+
     it('announces training state changes', () => {
         const { rerender } = render(
             <AccessibilityAnnouncer
@@ -169,5 +174,50 @@ describe('AccessibilityAnnouncer', () => {
         );
 
         expect(screen.getByRole('status')).toHaveTextContent('Training error: Failed to update training');
+    });
+
+    it('announces preset loading and preset errors', () => {
+        const { rerender } = render(
+            <AccessibilityAnnouncer
+                status="idle"
+                dataConfigLoading={false}
+                networkConfigLoading={false}
+                featuresConfigLoading={false}
+                trainingConfigLoading={false}
+                presetConfigLoading={false}
+                configError={null}
+                configErrorSource={null}
+            />,
+        );
+
+        rerender(
+            <AccessibilityAnnouncer
+                status="idle"
+                dataConfigLoading={false}
+                networkConfigLoading={false}
+                featuresConfigLoading={false}
+                trainingConfigLoading={false}
+                presetConfigLoading={true}
+                configError={null}
+                configErrorSource={null}
+            />,
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent('Applying preset');
+
+        rerender(
+            <AccessibilityAnnouncer
+                status="idle"
+                dataConfigLoading={false}
+                networkConfigLoading={false}
+                featuresConfigLoading={false}
+                trainingConfigLoading={false}
+                presetConfigLoading={false}
+                configError="Preset failed"
+                configErrorSource="preset"
+            />,
+        );
+
+        expect(screen.getByRole('status')).toHaveTextContent('Preset error: Preset failed');
     });
 });

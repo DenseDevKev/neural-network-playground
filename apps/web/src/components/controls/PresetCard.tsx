@@ -4,6 +4,7 @@ import { Tooltip } from '../common/Tooltip.tsx';
 interface PresetCardProps {
     preset: Preset;
     isSelected: boolean;
+    disabled?: boolean;
     onSelect: (preset: Preset) => void;
 }
 
@@ -11,7 +12,7 @@ function formatDifficulty(difficulty: NonNullable<Preset['difficulty']>) {
     return difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
 }
 
-export function PresetCard({ preset, isSelected, onSelect }: PresetCardProps) {
+export function PresetCard({ preset, isSelected, disabled = false, onSelect }: PresetCardProps) {
     return (
         <Tooltip content={`Cause: this loads the ${preset.title} preset and resets training. Effect: the playground starts from a known setup for the lesson goal.`} block>
             <button
@@ -20,6 +21,7 @@ export function PresetCard({ preset, isSelected, onSelect }: PresetCardProps) {
                 onClick={() => onSelect(preset)}
                 aria-pressed={isSelected}
                 aria-label={`Apply preset: ${preset.title}`}
+                disabled={disabled}
             >
                 {preset.thumbnail && (
                     <div className="preset-card__thumbnail" aria-hidden="true">

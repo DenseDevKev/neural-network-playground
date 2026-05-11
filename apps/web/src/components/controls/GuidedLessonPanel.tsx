@@ -1,73 +1,47 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { PRESETS, type Preset } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
-import { useLayoutStore, type LeftTabId, type PhaseMode } from '../../store/useLayoutStore.ts';
-
-export type LessonTarget = 'data' | 'network' | 'hyperparams' | 'transport';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import {
+    DEFAULT_LESSON_ID,
+    LESSON_DEFINITIONS,
+    getLessonDefinition,
+    getLessonPreset,
+    type LessonStep,
+    type LessonTarget,
+} from '../../lessons/lessonRegistry.ts';
 
 interface GuidedLessonPanelProps {
     onReset: () => void;
     onHighlightChange?: (target: LessonTarget | null) => void;
 }
 
-interface LessonStep {
-    title: string;
-    target: LessonTarget;
-    tab?: LeftTabId;
-    phase?: PhaseMode;
-    body: string;
-}
+const COMPACT_DRAWER_QUERY = '(max-width: 900px)';
 
-const XOR_LESSON_PRESET_ID = 'xor-hidden';
-
-const XOR_LESSON_STEPS: LessonStep[] = [
-    {
-        title: 'Read the XOR pattern',
-        target: 'data',
-        tab: 'data',
-        phase: 'build',
-        body: 'The XOR preset alternates labels by quadrant, so no single straight line can separate every point.',
-    },
-    {
-        title: 'Give the model capacity',
-        target: 'network',
-        tab: 'network',
-        phase: 'build',
-        body: 'Two hidden layers let the network combine simple bends into the corners needed for XOR.',
-    },
-    {
-        title: 'Use steady updates',
-        target: 'hyperparams',
-        tab: 'hyperparams',
-        phase: 'build',
-        body: 'A moderate learning rate and small batches make the loss react without bouncing wildly.',
-    },
-    {
-        title: 'Train in small moves',
-        target: 'transport',
-        phase: 'run',
-        body: 'Step or play from the transport controls and watch the boundary change as weights update.',
-    },
-];
-
-function findLessonPreset(): Preset {
-    const preset = PRESETS.find((item) => item.id === XOR_LESSON_PRESET_ID);
-    if (!preset) {
-        throw new Error(`Missing guided lesson preset: ${XOR_LESSON_PRESET_ID}`);
+function getInitialDrawerOpen(): boolean {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+        return true;
     }
-    return preset;
+    return !window.matchMedia(COMPACT_DRAWER_QUERY).matches;
 }
 
 export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     onReset,
     onHighlightChange,
 }: GuidedLessonPanelProps) {
+    const [selectedLessonId, setSelectedLessonId] = useState(DEFAULT_LESSON_ID);
     const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
+    const [isDrawerOpen, setIsDrawerOpen] = useState(getInitialDrawerOpen);
     const applyPreset = usePlaygroundStore((s) => s.applyPreset);
     const setActiveTabLeft = useLayoutStore((s) => s.setActiveTabLeft);
     const setPhase = useLayoutStore((s) => s.setPhase);
-    const lessonPreset = useMemo(findLessonPreset, []);
-    const activeStep = activeStepIndex === null ? null : XOR_LESSON_STEPS[activeStepIndex];
+    const setActiveLessonStep = useLayoutStore((s) => s.setActiveLessonStep);
+    const clearActiveLessonStep = useLayoutStore((s) => s.clearActiveLessonStep);
+    const selectedLesson = useMemo(
+        () => getLessonDefinition(selectedLessonId) ?? getLessonDefinition(DEFAULT_LESSON_ID)!,
+        [selectedLessonId],
+    );
+    const lessonPreset = useMemo(() => getLessonPreset(selectedLesson), [selectedLesson]);
+    const activeStep = activeStepIndex === null ? null : selectedLesson.steps[activeStepIndex];
 
     const focusStep = useCallback(
         (step: LessonStep) => {
@@ -79,78 +53,144 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     );
 
     useEffect(() => {
-        return () => onHighlightChange?.(null);
-    }, [onHighlightChange]);
+        return () => {
+            onHighlightChange?.(null);
+            clearActiveLessonStep();
+        };
+    }, [clearActiveLessonStep, onHighlightChange]);
+
+    useEffect(() => {
+        if (typeof window.matchMedia !== 'function') return;
+        const media = window.matchMedia(COMPACT_DRAWER_QUERY);
+        const syncDrawerDefault = () => setIsDrawerOpen(!media.matches);
+
+        syncDrawerDefault();
+        media.addEventListener?.('change', syncDrawerDefault);
+        return () => media.removeEventListener?.('change', syncDrawerDefault);
+    }, []);
 
     const startLesson = () => {
         applyPreset(lessonPreset);
         onReset();
         setActiveStepIndex(0);
-        focusStep(XOR_LESSON_STEPS[0]);
+        setActiveLessonStep(selectedLesson.id, 0);
+        focusStep(selectedLesson.steps[0]);
     };
 
     const goToStep = (nextIndex: number) => {
         setActiveStepIndex(nextIndex);
-        focusStep(XOR_LESSON_STEPS[nextIndex]);
+        setActiveLessonStep(selectedLesson.id, nextIndex);
+        focusStep(selectedLesson.steps[nextIndex]);
     };
 
     const finishLesson = () => {
         setActiveStepIndex(null);
+        clearActiveLessonStep();
+        onHighlightChange?.(null);
+    };
+
+    const selectLesson = (lessonId: string) => {
+        setSelectedLessonId(lessonId);
+        setActiveStepIndex(null);
+        clearActiveLessonStep();
         onHighlightChange?.(null);
     };
 
     return (
-        <aside className="guided-lesson" aria-label="Guided lesson mode">
-            <div className="guided-lesson__eyebrow">Guided lesson</div>
-            <div className="guided-lesson__title">{lessonPreset.title}</div>
+        <aside
+            className={`guided-lesson ${isDrawerOpen ? 'guided-lesson--open' : 'guided-lesson--collapsed'}`}
+            aria-label="Guided lesson mode"
+        >
+            <div className="guided-lesson__header">
+                <div className="guided-lesson__identity">
+                    <div className="guided-lesson__eyebrow">Guided lesson</div>
+                    <div className="guided-lesson__title">{selectedLesson.title}</div>
+                </div>
+                {activeStep && (
+                    <div className="guided-lesson__step-chip" aria-live="polite">
+                        {activeStepIndex! + 1}/{selectedLesson.steps.length}
+                    </div>
+                )}
+                <button
+                    type="button"
+                    className="guided-lesson__toggle"
+                    aria-label={isDrawerOpen ? 'Collapse guided lesson drawer' : 'Expand guided lesson drawer'}
+                    aria-expanded={isDrawerOpen}
+                    onClick={() => setIsDrawerOpen((open) => !open)}
+                >
+                    {isDrawerOpen ? '▾' : '▴'}
+                </button>
+            </div>
 
-            {activeStep ? (
-                <>
-                    <div className="guided-lesson__progress" aria-live="polite">
-                        Step {activeStepIndex! + 1} of {XOR_LESSON_STEPS.length}
-                    </div>
-                    <h2 className="guided-lesson__step-title">{activeStep.title}</h2>
-                    <p className="guided-lesson__body">{activeStep.body}</p>
-                    <div className="guided-lesson__actions">
-                        <button
-                            className="btn btn--ghost btn--sm"
-                            onClick={() => activeStepIndex! > 0 && goToStep(activeStepIndex! - 1)}
-                            disabled={activeStepIndex === 0}
-                        >
-                            Back
-                        </button>
-                        {activeStepIndex === XOR_LESSON_STEPS.length - 1 ? (
+            {isDrawerOpen && (
+                <div className="guided-lesson__content">
+                    {activeStep ? (
+                        <>
+                            <div className="guided-lesson__progress" aria-live="polite">
+                                Step {activeStepIndex! + 1} of {selectedLesson.steps.length}
+                            </div>
+                            <h2 className="guided-lesson__step-title">{activeStep.title}</h2>
+                            <p className="guided-lesson__body">{activeStep.body}</p>
+                            <div className="guided-lesson__actions">
+                                <button
+                                    className="btn btn--ghost btn--sm"
+                                    onClick={() => activeStepIndex! > 0 && goToStep(activeStepIndex! - 1)}
+                                    disabled={activeStepIndex === 0}
+                                >
+                                    Back
+                                </button>
+                                {activeStepIndex === selectedLesson.steps.length - 1 ? (
+                                    <button
+                                        className="btn btn--accent btn--sm"
+                                        onClick={finishLesson}
+                                        aria-label="Finish guided lesson"
+                                    >
+                                        Finish
+                                    </button>
+                                ) : (
+                                    <button
+                                        className="btn btn--accent btn--sm"
+                                        onClick={() => goToStep(activeStepIndex! + 1)}
+                                        aria-label="Next lesson step"
+                                    >
+                                        Next
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <label className="guided-lesson__selector">
+                                <span className="guided-lesson__selector-label">Lesson</span>
+                                <select
+                                    className="select guided-lesson__select"
+                                    value={selectedLesson.id}
+                                    onChange={(event) => selectLesson(event.target.value)}
+                                    aria-label="Guided lesson"
+                                >
+                                    {LESSON_DEFINITIONS.map((lesson) => (
+                                        <option key={lesson.id} value={lesson.id}>
+                                            {lesson.title}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <p className="guided-lesson__body">{selectedLesson.summary}</p>
+                            {selectedLesson.estimatedMinutes && (
+                                <div className="guided-lesson__meta">
+                                    About {selectedLesson.estimatedMinutes} min
+                                </div>
+                            )}
                             <button
-                                className="btn btn--accent btn--sm"
-                                onClick={finishLesson}
-                                aria-label="Finish guided lesson"
+                                className="btn btn--accent btn--sm guided-lesson__start"
+                                onClick={startLesson}
+                                aria-label="Start guided lesson"
                             >
-                                Finish
+                                Start
                             </button>
-                        ) : (
-                            <button
-                                className="btn btn--accent btn--sm"
-                                onClick={() => goToStep(activeStepIndex! + 1)}
-                                aria-label="Next lesson step"
-                            >
-                                Next
-                            </button>
-                        )}
-                    </div>
-                </>
-            ) : (
-                <>
-                    <p className="guided-lesson__body">
-                        Load a preset-backed walkthrough that shows why XOR needs hidden layers.
-                    </p>
-                    <button
-                        className="btn btn--accent btn--sm guided-lesson__start"
-                        onClick={startLesson}
-                        aria-label="Start guided lesson"
-                    >
-                        Start
-                    </button>
-                </>
+                        </>
+                    )}
+                </div>
             )}
         </aside>
     );

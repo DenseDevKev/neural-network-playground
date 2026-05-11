@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render } from '@testing-library/react';
-import { NetworkGraphCanvas } from './NetworkGraphCanvas.tsx';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+    NetworkGraphCanvas,
+    classifyNeuronActivity,
+    computeChangedEdgeKeys,
+    formatArchitectureStory,
+    getCapacityLabel,
+} from './NetworkGraphCanvas.tsx';
 import {
     resetFrameBuffer,
     updateFrameBuffer,
@@ -8,6 +14,7 @@ import {
 } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import {
     edgeFilterOptions,
     hitTestEdge,
@@ -45,6 +52,7 @@ function createMockContext() {
         }),
         putImageData: vi.fn(),
         drawImage: vi.fn(),
+        setLineDash: vi.fn(),
         imageSmoothingEnabled: false,
         imageSmoothingQuality: 'low' as const,
         fillStyle: '',
@@ -65,8 +73,38 @@ describe('NetworkGraphCanvas', () => {
         useTrainingStore.setState({
             snapshot: null,
             frameVersion: 0,
+            layerStatsVersion: 0,
             trainPoints: [],
             testPoints: [],
+            pendingConfigSource: null,
+            networkConfigLoading: false,
+        });
+        useLayoutStore.setState({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
+        usePlaygroundStore.setState({
+            data: {
+                ...usePlaygroundStore.getState().data,
+                dataset: 'gauss',
+            },
+            network: {
+                ...usePlaygroundStore.getState().network,
+                hiddenLayers: [],
+                activation: 'tanh',
+            },
+            features: {
+                ...usePlaygroundStore.getState().features,
+                x: true,
+                y: true,
+                xSquared: false,
+                ySquared: false,
+                xy: false,
+                sinX: false,
+                sinY: false,
+                cosX: false,
+                cosY: false,
+            },
         });
 
         HTMLCanvasElement.prototype.getContext = vi.fn(
@@ -134,6 +172,47 @@ describe('NetworkGraphCanvas', () => {
         expect(desc!.textContent).toContain('Activation: tanh');
     });
 
+    it('renders architecture story and capacity badge inside the graph', () => {
+        usePlaygroundStore.setState({
+            network: {
+                ...usePlaygroundStore.getState().network,
+                hiddenLayers: [4, 4],
+            },
+        });
+
+        render(<NetworkGraphCanvas />);
+
+        expect(screen.getByLabelText('Architecture summary')).toHaveTextContent('x, y -> [4] -> [4] -> 1 output');
+        expect(screen.getByText('Moderate capacity')).toBeInTheDocument();
+    });
+
+    it('shows dataset topology hints only for clear mismatches', () => {
+        usePlaygroundStore.setState({
+            data: {
+                ...usePlaygroundStore.getState().data,
+                dataset: 'xor',
+            },
+            network: {
+                ...usePlaygroundStore.getState().network,
+                hiddenLayers: [],
+            },
+        });
+
+        const { rerender } = render(<NetworkGraphCanvas />);
+
+        expect(screen.getByText('XOR is not linearly separable, so add a hidden layer before training.')).toBeInTheDocument();
+
+        usePlaygroundStore.setState({
+            network: {
+                ...usePlaygroundStore.getState().network,
+                hiddenLayers: [4],
+            },
+        });
+        rerender(<NetworkGraphCanvas />);
+
+        expect(screen.queryByText('XOR is not linearly separable, so add a hidden layer before training.')).not.toBeInTheDocument();
+    });
+
     it('clears any active tooltip when the pointer leaves the canvas', () => {
         const { container } = render(<NetworkGraphCanvas />);
         const canvas = container.querySelector('canvas')!;
@@ -164,6 +243,74 @@ describe('NetworkGraphCanvas', () => {
         fireEvent.click(container.querySelector('button[aria-label="Show only strong edges"]')!);
 
         expect(container.querySelector('button[aria-label="Show only strong edges"]')).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('renders topology view mode controls', () => {
+        render(<NetworkGraphCanvas />);
+
+        const activations = screen.getByRole('button', { name: 'Activations' });
+        fireEvent.click(activations);
+
+        expect(activations).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('uses inline topology buttons to begin network config changes', () => {
+        usePlaygroundStore.setState({
+            network: {
+                ...usePlaygroundStore.getState().network,
+                hiddenLayers: [2],
+            },
+        });
+        render(<NetworkGraphCanvas />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Add neuron to hidden layer 1' }));
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('network');
+        expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual([3]);
+    });
+
+    it('renders active network lesson copy and a ghost layer hint', () => {
+        usePlaygroundStore.setState({
+            network: {
+                ...usePlaygroundStore.getState().network,
+                hiddenLayers: [],
+            },
+        });
+        useLayoutStore.setState({
+            activeLessonId: 'lesson-xor-hidden-layers',
+            activeLessonStepIndex: 1,
+        });
+
+        render(<NetworkGraphCanvas />);
+
+        expect(screen.getByText('Two hidden layers let the network combine simple bends into the corners needed for XOR.')).toBeInTheDocument();
+        expect(screen.getByText('Add hidden layer here')).toBeInTheDocument();
+    });
+});
+
+describe('network topology helpers', () => {
+    it('formats architecture stories and capacity labels', () => {
+        expect(formatArchitectureStory(['x', 'y'], [])).toBe('x, y -> 1 output (linear)');
+        expect(formatArchitectureStory(['x', 'y'], [4, 4])).toBe('x, y -> [4] -> [4] -> 1 output');
+        expect(getCapacityLabel([])).toBe('Linear model');
+        expect(getCapacityLabel([4])).toBe('Low capacity');
+        expect(getCapacityLabel([16, 17])).toBe('Overfit risk');
+    });
+
+    it('classifies neuron activity from activation grids', () => {
+        expect(classifyNeuronActivity(new Float32Array(20).fill(0), 'relu')).toBe('low');
+        expect(classifyNeuronActivity(new Float32Array(20).fill(0.99), 'sigmoid')).toBe('saturated');
+        expect(classifyNeuronActivity(new Float32Array([0.1, 0.2, 0.3, 0.4]), 'tanh')).toBeNull();
+    });
+
+    it('selects the most changed edges from consecutive weight snapshots', () => {
+        const keys = computeChangedEdgeKeys(
+            new Float32Array([0, 0, 0, 0]),
+            new Float32Array([0.01, 1, 0.02, 0.03]),
+            [2, 2],
+        );
+
+        expect(keys.has('1:0:1')).toBe(true);
     });
 });
 
@@ -231,6 +378,7 @@ describe('networkGraphPainter helpers', () => {
 
     it('defines edge filter options used by the graph legend', () => {
         expect(edgeFilterOptions.map((option) => option.id)).toEqual(['all', 'strong', 'positive', 'negative']);
+        expect(edgeFilterOptions.map((option) => option.label)).toEqual(['All', 'Strong', 'Positive', 'Negative']);
     });
 
     it('filters edges by sign and strong magnitude', () => {
