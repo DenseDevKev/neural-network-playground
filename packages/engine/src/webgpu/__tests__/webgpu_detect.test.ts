@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detectWebGPU, resetWebGPUDetectionCache } from '../detect.js';
 
 describe('detectWebGPU', () => {
@@ -43,6 +43,52 @@ describe('detectWebGPU', () => {
                 Object.defineProperty(globalThis, 'navigator', desc);
             } else {
                 // No prior descriptor — remove the stub entirely.
+                delete (globalThis as unknown as { navigator?: unknown }).navigator;
+            }
+        }
+    });
+
+    it('returns null when no compatible adapter is available', async () => {
+        const desc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+        const requestAdapter = vi.fn().mockResolvedValue(null);
+        Object.defineProperty(globalThis, 'navigator', {
+            configurable: true,
+            value: {
+                gpu: { requestAdapter },
+            },
+        });
+        try {
+            const device = await detectWebGPU();
+            expect(device).toBeNull();
+            expect(requestAdapter).toHaveBeenCalledTimes(1);
+        } finally {
+            if (desc) {
+                Object.defineProperty(globalThis, 'navigator', desc);
+            } else {
+                delete (globalThis as unknown as { navigator?: unknown }).navigator;
+            }
+        }
+    });
+
+    it('returns null when device request rejects', async () => {
+        const desc = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+        const requestDevice = vi.fn().mockRejectedValue(new Error('device denied'));
+        const requestAdapter = vi.fn().mockResolvedValue({ requestDevice });
+        Object.defineProperty(globalThis, 'navigator', {
+            configurable: true,
+            value: {
+                gpu: { requestAdapter },
+            },
+        });
+        try {
+            const device = await detectWebGPU();
+            expect(device).toBeNull();
+            expect(requestAdapter).toHaveBeenCalledTimes(1);
+            expect(requestDevice).toHaveBeenCalledTimes(1);
+        } finally {
+            if (desc) {
+                Object.defineProperty(globalThis, 'navigator', desc);
+            } else {
                 delete (globalThis as unknown as { navigator?: unknown }).navigator;
             }
         }

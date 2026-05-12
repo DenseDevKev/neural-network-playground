@@ -7,6 +7,7 @@ import {
     FLAG_OUTPUT_GRID,
     allocSharedSnapshotViews,
     attachSharedSnapshotViews,
+    canUseSharedBuffers,
     publishSharedSnapshot,
     readSharedSnapshot,
 } from './sharedSnapshot.ts';
@@ -14,6 +15,42 @@ import {
 describe('sharedSnapshot', () => {
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it('disables shared buffers when cross-origin isolation is explicitly false', () => {
+        const original = Object.getOwnPropertyDescriptor(globalThis, 'crossOriginIsolated');
+        Object.defineProperty(globalThis, 'crossOriginIsolated', {
+            configurable: true,
+            value: false,
+        });
+
+        try {
+            expect(canUseSharedBuffers()).toBe(false);
+        } finally {
+            if (original) {
+                Object.defineProperty(globalThis, 'crossOriginIsolated', original);
+            } else {
+                delete (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated;
+            }
+        }
+    });
+
+    it('disables shared buffers when SharedArrayBuffer is unavailable', () => {
+        const original = Object.getOwnPropertyDescriptor(globalThis, 'SharedArrayBuffer');
+        Object.defineProperty(globalThis, 'SharedArrayBuffer', {
+            configurable: true,
+            value: undefined,
+        });
+
+        try {
+            expect(canUseSharedBuffers()).toBe(false);
+        } finally {
+            if (original) {
+                Object.defineProperty(globalThis, 'SharedArrayBuffer', original);
+            } else {
+                delete (globalThis as { SharedArrayBuffer?: unknown }).SharedArrayBuffer;
+            }
+        }
     });
 
     it('allocates and attaches typed views over the same SharedArrayBuffers', () => {

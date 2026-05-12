@@ -212,4 +212,24 @@ describe('training worker lifecycle and demand cadence', () => {
         });
         expect(workerApi.step(1).layerStats?.length).toBeGreaterThan(0);
     });
+
+    it('rejects malformed demand updates without clearing the previous demand', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 905, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needLayerStats: true,
+        });
+
+        expect(() => workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needLayerStats: 'yes',
+        } as unknown as typeof DEFAULT_DEMAND)).toThrow('Invalid visualization demand.');
+
+        expect(workerApi.step(1).layerStats?.length).toBeGreaterThan(0);
+    });
 });

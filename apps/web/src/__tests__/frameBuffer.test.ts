@@ -37,6 +37,16 @@ describe('frameBuffer', () => {
             expect(getFrameVersions()).toEqual(initialVersions);
         });
 
+        it('layout-only grid size patches should not bump any version', () => {
+            const initialVersions = getFrameVersions();
+
+            const newVersion = updateFrameBuffer({ gridSize: 40 });
+
+            expect(newVersion).toBe(initialVersions.frameVersion);
+            expect(getFrameVersions()).toEqual(initialVersions);
+            expect(getFrameBuffer().gridSize).toBe(40);
+        });
+
         it('output grid patch should bump only output grid and broad frame versions', () => {
             const initialVersions = getFrameVersions();
             const outputGrid = new Float32Array([0, 0.25, 0.75, 1]);
@@ -108,6 +118,36 @@ describe('frameBuffer', () => {
             });
             expect(getFrameBuffer().activationHistogramBins).toBe(activationHistogramBins);
             expect(getFrameBuffer().activationHistogramLayout).toBe(activationHistogramLayout);
+        });
+
+        it('multi-domain patches should bump each affected counter once', () => {
+            const initialVersions = getFrameVersions();
+            const outputGrid = new Float32Array([0, 1, 0, 1]);
+            const weights = new Float32Array([0.1, 0.2]);
+            const confusionMatrix = {
+                truePositive: 1,
+                trueNegative: 2,
+                falsePositive: 3,
+                falseNegative: 4,
+            };
+
+            const newVersion = updateFrameBuffer({
+                outputGrid,
+                weights,
+                confusionMatrix,
+            });
+
+            expect(newVersion).toBe(initialVersions.frameVersion + 1);
+            expect(getFrameVersions()).toEqual({
+                ...initialVersions,
+                frameVersion: initialVersions.frameVersion + 1,
+                outputGridVersion: initialVersions.outputGridVersion + 1,
+                paramsVersion: initialVersions.paramsVersion + 1,
+                confusionMatrixVersion: initialVersions.confusionMatrixVersion + 1,
+            });
+            expect(getFrameBuffer().outputGrid).toBe(outputGrid);
+            expect(getFrameBuffer().weights).toBe(weights);
+            expect(getFrameBuffer().confusionMatrix).toBe(confusionMatrix);
         });
 
         it('resetFrameBuffer should bump all versions', () => {
