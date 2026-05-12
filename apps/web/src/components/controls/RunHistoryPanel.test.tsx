@@ -13,7 +13,7 @@ import {
     DEFAULT_TRAINING,
 } from '@nn-playground/shared';
 
-function makeRecord(): ExperimentRunRecordV1 {
+function makeRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentRunRecordV1 {
     return {
         schemaVersion: 1,
         id: 'run-1',
@@ -39,6 +39,7 @@ function makeRecord(): ExperimentRunRecordV1 {
         },
         network: null,
         history: [{ step: 120, trainLoss: 0.22, testLoss: 0.31 }],
+        ...overrides,
     };
 }
 
@@ -103,6 +104,42 @@ describe('RunHistoryPanel', () => {
         expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
         expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual([4, 4]);
         expect(onRestore).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows existing-data comparison summaries between saved runs', () => {
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'baseline',
+                title: 'Baseline',
+                updatedAt: '2026-04-26T00:00:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 100,
+                    trainLoss: 0.4,
+                    testLoss: 0.6,
+                },
+            }));
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'tuned',
+                title: 'Tuned model',
+                updatedAt: '2026-04-26T00:01:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 180,
+                    trainLoss: 0.25,
+                    testLoss: 0.42,
+                },
+            }));
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+
+        expect(screen.getByRole('group', { name: 'Comparison for Tuned model against Baseline' })).toBeInTheDocument();
+        expect(screen.getByText('Compared with Baseline')).toBeInTheDocument();
+        expect(screen.getByText('Train loss -0.1500')).toBeInTheDocument();
+        expect(screen.getByText('Test loss -0.1800')).toBeInTheDocument();
+        expect(screen.getByText('Gap -0.0300')).toBeInTheDocument();
+        expect(screen.getByText('Steps +80')).toBeInTheDocument();
     });
 
     it('exports a markdown report for a saved run', async () => {
