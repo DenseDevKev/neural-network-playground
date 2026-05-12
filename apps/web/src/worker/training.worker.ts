@@ -32,6 +32,7 @@ import type {
     Metrics,
     PredictionTrace,
     ActivationHistogramResult,
+    NetworkCheckpoint,
 } from '@nn-playground/engine';
 import {
     GRID_SIZE,
@@ -48,6 +49,8 @@ import type {
     WorkerStatusMessage,
     WorkerErrorMessage,
     WorkerSharedBuffersMessage,
+    CheckpointTimeline,
+    CheckpointSummary,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 import {
@@ -119,6 +122,11 @@ interface WorkerState {
     lossEmaAlpha: number;
     /** True when the most recent snapshot reused cached test metrics instead of re-evaluating. */
     testMetricsStale: boolean;
+    /** Runtime-only bounded checkpoint ring buffer. Heavy model state stays in the worker. */
+    checkpoints: RuntimeCheckpoint[];
+    nextCheckpointId: number;
+    checkpointEvictedCount: number;
+    restoredCheckpointId: number | null;
     /** Runtime-only stop-condition tracking. Reset on new worker runs/rebuilds. */
     stopConditionState: StopConditionState;
     /** Monotonic identity for confusion matrix payload freshness. */
@@ -169,6 +177,20 @@ interface WorkerState {
      * postMessage calls so the transferable queue doesn't grow unbounded.
      */
     awaitingAck: boolean;
+}
+
+interface RuntimeCheckpoint {
+    summary: CheckpointSummary;
+    checkpoint: NetworkCheckpoint;
+    epoch: number;
+    shuffledIndices: number[];
+    lossEma: number | null;
+    lastTrainMetrics: WorkerState['lastTrainMetrics'];
+    lastTestMetrics: WorkerState['lastTestMetrics'];
+    snapshotsSinceLastTrainEval: number;
+    snapshotsSinceLastTestEval: number;
+    snapshotsSinceLastGrid: number;
+    snapshotsSinceLastActivationHistogram: number;
 }
 
 export type PredictionTraceSampleSource = 'train' | 'test' | 'custom';
@@ -298,6 +320,8 @@ const configsEqual = structuralEqual;
 const WORKER_PERF_ENABLED = import.meta.env.DEV && import.meta.env.VITE_WORKER_PERF === '1';
 const ACTIVATION_HISTOGRAM_BIN_COUNT = 12;
 const ACTIVATION_HISTOGRAM_MAX_SAMPLES = 128;
+const CHECKPOINT_MAX_COUNT = 8;
+const CHECKPOINT_STEP_INTERVAL = 5;
 
 function workerPerfMark(name: string): void {
     if (WORKER_PERF_ENABLED) performance.mark(name);
@@ -340,6 +364,10 @@ const state: WorkerState = {
     lossEma: null,
     lossEmaAlpha: 0.1,
     testMetricsStale: false,
+    checkpoints: [],
+    nextCheckpointId: 1,
+    checkpointEvictedCount: 0,
+    restoredCheckpointId: null,
     stopConditionState: createInitialStopConditionState(),
     confusionMatrixVersion: 0,
     activationHistogramVersion: 0,
@@ -358,6 +386,74 @@ const state: WorkerState = {
     trainLoopTimer: null,
     awaitingAck: false,
 };
+
+function cloneMetrics<T extends { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null>(metrics: T): T {
+    if (metrics === null) return null as T;
+    return {
+        ...metrics,
+        confusionMatrix: metrics.confusionMatrix
+            ? { ...metrics.confusionMatrix }
+            : undefined,
+    } as T;
+}
+
+function buildCheckpointTimeline(): CheckpointTimeline {
+    return {
+        checkpoints: state.checkpoints.map((entry) => ({ ...entry.summary })),
+        maxCheckpoints: CHECKPOINT_MAX_COUNT,
+        evictedCount: state.checkpointEvictedCount,
+        liveCheckpointId: state.checkpoints.at(-1)?.summary.id ?? null,
+        restoredCheckpointId: state.restoredCheckpointId,
+    };
+}
+
+function captureCheckpointFromSnapshot(snap: NetworkSnapshot): void {
+    if (!state.network) return;
+    const latest = state.checkpoints.at(-1);
+    if (latest && latest.summary.step === snap.step) return;
+    if (latest && snap.step - latest.summary.step < CHECKPOINT_STEP_INTERVAL) return;
+
+    const id = state.nextCheckpointId++;
+    const summary: CheckpointSummary = {
+        id,
+        step: snap.step,
+        epoch: snap.epoch,
+        trainLoss: snap.trainLoss,
+        testLoss: snap.testLoss,
+        trainAccuracy: snap.trainMetrics.accuracy,
+        testAccuracy: snap.testMetrics.accuracy,
+        label: `Step ${snap.step}`,
+    };
+
+    state.checkpoints.push({
+        summary,
+        checkpoint: state.network.createCheckpoint(),
+        epoch: state.epoch,
+        shuffledIndices: [...state.shuffledIndices],
+        lossEma: state.lossEma,
+        lastTrainMetrics: cloneMetrics(state.lastTrainMetrics),
+        lastTestMetrics: cloneMetrics(state.lastTestMetrics),
+        snapshotsSinceLastTrainEval: state.snapshotsSinceLastTrainEval,
+        snapshotsSinceLastTestEval: state.snapshotsSinceLastTestEval,
+        snapshotsSinceLastGrid: state.snapshotsSinceLastGrid,
+        snapshotsSinceLastActivationHistogram: state.snapshotsSinceLastActivationHistogram,
+    });
+
+    while (state.checkpoints.length > CHECKPOINT_MAX_COUNT) {
+        const evicted = state.checkpoints.shift();
+        state.checkpointEvictedCount++;
+        if (evicted && state.restoredCheckpointId === evicted.summary.id) {
+            state.restoredCheckpointId = null;
+        }
+    }
+}
+
+function resetCheckpoints(): void {
+    state.checkpoints = [];
+    state.nextCheckpointId = 1;
+    state.checkpointEvictedCount = 0;
+    state.restoredCheckpointId = null;
+}
 
 // Top-level error backstops — catch anything not handled by the per-function
 // try/catch blocks (e.g. errors thrown during module evaluation or in callbacks
@@ -457,6 +553,7 @@ function buildDataAndNetwork(): void {
     state.stopConditionState = createInitialStopConditionState();
     state.confusionMatrixVersion++;
     state.activationHistogramVersion++;
+    resetCheckpoints();
 
     // Increment run ID
     state.runId++;
@@ -803,6 +900,7 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         state.snapshotsSinceLastActivationHistogram++;
     }
 
+    captureCheckpointFromSnapshot(snap);
     workerPerfMeasure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
 }
@@ -954,6 +1052,7 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         historyPoint,
         confusionMatrix: state.testMetricsStale ? undefined : snap.testMetrics?.confusionMatrix,
         confusionMatrixVersion: state.confusionMatrixVersion,
+        checkpointTimeline: buildCheckpointTimeline(),
         sharedSeq,
     };
 
@@ -1283,6 +1382,49 @@ export const workerApi = {
         stopInternalLoop();
         buildDataAndNetwork();
         return { snapshot: computeSnapshot(), runId: state.runId };
+    },
+
+    getCheckpointTimeline(): CheckpointTimeline {
+        return buildCheckpointTimeline();
+    },
+
+    restoreCheckpoint(id: number): { snapshot: NetworkSnapshot; runId: number; timeline: CheckpointTimeline } {
+        if (!Number.isInteger(id) || id <= 0) {
+            throw new RangeError('checkpoint id must be a positive integer');
+        }
+        if (!state.network) {
+            throw new Error('Not initialized');
+        }
+
+        const entry = state.checkpoints.find((candidate) => candidate.summary.id === id);
+        if (!entry) {
+            throw new RangeError('checkpoint not found');
+        }
+
+        stopInternalLoop();
+        state.network.restoreCheckpoint(entry.checkpoint);
+        state.epoch = entry.epoch;
+        state.shuffledIndices = [...entry.shuffledIndices];
+        state.lossEma = entry.lossEma;
+        state.lastTrainMetrics = cloneMetrics(entry.lastTrainMetrics);
+        state.lastTestMetrics = cloneMetrics(entry.lastTestMetrics);
+        state.snapshotsSinceLastTrainEval = entry.snapshotsSinceLastTrainEval;
+        state.snapshotsSinceLastTestEval = entry.snapshotsSinceLastTestEval;
+        state.snapshotsSinceLastGrid = entry.snapshotsSinceLastGrid;
+        state.snapshotsSinceLastActivationHistogram = entry.snapshotsSinceLastActivationHistogram;
+        state.restoredCheckpointId = id;
+        state.gridStale = true;
+        state.gridFreshFromGpu = false;
+        state.confusionMatrixVersion++;
+        state.activationHistogramVersion++;
+        resetAck();
+
+        const snapshot = computeSnapshot();
+        return {
+            snapshot,
+            runId: state.runId,
+            timeline: buildCheckpointTimeline(),
+        };
     },
 
     getTrainPoints(): DataPoint[] {

@@ -52,6 +52,8 @@ through the MessageChannel commands below.
 | `updateConfig(network, training, data, features, rebuild)` | `{ snapshot, runId }` | Normalizes and validates config; rebuilds only when required or requested. |
 | `step(iterations = 1)` | `NetworkSnapshot` | Synchronous manual stepping for UI "step" actions/tests. |
 | `reset()` | `{ snapshot, runId }` | Stops streaming, rebuilds data/network, returns a fresh snapshot. |
+| `getCheckpointTimeline()` | `CheckpointTimeline` | Returns lightweight runtime-only checkpoint summaries. Heavy checkpoint payloads stay inside the worker. |
+| `restoreCheckpoint(id)` | `{ snapshot, runId, timeline }` | Stops streaming, restores a bounded runtime checkpoint, invalidates stale visualizations, and returns a fresh snapshot plus timeline metadata. |
 | `getTrainPoints()` | `DataPoint[]` | Returns current transformed training points for immediate UI render after init/config/reset. |
 | `getTestPoints()` | `DataPoint[]` | Returns current transformed test points for immediate UI render after init/config/reset. |
 | `updateDemand(demand)` | `void` | Validates with `normalizeVisualizationDemand`; invalid demand throws. Valid demand also marks expensive work due immediately. |

@@ -338,3 +338,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4268 ms
 
 These benchmark values remain within the roadmap warning thresholds. This slice adds validation for optional scalar checkpoint metadata only; heavy checkpoint payloads are still worker-local and are not stored in React state.
+
+## Wave 6E Worker Checkpoint Ring Buffer
+
+Date: 2026-05-12
+
+Scope: worker-local bounded checkpoint ring buffer, checkpoint metadata RPC, and restore RPC.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the worker checkpoint slice. Relevant production output:
+
+- `dist/assets/training.worker-DPoonmTq.js`: 77.21 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/InspectionPanel-DtpXDUcq.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-CZbKpP55.js`: 12.31 kB, gzip 4.14 kB
+- `dist/assets/index-J2TlDb6i.js`: 361.88 kB, gzip 109.90 kB
+
+Compared with the prior Wave 6E protocol metadata slice, the main app bundle was unchanged and the worker bundle increased from 74.75 kB to 77.21 kB because it now owns the bounded runtime checkpoint ring buffer. The increase is below the roadmap 10% warning threshold, and the existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the worker checkpoint slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1138.2182 ms total for 100 iterations
+- `predictGridInto`: 1081.3733 ms total for 100 iterations
+- `predictGridWithNeurons`: 693.0297 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 589.9068 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.5410 ms
+- Average `applyGradients` time (SGD): 1.4516 ms
+
+These benchmark values remain within the roadmap warning thresholds. The current perf benchmark does not directly measure checkpoint capture cadence; runtime protection is covered by worker tests for bounded metadata, restore behavior, and eviction.

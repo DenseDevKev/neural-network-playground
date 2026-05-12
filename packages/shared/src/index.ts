@@ -77,6 +77,8 @@ export { structuralEqual } from './structural.js';
 export type {
     VisualizationDemand,
     ActivationHistogramLayout,
+    CheckpointSummary,
+    CheckpointTimeline,
     SnapshotScalars,
     WorkerSnapshotMessage,
     WorkerStatusMessage,

@@ -125,6 +125,47 @@ describe('training worker activation histogram demand', () => {
 });
 
 describe('training worker lifecycle and demand cadence', () => {
+    it('captures bounded checkpoint metadata and restores an earlier checkpoint', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING, optimizer: 'adam' },
+            { ...DEFAULT_DATA, seed: 906, numSamples: 30 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        let timeline = workerApi.getCheckpointTimeline();
+        expect(timeline.checkpoints).toHaveLength(1);
+        expect(timeline.checkpoints[0].step).toBe(init.snapshot.step);
+
+        workerApi.step(6);
+        timeline = workerApi.getCheckpointTimeline();
+        expect(timeline.checkpoints.map((checkpoint) => checkpoint.step)).toContain(6);
+
+        const firstCheckpointId = timeline.checkpoints[0].id;
+        const restored = workerApi.restoreCheckpoint(firstCheckpointId);
+        expect(restored.snapshot.step).toBe(0);
+        expect(restored.timeline.restoredCheckpointId).toBe(firstCheckpointId);
+        expect(workerApi.step(1).step).toBe(1);
+    });
+
+    it('evicts old checkpoints when the runtime timeline reaches its bound', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 907, numSamples: 30 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        for (let i = 0; i < 12; i++) {
+            workerApi.step(5);
+        }
+
+        const timeline = workerApi.getCheckpointTimeline();
+        expect(timeline.checkpoints.length).toBeLessThanOrEqual(timeline.maxCheckpoints);
+        expect(timeline.evictedCount).toBeGreaterThan(0);
+        expect(timeline.checkpoints[0].step).toBeGreaterThan(0);
+    });
+
     it('preserves the run on training-only config updates and rebuilds for shape changes', () => {
         const init = workerApi.initialize(
             { ...DEFAULT_NETWORK },

@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: pending commit for Wave 6E checkpoint protocol metadata; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed on 2026-05-12 before commit.
+- Last verified commit: pending commit for Wave 6E worker checkpoint ring buffer; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed on 2026-05-12 before commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 6E
-- Slice: Checkpoint timeline protocol metadata
+- Slice: Worker checkpoint ring buffer and restore RPC
 - Risk: High, approved Wave 6E runtime checkpoint work
-- Status: Shared protocol metadata guards and docs implemented; continuing into worker checkpoint ring buffer and restore behavior
+- Status: Worker-local bounded checkpoint capture and restore implemented; continuing into web hook/store and accessible timeline UI
 
 ## Completed Slices
 
@@ -51,13 +51,14 @@
 | 2026-05-11 | Wave 6D | Dataset lab QA/state | `2f5dffe` | Docs-only evidence commit after Wave 6D full verification and Browser QA passed; `git diff --check` passed before commit | `docs/qa/browser-qa/wave-6d-dataset-lab.md`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
 | 2026-05-11 | Wave 6E | Checkpoints/timeline design note | `c2896a2` | Docs-only mandatory-approval design note; `git diff --check` passed before commit | `docs/design-notes/training-checkpoints-timeline.md` |
 | 2026-05-12 | Wave 6E | Engine checkpoint snapshot/restore semantics | `47a94d5` | Red targeted engine test failed before implementation; targeted engine run passed with 13 files and 276 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/types.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
-| 2026-05-12 | Wave 6E | Checkpoint timeline protocol metadata | Pending | Red targeted shared protocol test failed before implementation; targeted shared run passed with 5 files and 67 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `packages/shared/src/workerProtocol.ts`, `packages/shared/src/__tests__/workerProtocol.test.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-12 | Wave 6E | Checkpoint timeline protocol metadata | `36b5e60` | Red targeted shared protocol test failed before implementation; targeted shared run passed with 5 files and 67 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `packages/shared/src/workerProtocol.ts`, `packages/shared/src/__tests__/workerProtocol.test.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-12 | Wave 6E | Worker checkpoint ring buffer and restore RPC | Pending | Red targeted web worker tests failed before implementation; targeted web run passed with 51 files and 342 tests; after fixing a shared type export caught by `pnpm build`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `packages/shared/src/index.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
 
 ## Current Verification Status
 
 - Tests: `pnpm test` passed on 2026-05-12 after Wave 6E engine checkpoint state with engine 276 tests, shared 65 tests, and web 340 tests.
 - Lint: `pnpm lint` passed on 2026-05-12 after Wave 6E engine checkpoint state.
-- Build: `pnpm build` passed on 2026-05-12 after Wave 6E checkpoint protocol metadata with the existing Vite chunk-size warning. Relevant chunks: `training.worker-DIGdGEzY.js` 74.75 kB, `RunHistoryPanel-vnZ6qPMo.js` 12.31 kB gzip 4.14 kB, `index-CGYNOHsy.js` 361.88 kB gzip 109.90 kB.
+- Build: `pnpm build` passed on 2026-05-12 after Wave 6E worker checkpoint ring buffer with the existing Vite chunk-size warning. Relevant chunks: `training.worker-DPoonmTq.js` 77.21 kB, `RunHistoryPanel-CZbKpP55.js` 12.31 kB gzip 4.14 kB, `index-J2TlDb6i.js` 361.88 kB gzip 109.90 kB.
 - Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, and Wave 6D Mode B passed on 2026-05-11. Wave 6D used `http://127.0.0.1:5177/`; current-URL console errors were empty.
 - Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA.
 - Performance: `pnpm test:perf` passed on 2026-05-12 after Wave 6E engine checkpoint state with 2 benchmark files and 4 benchmark tests.
@@ -98,6 +99,7 @@
 - Wave 6D dataset lab changed the main web UI bundle only. `pnpm test:perf` passed with `predictGrid` 1160.4786 ms, `predictGridInto` 1112.4462 ms, `predictGridWithNeurons` 695.9391 ms, `predictGridWithNeuronsInto` 597.1600 ms, Adam/L2/Clip applyGradients 4.8577 ms, SGD applyGradients 1.5220 ms.
 - Wave 6E engine checkpoint state changed the engine class imported by the worker. `pnpm test:perf` passed with `predictGrid` 1195.5230 ms, `predictGridInto` 1120.8068 ms, `predictGridWithNeurons` 712.0676 ms, `predictGridWithNeuronsInto` 588.5592 ms, Adam/L2/Clip applyGradients 4.8142 ms, SGD applyGradients 1.5587 ms.
 - Wave 6E checkpoint protocol metadata changed shared runtime guards and protocol docs. `pnpm test:perf` passed with `predictGrid` 1185.8776 ms, `predictGridInto` 1139.6066 ms, `predictGridWithNeurons` 699.6503 ms, `predictGridWithNeuronsInto` 578.9710 ms, Adam/L2/Clip applyGradients 4.8995 ms, SGD applyGradients 1.4268 ms.
+- Wave 6E worker checkpoint ring buffer changed worker runtime only. `pnpm test:perf` passed with `predictGrid` 1138.2182 ms, `predictGridInto` 1081.3733 ms, `predictGridWithNeurons` 693.0297 ms, `predictGridWithNeuronsInto` 589.9068 ms, Adam/L2/Clip applyGradients 4.5410 ms, SGD applyGradients 1.4516 ms.
 
 ## Design Decisions
 
@@ -119,6 +121,7 @@
 | 2026-05-11 | Gate checkpoint/timeline implementation behind explicit approval | Wave 6E likely touches worker protocol, runtime restore behavior, checkpoint memory, and model-state determinism | `docs/design-notes/training-checkpoints-timeline.md`, `c2896a2` |
 | 2026-05-12 | Store checkpoint payloads as engine runtime state, not persistence or URL state | Preserves public config, URL/config serialization, run-history schema, and large-array React-state boundaries | Wave 6E engine checkpoint implementation |
 | 2026-05-12 | Send only checkpoint summaries through streamed snapshots | Keeps heavy checkpoint arrays in the worker and gives React bounded scalar timeline metadata | Wave 6E protocol metadata implementation |
+| 2026-05-12 | Keep checkpoint payloads in a worker-local ring buffer | Avoids React large-array state, persistence, URL/config serialization, run-history schema changes, and new dependencies | Wave 6E worker checkpoint implementation |
 
 ## Known Issues
 
@@ -153,7 +156,7 @@
 
 ## Next Recommended Slice
 
-Continue Wave 6E with worker checkpoint ring buffer, cadence, restore behavior, and frame invalidation tests. Keep checkpoint payloads runtime-only and avoid persistence, URL/config serialization, public config shape, dependencies, and run-history schema changes.
+Continue Wave 6E with web hook/store integration and an accessible timeline UI. Keep checkpoint payloads runtime-only and avoid persistence, URL/config serialization, public config shape, dependencies, and run-history schema changes.
 
 ## Handoff Notes
 
