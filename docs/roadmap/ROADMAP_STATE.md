@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `590114d` for Wave 4 activation histogram implementation
+- Last verified commit: `6854f25` for Wave 5 worker lifecycle test hardening
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -16,10 +16,10 @@
 
 ## Current Position
 
-- Wave: Wave 4
-- Slice: Activation histogram explorer
-- Risk: High, approved
-- Status: Implemented in `590114d`; QA/state evidence recorded
+- Wave: Wave 5
+- Slice: Worker lifecycle and demand cadence tests
+- Risk: Low, tests-only
+- Status: Implemented in `6854f25`; continuing Wave 5 runtime hardening
 
 ## Completed Slices
 
@@ -36,15 +36,16 @@
 | 2026-05-11 | Wave 2 | Tuning/failure-mode lesson content | `e822187` | `pnpm test`, `pnpm lint`, `pnpm build`, Browser QA Mode B all passed | `docs/qa/browser-qa/wave-2-lesson-depth.md` |
 | 2026-05-11 | Wave 3 | QA checklist and browser evidence template | `d9cc432` | Docs-only commit after prior `pnpm test`, `pnpm lint`, and `pnpm build` passed | `docs/qa/QA_CHECKLIST.md`, `docs/qa/browser-qa/TEMPLATE.md` |
 | 2026-05-11 | Wave 4 | Activation histogram explorer | `590114d` | `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, targeted worker/shared/web tests, Browser QA Mode B all passed with dev perf warnings only | `docs/qa/browser-qa/wave-4-activation-histogram.md`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/worker-protocol.md` |
+| 2026-05-11 | Wave 5 | Worker lifecycle and demand cadence regression tests | `6854f25` | Targeted web worker run passed with 51 files and 331 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `apps/web/src/worker/training.worker.test.ts`, `apps/web/src/worker/workerBridge.test.ts` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-11 after Wave 4 activation histogram explorer with engine 273 tests, shared 65 tests, and web 326 tests.
-- Lint: `pnpm lint` passed on 2026-05-11 after Wave 4 activation histogram explorer.
-- Build: `pnpm build` passed on 2026-05-11 after Wave 4 activation histogram explorer with the existing Vite chunk-size warning.
+- Tests: `pnpm test` passed on 2026-05-11 after Wave 5 worker lifecycle tests with engine 273 tests, shared 65 tests, and web 331 tests.
+- Lint: `pnpm lint` passed on 2026-05-11 after Wave 5 worker lifecycle tests.
+- Build: `pnpm build` passed on 2026-05-11 after Wave 5 worker lifecycle tests with the existing Vite chunk-size warning.
 - Browser QA: Wave 0, Wave 1, Wave 2, and Wave 4 Mode B passed on 2026-05-11. Wave 4 used `http://127.0.0.1:5176/`; no console errors were reported for the fresh URL, only dev perf warnings.
 - Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-11 after Wave 4 with 2 benchmark files and 4 benchmark tests.
+- Performance: `pnpm test:perf` passed twice on 2026-05-11 after Wave 5 worker lifecycle tests. The first run was a noisy outlier; the repeat run returned close to the established baseline.
 
 ## Browser QA Evidence
 
@@ -67,6 +68,7 @@
 - Wave 1 build main bundle changed from 351.56 kB to 354.89 kB, below the 10% build-size warning threshold.
 - Wave 4 post-change `pnpm test:perf` passed. Observed values: `predictGrid` 1083.7991 ms, `predictGridInto` 1060.3090 ms, `predictGridWithNeurons` 673.5523 ms, `predictGridWithNeuronsInto` 576.1459 ms, Adam/L2/Clip applyGradients 3.7961 ms, SGD applyGradients 1.4921 ms.
 - Wave 4 build main bundle changed from 351.56 kB at Wave 0 to 360.52 kB, about 2.5%, and worker changed from 68.66 kB to 71.53 kB, about 4.2%.
+- Wave 5 worker lifecycle tests changed test files only. `pnpm test:perf` first run was noisy (`predictGrid` 1715.3990 ms, `predictGridInto` 1407.6730 ms, `predictGridWithNeurons` 1168.0452 ms, `predictGridWithNeuronsInto` 802.7233 ms, Adam 6.8347 ms, SGD 1.9094 ms). Repeat run passed with `predictGrid` 1161.8212 ms, `predictGridInto` 1112.8496 ms, `predictGridWithNeurons` 707.6835 ms, `predictGridWithNeuronsInto` 601.9497 ms, Adam 4.9256 ms, SGD 1.4850 ms.
 
 ## Design Decisions
 
@@ -99,6 +101,7 @@
 - Wave 3 QA infrastructure beyond the Wave 0/Wave 1 records.
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 5 runtime and performance hardening.
+- Wave 5 remaining runtime hardening: frame-buffer/SAB fallback tests, WebGPU fallback tests, runtime error/fallback tests, performance diagnostics design note, final regression sweep.
 - Wave 6A-6D experiment workflows.
 - Wave 6E checkpoints and timeline scrubber, pending mandatory approval.
 - Wave 7 large product bets, pending mandatory approval.
@@ -109,7 +112,7 @@
 
 ## Next Recommended Slice
 
-Continue Wave 4 only with another small approved slice. Candidate: improve decision-boundary and inspection text alternatives using existing data only, or write a separate design note for gradient-flow overlay before requesting approval for any new runtime/protocol data.
+Continue Wave 5 with tests-only frame-buffer, SharedArrayBuffer fallback, WebGPU fallback, and runtime error/fallback hardening. Do not continue into Wave 6 without explicit approval.
 
 ## Handoff Notes
 
