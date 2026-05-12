@@ -270,3 +270,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5220 ms
 
 These benchmark values remain within the roadmap warning thresholds. Wave 6D did not touch engine, worker, frame-buffer, persistence, schema, URL/config serialization, or public config code.
+
+## Wave 6E Engine Checkpoint State
+
+Date: 2026-05-12
+
+Scope: engine-local runtime checkpoint and restore support for weights, biases, optimizer state, and step counters.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the engine checkpoint slice. Relevant production output:
+
+- `dist/assets/training.worker-DIGdGEzY.js`: 74.75 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/InspectionPanel-BeAX8XuO.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-xfRz3sls.js`: 12.31 kB, gzip 4.14 kB
+- `dist/assets/index-B-6ikeZX.js`: 361.36 kB, gzip 109.72 kB
+
+Compared with Wave 6D, the main app bundle was unchanged and the worker bundle increased from 71.53 kB to 74.75 kB because the worker imports the engine class that now includes checkpoint helpers. The existing Vite large chunk warning remains. The worker-bundle increase is below the roadmap 10% warning threshold.
+
+`pnpm test:perf` passed after the engine checkpoint slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1195.5230 ms total for 100 iterations
+- `predictGridInto`: 1120.8068 ms total for 100 iterations
+- `predictGridWithNeurons`: 712.0676 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 588.5592 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.8142 ms
+- Average `applyGradients` time (SGD): 1.5587 ms
+
+These benchmark values remain within the roadmap warning thresholds. This slice does not add checkpoint capture to the training hot path yet; it only adds explicit engine copy/restore helpers used by later runtime slices.

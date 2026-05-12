@@ -434,6 +434,36 @@ describe('Network serialize/deserialize', () => {
     });
 });
 
+describe('Network checkpoints', () => {
+    it('restores Adam optimizer state so resumed training matches uninterrupted training', () => {
+        const config = makeConfig();
+        const adamTraining: TrainingConfig = { ...defaultTraining, optimizer: 'adam' };
+        const inputs = [[0, 0], [1, 1], [0, 1], [1, 0]];
+        const targets = [[0], [1], [1], [0]];
+
+        const continuous = new Network(config);
+        for (let i = 0; i < 5; i++) {
+            continuous.trainBatch(inputs, targets, adamTraining);
+        }
+        const checkpoint = continuous.createCheckpoint();
+        for (let i = 0; i < 4; i++) {
+            continuous.trainBatch(inputs, targets, adamTraining);
+        }
+
+        const restored = new Network(config);
+        restored.trainBatch(inputs, targets, { ...adamTraining, learningRate: 0.5 });
+        restored.restoreCheckpoint(checkpoint);
+        for (let i = 0; i < 4; i++) {
+            restored.trainBatch(inputs, targets, adamTraining);
+        }
+
+        expect(restored.getStep()).toBe(continuous.getStep());
+        expect(restored.getWeights()).toEqual(continuous.getWeights());
+        expect(restored.getBiases()).toEqual(continuous.getBiases());
+        expect(restored.forward([0.25, 0.75])).toEqual(continuous.forward([0.25, 0.75]));
+    });
+});
+
 describe('Network snapshot', () => {
     it('returns a well-formed snapshot', () => {
         const net = new Network(makeConfig());

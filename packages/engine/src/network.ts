@@ -22,6 +22,7 @@ import type {
     ActivationHistogramOptions,
     ActivationHistogramResult,
     ActivationHistogramLayer,
+    NetworkCheckpoint,
 } from './types.js';
 import { getLoss } from './losses.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
@@ -297,6 +298,53 @@ function assertSerializedParams(
         for (let n = 0; n < fanOut; n++) {
             assertFiniteValue(biasLayer[n], `serialized biases[${l}][${n}]`);
         }
+    }
+}
+
+function clonePackedBuffers(buffers: readonly Float64Array[]): Float64Array[] {
+    return buffers.map((buffer) => new Float64Array(buffer));
+}
+
+function assertPackedBufferList(
+    buffers: readonly Float64Array[] | undefined,
+    expectedLengths: readonly number[],
+    name: string,
+): asserts buffers is readonly Float64Array[] {
+    if (!Array.isArray(buffers) || buffers.length !== expectedLengths.length) {
+        throw new RangeError(`${name} must have ${expectedLengths.length} layers`);
+    }
+    for (let l = 0; l < expectedLengths.length; l++) {
+        const buffer = buffers[l];
+        if (!(buffer instanceof Float64Array) || buffer.length !== expectedLengths[l]) {
+            throw new RangeError(`${name}[${l}] must be a Float64Array of length ${expectedLengths[l]}`);
+        }
+        for (let i = 0; i < buffer.length; i++) {
+            assertFiniteValue(buffer[i], `${name}[${l}][${i}]`);
+        }
+    }
+}
+
+function assertOptimizerStateShape(
+    checkpoint: NetworkCheckpoint,
+    weightLengths: readonly number[],
+    biasLengths: readonly number[],
+): void {
+    if (checkpoint.hasAdamState && !checkpoint.hasMomentumState) {
+        throw new RangeError('checkpoint Adam state requires momentum state');
+    }
+
+    if (checkpoint.hasMomentumState) {
+        assertPackedBufferList(checkpoint.mWeights, weightLengths, 'checkpoint.mWeights');
+        assertPackedBufferList(checkpoint.mBiases, biasLengths, 'checkpoint.mBiases');
+    } else if (checkpoint.mWeights.length !== 0 || checkpoint.mBiases.length !== 0) {
+        throw new RangeError('checkpoint momentum buffers must be empty when momentum state is absent');
+    }
+
+    if (checkpoint.hasAdamState) {
+        assertPackedBufferList(checkpoint.vWeights, weightLengths, 'checkpoint.vWeights');
+        assertPackedBufferList(checkpoint.vBiases, biasLengths, 'checkpoint.vBiases');
+    } else if (checkpoint.vWeights.length !== 0 || checkpoint.vBiases.length !== 0) {
+        throw new RangeError('checkpoint Adam buffers must be empty when Adam state is absent');
     }
 }
 
@@ -1165,6 +1213,89 @@ export class Network {
 
     getStep(): number {
         return this.currentStep;
+    }
+
+    createCheckpoint(): NetworkCheckpoint {
+        return {
+            config: { ...this.config, hiddenLayers: [...this.config.hiddenLayers] },
+            currentStep: this.currentStep,
+            optimizerStep: this.optimizerStep,
+            activeOptimizer: this.activeOptimizer,
+            hasMomentumState: this.hasMomentumState,
+            hasAdamState: this.hasAdamState,
+            weights: clonePackedBuffers(this.weights),
+            biases: clonePackedBuffers(this.biases),
+            mWeights: this.hasMomentumState ? clonePackedBuffers(this.mWeights) : [],
+            mBiases: this.hasMomentumState ? clonePackedBuffers(this.mBiases) : [],
+            vWeights: this.hasAdamState ? clonePackedBuffers(this.vWeights) : [],
+            vBiases: this.hasAdamState ? clonePackedBuffers(this.vBiases) : [],
+        };
+    }
+
+    restoreCheckpoint(checkpoint: NetworkCheckpoint): void {
+        if (checkpoint == null || typeof checkpoint !== 'object') {
+            throw new RangeError('checkpoint must be an object');
+        }
+        if (
+            !Number.isFinite(checkpoint.currentStep) ||
+            !Number.isInteger(checkpoint.currentStep) ||
+            checkpoint.currentStep < 0
+        ) {
+            throw new RangeError('checkpoint currentStep must be a non-negative integer');
+        }
+        if (
+            !Number.isFinite(checkpoint.optimizerStep) ||
+            !Number.isInteger(checkpoint.optimizerStep) ||
+            checkpoint.optimizerStep < 0
+        ) {
+            throw new RangeError('checkpoint optimizerStep must be a non-negative integer');
+        }
+        if (
+            checkpoint.activeOptimizer !== null &&
+            checkpoint.activeOptimizer !== 'sgd' &&
+            checkpoint.activeOptimizer !== 'sgdMomentum' &&
+            checkpoint.activeOptimizer !== 'adam'
+        ) {
+            throw new RangeError('checkpoint activeOptimizer must be null, sgd, sgdMomentum, or adam');
+        }
+
+        const checkpointLayerSizes = validatedLayerSizes(checkpoint.config);
+        if (
+            checkpointLayerSizes.length !== this.layerSizes.length ||
+            checkpointLayerSizes.some((size, index) => size !== this.layerSizes[index])
+        ) {
+            throw new RangeError('checkpoint network shape does not match this network');
+        }
+        if (
+            checkpoint.config.activation !== this.config.activation ||
+            checkpoint.config.outputActivation !== this.config.outputActivation
+        ) {
+            throw new RangeError('checkpoint activation config does not match this network');
+        }
+
+        const weightLengths = this.weights.map((buffer) => buffer.length);
+        const biasLengths = this.biases.map((buffer) => buffer.length);
+        assertPackedBufferList(checkpoint.weights, weightLengths, 'checkpoint.weights');
+        assertPackedBufferList(checkpoint.biases, biasLengths, 'checkpoint.biases');
+        assertOptimizerStateShape(checkpoint, weightLengths, biasLengths);
+
+        for (let l = 0; l < this.weights.length; l++) {
+            this.weights[l].set(checkpoint.weights[l]);
+            this.biases[l].set(checkpoint.biases[l]);
+            this.weightGrads[l].fill(0);
+            this.biasGrads[l].fill(0);
+            this.recentWeightGrads[l].fill(0);
+        }
+
+        this.hasMomentumState = checkpoint.hasMomentumState;
+        this.hasAdamState = checkpoint.hasAdamState;
+        this.mWeights = checkpoint.hasMomentumState ? clonePackedBuffers(checkpoint.mWeights) : [];
+        this.mBiases = checkpoint.hasMomentumState ? clonePackedBuffers(checkpoint.mBiases) : [];
+        this.vWeights = checkpoint.hasAdamState ? clonePackedBuffers(checkpoint.vWeights) : [];
+        this.vBiases = checkpoint.hasAdamState ? clonePackedBuffers(checkpoint.vBiases) : [];
+        this.activeOptimizer = checkpoint.activeOptimizer;
+        this.optimizerStep = checkpoint.optimizerStep;
+        this.currentStep = checkpoint.currentStep;
     }
 
     /** Read a single weight. Useful for tests and gradient checks that need

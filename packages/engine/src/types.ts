@@ -191,6 +191,22 @@ export interface SerializedNetwork {
     biases: number[][];
 }
 
+/** Runtime-only checkpoint state for pausable training timelines. */
+export interface NetworkCheckpoint {
+    config: NetworkConfig;
+    currentStep: number;
+    optimizerStep: number;
+    activeOptimizer: OptimizerType | null;
+    hasMomentumState: boolean;
+    hasAdamState: boolean;
+    weights: Float64Array[];
+    biases: Float64Array[];
+    mWeights: Float64Array[];
+    mBiases: Float64Array[];
+    vWeights: Float64Array[];
+    vBiases: Float64Array[];
+}
+
 /**
  * Full snapshot returned from the worker to the main thread.
  * Contains everything the UI needs to render.
