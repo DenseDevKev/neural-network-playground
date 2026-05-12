@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `0344bbe`; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, targeted web hook/control tests, Browser QA Mode B, and `git diff --check` passed before the Wave 7 live arena UI commit.
+- Last verified commit: `5dd79e7`; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before the Wave 7 live arena UI evidence commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Live Side-by-Side Model Arena scalar UI prototype
+- Slice: Slow-Motion Backprop Explanation Mode approval gate
 - Risk: High
-- Status: Scalar-only one-worker/two-model-slot runtime and UI prototype is implemented and verified. Paired heavy visualizations, URL/config serialization, persistence, public config shape changes, dependencies, engine math changes, and multiple-worker execution remain forbidden/deferred without separate approval.
+- Status: Scalar-only one-worker/two-model-slot runtime and UI prototype is implemented and verified. A design note for the next Wave 7 candidate, Slow-Motion Backprop Explanation Mode, has been prepared and is pending explicit approval before implementation.
 
 ## Completed Slices
 
@@ -60,6 +60,7 @@
 | 2026-05-12 | Wave 7 | Live Side-by-Side Model Arena runtime design note | `37c7d57` | Docs-only design note; `git diff --check` passed before commit | `docs/design-notes/live-side-by-side-model-arena.md` |
 | 2026-05-12 | Wave 7 | Scalar live arena runtime prototype | `bb4aac1` | Red targeted protocol/frame-buffer/worker tests failed before implementation; targeted shared run passed with 5 files and 70 tests; targeted web run passed with 51 files and 348 tests; `pnpm test`, `pnpm lint`, `pnpm build`, repeated `pnpm test:perf`, and `git diff --check` passed before commit | `packages/shared/src/workerProtocol.ts`, `apps/web/src/worker/frameBuffer.ts`, `apps/web/src/worker/training.worker.ts`, `docs/worker-protocol.md` |
 | 2026-05-12 | Wave 7 | Scalar live arena UI prototype | `0344bbe` | Red targeted web tests failed before implementation; targeted web run passed with 51 files and 350 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before commit | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/hooks/useTraining.ts`, `apps/web/src/store/useTrainingStore.ts`, `docs/qa/browser-qa/wave-7-live-arena-ui.md` |
+| 2026-05-12 | Wave 7 | Scalar live arena UI QA/state | `5dd79e7` | Docs-only evidence commit after Wave 7 live arena UI full verification and Browser QA passed; `git diff --check` passed before commit | `docs/qa/browser-qa/wave-7-live-arena-ui.md`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
 
 ## Current Verification Status
 
@@ -188,10 +189,11 @@
 - Wave 7 scalar live arena runtime slice was approved by the user's continuation and committed as `bb4aac1`.
 - Wave 7 scalar live arena UI slice was approved by the user's continuation and committed as `0344bbe`.
 - Further Wave 7 work that adds paired heavy visualizations, URL/config state, persistence, public config changes, dependencies, engine math changes, or multiple-worker execution requires a separate approval gate.
+- Wave 7 Slow-Motion Backprop Explanation Mode design note prepared in `docs/design-notes/slow-motion-backprop-explanation-mode.md`; implementation is blocked until explicit approval.
 
 ## Next Recommended Slice
 
-Next recommended step: stop for a fresh approval gate before any further Wave 7 product bet. The safe scalar live arena prototype is now exposed in the UI. Paired boundaries, histograms, checkpoints, URL/config serialization, persistence, public config changes, dependencies, engine math changes, continuous streaming, and multiple workers all require separate approval/design before implementation.
+Next recommended step: request explicit approval for `docs/design-notes/slow-motion-backprop-explanation-mode.md`. If approved, implement only the bounded layer-level slow-motion backprop explanation slice. If not approved, defer it and choose another Wave 7 design-only approval packet.
 
 ## Handoff Notes
 
