@@ -550,3 +550,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5099 ms
 
 These values remain within the established range and below the roadmap warning thresholds. The slice adds an explicit dry-run computation path but does not alter the live training hot path; tests prove the preview leaves the live network checkpoint, snapshot, and layer stats unchanged.
+
+## Wave 7 Slow-Motion Backprop Worker RPC
+
+Date: 2026-05-12
+
+Scope: worker-only one-shot Comlink RPC for the slow-motion backprop explanation path. This slice exposes the already-bounded engine `BackpropExplanation` through `getBackpropExplanation()` and documents the RPC. It does not add UI state, streamed messages, frame-buffer fields, shared protocol guards, URL/config serialization, persistence schema changes, public config shape changes, dependencies, or raw activation/gradient arrays.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the worker RPC slice. Relevant production output:
+
+- `dist/assets/training.worker-S7ocudoV.js`: 83.50 kB
+- `dist/assets/index-B3wCX0gO.css`: 66.18 kB, gzip 11.49 kB
+- `dist/assets/InspectionPanel-B9mxGWHm.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-CufaPasd.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-BkhH1qdr.js`: 366.75 kB, gzip 111.02 kB
+
+Compared with the engine foundation build, the main app and lazy chunks were effectively unchanged. The worker bundle increased from 82.68 kB to 83.50 kB because it now exposes a Comlink one-shot RPC and batch preview helper. The increase is about 1.0%, below the roadmap 10% build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the worker RPC slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1080.3162 ms total for 100 iterations
+- `predictGridInto`: 1072.9316 ms total for 100 iterations
+- `predictGridWithNeurons`: 672.7654 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 579.6610 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.8635 ms
+- Average `applyGradients` time (SGD): 1.5098 ms
+
+These values remain within the established range and below the roadmap warning thresholds. The RPC is one-shot and not called from the live training loop, so no runtime cadence impact is expected from this slice.
