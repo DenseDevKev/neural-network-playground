@@ -187,6 +187,29 @@ describe('isWorkerToMainMessage', () => {
         })).toBe(true);
     });
 
+    it('accepts omitted activation histogram payloads represented as undefined optional fields', () => {
+        expect(isWorkerToMainMessage({
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 10,
+                epoch: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+                gridSize: 40,
+            },
+            historyPoint: {
+                step: 10,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+            },
+            activationHistogramBins: undefined,
+            activationHistogramLayout: undefined,
+            activationHistogramVersion: undefined,
+        })).toBe(true);
+    });
+
     it('rejects malformed activation histogram snapshot payloads', () => {
         expect(isWorkerToMainMessage({
             type: 'snapshot',

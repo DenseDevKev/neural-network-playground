@@ -116,9 +116,9 @@ function isActivationHistogramLayout(value: unknown): value is ActivationHistogr
 }
 
 function hasMalformedActivationHistogramPayload(m: Record<string, unknown>): boolean {
-    const hasBins = 'activationHistogramBins' in m;
-    const hasLayout = 'activationHistogramLayout' in m;
-    const hasVersion = 'activationHistogramVersion' in m;
+    const hasBins = m['activationHistogramBins'] !== undefined;
+    const hasLayout = m['activationHistogramLayout'] !== undefined;
+    const hasVersion = m['activationHistogramVersion'] !== undefined;
     if (!hasBins && !hasLayout && !hasVersion) return false;
     if (!isFloat32Array(m['activationHistogramBins'])) return true;
     if (!isActivationHistogramLayout(m['activationHistogramLayout'])) return true;
