@@ -931,6 +931,57 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     color: var(--text-secondary);
 }
 
+.training-bar__timeline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 260px;
+    max-width: min(460px, 100%);
+    flex: 1 1 320px;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+}
+
+.training-bar__timeline-label {
+    flex: 0 0 auto;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.training-bar__timeline-range {
+    flex: 1 1 120px;
+    min-width: 96px;
+    accent-color: var(--color-accent);
+}
+
+.training-bar__timeline-meta {
+    display: inline-flex;
+    flex-direction: column;
+    min-width: 92px;
+    max-width: 150px;
+    gap: 1px;
+    line-height: 1.2;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.training-bar__timeline-meta strong,
+.training-bar__timeline-meta span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.training-bar__timeline-meta strong {
+    color: var(--text-primary);
+    font-size: 11px;
+}
+
+.training-bar__timeline-restore {
+    flex: 0 0 auto;
+    min-width: 74px;
+}
+
 .speed-btn {
     display: inline-flex;
     align-items: center;
@@ -1729,6 +1780,15 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     .training-bar {
         flex-wrap: wrap;
         gap: var(--space-sm);
+    }
+
+    .training-bar__timeline {
+        flex-basis: 100%;
+        min-width: 0;
+    }
+
+    .training-bar__timeline-meta {
+        max-width: 120px;
     }
 }
 

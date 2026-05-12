@@ -26,7 +26,7 @@ import {
     flattenWeights,
 } from '../worker/frameBufferLayout.ts';
 import type { NetworkSnapshot } from '@nn-playground/engine';
-import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
+import type { CheckpointTimeline, WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
 import { structuralEqual } from '@nn-playground/shared';
 
 
@@ -35,6 +35,7 @@ export interface TrainingHook {
     pause: () => void;
     step: () => void;
     reset: () => void;
+    restoreCheckpoint: (id: number) => Promise<void>;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -106,6 +107,11 @@ function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot)
     ts.resetHistory();
     if (snapshot.historyPoint) ts.addHistoryPoint(snapshot.historyPoint);
     ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
+}
+
+async function syncCheckpointTimelineToStore(): Promise<void> {
+    const timeline = await getWorkerApi().getCheckpointTimeline();
+    useTrainingStore.getState().setCheckpointTimeline(timeline as CheckpointTimeline);
 }
 
 function createStreamSnapshot(
@@ -208,6 +214,7 @@ export function useTraining(): TrainingHook {
         ts.clearWorkerError();
         applyFreshSnapshotToStore(ts, result.snapshot);
         newRunTo(result.runId);
+        await syncCheckpointTimelineToStore();
 
         // Store points reactively so UI renders immediately
         const trainPts = await api.getTrainPoints();
@@ -265,6 +272,7 @@ export function useTraining(): TrainingHook {
                     frameVersion: frameVersions.frameVersion,
                     frameVersions,
                     testMetricsStale: msg.scalars.testMetricsStale === true,
+                    checkpointTimeline: msg.checkpointTimeline,
                 });
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused') {
@@ -338,6 +346,9 @@ export function useTraining(): TrainingHook {
                 newRunTo(result.runId);
                 ts.clearPauseReason();
                 applyFreshSnapshotToStore(ts, result.snapshot);
+                const timeline = await api.getCheckpointTimeline();
+                if (!isCurrentConfigSync(seq)) return;
+                ts.setCheckpointTimeline(timeline as CheckpointTimeline);
 
                 // Update points reactively
                 const trainPts = await api.getTrainPoints();
@@ -443,6 +454,7 @@ export function useTraining(): TrainingHook {
             ts.setSnapshot(snapshotForReactState(snap));
             ts.setFrameVersions(syncSnapshotToFrameBuffer(snap));
             if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
+            await syncCheckpointTimelineToStore();
         } catch (error) {
             reportWorkerError(error, 'Failed to run a training step.');
         }
@@ -473,6 +485,9 @@ export function useTraining(): TrainingHook {
             newRunTo(result.runId);
             const ts = useTrainingStore.getState();
             applyFreshSnapshotToStore(ts, result.snapshot);
+            const timeline = await api.getCheckpointTimeline();
+            if (!isCurrentConfigSync(seq)) return;
+            ts.setCheckpointTimeline(timeline as CheckpointTimeline);
             ts.setStatus('idle');
 
             // Refresh points
@@ -490,6 +505,31 @@ export function useTraining(): TrainingHook {
         }
     }, [beginConfigSync, finishConfigSyncIfCurrent, initializeWorker, isCurrentConfigSync, reportWorkerError]);
 
+    const restoreCheckpoint = useCallback(async (id: number) => {
+        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+            return;
+        }
+        if (isPlayingRef.current) {
+            postStreamCommand({ type: 'stopTraining' });
+            stopRenderLoop();
+            isPlayingRef.current = false;
+        }
+        try {
+            if (!initializedRef.current) {
+                await initializeWorker();
+            }
+            const result = await getWorkerApi().restoreCheckpoint(id);
+            newRunTo(result.runId);
+            const ts = useTrainingStore.getState();
+            applyFreshSnapshotToStore(ts, result.snapshot);
+            ts.setCheckpointTimeline(result.timeline as CheckpointTimeline);
+            ts.setPauseReason('manual');
+            ts.setStatus('paused');
+        } catch (error) {
+            reportWorkerError(error, 'Failed to restore checkpoint.');
+        }
+    }, [initializeWorker, reportWorkerError]);
+
     // Cleanup on unmount
     useEffect(() => {
         return () => {
@@ -501,5 +541,5 @@ export function useTraining(): TrainingHook {
         };
     }, []);
 
-    return { play, pause, step, reset };
+    return { play, pause, step, reset, restoreCheckpoint };
 }

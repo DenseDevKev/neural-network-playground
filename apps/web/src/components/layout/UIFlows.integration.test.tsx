@@ -19,6 +19,7 @@ const trainingMock = {
     pause: vi.fn(),
     step: vi.fn(),
     reset: vi.fn(),
+    restoreCheckpoint: vi.fn(),
 };
 
 describe('UI integration flows', () => {
@@ -27,6 +28,7 @@ describe('UI integration flows', () => {
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();
         trainingMock.reset.mockReset();
+        trainingMock.restoreCheckpoint.mockReset();
 
         usePlaygroundStore.setState({
             data: { ...DEFAULT_DATA },

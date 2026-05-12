@@ -372,3 +372,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4516 ms
 
 These benchmark values remain within the roadmap warning thresholds. The current perf benchmark does not directly measure checkpoint capture cadence; runtime protection is covered by worker tests for bounded metadata, restore behavior, and eviction.
+
+## Wave 6E Checkpoint Timeline UI and Guard Fix
+
+Date: 2026-05-12
+
+Scope: web hook/store integration for checkpoint timeline metadata, accessible timeline controls, and a shared runtime-guard fix for omitted activation-histogram payloads represented as `undefined` optional fields.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the checkpoint timeline UI and guard fix. Relevant production output:
+
+- `dist/assets/training.worker-DPoonmTq.js`: 77.21 kB
+- `dist/assets/index-CkY1LDYX.css`: 64.48 kB, gzip 11.29 kB
+- `dist/assets/InspectionPanel-Byj47Raa.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-BdKcAo3E.js`: 12.31 kB, gzip 4.14 kB
+- `dist/assets/index-0S6cDKV4.js`: 364.37 kB, gzip 110.50 kB
+
+Compared with the worker checkpoint ring-buffer slice, the worker bundle was unchanged. The main app bundle increased from 361.88 kB to 364.37 kB because the main training bar now renders timeline controls and hook/store wiring. The existing Vite large chunk warning remains, and the increase is below the roadmap 10% warning threshold.
+
+`pnpm test:perf` passed after the checkpoint timeline UI and guard fix with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1141.9338 ms total for 100 iterations
+- `predictGridInto`: 1122.8077 ms total for 100 iterations
+- `predictGridWithNeurons`: 684.5251 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 587.9544 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.5803 ms
+- Average `applyGradients` time (SGD): 1.4364 ms
+
+These benchmark values remain within the roadmap warning thresholds. Browser QA found and verified the protocol guard fix; after the fix, training started and paused without console errors.

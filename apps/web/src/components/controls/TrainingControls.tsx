@@ -1,5 +1,5 @@
 // ── Training Controls ──
-import { memo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
@@ -24,9 +24,26 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
     const setStepsPerFrame = useTrainingStore((s) => s.setStepsPerFrame);
     const pauseReason = useTrainingStore((s) => s.pauseReason);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
+    const checkpointTimeline = useTrainingStore((s) => s.checkpointTimeline);
     const isRunning = status === 'running';
     const lifecycle = getTrainingLifecycleUi({ status, pauseReason, pendingConfigSource });
     const blockConfigAction = lifecycle.isBlocked;
+    const checkpoints = checkpointTimeline.checkpoints;
+    const defaultCheckpointIndex = useMemo(() => {
+        if (checkpoints.length === 0) return 0;
+        const highlightedId = checkpointTimeline.restoredCheckpointId ?? checkpointTimeline.liveCheckpointId;
+        const highlightedIndex = checkpoints.findIndex((checkpoint) => checkpoint.id === highlightedId);
+        return highlightedIndex >= 0 ? highlightedIndex : checkpoints.length - 1;
+    }, [checkpointTimeline.liveCheckpointId, checkpointTimeline.restoredCheckpointId, checkpoints]);
+    const [selectedCheckpointIndex, setSelectedCheckpointIndex] = useState(defaultCheckpointIndex);
+
+    useEffect(() => {
+        setSelectedCheckpointIndex(defaultCheckpointIndex);
+    }, [defaultCheckpointIndex]);
+
+    const selectedCheckpoint = checkpoints[selectedCheckpointIndex] ?? checkpoints[defaultCheckpointIndex];
+    const checkpointControlsDisabled = blockConfigAction || isRunning || !selectedCheckpoint;
+    const clampCheckpointIndex = (index: number) => Math.min(Math.max(index, 0), Math.max(0, checkpoints.length - 1));
 
     return (
         <div className="training-bar">
@@ -103,6 +120,57 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     );
                 })}
             </div>
+
+            {selectedCheckpoint && (
+                <div
+                    className="training-bar__timeline"
+                    aria-label="Checkpoint timeline controls"
+                >
+                    <span className="training-bar__timeline-label">Timeline</span>
+                    <input
+                        className="training-bar__timeline-range"
+                        type="range"
+                        min={0}
+                        max={Math.max(0, checkpoints.length - 1)}
+                        step={1}
+                        value={selectedCheckpointIndex}
+                        onChange={(event) => setSelectedCheckpointIndex(Number(event.currentTarget.value))}
+                        onKeyDown={(event) => {
+                            if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+                                event.preventDefault();
+                                setSelectedCheckpointIndex((index) => clampCheckpointIndex(index - 1));
+                            } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+                                event.preventDefault();
+                                setSelectedCheckpointIndex((index) => clampCheckpointIndex(index + 1));
+                            } else if (event.key === 'Home') {
+                                event.preventDefault();
+                                setSelectedCheckpointIndex(0);
+                            } else if (event.key === 'End') {
+                                event.preventDefault();
+                                setSelectedCheckpointIndex(Math.max(0, checkpoints.length - 1));
+                            }
+                        }}
+                        aria-label="Checkpoint timeline"
+                        aria-valuetext={selectedCheckpoint.label}
+                        disabled={checkpointControlsDisabled}
+                    />
+                    <span className="training-bar__timeline-meta">
+                        <strong>{selectedCheckpoint.label}</strong>
+                        <span>
+                            train {selectedCheckpoint.trainLoss.toFixed(3)} / test {selectedCheckpoint.testLoss.toFixed(3)}
+                        </span>
+                    </span>
+                    <button
+                        type="button"
+                        className="btn btn--ghost btn--control training-bar__timeline-restore"
+                        onClick={() => void training.restoreCheckpoint(selectedCheckpoint.id)}
+                        aria-label={`Restore checkpoint ${selectedCheckpoint.label}`}
+                        disabled={checkpointControlsDisabled}
+                    >
+                        Restore
+                    </button>
+                </div>
+            )}
 
             <div className="training-bar__info">
                 {isRunning && (

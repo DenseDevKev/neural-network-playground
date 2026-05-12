@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: pending commit for Wave 6E worker checkpoint ring buffer; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed on 2026-05-12 before commit.
+- Last verified commit: pending commit for Wave 6E checkpoint timeline UI and QA evidence; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed on 2026-05-12 before commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 6E
-- Slice: Worker checkpoint ring buffer and restore RPC
+- Slice: Web checkpoint timeline controls and QA evidence
 - Risk: High, approved Wave 6E runtime checkpoint work
-- Status: Worker-local bounded checkpoint capture and restore implemented; continuing into web hook/store and accessible timeline UI
+- Status: Web checkpoint timeline controls implemented and Browser QA Mode B passed at desktop size; compact visual Browser QA is pending human verification because the in-app Browser plugin did not expose viewport resizing.
 
 ## Completed Slices
 
@@ -52,16 +52,18 @@
 | 2026-05-11 | Wave 6E | Checkpoints/timeline design note | `c2896a2` | Docs-only mandatory-approval design note; `git diff --check` passed before commit | `docs/design-notes/training-checkpoints-timeline.md` |
 | 2026-05-12 | Wave 6E | Engine checkpoint snapshot/restore semantics | `47a94d5` | Red targeted engine test failed before implementation; targeted engine run passed with 13 files and 276 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/types.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-12 | Wave 6E | Checkpoint timeline protocol metadata | `36b5e60` | Red targeted shared protocol test failed before implementation; targeted shared run passed with 5 files and 67 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `packages/shared/src/workerProtocol.ts`, `packages/shared/src/__tests__/workerProtocol.test.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
-| 2026-05-12 | Wave 6E | Worker checkpoint ring buffer and restore RPC | Pending | Red targeted web worker tests failed before implementation; targeted web run passed with 51 files and 342 tests; after fixing a shared type export caught by `pnpm build`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `packages/shared/src/index.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-12 | Wave 6E | Worker checkpoint ring buffer and restore RPC | `69d4ffe` | Red targeted web worker tests failed before implementation; targeted web run passed with 51 files and 342 tests; after fixing a shared type export caught by `pnpm build`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `packages/shared/src/index.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-12 | Wave 6E | Protocol guard for omitted activation histograms | `972ec04` | Red targeted shared protocol test failed before implementation; targeted shared run passed with 5 files and 68 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit as part of the Wave 6E verification sweep | `packages/shared/src/workerProtocol.ts`, `packages/shared/src/__tests__/workerProtocol.test.ts` |
+| 2026-05-12 | Wave 6E | Checkpoint timeline UI and QA evidence | Pending | Red targeted web hook/control tests failed before implementation; targeted web run passed with 51 files and 344 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit; Browser QA Mode B passed at desktop size | `apps/web/src/hooks/useTraining.ts`, `apps/web/src/components/controls/TrainingControls.tsx`, `apps/web/src/store/useTrainingStore.ts`, `docs/qa/browser-qa/wave-6e-checkpoint-timeline.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-12 after Wave 6E engine checkpoint state with engine 276 tests, shared 65 tests, and web 340 tests.
-- Lint: `pnpm lint` passed on 2026-05-12 after Wave 6E engine checkpoint state.
-- Build: `pnpm build` passed on 2026-05-12 after Wave 6E worker checkpoint ring buffer with the existing Vite chunk-size warning. Relevant chunks: `training.worker-DPoonmTq.js` 77.21 kB, `RunHistoryPanel-CZbKpP55.js` 12.31 kB gzip 4.14 kB, `index-J2TlDb6i.js` 361.88 kB gzip 109.90 kB.
-- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, and Wave 6D Mode B passed on 2026-05-11. Wave 6D used `http://127.0.0.1:5177/`; current-URL console errors were empty.
-- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-12 after Wave 6E engine checkpoint state with 2 benchmark files and 4 benchmark tests.
+- Tests: `pnpm test` passed on 2026-05-12 after Wave 6E checkpoint timeline UI and protocol guard fix with engine 276 tests, shared 68 tests, and web 344 tests.
+- Lint: `pnpm lint` passed on 2026-05-12 after Wave 6E checkpoint timeline UI and protocol guard fix.
+- Build: `pnpm build` passed on 2026-05-12 after Wave 6E checkpoint timeline UI and protocol guard fix with the existing Vite chunk-size warning. Relevant chunks: `training.worker-DPoonmTq.js` 77.21 kB, `RunHistoryPanel-BdKcAo3E.js` 12.31 kB gzip 4.14 kB, `index-0S6cDKV4.js` 364.37 kB gzip 110.50 kB.
+- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, and Wave 6E Mode B desktop checks passed. Wave 6E compact viewport visual check is pending human verification because Browser plugin viewport resizing was unavailable.
+- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks.
+- Performance: `pnpm test:perf` passed on 2026-05-12 after Wave 6E checkpoint timeline UI and protocol guard fix with 2 benchmark files and 4 benchmark tests.
 
 ## Browser QA Evidence
 
@@ -72,6 +74,7 @@
 - `docs/qa/browser-qa/wave-6a-run-comparison.md`
 - `docs/qa/browser-qa/wave-6b-saved-run-thumbnails.md`
 - `docs/qa/browser-qa/wave-6d-dataset-lab.md`
+- `docs/qa/browser-qa/wave-6e-checkpoint-timeline.md`
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
@@ -82,6 +85,7 @@
 - Wave 6A run comparison screenshot: `/private/tmp/nn-playground-wave6a-run-comparison.png`
 - Wave 6B saved-run thumbnails screenshot: `/private/tmp/nn-playground-wave6b-run-thumbnails.png`
 - Wave 6D dataset lab screenshot: `/private/tmp/nn-playground-wave6d-dataset-lab.png`
+- Wave 6E checkpoint timeline desktop screenshot: `docs/qa/browser-qa/wave-6e-checkpoint-timeline-desktop.png`
 
 ## Performance Evidence
 
@@ -100,6 +104,7 @@
 - Wave 6E engine checkpoint state changed the engine class imported by the worker. `pnpm test:perf` passed with `predictGrid` 1195.5230 ms, `predictGridInto` 1120.8068 ms, `predictGridWithNeurons` 712.0676 ms, `predictGridWithNeuronsInto` 588.5592 ms, Adam/L2/Clip applyGradients 4.8142 ms, SGD applyGradients 1.5587 ms.
 - Wave 6E checkpoint protocol metadata changed shared runtime guards and protocol docs. `pnpm test:perf` passed with `predictGrid` 1185.8776 ms, `predictGridInto` 1139.6066 ms, `predictGridWithNeurons` 699.6503 ms, `predictGridWithNeuronsInto` 578.9710 ms, Adam/L2/Clip applyGradients 4.8995 ms, SGD applyGradients 1.4268 ms.
 - Wave 6E worker checkpoint ring buffer changed worker runtime only. `pnpm test:perf` passed with `predictGrid` 1138.2182 ms, `predictGridInto` 1081.3733 ms, `predictGridWithNeurons` 693.0297 ms, `predictGridWithNeuronsInto` 589.9068 ms, Adam/L2/Clip applyGradients 4.5410 ms, SGD applyGradients 1.4516 ms.
+- Wave 6E checkpoint timeline UI and protocol guard fix changed the main web UI bundle and shared runtime guard. `pnpm test:perf` passed with `predictGrid` 1141.9338 ms, `predictGridInto` 1122.8077 ms, `predictGridWithNeurons` 684.5251 ms, `predictGridWithNeuronsInto` 587.9544 ms, Adam/L2/Clip applyGradients 4.5803 ms, SGD applyGradients 1.4364 ms.
 
 ## Design Decisions
 
@@ -122,6 +127,8 @@
 | 2026-05-12 | Store checkpoint payloads as engine runtime state, not persistence or URL state | Preserves public config, URL/config serialization, run-history schema, and large-array React-state boundaries | Wave 6E engine checkpoint implementation |
 | 2026-05-12 | Send only checkpoint summaries through streamed snapshots | Keeps heavy checkpoint arrays in the worker and gives React bounded scalar timeline metadata | Wave 6E protocol metadata implementation |
 | 2026-05-12 | Keep checkpoint payloads in a worker-local ring buffer | Avoids React large-array state, persistence, URL/config serialization, run-history schema changes, and new dependencies | Wave 6E worker checkpoint implementation |
+| 2026-05-12 | Render the timeline from bounded metadata only | Keeps React state limited to checkpoint summaries while restore reads heavy payloads by worker-local checkpoint id | Wave 6E checkpoint timeline UI implementation |
+| 2026-05-12 | Treat undefined optional histogram fields as omitted in the runtime guard | Worker snapshot assembly can include optional keys with `undefined` values when histogram demand is off; Browser QA proved the guard otherwise rejected valid snapshots | Wave 6E Browser QA and shared protocol regression test |
 
 ## Known Issues
 
@@ -134,6 +141,7 @@
 - Wave 6B thumbnails are generated in render from existing bounded history; stored thumbnails and selectable thumbnail styles are deferred.
 - Wave 6C report export does not include images, weights, or raw arrays; richer report media/export formats are deferred.
 - Wave 6D sample controls are bounded presets only. Custom sample count editing and new dataset parameters are deferred.
+- Wave 6E compact viewport visual Browser QA is pending human verification because the in-app Browser plugin did not expose viewport resizing. CSS responsive constraints and component-level keyboard/accessibility tests were still verified.
 
 ## Blocked Items
 
@@ -156,7 +164,7 @@
 
 ## Next Recommended Slice
 
-Continue Wave 6E with web hook/store integration and an accessible timeline UI. Keep checkpoint payloads runtime-only and avoid persistence, URL/config serialization, public config shape, dependencies, and run-history schema changes.
+Complete Wave 6E evidence commits, then prepare a Wave 7 proposal and stop for mandatory human approval before implementing any larger product bet.
 
 ## Handoff Notes
 

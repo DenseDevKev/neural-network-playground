@@ -10,6 +10,7 @@ const trainingMock = {
     pause: vi.fn(),
     step: vi.fn(),
     reset: vi.fn(),
+    restoreCheckpoint: vi.fn(),
 };
 
 vi.mock('./hooks/useTraining.ts', () => ({
@@ -56,6 +57,7 @@ describe('App accessibility shell', () => {
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();
         trainingMock.reset.mockReset();
+        trainingMock.restoreCheckpoint.mockReset();
 
         useTrainingStore.setState({
             status: 'idle',

@@ -11,6 +11,7 @@ function createTrainingMock(): TrainingHook {
     pause: vi.fn(),
     step: vi.fn(),
     reset: vi.fn(),
+    restoreCheckpoint: vi.fn(),
   };
 }
 
@@ -33,6 +34,13 @@ describe('TrainingControls', () => {
       configErrorSource: null,
       configSyncNonce: 0,
       pauseReason: null,
+      checkpointTimeline: {
+        checkpoints: [],
+        maxCheckpoints: 8,
+        evictedCount: 0,
+        liveCheckpointId: null,
+        restoredCheckpointId: null,
+      },
     });
   });
 
@@ -121,5 +129,37 @@ describe('TrainingControls', () => {
     await user.click(speed25);
 
     expect(useTrainingStore.getState().stepsPerFrame).toBe(25);
+  });
+
+  it('renders checkpoint timeline controls and restores the selected checkpoint', async () => {
+    const user = userEvent.setup();
+    const training = createTrainingMock();
+    useTrainingStore.setState({
+      snapshot: { step: 10, epoch: 1 } as any,
+      checkpointTimeline: {
+        checkpoints: [
+          { id: 1, step: 0, epoch: 0, trainLoss: 0.5, testLoss: 0.6, label: 'Step 0' },
+          { id: 2, step: 10, epoch: 1, trainLoss: 0.3, testLoss: 0.4, label: 'Step 10' },
+        ],
+        maxCheckpoints: 8,
+        evictedCount: 0,
+        liveCheckpointId: 2,
+        restoredCheckpointId: null,
+      },
+    });
+
+    render(<TrainingControls training={training} />);
+
+    const slider = screen.getByRole('slider', { name: 'Checkpoint timeline' });
+    expect(slider).toHaveValue('1');
+    expect(screen.getByRole('button', { name: 'Restore checkpoint Step 10' })).toBeInTheDocument();
+
+    slider.focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(slider).toHaveValue('0');
+
+    await user.click(screen.getByRole('button', { name: 'Restore checkpoint Step 0' }));
+
+    expect(training.restoreCheckpoint).toHaveBeenCalledWith(1);
   });
 });

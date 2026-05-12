@@ -44,6 +44,24 @@ const fakeWorkerApi = {
     updateConfig: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 }),
     reset: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 3 }),
     step: vi.fn().mockResolvedValue(fakeSnapshot),
+    restoreCheckpoint: vi.fn().mockResolvedValue({
+        snapshot: fakeSnapshot,
+        runId: 1,
+        timeline: {
+            checkpoints: [],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: null,
+            restoredCheckpointId: null,
+        },
+    }),
+    getCheckpointTimeline: vi.fn().mockResolvedValue({
+        checkpoints: [],
+        maxCheckpoints: 8,
+        evictedCount: 0,
+        liveCheckpointId: null,
+        restoredCheckpointId: null,
+    }),
     getTrainPoints: vi.fn().mockResolvedValue([]),
     getTestPoints: vi.fn().mockResolvedValue([]),
     updateDemand: vi.fn().mockResolvedValue(undefined),
@@ -113,6 +131,24 @@ describe('Training integration', () => {
         fakeWorkerApi.updateConfig.mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 });
         fakeWorkerApi.reset.mockResolvedValue({ snapshot: fakeSnapshot, runId: 3 });
         fakeWorkerApi.step.mockResolvedValue(fakeSnapshot);
+        fakeWorkerApi.restoreCheckpoint.mockResolvedValue({
+            snapshot: fakeSnapshot,
+            runId: 1,
+            timeline: {
+                checkpoints: [],
+                maxCheckpoints: 8,
+                evictedCount: 0,
+                liveCheckpointId: null,
+                restoredCheckpointId: null,
+            },
+        });
+        fakeWorkerApi.getCheckpointTimeline.mockResolvedValue({
+            checkpoints: [],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: null,
+            restoredCheckpointId: null,
+        });
         fakeWorkerApi.getTrainPoints.mockResolvedValue([]);
         fakeWorkerApi.getTestPoints.mockResolvedValue([]);
 
@@ -144,6 +180,13 @@ describe('Training integration', () => {
             configSyncNonce: 0,
             workerError: null,
             testMetricsStale: false,
+            checkpointTimeline: {
+                checkpoints: [],
+                maxCheckpoints: 8,
+                evictedCount: 0,
+                liveCheckpointId: null,
+                restoredCheckpointId: null,
+            },
         });
     });
 

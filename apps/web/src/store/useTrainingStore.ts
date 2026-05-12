@@ -8,7 +8,7 @@ import type {
     HistoryPoint,
     DataPoint,
 } from '@nn-playground/engine';
-import type { PauseReason, TrainingStatus } from '@nn-playground/shared';
+import type { CheckpointTimeline, PauseReason, TrainingStatus } from '@nn-playground/shared';
 import {
     appendHistoryPoint,
     resetHistoryBuffer,
@@ -48,6 +48,8 @@ export interface TrainingStore {
     pauseReason: PauseReason | null;
     /** True when the most recent streamed snapshot reused cached test metrics. */
     testMetricsStale: boolean;
+    /** Lightweight checkpoint timeline metadata only; model payloads stay in the worker. */
+    checkpointTimeline: CheckpointTimeline;
 
     // ── Actions ──
     setStatus: (s: TrainingStatus) => void;
@@ -58,6 +60,7 @@ export interface TrainingStore {
         frameVersion: number;
         frameVersions?: FrameVersions;
         testMetricsStale: boolean;
+        checkpointTimeline?: CheckpointTimeline;
     }) => void;
     resetHistory: () => void;
     setFrameVersion: (version: number) => void;
@@ -74,7 +77,16 @@ export interface TrainingStore {
     setPauseReason: (reason: PauseReason | null) => void;
     clearPauseReason: () => void;
     setTestMetricsStale: (stale: boolean) => void;
+    setCheckpointTimeline: (timeline: CheckpointTimeline) => void;
 }
+
+const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
+    checkpoints: [],
+    maxCheckpoints: 8,
+    evictedCount: 0,
+    liveCheckpointId: null,
+    restoredCheckpointId: null,
+};
 
 export const useTrainingStore = create<TrainingStore>((set) => ({
     status: 'idle',
@@ -102,10 +114,11 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     workerError: null,
     pauseReason: null,
     testMetricsStale: false,
+    checkpointTimeline: EMPTY_CHECKPOINT_TIMELINE,
 
     setStatus: (status) => set({ status }),
     setSnapshot: (snapshot) => set({ snapshot }),
-    applyStreamedSnapshot: ({ snapshot, frameVersion, frameVersions, testMetricsStale }) => {
+    applyStreamedSnapshot: ({ snapshot, frameVersion, frameVersions, testMetricsStale, checkpointTimeline }) => {
         set((state) => {
             const versions = frameVersions ?? {
                 frameVersion,
@@ -132,6 +145,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 activationHistogramsVersion: versions.activationHistogramsVersion,
                 historyVersion,
                 testMetricsStale,
+                checkpointTimeline: checkpointTimeline ?? state.checkpointTimeline,
                 workerError: null,
             };
         });
@@ -211,4 +225,5 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     setPauseReason: (pauseReason) => set({ pauseReason }),
     clearPauseReason: () => set({ pauseReason: null }),
     setTestMetricsStale: (testMetricsStale) => set({ testMetricsStale }),
+    setCheckpointTimeline: (checkpointTimeline) => set({ checkpointTimeline }),
 }));

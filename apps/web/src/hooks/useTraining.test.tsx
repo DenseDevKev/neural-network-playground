@@ -19,6 +19,8 @@ const bridge = vi.hoisted(() => {
         updateConfig: vi.fn(),
         reset: vi.fn(),
         step: vi.fn(),
+        restoreCheckpoint: vi.fn(),
+        getCheckpointTimeline: vi.fn(),
         getTrainPoints: vi.fn(),
         getTestPoints: vi.fn(),
         updateDemand: vi.fn(),
@@ -168,6 +170,26 @@ describe('useTraining', () => {
         bridge.workerApi.updateConfig.mockResolvedValue({ snapshot: makeSnapshot(2), runId: 102 });
         bridge.workerApi.reset.mockResolvedValue({ snapshot: makeSnapshot(3), runId: 103 });
         bridge.workerApi.step.mockResolvedValue(makeSnapshot(4));
+        bridge.workerApi.restoreCheckpoint.mockResolvedValue({
+            snapshot: makeSnapshot(0),
+            runId: 101,
+            timeline: {
+                checkpoints: [
+                    { id: 1, step: 0, epoch: 0, trainLoss: 0.4, testLoss: 0.5, label: 'Step 0' },
+                ],
+                maxCheckpoints: 8,
+                evictedCount: 0,
+                liveCheckpointId: 1,
+                restoredCheckpointId: 1,
+            },
+        });
+        bridge.workerApi.getCheckpointTimeline.mockResolvedValue({
+            checkpoints: [],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: null,
+            restoredCheckpointId: null,
+        });
         bridge.workerApi.getTrainPoints.mockResolvedValue([{ x: 0, y: 1, label: 1 }]);
         bridge.workerApi.getTestPoints.mockResolvedValue([{ x: 1, y: 0, label: 0 }]);
         bridge.workerApi.updateDemand.mockResolvedValue(undefined);
@@ -391,6 +413,21 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().workerError).toBe('step exploded');
         expect(useTrainingStore.getState().status).toBe('paused');
         expect(useTrainingStore.getState().pauseReason).toBe('error');
+    });
+
+    it('restores a worker checkpoint and applies its lightweight timeline metadata', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        await act(async () => {
+            await result.current.restoreCheckpoint(1);
+        });
+
+        expect(bridge.workerApi.restoreCheckpoint).toHaveBeenCalledWith(1);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
+        expect(useTrainingStore.getState().status).toBe('paused');
+        expect(useTrainingStore.getState().checkpointTimeline.restoredCheckpointId).toBe(1);
+        expect(getFrameBuffer().weights).toBeInstanceOf(Float32Array);
     });
 
     it('clears pause reason on reset', async () => {

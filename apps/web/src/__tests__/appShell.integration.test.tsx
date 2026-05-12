@@ -11,6 +11,7 @@ const trainingMock = {
     pause: vi.fn(),
     step: vi.fn(),
     reset: vi.fn(),
+    restoreCheckpoint: vi.fn(),
 };
 
 vi.mock('../hooks/useTraining.ts', () => ({

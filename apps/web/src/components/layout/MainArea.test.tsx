@@ -44,6 +44,7 @@ function createTrainingMock(): TrainingHook {
         pause: vi.fn(),
         step: vi.fn(),
         reset: vi.fn(),
+        restoreCheckpoint: vi.fn(),
     };
 }
 
