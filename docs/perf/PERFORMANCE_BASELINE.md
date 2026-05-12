@@ -135,3 +135,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.6078 ms
 
 These benchmark values remain within the roadmap warning thresholds compared with the Wave 0 and Wave 4 baselines. One earlier Wave 5 worker-lifecycle perf run was noisy, so it was repeated before commit; the repeated and final values did not indicate a sustained regression. Because Wave 5 changed tests and docs only, no runtime performance impact is expected from the completed slices.
+
+## Wave 6A Run Comparison
+
+Date: 2026-05-11
+
+Scope: saved-run comparison summaries in the web History panel using existing `ExperimentRunRecordV1.summary` data only.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the Wave 6A comparison slice. Relevant production output:
+
+- `dist/assets/training.worker--UxrksoV.js`: 71.53 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/InspectionPanel-eH7iPmEC.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-DYvsV1ry.js`: 9.57 kB, gzip 3.24 kB
+- `dist/assets/index-BFhnXlXc.js`: 360.52 kB, gzip 109.51 kB
+
+Compared with the Wave 5 final build, the main app and worker chunks were unchanged. The lazy run-history chunk increased from 8.58 kB to 9.57 kB because it now renders comparison summaries. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the Wave 6A comparison slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1137.5487 ms total for 100 iterations
+- `predictGridInto`: 1108.1885 ms total for 100 iterations
+- `predictGridWithNeurons`: 708.8439 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 611.1152 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.3936 ms
+- Average `applyGradients` time (SGD): 1.4319 ms
+
+These benchmark values remain within the roadmap warning thresholds. Wave 6A did not touch engine, worker, frame-buffer, persistence, schema, URL/config serialization, or public config code.

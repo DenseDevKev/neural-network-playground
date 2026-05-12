@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `d1b6349` for Wave 5 runtime diagnostics design note; final Wave 5 verification passed after that commit before evidence packaging
+- Last verified commit: `aa5fff1` for Wave 6A saved-run comparison summaries; Wave 6A verification passed before evidence packaging
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -16,10 +16,10 @@
 
 ## Current Position
 
-- Wave: Wave 5
-- Slice: Runtime and performance hardening completion
-- Risk: Low for completed Wave 5 work; tests/docs only
-- Status: Wave 5 complete through the approved non-gated scope; stop before Wave 6 pending explicit approval
+- Wave: Wave 6A
+- Slice: Improved experiment comparison
+- Risk: Medium, web UI only using existing stored run data
+- Status: Implemented in `aa5fff1`; continuing Wave 6 through safe non-gated slices
 
 ## Completed Slices
 
@@ -39,15 +39,17 @@
 | 2026-05-11 | Wave 5 | Worker lifecycle and demand cadence regression tests | `6854f25` | Targeted web worker run passed with 51 files and 331 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `apps/web/src/worker/training.worker.test.ts`, `apps/web/src/worker/workerBridge.test.ts` |
 | 2026-05-11 | Wave 5 | Frame-buffer, SharedArrayBuffer, WebGPU, and demand fallback tests | `847aebd` | Targeted web fallback run passed with 51 files and 336 tests; targeted engine WebGPU run passed with 13 files and 275 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `apps/web/src/__tests__/frameBuffer.test.ts`, `apps/web/src/worker/sharedSnapshot.test.ts`, `packages/engine/src/webgpu/__tests__/webgpu_detect.test.ts` |
 | 2026-05-11 | Wave 5 | Runtime performance diagnostics design note | `d1b6349` | Docs/status review with `git diff --check` passed before commit; final Wave 5 `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed after commit | `docs/design-notes/runtime-performance-diagnostics.md` |
+| 2026-05-11 | Wave 5 | Runtime hardening completion evidence | `eacfa0a` | Clean-head `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed after commit | `docs/roadmap/ROADMAP_STATE.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-11 | Wave 6A | Saved-run comparison summaries | `aa5fff1` | Red targeted test failed before implementation; targeted web run passed with 51 files and 337 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and Browser QA Mode B passed before evidence packaging | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/components/controls/RunHistoryPanel.test.tsx`, `docs/qa/browser-qa/wave-6a-run-comparison.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-11 after Wave 5 diagnostics note with engine 275 tests, shared 65 tests, and web 336 tests.
-- Lint: `pnpm lint` passed on 2026-05-11 after Wave 5 diagnostics note.
-- Build: `pnpm build` passed on 2026-05-11 after Wave 5 diagnostics note with the existing Vite chunk-size warning. Relevant unchanged chunks: `training.worker--UxrksoV.js` 71.53 kB, `index-Do23QsAR.js` 360.52 kB gzip 109.51 kB.
-- Browser QA: Wave 0, Wave 1, Wave 2, and Wave 4 Mode B passed on 2026-05-11. Wave 4 used `http://127.0.0.1:5176/`; no console errors were reported for the fresh URL, only dev perf warnings.
+- Tests: `pnpm test` passed on 2026-05-11 after Wave 6A comparison summaries with engine 275 tests, shared 65 tests, and web 337 tests.
+- Lint: `pnpm lint` passed on 2026-05-11 after Wave 6A comparison summaries.
+- Build: `pnpm build` passed on 2026-05-11 after Wave 6A comparison summaries with the existing Vite chunk-size warning. Relevant chunks: `training.worker--UxrksoV.js` 71.53 kB, `RunHistoryPanel-DYvsV1ry.js` 9.57 kB gzip 3.24 kB, `index-BFhnXlXc.js` 360.52 kB gzip 109.51 kB.
+- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, and Wave 6A Mode B passed on 2026-05-11. Wave 6A used `http://127.0.0.1:5177/`; current-URL console errors were empty.
 - Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-11 after Wave 5 diagnostics note with 2 benchmark files and 4 benchmark tests.
+- Performance: `pnpm test:perf` passed on 2026-05-11 after Wave 6A comparison summaries with 2 benchmark files and 4 benchmark tests.
 
 ## Browser QA Evidence
 
@@ -55,6 +57,7 @@
 - `docs/qa/browser-qa/wave-1-explanation-actions.md`
 - `docs/qa/browser-qa/wave-2-lesson-depth.md`
 - `docs/qa/browser-qa/wave-4-activation-histogram.md`
+- `docs/qa/browser-qa/wave-6a-run-comparison.md`
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
@@ -62,6 +65,7 @@
 - Wave 1 compact action-card screenshot: `/private/tmp/nn-playground-wave1-action-card-compact.png`
 - Wave 2 learning-rate lesson screenshot: `/private/tmp/nn-playground-wave2-learning-rate-lesson.png`
 - Wave 4 activation histogram screenshot: `/private/tmp/nn-playground-wave4-activation-histogram.png`
+- Wave 6A run comparison screenshot: `/private/tmp/nn-playground-wave6a-run-comparison.png`
 
 ## Performance Evidence
 
@@ -73,6 +77,7 @@
 - Wave 5 worker lifecycle tests changed test files only. `pnpm test:perf` first run was noisy (`predictGrid` 1715.3990 ms, `predictGridInto` 1407.6730 ms, `predictGridWithNeurons` 1168.0452 ms, `predictGridWithNeuronsInto` 802.7233 ms, Adam 6.8347 ms, SGD 1.9094 ms). Repeat run passed with `predictGrid` 1161.8212 ms, `predictGridInto` 1112.8496 ms, `predictGridWithNeurons` 707.6835 ms, `predictGridWithNeuronsInto` 601.9497 ms, Adam 4.9256 ms, SGD 1.4850 ms.
 - Wave 5 fallback tests changed test files only. `pnpm test:perf` passed with `predictGrid` 1178.1976 ms, `predictGridInto` 1105.2287 ms, `predictGridWithNeurons` 699.9329 ms, `predictGridWithNeuronsInto` 610.8358 ms, Adam/L2/Clip applyGradients 5.1271 ms, SGD applyGradients 1.5424 ms.
 - Wave 5 final verification changed tests/docs only. `pnpm test:perf` passed with `predictGrid` 1148.0024 ms, `predictGridInto` 1148.9127 ms, `predictGridWithNeurons` 719.4125 ms, `predictGridWithNeuronsInto` 604.6402 ms, Adam/L2/Clip applyGradients 4.8508 ms, SGD applyGradients 1.6078 ms.
+- Wave 6A comparison summaries changed the lazy run-history UI chunk only. `pnpm test:perf` passed with `predictGrid` 1137.5487 ms, `predictGridInto` 1108.1885 ms, `predictGridWithNeurons` 708.8439 ms, `predictGridWithNeuronsInto` 611.1152 ms, Adam/L2/Clip applyGradients 4.3936 ms, SGD applyGradients 1.4319 ms.
 
 ## Design Decisions
 
@@ -87,6 +92,7 @@
 | 2026-05-11 | Ship activation histograms as bounded layer-level bins in the frame buffer | Satisfies the approved high-risk slice without raw activation streaming, React large-array state, persistence, URL/config, or dependency changes | `docs/design-notes/activation-histogram-explorer.md`, `590114d` |
 | 2026-05-11 | Gate histogram computation only on `needActivationHistograms` | Spec review found the layer-stat fallback too broad; explicit demand preserves the approved compute gate | Wave 4 review |
 | 2026-05-11 | Keep Wave 5 performance diagnostics docs/test-based | Avoids hot-path runtime telemetry, protocol changes, user-visible diagnostic UI, and dependencies while preserving an evidence trail | `docs/design-notes/runtime-performance-diagnostics.md`, `d1b6349` |
+| 2026-05-11 | Compare saved runs against the next older saved run | Reuses the existing newest-first run-history order and avoids persistence/schema changes or selectable-baseline state | Wave 6A implementation, `aa5fff1` |
 
 ## Known Issues
 
@@ -95,6 +101,7 @@
 - Vite build has an existing large chunk warning; this is not a Wave 0 regression unless the warning changes materially.
 - Browser QA exercised the live `test-metrics-stale` action card. Hyperparams/loss action targeting is covered by component and app integration tests.
 - Wave 4 Browser QA on the fresh `5176` URL reported development-only perf warnings for slow interactions, but no console errors.
+- Wave 6A compares each saved run with the next older saved run. Selectable comparison baselines are deferred.
 
 ## Blocked Items
 
@@ -106,7 +113,9 @@
 - Additional Wave 3 QA infrastructure beyond `d9cc432` and the recorded Wave 0/Wave 1/Wave 2/Wave 4 browser evidence.
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
-- Wave 6A-6D experiment workflows.
+- Wave 6B saved run thumbnails.
+- Wave 6C report export improvements.
+- Wave 6D dataset parameter workflow.
 - Wave 6E checkpoints and timeline scrubber, pending mandatory approval.
 - Wave 7 large product bets, pending mandatory approval.
 
@@ -116,7 +125,7 @@
 
 ## Next Recommended Slice
 
-Stop at the Wave 5 boundary. Next recommended wave is Wave 6A improved experiment comparison, but do not continue into Wave 6 without explicit user approval.
+Continue Wave 6 with saved-run thumbnails only after a design note confirms the approach avoids persistence schema changes and heavy stored image data.
 
 ## Handoff Notes
 
