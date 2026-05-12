@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `d6eeffa` for Wave 6D dataset parameter lab; Wave 6D verification passed before evidence packaging
+- Last verified commit: `d6eeffa` for Wave 6D dataset parameter lab; Wave 6D verification passed before evidence packaging. Later docs-only commits `2f5dffe` and `c2896a2` were checked with `git diff --check`.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -16,10 +16,10 @@
 
 ## Current Position
 
-- Wave: Wave 6D
-- Slice: Dataset parameter lab
-- Risk: Medium, web UI only using existing `DataConfig.numSamples`
-- Status: Implemented in `d6eeffa`; next step is Wave 6E design note and mandatory approval gate
+- Wave: Wave 6E
+- Slice: Training checkpoints and timeline scrubber design note
+- Risk: High, mandatory approval required before implementation
+- Status: Design note committed in `c2896a2`; implementation is blocked pending explicit user approval
 
 ## Completed Slices
 
@@ -48,6 +48,8 @@
 | 2026-05-11 | Wave 6C | Richer saved-run markdown report export | `2d3ad9d` | Red targeted test failed before implementation; targeted web run passed with 51 files and 338 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before evidence packaging | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/components/controls/RunHistoryPanel.test.tsx` |
 | 2026-05-11 | Wave 6C | Report export evidence | `89f84f4` | Docs-only evidence commit after Wave 6C full verification passed | `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
 | 2026-05-11 | Wave 6D | Bounded dataset sample presets | `d6eeffa` | Red targeted tests failed before implementation; targeted web run passed with 51 files and 340 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and Browser QA Mode B passed before evidence packaging | `apps/web/src/components/controls/DataPanel.tsx`, `apps/web/src/components/controls/DataPanel.test.tsx`, `docs/qa/browser-qa/wave-6d-dataset-lab.md` |
+| 2026-05-11 | Wave 6D | Dataset lab QA/state | `2f5dffe` | Docs-only evidence commit after Wave 6D full verification and Browser QA passed; `git diff --check` passed before commit | `docs/qa/browser-qa/wave-6d-dataset-lab.md`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
+| 2026-05-11 | Wave 6E | Checkpoints/timeline design note | `c2896a2` | Docs-only mandatory-approval design note; `git diff --check` passed before commit | `docs/design-notes/training-checkpoints-timeline.md` |
 
 ## Current Verification Status
 
@@ -110,6 +112,7 @@
 | 2026-05-11 | Generate run thumbnails at render time from saved history | Avoids persistence schema changes, stored image data, and new runtime data collection while improving scanability | `docs/design-notes/saved-run-thumbnails.md`, `96ee7a4` |
 | 2026-05-11 | Enrich markdown reports from saved record data only | Improves experiment handoff without adding export dependencies, stored data, or schema changes | Wave 6C implementation, `2d3ad9d` |
 | 2026-05-11 | Expose sample count through bounded presets | Improves dataset experimentation while reusing existing `DataConfig.numSamples` and avoiding schema changes | Wave 6D implementation, `d6eeffa` |
+| 2026-05-11 | Gate checkpoint/timeline implementation behind explicit approval | Wave 6E likely touches worker protocol, runtime restore behavior, checkpoint memory, and model-state determinism | `docs/design-notes/training-checkpoints-timeline.md`, `c2896a2` |
 
 ## Known Issues
 
@@ -125,7 +128,7 @@
 
 ## Blocked Items
 
-- No current blocker for completed Waves 0-5.
+- Wave 6E implementation is blocked pending mandatory human approval.
 
 ## Deferred Items
 
@@ -139,10 +142,12 @@
 ## Approval Gates Reached
 
 - Wave 4 activation histogram explorer was approved by the user on 2026-05-11 and implemented in `590114d`.
+- Wave 6E checkpoints and timeline scrubber design note was prepared in `c2896a2`. Implementation requires explicit user approval before code changes.
+- Wave 7 larger product bets require separate proposal and explicit approval before each feature.
 
 ## Next Recommended Slice
 
-Create the Wave 6E checkpoints/timeline design note, then stop for the mandatory approval gate before implementation.
+Request explicit approval for Wave 6E checkpoint/timeline implementation. If approved, begin with the smallest TDD slice for engine/runtime checkpoint snapshot semantics. If not approved, record Wave 6E as deferred and prepare a Wave 7 proposal without implementation.
 
 ## Handoff Notes
 
