@@ -184,6 +184,35 @@ export interface PredictionTrace {
     layers: PredictionTraceLayer[];
 }
 
+export type BackpropExplanationStatus = 'tiny' | 'healthy' | 'large' | 'clipped';
+
+/** Bounded scalar summary for one layer in a dry-run backprop explanation. */
+export interface BackpropExplanationLayer {
+    layerIndex: number;
+    meanAbsErrorSignal: number;
+    maxAbsErrorSignal: number;
+    meanAbsGradient: number;
+    maxAbsGradient: number;
+    meanAbsUpdate: number;
+    maxAbsUpdate: number;
+    meanActivation: number;
+    activationStd: number;
+    status: BackpropExplanationStatus;
+    note: string;
+}
+
+/** Pure dry-run preview of the next mini-batch update. */
+export interface BackpropExplanation {
+    batchSize: number;
+    loss: number;
+    learningRate: number;
+    globalGradientNorm: number;
+    globalClipScale: number;
+    clipped: boolean;
+    layers: BackpropExplanationLayer[];
+    summary: string;
+}
+
 /** Serializable network state for save/restore. */
 export interface SerializedNetwork {
     config: NetworkConfig;

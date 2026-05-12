@@ -655,3 +655,121 @@ describe('prediction tracing', () => {
         expect(() => net.tracePrediction([1, 2], [1, 0], 'crossEntropy')).toThrow(RangeError);
     });
 });
+
+describe('backprop explanation', () => {
+    it('returns bounded deterministic layer summaries without mutating the live network', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3, 2] }));
+        const training: TrainingConfig = {
+            ...defaultTraining,
+            optimizer: 'sgd',
+            learningRate: 0.05,
+            gradientClip: null,
+        };
+        const inputs = [[0, 0], [1, 1], [0.5, -0.25]];
+        const targets = [[0], [1], [1]];
+        net.trainBatch(inputs, targets, training);
+
+        const beforeCheckpoint = net.createCheckpoint();
+        const beforeSnapshot = net.getSnapshot(12, 1, { loss: 0.4 }, { loss: 0.5 }, [0], 1);
+        const beforeStats = net.getLayerStats();
+
+        const explanation = net.explainBackpropStep(inputs, targets, training);
+        const again = net.explainBackpropStep(inputs, targets, training);
+
+        expect(explanation).toEqual(again);
+        expect(explanation.layers).toHaveLength(3);
+        expect(explanation.batchSize).toBe(inputs.length);
+        expect(explanation.loss).toBeGreaterThanOrEqual(0);
+        expect(explanation.globalGradientNorm).toBeGreaterThan(0);
+        expect(explanation.globalClipScale).toBe(1);
+        expect(explanation.clipped).toBe(false);
+        expect(explanation.summary).toContain('healthy');
+
+        for (const layer of explanation.layers) {
+            expect(layer.meanAbsErrorSignal).toBeGreaterThanOrEqual(0);
+            expect(layer.maxAbsErrorSignal).toBeGreaterThanOrEqual(layer.meanAbsErrorSignal);
+            expect(layer.meanAbsGradient).toBeGreaterThanOrEqual(0);
+            expect(layer.maxAbsGradient).toBeGreaterThanOrEqual(layer.meanAbsGradient);
+            expect(layer.meanAbsUpdate).toBeGreaterThanOrEqual(0);
+            expect(layer.maxAbsUpdate).toBeGreaterThanOrEqual(layer.meanAbsUpdate);
+            expect(['tiny', 'healthy', 'large', 'clipped']).toContain(layer.status);
+            expect(layer.note.length).toBeGreaterThan(0);
+        }
+
+        expect(net.createCheckpoint()).toEqual(beforeCheckpoint);
+        expect(net.getSnapshot(12, 1, { loss: 0.4 }, { loss: 0.5 }, [0], 1)).toEqual(beforeSnapshot);
+        expect(net.getLayerStats()).toEqual(beforeStats);
+    });
+
+    it('includes bias-only gradients and updates in layer summaries', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [], outputActivation: 'linear' }));
+        const explanation = net.explainBackpropStep([[0, 0], [0, 0]], [[2], [-1]], {
+            ...defaultTraining,
+            lossType: 'mse',
+            optimizer: 'sgd',
+            learningRate: 0.1,
+        });
+
+        expect(explanation.layers).toHaveLength(1);
+        expect(explanation.layers[0].meanAbsGradient).toBeGreaterThan(0);
+        expect(explanation.layers[0].meanAbsUpdate).toBeGreaterThan(0);
+    });
+
+    it('summarizes activations and error signals across the full batch independent of sample order', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3], outputActivation: 'linear' }));
+        const training: TrainingConfig = {
+            ...defaultTraining,
+            lossType: 'mse',
+            optimizer: 'sgd',
+            learningRate: 0.02,
+        };
+        const inputs = [[-1, 0.5], [0.25, -0.75], [1, 1]];
+        const targets = [[-0.25], [0.75], [1.25]];
+
+        const forward = net.explainBackpropStep(inputs, targets, training);
+        const reversed = net.explainBackpropStep([...inputs].reverse(), [...targets].reverse(), training);
+
+        for (let l = 0; l < forward.layers.length; l++) {
+            expect(forward.layers[l].meanAbsErrorSignal).toBeCloseTo(reversed.layers[l].meanAbsErrorSignal, 12);
+            expect(forward.layers[l].maxAbsErrorSignal).toBeCloseTo(reversed.layers[l].maxAbsErrorSignal, 12);
+            expect(forward.layers[l].meanActivation).toBeCloseTo(reversed.layers[l].meanActivation, 12);
+            expect(forward.layers[l].activationStd).toBeCloseTo(reversed.layers[l].activationStd, 12);
+        }
+    });
+
+    it('reports global clipping as a scalar clip scale instead of per-parameter clipping', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [4], outputActivation: 'linear' }));
+        const inputs = [[10, -10], [-10, 10], [8, 8]];
+        const targets = [[10], [-10], [12]];
+        const unclipped = net.explainBackpropStep(inputs, targets, {
+            ...defaultTraining,
+            lossType: 'mse',
+            optimizer: 'sgd',
+            learningRate: 0.5,
+            gradientClip: null,
+        });
+        const clipped = net.explainBackpropStep(inputs, targets, {
+            ...defaultTraining,
+            lossType: 'mse',
+            optimizer: 'sgd',
+            learningRate: 0.5,
+            gradientClip: 0.001,
+        });
+
+        expect(unclipped.globalClipScale).toBe(1);
+        expect(unclipped.clipped).toBe(false);
+        expect(clipped.globalClipScale).toBeGreaterThan(0);
+        expect(clipped.globalClipScale).toBeLessThan(1);
+        expect(clipped.clipped).toBe(true);
+        expect(clipped.summary).toContain('clipped');
+        expect(clipped.layers.some((layer) => layer.status === 'clipped')).toBe(true);
+    });
+
+    it('rejects invalid backprop explanation batches', () => {
+        const net = new Network(makeConfig());
+
+        expect(() => net.explainBackpropStep([], [], defaultTraining)).toThrow(RangeError);
+        expect(() => net.explainBackpropStep([[1]], [[1]], defaultTraining)).toThrow(RangeError);
+        expect(() => net.explainBackpropStep([[1, 2]], [[1, 0]], defaultTraining)).toThrow(RangeError);
+    });
+});

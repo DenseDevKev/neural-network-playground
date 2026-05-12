@@ -23,6 +23,9 @@ import type {
     ActivationHistogramResult,
     ActivationHistogramLayer,
     NetworkCheckpoint,
+    BackpropExplanation,
+    BackpropExplanationLayer,
+    BackpropExplanationStatus,
 } from './types.js';
 import { getLoss } from './losses.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
@@ -405,6 +408,119 @@ function isSaturatedActivation(value: number, kind: ActivationType, threshold: n
             return Math.abs(value) >= threshold;
         default:
             return false;
+    }
+}
+
+interface AbsAggregate {
+    sum: number;
+    max: number;
+    count: number;
+}
+
+interface MomentAggregate {
+    sum: number;
+    sumSquares: number;
+    count: number;
+}
+
+function createAbsAggregate(): AbsAggregate {
+    return { sum: 0, max: 0, count: 0 };
+}
+
+function createMomentAggregate(): MomentAggregate {
+    return { sum: 0, sumSquares: 0, count: 0 };
+}
+
+function addAbsValues(aggregate: AbsAggregate, values: Float64Array): void {
+    for (let i = 0; i < values.length; i++) {
+        const abs = Math.abs(values[i]);
+        aggregate.sum += abs;
+        if (abs > aggregate.max) aggregate.max = abs;
+    }
+    aggregate.count += values.length;
+}
+
+function addMomentValues(aggregate: MomentAggregate, values: Float64Array): void {
+    for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        aggregate.sum += value;
+        aggregate.sumSquares += value * value;
+    }
+    aggregate.count += values.length;
+}
+
+function finishAbsAggregate(aggregate: AbsAggregate): { mean: number; max: number } {
+    return {
+        mean: aggregate.count > 0 ? aggregate.sum / aggregate.count : 0,
+        max: aggregate.max,
+    };
+}
+
+function finishMomentAggregate(aggregate: MomentAggregate): { mean: number; std: number } {
+    if (aggregate.count === 0) return { mean: 0, std: 0 };
+    const mean = aggregate.sum / aggregate.count;
+    const variance = Math.max(0, aggregate.sumSquares / aggregate.count - mean * mean);
+    return { mean, std: Math.sqrt(variance) };
+}
+
+function summarizeScaledAbsBuffers(
+    first: Float64Array,
+    second: Float64Array,
+    scale: number,
+): { mean: number; max: number } {
+    const aggregate = createAbsAggregate();
+    for (let i = 0; i < first.length; i++) {
+        const abs = Math.abs(first[i] * scale);
+        aggregate.sum += abs;
+        if (abs > aggregate.max) aggregate.max = abs;
+    }
+    for (let i = 0; i < second.length; i++) {
+        const abs = Math.abs(second[i] * scale);
+        aggregate.sum += abs;
+        if (abs > aggregate.max) aggregate.max = abs;
+    }
+    aggregate.count = first.length + second.length;
+    return finishAbsAggregate(aggregate);
+}
+
+function summarizeAbsDiffBuffers(
+    beforeFirst: Float64Array,
+    afterFirst: Float64Array,
+    beforeSecond: Float64Array,
+    afterSecond: Float64Array,
+): { mean: number; max: number } {
+    const aggregate = createAbsAggregate();
+    for (let i = 0; i < beforeFirst.length; i++) {
+        const abs = Math.abs(afterFirst[i] - beforeFirst[i]);
+        aggregate.sum += abs;
+        if (abs > aggregate.max) aggregate.max = abs;
+    }
+    for (let i = 0; i < beforeSecond.length; i++) {
+        const abs = Math.abs(afterSecond[i] - beforeSecond[i]);
+        aggregate.sum += abs;
+        if (abs > aggregate.max) aggregate.max = abs;
+    }
+    aggregate.count = beforeFirst.length + beforeSecond.length;
+    return finishAbsAggregate(aggregate);
+}
+
+function getBackpropStatus(meanUpdate: number, clipScale: number): BackpropExplanationStatus {
+    if (clipScale < 1) return 'clipped';
+    if (meanUpdate < 1e-6) return 'tiny';
+    if (meanUpdate > 0.1) return 'large';
+    return 'healthy';
+}
+
+function describeBackpropLayer(status: BackpropExplanationStatus): string {
+    switch (status) {
+        case 'clipped':
+            return 'Global gradient clipping scaled this layer update.';
+        case 'tiny':
+            return 'The previewed update is tiny; learning may move slowly here.';
+        case 'large':
+            return 'The previewed update is large; watch for unstable loss movement.';
+        case 'healthy':
+            return 'The previewed update is in a moderate range.';
     }
 }
 
@@ -949,6 +1065,123 @@ export class Network {
 
         this.applyGradients(training, (end - start) * this.config.outputSize);
         return count > 0 ? totalLoss / count : 0;
+    }
+
+    explainBackpropStep(
+        inputs: number[][],
+        targets: number[][],
+        training: TrainingConfig,
+    ): BackpropExplanation {
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
+        if (inputs.length === 0) {
+            throw new RangeError('backprop explanation batch must contain at least one sample');
+        }
+
+        const dryRun = new Network(this.config);
+        dryRun.restoreCheckpoint(this.createCheckpoint());
+        return dryRun.explainBackpropStepInPlace(inputs, targets, training);
+    }
+
+    private explainBackpropStepInPlace(
+        inputs: number[][],
+        targets: number[][],
+        training: TrainingConfig,
+    ): BackpropExplanation {
+        assertTrainingHyperparams(training);
+        const beforeWeights = clonePackedBuffers(this.weights);
+        const beforeBiases = clonePackedBuffers(this.biases);
+        const signalAggregates = this.deltas.map(() => createAbsAggregate());
+        const activationAggregates = this.outputs.map(() => createMomentAggregate());
+        const lossFn = getLoss(training.lossType, { huberDelta: training.huberDelta });
+        let totalLoss = 0;
+        let count = 0;
+
+        for (let s = 0; s < inputs.length; s++) {
+            const out = this.forwardInto(inputs[s]);
+            for (let l = 0; l < this.outputs.length; l++) {
+                addMomentValues(activationAggregates[l], this.outputs[l]);
+            }
+            const target = targets[s];
+            for (let o = 0; o < out.length; o++) {
+                totalLoss += lossFn.loss(out[o], target[o]);
+                count++;
+            }
+            this.backward(target, training.lossType, training.huberDelta);
+            for (let l = 0; l < this.deltas.length; l++) {
+                addAbsValues(signalAggregates[l], this.deltas[l]);
+            }
+        }
+
+        const invB = 1 / (inputs.length * this.config.outputSize);
+        let sqSum = 0;
+        for (let l = 0; l < this.weightGrads.length; l++) {
+            const wg = this.weightGrads[l];
+            const bg = this.biasGrads[l];
+            for (let i = 0; i < wg.length; i++) {
+                const g = wg[i] * invB;
+                sqSum += g * g;
+            }
+            for (let i = 0; i < bg.length; i++) {
+                const g = bg[i] * invB;
+                sqSum += g * g;
+            }
+        }
+
+        const globalGradientNorm = Math.sqrt(sqSum);
+        const clip = training.gradientClip;
+        const globalClipScale = clip != null && clip > 0 && globalGradientNorm > clip
+            ? clip / globalGradientNorm
+            : 1;
+        const gradientScale = invB * globalClipScale;
+        const gradientSummaries = this.weightGrads.map((weightGrad, layerIndex) => (
+            summarizeScaledAbsBuffers(weightGrad, this.biasGrads[layerIndex], gradientScale)
+        ));
+
+        this.applyGradients(training, inputs.length * this.config.outputSize);
+
+        const layers: BackpropExplanationLayer[] = [];
+        for (let l = 0; l < this.weights.length; l++) {
+            const signal = finishAbsAggregate(signalAggregates[l]);
+            const gradient = gradientSummaries[l];
+            const update = summarizeAbsDiffBuffers(
+                beforeWeights[l],
+                this.weights[l],
+                beforeBiases[l],
+                this.biases[l],
+            );
+            const activations = finishMomentAggregate(activationAggregates[l]);
+            const status = getBackpropStatus(update.mean, globalClipScale);
+            layers.push({
+                layerIndex: l,
+                meanAbsErrorSignal: signal.mean,
+                maxAbsErrorSignal: signal.max,
+                meanAbsGradient: gradient.mean,
+                maxAbsGradient: gradient.max,
+                meanAbsUpdate: update.mean,
+                maxAbsUpdate: update.max,
+                meanActivation: activations.mean,
+                activationStd: activations.std,
+                status,
+                note: describeBackpropLayer(status),
+            });
+        }
+
+        const clipped = globalClipScale < 1;
+        const healthyCount = layers.filter((layer) => layer.status === 'healthy').length;
+        const summary = clipped
+            ? `Backprop preview clipped the global gradient by ${globalClipScale.toFixed(3)}.`
+            : `Backprop preview found ${healthyCount} healthy layer update${healthyCount === 1 ? '' : 's'}.`;
+
+        return {
+            batchSize: inputs.length,
+            loss: count > 0 ? totalLoss / count : 0,
+            learningRate: computeLearningRate(training.learningRate, this.currentStep - 1, training.lrSchedule),
+            globalGradientNorm,
+            globalClipScale,
+            clipped,
+            layers,
+            summary,
+        };
     }
 
     // ── Predict helpers ──────────────────────────────────────────────────────
