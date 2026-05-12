@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `76c37ae`; full verification passed before the Wave 7 saved-run arena implementation commit, and Browser QA Mode B passed before the evidence/state update.
+- Last verified commit: `37c7d57`; `git diff --check` passed before the Wave 7 live arena runtime design-note commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Side-by-Side Model Arena Phase 1 saved-run comparison UI
+- Slice: Live Side-by-Side Model Arena runtime design note
 - Risk: High
-- Status: Phase 1 saved-run-only arena is implemented and verified. Stop at the next Wave 7 approval gate before live dual-model/runtime work.
+- Status: Live arena runtime design note is complete. Stop at the mandatory approval gate before worker/protocol/frame-buffer/runtime implementation.
 
 ## Completed Slices
 
@@ -57,15 +57,16 @@
 | 2026-05-12 | Wave 6E | Checkpoint timeline UI and QA evidence | `67b7c9f` | Red targeted web hook/control tests failed before implementation; targeted web run passed with 51 files and 344 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit; Browser QA Mode B passed at desktop size | `apps/web/src/hooks/useTraining.ts`, `apps/web/src/components/controls/TrainingControls.tsx`, `apps/web/src/store/useTrainingStore.ts`, `docs/qa/browser-qa/wave-6e-checkpoint-timeline.md` |
 | 2026-05-12 | Wave 7 | Side-by-Side Model Arena design note | `64ed867` | Design-note-only commit; `git diff --check` passed before commit | `docs/design-notes/side-by-side-model-arena.md` |
 | 2026-05-12 | Wave 7 | Saved-run side-by-side arena comparison | `76c37ae` | Red targeted test failed before implementation; targeted web run passed with 51 files and 345 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and Browser QA Mode B passed before evidence packaging | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/components/controls/RunHistoryPanel.test.tsx`, `docs/qa/browser-qa/wave-7-side-by-side-arena.md` |
+| 2026-05-12 | Wave 7 | Live Side-by-Side Model Arena runtime design note | `37c7d57` | Docs-only design note; `git diff --check` passed before commit | `docs/design-notes/live-side-by-side-model-arena.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-12 after the Wave 7 saved-run arena implementation with engine 276 tests, shared 68 tests, and web 345 tests.
-- Lint: `pnpm lint` passed on 2026-05-12 after the Wave 7 saved-run arena implementation.
-- Build: `pnpm build` passed on 2026-05-12 after the Wave 7 saved-run arena implementation with the existing Vite chunk-size warning. Relevant chunks: `training.worker-DPoonmTq.js` 77.21 kB, `RunHistoryPanel-C2bti-N-.js` 15.13 kB gzip 4.84 kB, `index-CZ39uNC2.js` 364.37 kB gzip 110.50 kB.
+- Tests: `pnpm test` passed on 2026-05-12 after the Wave 7 saved-run arena implementation with engine 276 tests, shared 68 tests, and web 345 tests. Not rerun after the docs-only live arena design note.
+- Lint: `pnpm lint` passed on 2026-05-12 after the Wave 7 saved-run arena implementation. Not rerun after the docs-only live arena design note.
+- Build: `pnpm build` passed on 2026-05-12 after the Wave 7 saved-run arena implementation with the existing Vite chunk-size warning. Relevant chunks: `training.worker-DPoonmTq.js` 77.21 kB, `RunHistoryPanel-C2bti-N-.js` 15.13 kB gzip 4.84 kB, `index-CZ39uNC2.js` 364.37 kB gzip 110.50 kB. Not rerun after the docs-only live arena design note.
 - Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Wave 7 included desktop and compact viewport verification with no console errors.
 - Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run arena uses native labelled selects, labelled model regions, and contextual thumbnail text alternatives covered by component tests and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-12 after the Wave 7 saved-run arena implementation with 2 benchmark files and 4 benchmark tests.
+- Performance: `pnpm test:perf` passed on 2026-05-12 after the Wave 7 saved-run arena implementation with 2 benchmark files and 4 benchmark tests. Not rerun after the docs-only live arena design note.
 
 ## Browser QA Evidence
 
@@ -138,6 +139,7 @@
 | 2026-05-12 | Render the timeline from bounded metadata only | Keeps React state limited to checkpoint summaries while restore reads heavy payloads by worker-local checkpoint id | Wave 6E checkpoint timeline UI implementation |
 | 2026-05-12 | Treat undefined optional histogram fields as omitted in the runtime guard | Worker snapshot assembly can include optional keys with `undefined` values when histogram demand is off; Browser QA proved the guard otherwise rejected valid snapshots | Wave 6E Browser QA and shared protocol regression test |
 | 2026-05-12 | Implement Wave 7 Phase 1 from saved run history only | Delivers a usable side-by-side arena without live dual-model runtime, worker, protocol, persistence, URL/config, public config, or dependency changes | `docs/design-notes/side-by-side-model-arena.md`, `76c37ae` |
+| 2026-05-12 | Prefer one-worker sequential live arena before multi-worker designs | Minimizes concurrency, lifecycle, and memory risk while preserving deterministic stepping and the existing single-model path | `docs/design-notes/live-side-by-side-model-arena.md`, `37c7d57` |
 
 ## Known Issues
 
@@ -154,7 +156,7 @@
 
 ## Blocked Items
 
-- Wave 7 live dual-model arena/runtime phase is blocked on mandatory human approval. Phase 1 saved-run comparison is complete.
+- Wave 7 live dual-model arena/runtime phase is blocked on mandatory human approval. Phase 1 saved-run comparison and the live runtime design note are complete.
 
 ## Deferred Items
 
@@ -164,6 +166,7 @@
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
 - Wave 6E persistence of checkpoints across reloads remains deferred and requires separate approval.
 - Wave 7 live model arena, slow-motion backprop, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
+- Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, and multiple-worker execution are explicitly deferred from the first proposed live arena slice.
 
 ## Approval Gates Reached
 
@@ -172,11 +175,12 @@
 - Wave 7 larger product bets require separate proposal and explicit approval before each feature. Proposal prepared in `docs/roadmap/WAVE_7_PROPOSAL.md`.
 - Wave 7 Side-by-Side Model Arena design note was approved to create on 2026-05-12 and committed as `64ed867`.
 - Wave 7 Side-by-Side Model Arena Phase 1 saved-run implementation was approved by the user's `/goal complete everything` continuation and committed as `76c37ae`.
-- Further Wave 7 live/runtime arena work requires a separate approval gate because it would add live dual-model runtime behavior.
+- Wave 7 live Side-by-Side Model Arena runtime design note was committed as `37c7d57`.
+- Further Wave 7 live/runtime arena implementation requires a separate approval gate because it would add live dual-model runtime behavior and likely touch worker protocol, frame-buffer semantics, and runtime snapshot format.
 
 ## Next Recommended Slice
 
-Stop at the next Wave 7 approval gate. Recommended next step: review the Phase 1 saved-run arena and decide whether to approve a separate live dual-model arena design/implementation slice.
+Stop at the live arena implementation approval gate. Recommended next step: review `docs/design-notes/live-side-by-side-model-arena.md` and answer its exact approval question.
 
 ## Handoff Notes
 
