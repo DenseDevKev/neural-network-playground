@@ -440,3 +440,45 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5177 ms
 
 These benchmark values are noisier than the immediately prior Wave 6E run but remain within the roadmap warning thresholds for this UI-only, lazy-panel slice. No runtime hot path was changed.
+
+## Wave 7 Live Arena Scalar Runtime
+
+Date: 2026-05-12
+
+Scope: scalar-only live arena runtime contract and worker prototype. This slice adds side-tagged bounded arena summaries, frame-buffer version support for scalar summaries, and worker Comlink methods for initializing and stepping two model slots sequentially. It does not add paired heavy visualizations, URL/config serialization, persistence schema changes, public config shape changes, dependencies, multiple workers, or engine math changes.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+- repeated `pnpm test:perf` because the first benchmark run was noisy
+
+`pnpm build` passed after the scalar live arena runtime slice. Relevant production output:
+
+- `dist/assets/training.worker-CUaUykZz.js`: 79.35 kB
+- `dist/assets/index-B3wCX0gO.css`: 66.18 kB, gzip 11.49 kB
+- `dist/assets/InspectionPanel-DVGMOlJx.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-DKXx4SLe.js`: 15.13 kB, gzip 4.84 kB
+- `dist/assets/index-DE01l2hl.js`: 365.16 kB, gzip 110.67 kB
+
+Compared with Wave 7 Phase 1, the lazy run-history chunk was unchanged. The worker bundle increased from 77.21 kB to 79.35 kB because it now includes scalar live-arena slot setup and sequential stepping helpers. The increase is below the roadmap 10% build-size warning threshold. The existing Vite large chunk warning remains.
+
+The first `pnpm test:perf` run passed but exceeded the roadmap warning threshold on grid timings despite this slice not touching engine prediction code:
+
+- `predictGrid`: 1749.2360 ms total for 100 iterations
+- `predictGridInto`: 1867.7205 ms total for 100 iterations
+- `predictGridWithNeurons`: 1457.9459 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 1410.4423 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.5880 ms
+- Average `applyGradients` time (SGD): 3.5469 ms
+
+The repeated `pnpm test:perf` run passed and returned to the established range:
+
+- `predictGrid`: 1138.0670 ms total for 100 iterations
+- `predictGridInto`: 1093.3958 ms total for 100 iterations
+- `predictGridWithNeurons`: 696.0030 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 592.8361 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.4625 ms
+- Average `applyGradients` time (SGD): 1.4232 ms
+
+The repeat suggests the first perf run was machine noise. The implemented runtime slice does not alter engine prediction or gradient hot paths.
