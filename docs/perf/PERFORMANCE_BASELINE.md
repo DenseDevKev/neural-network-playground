@@ -237,3 +237,36 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4548 ms
 
 These benchmark values remain within the roadmap warning thresholds. Wave 6C did not touch engine, worker, frame-buffer, persistence, schema, URL/config serialization, or public config code.
+
+## Wave 6D Dataset Parameter Lab
+
+Date: 2026-05-11
+
+Scope: bounded sample-count presets and accessible dataset settings summary in the existing Data panel.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the Wave 6D dataset parameter slice. Relevant production output:
+
+- `dist/assets/training.worker--UxrksoV.js`: 71.53 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/RunHistoryPanel-B2DeJ9nu.js`: 12.31 kB, gzip 4.14 kB
+- `dist/assets/index-CYHfg_fP.js`: 361.36 kB, gzip 109.72 kB
+
+Compared with Wave 6C, the worker and run-history chunks were unchanged. The main app chunk increased from 360.52 kB to 361.36 kB because the Data panel is in the main UI bundle. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the Wave 6D dataset parameter slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1160.4786 ms total for 100 iterations
+- `predictGridInto`: 1112.4462 ms total for 100 iterations
+- `predictGridWithNeurons`: 695.9391 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 597.1600 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.8577 ms
+- Average `applyGradients` time (SGD): 1.5220 ms
+
+These benchmark values remain within the roadmap warning thresholds. Wave 6D did not touch engine, worker, frame-buffer, persistence, schema, URL/config serialization, or public config code.

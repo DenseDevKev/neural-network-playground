@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `2d3ad9d` for Wave 6C richer report export; Wave 6C verification passed before evidence packaging
+- Last verified commit: `d6eeffa` for Wave 6D dataset parameter lab; Wave 6D verification passed before evidence packaging
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -16,10 +16,10 @@
 
 ## Current Position
 
-- Wave: Wave 6C
-- Slice: Report export
-- Risk: Medium, web-local report generation using existing saved run data
-- Status: Implemented in `2d3ad9d`; continuing Wave 6 through safe non-gated slices
+- Wave: Wave 6D
+- Slice: Dataset parameter lab
+- Risk: Medium, web UI only using existing `DataConfig.numSamples`
+- Status: Implemented in `d6eeffa`; next step is Wave 6E design note and mandatory approval gate
 
 ## Completed Slices
 
@@ -46,15 +46,17 @@
 | 2026-05-11 | Wave 6B | Generated saved-run loss thumbnails | `96ee7a4` | Red targeted test failed before implementation; targeted web run passed with 51 files and 338 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and Browser QA Mode B passed before evidence packaging | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/components/controls/RunHistoryPanel.test.tsx`, `docs/qa/browser-qa/wave-6b-saved-run-thumbnails.md` |
 | 2026-05-11 | Wave 6B | Saved-run thumbnail QA/state | `c0c4943` | Docs-only evidence commit after Wave 6B full verification and Browser QA passed | `docs/qa/browser-qa/wave-6b-saved-run-thumbnails.md`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
 | 2026-05-11 | Wave 6C | Richer saved-run markdown report export | `2d3ad9d` | Red targeted test failed before implementation; targeted web run passed with 51 files and 338 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before evidence packaging | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/components/controls/RunHistoryPanel.test.tsx` |
+| 2026-05-11 | Wave 6C | Report export evidence | `89f84f4` | Docs-only evidence commit after Wave 6C full verification passed | `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
+| 2026-05-11 | Wave 6D | Bounded dataset sample presets | `d6eeffa` | Red targeted tests failed before implementation; targeted web run passed with 51 files and 340 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and Browser QA Mode B passed before evidence packaging | `apps/web/src/components/controls/DataPanel.tsx`, `apps/web/src/components/controls/DataPanel.test.tsx`, `docs/qa/browser-qa/wave-6d-dataset-lab.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-11 after Wave 6C report export with engine 275 tests, shared 65 tests, and web 338 tests.
-- Lint: `pnpm lint` passed on 2026-05-11 after Wave 6C report export.
-- Build: `pnpm build` passed on 2026-05-11 after Wave 6C report export with the existing Vite chunk-size warning. Relevant chunks: `training.worker--UxrksoV.js` 71.53 kB, `RunHistoryPanel-DnKpviYY.js` 12.31 kB gzip 4.14 kB, `index-Dk30pzTM.js` 360.52 kB gzip 109.51 kB.
-- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, and Wave 6B Mode B passed on 2026-05-11. Wave 6B used `http://127.0.0.1:5177/`; current-URL console errors were empty.
+- Tests: `pnpm test` passed on 2026-05-11 after Wave 6D dataset lab with engine 275 tests, shared 65 tests, and web 340 tests.
+- Lint: `pnpm lint` passed on 2026-05-11 after Wave 6D dataset lab.
+- Build: `pnpm build` passed on 2026-05-11 after Wave 6D dataset lab with the existing Vite chunk-size warning. Relevant chunks: `training.worker--UxrksoV.js` 71.53 kB, `RunHistoryPanel-B2DeJ9nu.js` 12.31 kB gzip 4.14 kB, `index-CYHfg_fP.js` 361.36 kB gzip 109.72 kB.
+- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, and Wave 6D Mode B passed on 2026-05-11. Wave 6D used `http://127.0.0.1:5177/`; current-URL console errors were empty.
 - Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-11 after Wave 6C report export with 2 benchmark files and 4 benchmark tests.
+- Performance: `pnpm test:perf` passed on 2026-05-11 after Wave 6D dataset lab with 2 benchmark files and 4 benchmark tests.
 
 ## Browser QA Evidence
 
@@ -64,6 +66,7 @@
 - `docs/qa/browser-qa/wave-4-activation-histogram.md`
 - `docs/qa/browser-qa/wave-6a-run-comparison.md`
 - `docs/qa/browser-qa/wave-6b-saved-run-thumbnails.md`
+- `docs/qa/browser-qa/wave-6d-dataset-lab.md`
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
@@ -73,6 +76,7 @@
 - Wave 4 activation histogram screenshot: `/private/tmp/nn-playground-wave4-activation-histogram.png`
 - Wave 6A run comparison screenshot: `/private/tmp/nn-playground-wave6a-run-comparison.png`
 - Wave 6B saved-run thumbnails screenshot: `/private/tmp/nn-playground-wave6b-run-thumbnails.png`
+- Wave 6D dataset lab screenshot: `/private/tmp/nn-playground-wave6d-dataset-lab.png`
 
 ## Performance Evidence
 
@@ -87,6 +91,7 @@
 - Wave 6A comparison summaries changed the lazy run-history UI chunk only. `pnpm test:perf` passed with `predictGrid` 1137.5487 ms, `predictGridInto` 1108.1885 ms, `predictGridWithNeurons` 708.8439 ms, `predictGridWithNeuronsInto` 611.1152 ms, Adam/L2/Clip applyGradients 4.3936 ms, SGD applyGradients 1.4319 ms.
 - Wave 6B saved-run thumbnails changed the lazy run-history UI chunk only. `pnpm test:perf` passed with `predictGrid` 1137.8122 ms, `predictGridInto` 1093.4358 ms, `predictGridWithNeurons` 697.4345 ms, `predictGridWithNeuronsInto` 592.1591 ms, Adam/L2/Clip applyGradients 4.7540 ms, SGD applyGradients 1.4204 ms.
 - Wave 6C report export changed the lazy run-history UI chunk only. `pnpm test:perf` passed with `predictGrid` 1138.3189 ms, `predictGridInto` 1108.7949 ms, `predictGridWithNeurons` 690.4257 ms, `predictGridWithNeuronsInto` 589.8016 ms, Adam/L2/Clip applyGradients 4.6273 ms, SGD applyGradients 1.4548 ms.
+- Wave 6D dataset lab changed the main web UI bundle only. `pnpm test:perf` passed with `predictGrid` 1160.4786 ms, `predictGridInto` 1112.4462 ms, `predictGridWithNeurons` 695.9391 ms, `predictGridWithNeuronsInto` 597.1600 ms, Adam/L2/Clip applyGradients 4.8577 ms, SGD applyGradients 1.5220 ms.
 
 ## Design Decisions
 
@@ -104,6 +109,7 @@
 | 2026-05-11 | Compare saved runs against the next older saved run | Reuses the existing newest-first run-history order and avoids persistence/schema changes or selectable-baseline state | Wave 6A implementation, `aa5fff1` |
 | 2026-05-11 | Generate run thumbnails at render time from saved history | Avoids persistence schema changes, stored image data, and new runtime data collection while improving scanability | `docs/design-notes/saved-run-thumbnails.md`, `96ee7a4` |
 | 2026-05-11 | Enrich markdown reports from saved record data only | Improves experiment handoff without adding export dependencies, stored data, or schema changes | Wave 6C implementation, `2d3ad9d` |
+| 2026-05-11 | Expose sample count through bounded presets | Improves dataset experimentation while reusing existing `DataConfig.numSamples` and avoiding schema changes | Wave 6D implementation, `d6eeffa` |
 
 ## Known Issues
 
@@ -115,6 +121,7 @@
 - Wave 6A compares each saved run with the next older saved run. Selectable comparison baselines are deferred.
 - Wave 6B thumbnails are generated in render from existing bounded history; stored thumbnails and selectable thumbnail styles are deferred.
 - Wave 6C report export does not include images, weights, or raw arrays; richer report media/export formats are deferred.
+- Wave 6D sample controls are bounded presets only. Custom sample count editing and new dataset parameters are deferred.
 
 ## Blocked Items
 
@@ -126,7 +133,6 @@
 - Additional Wave 3 QA infrastructure beyond `d9cc432` and the recorded Wave 0/Wave 1/Wave 2/Wave 4 browser evidence.
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
-- Wave 6D dataset parameter workflow.
 - Wave 6E checkpoints and timeline scrubber, pending mandatory approval.
 - Wave 7 large product bets, pending mandatory approval.
 
@@ -136,7 +142,7 @@
 
 ## Next Recommended Slice
 
-Continue Wave 6 with dataset parameter workflow guardrails using existing data controls and no dataset schema changes.
+Create the Wave 6E checkpoints/timeline design note, then stop for the mandatory approval gate before implementation.
 
 ## Handoff Notes
 
