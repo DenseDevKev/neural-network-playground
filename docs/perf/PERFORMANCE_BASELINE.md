@@ -406,3 +406,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4364 ms
 
 These benchmark values remain within the roadmap warning thresholds. Browser QA found and verified the protocol guard fix; after the fix, training started and paused without console errors.
+
+## Wave 7 Side-by-Side Model Arena Phase 1
+
+Date: 2026-05-12
+
+Scope: saved-run-only comparison UI in the lazy run-history panel. This slice does not change worker runtime, engine math, frame-buffer semantics, URL/config serialization, persistence schema, public config shape, or dependencies.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the saved-run arena slice. Relevant production output:
+
+- `dist/assets/training.worker-DPoonmTq.js`: 77.21 kB
+- `dist/assets/index-B3wCX0gO.css`: 66.18 kB, gzip 11.49 kB
+- `dist/assets/InspectionPanel-DlOrFiUi.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-C2bti-N-.js`: 15.13 kB, gzip 4.84 kB
+- `dist/assets/index-CZ39uNC2.js`: 364.37 kB, gzip 110.50 kB
+
+Compared with the Wave 6E checkpoint timeline UI baseline, the worker and main app bundles were unchanged. The lazy `RunHistoryPanel` chunk increased from 12.31 kB to 15.13 kB because it now renders the saved-run arena selectors, model panes, comparison copy, and reused thumbnails. The increase is isolated to a lazy chunk and below the roadmap 10% production-build warning threshold for the whole app.
+
+`pnpm test:perf` passed after the saved-run arena slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1286.9436 ms total for 100 iterations
+- `predictGridInto`: 1278.7490 ms total for 100 iterations
+- `predictGridWithNeurons`: 773.1364 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 653.8458 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 6.0251 ms
+- Average `applyGradients` time (SGD): 1.5177 ms
+
+These benchmark values are noisier than the immediately prior Wave 6E run but remain within the roadmap warning thresholds for this UI-only, lazy-panel slice. No runtime hot path was changed.
