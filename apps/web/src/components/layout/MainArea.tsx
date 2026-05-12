@@ -12,6 +12,7 @@ import { LossChart } from '../visualization/LossChart.tsx';
 import { TrainingExplanationPanel } from '../visualization/TrainingExplanationPanel.tsx';
 import { ConfusionMatrix } from '../visualization/ConfusionMatrix.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
+import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { Panel } from '../common/Panel.tsx';
@@ -152,10 +153,24 @@ export const CodeContent = memo(function CodeContent() {
     );
 });
 
-export const HistoryContent = memo(function HistoryContent({ onRestore }: { onRestore: () => void }) {
+interface HistoryContentProps {
+    onRestore: () => void;
+    onInitializeArena?: (modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => void | Promise<void>;
+    onStepArena?: () => void | Promise<void>;
+}
+
+export const HistoryContent = memo(function HistoryContent({
+    onRestore,
+    onInitializeArena,
+    onStepArena,
+}: HistoryContentProps) {
     return (
         <Suspense fallback={<Fallback msg="Loading run history…" />}>
-            <RunHistoryPanel onRestore={onRestore} />
+            <RunHistoryPanel
+                onRestore={onRestore}
+                onInitializeArena={onInitializeArena}
+                onStepArena={onStepArena}
+            />
         </Suspense>
     );
 });
@@ -221,7 +236,26 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                 </Panel>
                 <Panel title="Run History" phase="both">
                     <Suspense fallback={<Fallback msg="Loading run history…" />}>
-                        <RunHistoryPanel onRestore={training.reset} />
+                        <RunHistoryPanel
+                            onRestore={training.reset}
+                            onInitializeArena={(modelA, modelB) => training.initializeArena(
+                                {
+                                    label: modelA.title ?? modelA.id,
+                                    network: modelA.config.network,
+                                    training: modelA.config.training,
+                                    data: modelA.config.data,
+                                    features: modelA.config.features,
+                                },
+                                {
+                                    label: modelB.title ?? modelB.id,
+                                    network: modelB.config.network,
+                                    training: modelB.config.training,
+                                    data: modelB.config.data,
+                                    features: modelB.config.features,
+                                },
+                            )}
+                            onStepArena={() => training.stepArena(1)}
+                        />
                     </Suspense>
                 </Panel>
             </aside>

@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NetworkSnapshot } from '@nn-playground/engine';
 import {
+    type ArenaScalarSnapshot,
     DEFAULT_DATA,
     DEFAULT_DEMAND,
     DEFAULT_FEATURES,
@@ -20,6 +21,8 @@ const bridge = vi.hoisted(() => {
         reset: vi.fn(),
         step: vi.fn(),
         restoreCheckpoint: vi.fn(),
+        initializeArena: vi.fn(),
+        stepArena: vi.fn(),
         getCheckpointTimeline: vi.fn(),
         getTrainPoints: vi.fn(),
         getTestPoints: vi.fn(),
@@ -98,6 +101,39 @@ function withActivationHistograms(snapshot: NetworkSnapshot): NetworkSnapshot {
     };
 }
 
+function makeArenaSnapshot(step: number): ArenaScalarSnapshot {
+    return {
+        runId: 501,
+        snapshotId: step,
+        summaries: [
+            {
+                side: 'A',
+                label: 'Tuned model',
+                status: 'paused',
+                pauseReason: 'manual',
+                step,
+                epoch: 0,
+                trainLoss: 0.25,
+                testLoss: 0.32,
+                trainAccuracy: 0.86,
+                testAccuracy: 0.8,
+            },
+            {
+                side: 'B',
+                label: 'Baseline',
+                status: 'paused',
+                pauseReason: 'manual',
+                step,
+                epoch: 0,
+                trainLoss: 0.4,
+                testLoss: 0.52,
+                trainAccuracy: 0.74,
+                testAccuracy: 0.68,
+            },
+        ],
+    };
+}
+
 function deferred<T>() {
     let resolve!: (value: T) => void;
     let reject!: (reason?: unknown) => void;
@@ -152,6 +188,8 @@ function resetStores(): void {
         workerError: null,
         pauseReason: null,
         testMetricsStale: false,
+        arenaSummariesVersion: 0,
+        arenaSummaries: null,
     });
 }
 
@@ -170,6 +208,8 @@ describe('useTraining', () => {
         bridge.workerApi.updateConfig.mockResolvedValue({ snapshot: makeSnapshot(2), runId: 102 });
         bridge.workerApi.reset.mockResolvedValue({ snapshot: makeSnapshot(3), runId: 103 });
         bridge.workerApi.step.mockResolvedValue(makeSnapshot(4));
+        bridge.workerApi.initializeArena.mockResolvedValue(makeArenaSnapshot(0));
+        bridge.workerApi.stepArena.mockResolvedValue(makeArenaSnapshot(1));
         bridge.workerApi.restoreCheckpoint.mockResolvedValue({
             snapshot: makeSnapshot(0),
             runId: 101,
@@ -282,6 +322,45 @@ describe('useTraining', () => {
         expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(1);
         expect(useTrainingStore.getState().snapshot?.step).toBe(2);
         expect(useTrainingStore.getState().snapshot?.activationHistograms).toBeUndefined();
+    });
+
+    it('initializes and steps the scalar live arena through bounded frame-buffer summaries', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        const modelA = {
+            label: 'Tuned model',
+            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: 7 },
+            training: { ...DEFAULT_TRAINING, learningRate: 0.03 },
+            data: { ...DEFAULT_DATA, seed: 7 },
+            features: { ...DEFAULT_FEATURES },
+        };
+        const modelB = {
+            label: 'Baseline',
+            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: 11 },
+            training: { ...DEFAULT_TRAINING, learningRate: 0.01 },
+            data: { ...DEFAULT_DATA, seed: 11 },
+            features: { ...DEFAULT_FEATURES },
+        };
+
+        await act(async () => {
+            await result.current.initializeArena(modelA, modelB);
+        });
+
+        expect(bridge.workerApi.initializeArena).toHaveBeenCalledWith({ modelA, modelB });
+        expect(getFrameBuffer().arenaSummaries?.map((summary) => summary.label)).toEqual(['Tuned model', 'Baseline']);
+        expect(useTrainingStore.getState().arenaSummaries?.[0]?.testLoss).toBe(0.32);
+        const initializedVersion = useTrainingStore.getState().arenaSummariesVersion;
+        expect(initializedVersion).toBeGreaterThan(0);
+
+        await act(async () => {
+            await result.current.stepArena(2);
+        });
+
+        expect(bridge.workerApi.stepArena).toHaveBeenCalledWith(2);
+        expect(useTrainingStore.getState().arenaSummaries?.[0]?.step).toBe(1);
+        expect(useTrainingStore.getState().arenaSummariesVersion).toBeGreaterThan(initializedVersion);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(1);
     });
 
     it('starts and stops the streaming training loop', async () => {

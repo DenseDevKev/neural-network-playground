@@ -8,7 +8,7 @@ import type {
     HistoryPoint,
     DataPoint,
 } from '@nn-playground/engine';
-import type { CheckpointTimeline, PauseReason, TrainingStatus } from '@nn-playground/shared';
+import type { ArenaModelSummary, CheckpointTimeline, PauseReason, TrainingStatus } from '@nn-playground/shared';
 import {
     appendHistoryPoint,
     resetHistoryBuffer,
@@ -31,6 +31,9 @@ export interface TrainingStore {
     layerStatsVersion: number;
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
+    arenaSummariesVersion: number;
+    /** Bounded scalar summaries only; arena model arrays stay in the worker/frame buffer. */
+    arenaSummaries: ArenaModelSummary[] | null;
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     /** Steps of training to run per animation frame. */
@@ -78,6 +81,7 @@ export interface TrainingStore {
     clearPauseReason: () => void;
     setTestMetricsStale: (stale: boolean) => void;
     setCheckpointTimeline: (timeline: CheckpointTimeline) => void;
+    setArenaSummaries: (summaries: ArenaModelSummary[] | null) => void;
 }
 
 const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
@@ -99,6 +103,8 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     layerStatsVersion: 0,
     confusionMatrixVersion: 0,
     activationHistogramsVersion: 0,
+    arenaSummariesVersion: 0,
+    arenaSummaries: null,
     trainPoints: [],
     testPoints: [],
     stepsPerFrame: 5,
@@ -128,6 +134,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 layerStatsVersion: state.layerStatsVersion,
                 confusionMatrixVersion: state.confusionMatrixVersion,
                 activationHistogramsVersion: state.activationHistogramsVersion,
+                arenaSummariesVersion: state.arenaSummariesVersion,
             };
 
             const historyVersion = snapshot.historyPoint
@@ -143,6 +150,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 layerStatsVersion: versions.layerStatsVersion,
                 confusionMatrixVersion: versions.confusionMatrixVersion,
                 activationHistogramsVersion: versions.activationHistogramsVersion,
+                arenaSummariesVersion: versions.arenaSummariesVersion,
                 historyVersion,
                 testMetricsStale,
                 checkpointTimeline: checkpointTimeline ?? state.checkpointTimeline,
@@ -170,6 +178,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         layerStatsVersion: versions.layerStatsVersion,
         confusionMatrixVersion: versions.confusionMatrixVersion,
         activationHistogramsVersion: versions.activationHistogramsVersion,
+        arenaSummariesVersion: versions.arenaSummariesVersion,
     }),
     setTrainPoints: (trainPoints) => set({ trainPoints }),
     setTestPoints: (testPoints) => set({ testPoints }),
@@ -226,4 +235,5 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     clearPauseReason: () => set({ pauseReason: null }),
     setTestMetricsStale: (testMetricsStale) => set({ testMetricsStale }),
     setCheckpointTimeline: (checkpointTimeline) => set({ checkpointTimeline }),
+    setArenaSummaries: (arenaSummaries) => set({ arenaSummaries }),
 }));

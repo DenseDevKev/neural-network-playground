@@ -7,6 +7,7 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
 import {
+    type ArenaModelSummary,
     DEFAULT_DATA,
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
@@ -43,6 +44,35 @@ function makeRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentR
     };
 }
 
+function makeArenaSummaries(): ArenaModelSummary[] {
+    return [
+        {
+            side: 'A',
+            label: 'Tuned model',
+            status: 'paused',
+            pauseReason: 'manual',
+            step: 181,
+            epoch: 3,
+            trainLoss: 0.24,
+            testLoss: 0.4,
+            trainAccuracy: 0.91,
+            testAccuracy: 0.84,
+        },
+        {
+            side: 'B',
+            label: 'Baseline',
+            status: 'paused',
+            pauseReason: 'manual',
+            step: 101,
+            epoch: 2,
+            trainLoss: 0.38,
+            testLoss: 0.58,
+            trainAccuracy: 0.78,
+            testAccuracy: 0.7,
+        },
+    ];
+}
+
 describe('RunHistoryPanel', () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -59,6 +89,8 @@ describe('RunHistoryPanel', () => {
             status: 'paused',
             snapshot: null,
             pauseReason: null,
+            arenaSummaries: null,
+            arenaSummariesVersion: 0,
         });
     });
 
@@ -195,6 +227,69 @@ describe('RunHistoryPanel', () => {
         expect(screen.getByRole('group', { name: 'Arena comparison summary' })).toHaveTextContent(
             'Both models have the same test loss.',
         );
+    });
+
+    it('starts and steps the live scalar arena with accessible summaries', async () => {
+        const user = userEvent.setup();
+        const onInitializeArena = vi.fn();
+        const onStepArena = vi.fn();
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'baseline',
+                title: 'Baseline',
+                updatedAt: '2026-04-26T00:00:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 100,
+                    trainLoss: 0.4,
+                    testLoss: 0.6,
+                },
+            }));
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'tuned',
+                title: 'Tuned model',
+                updatedAt: '2026-04-26T00:01:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 180,
+                    trainLoss: 0.25,
+                    testLoss: 0.42,
+                },
+            }));
+        });
+
+        render(
+            <RunHistoryPanel
+                onRestore={vi.fn()}
+                onInitializeArena={onInitializeArena}
+                onStepArena={onStepArena}
+            />,
+        );
+
+        await user.click(screen.getByRole('button', { name: 'Start live arena with selected saved runs' }));
+
+        expect(onInitializeArena).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'tuned' }),
+            expect.objectContaining({ id: 'baseline' }),
+        );
+
+        act(() => {
+            useTrainingStore.setState({
+                arenaSummaries: makeArenaSummaries(),
+                arenaSummariesVersion: 1,
+            });
+        });
+
+        const summaries = screen.getByRole('group', { name: 'Live arena scalar summaries' });
+        expect(summaries).toHaveTextContent('Model A live: Tuned model');
+        expect(summaries).toHaveTextContent('test 0.4000');
+        expect(summaries).toHaveTextContent('Model B live: Baseline');
+        expect(summaries).toHaveTextContent('accuracy 84.0% / 70.0%');
+
+        await user.keyboard('[Tab]');
+        await user.click(screen.getByRole('button', { name: 'Step live arena once' }));
+
+        expect(onStepArena).toHaveBeenCalledTimes(1);
     });
 
     it('renders accessible loss-history thumbnails from saved history points', () => {

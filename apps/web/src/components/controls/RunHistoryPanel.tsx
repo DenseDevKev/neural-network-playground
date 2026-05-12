@@ -1,5 +1,5 @@
 import { memo, useCallback, useState } from 'react';
-import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
+import type { ArenaModelSummary, ExperimentRunRecordV1 } from '@nn-playground/shared';
 import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -13,6 +13,8 @@ import { Tooltip } from '../common/Tooltip.tsx';
 
 interface RunHistoryPanelProps {
     onRestore: () => void;
+    onInitializeArena?: (modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => void | Promise<void>;
+    onStepArena?: () => void | Promise<void>;
 }
 
 function formatMetric(value: number): string {
@@ -29,6 +31,10 @@ function formatSignedInteger(value: number): string {
     if (!Number.isFinite(value)) return 'n/a';
     const prefix = value > 0 ? '+' : '';
     return `${prefix}${value.toLocaleString()}`;
+}
+
+function formatPercent(value: number | undefined): string {
+    return value === undefined || !Number.isFinite(value) ? 'n/a' : `${(value * 100).toFixed(1)}%`;
 }
 
 function getRecordLabel(record: ExperimentRunRecordV1): string {
@@ -137,6 +143,27 @@ function RunHistoryThumbnail({
     );
 }
 
+function LiveArenaSummary({ summary }: { summary: ArenaModelSummary }) {
+    const label = summary.side === 'A' ? 'Model A' : 'Model B';
+    return (
+        <section
+            className="run-arena__model"
+            aria-label={`${label} live arena summary for ${summary.label}`}
+        >
+            <div className="run-arena__model-title">
+                <span>{label} live: {summary.label}</span>
+                <strong>{summary.status}</strong>
+            </div>
+            <div className="run-arena__metrics">
+                <span>step {summary.step.toLocaleString()}</span>
+                <span>train {formatMetric(summary.trainLoss)}</span>
+                <span>test {formatMetric(summary.testLoss)}</span>
+                <span>accuracy {formatPercent(summary.testAccuracy)}</span>
+            </div>
+        </section>
+    );
+}
+
 function ArenaModelPane({
     label,
     record,
@@ -161,9 +188,18 @@ function ArenaModelPane({
     );
 }
 
-function SideBySideModelArena({ records }: { records: ExperimentRunRecordV1[] }) {
+function SideBySideModelArena({
+    records,
+    onInitializeArena,
+    onStepArena,
+}: {
+    records: ExperimentRunRecordV1[];
+    onInitializeArena?: (modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => void | Promise<void>;
+    onStepArena?: () => void | Promise<void>;
+}) {
     const [modelAId, setModelAId] = useState(records[0]?.id ?? '');
     const [modelBId, setModelBId] = useState(records[1]?.id ?? records[0]?.id ?? '');
+    const arenaSummaries = useTrainingStore((s) => s.arenaSummaries);
     if (records.length < 2) return null;
 
     const modelA = records.find((record) => record.id === modelAId) ?? records[0];
@@ -197,6 +233,36 @@ function SideBySideModelArena({ records }: { records: ExperimentRunRecordV1[] })
                     </select>
                 </label>
             </div>
+            <div className="run-arena__comparison" role="group" aria-label="Live arena controls">
+                <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    onClick={() => void onInitializeArena?.(modelA, modelB)}
+                    disabled={!onInitializeArena}
+                    aria-label="Start live arena with selected saved runs"
+                >
+                    Start live arena
+                </button>
+                <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    onClick={() => void onStepArena?.()}
+                    disabled={!onStepArena || !arenaSummaries}
+                    aria-label="Step live arena once"
+                >
+                    Step live arena
+                </button>
+            </div>
+            {arenaSummaries && (
+                <div className="run-arena__models" role="group" aria-label="Live arena scalar summaries">
+                    {arenaSummaries.map((summary) => (
+                        <LiveArenaSummary key={summary.side} summary={summary} />
+                    ))}
+                    <span className="sr-only">
+                        Live arena accuracy {formatPercent(arenaSummaries[0]?.testAccuracy)} / {formatPercent(arenaSummaries[1]?.testAccuracy)}
+                    </span>
+                </div>
+            )}
             <div className="run-arena__models">
                 <ArenaModelPane label="Model A" record={modelA} />
                 <ArenaModelPane label="Model B" record={modelB} />
@@ -273,7 +339,11 @@ function downloadMarkdown(record: ExperimentRunRecordV1): void {
     URL.revokeObjectURL(url);
 }
 
-export const RunHistoryPanel = memo(function RunHistoryPanel({ onRestore }: RunHistoryPanelProps) {
+export const RunHistoryPanel = memo(function RunHistoryPanel({
+    onRestore,
+    onInitializeArena,
+    onStepArena,
+}: RunHistoryPanelProps) {
     const records = useExperimentMemoryStore((s) => s.records);
     const saveRecord = useExperimentMemoryStore((s) => s.saveRecord);
     const removeRecord = useExperimentMemoryStore((s) => s.removeRecord);
@@ -326,7 +396,11 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({ onRestore }: RunH
                 <div className="inspection__empty" style={{ marginTop: 12 }}>No saved runs</div>
             ) : (
                 <>
-                    <SideBySideModelArena records={records} />
+                    <SideBySideModelArena
+                        records={records}
+                        onInitializeArena={onInitializeArena}
+                        onStepArena={onStepArena}
+                    />
                     <div className="inspection__layers" style={{ marginTop: 12 }}>
                         {records.map((record, index) => {
                             const baseline = records[index + 1];

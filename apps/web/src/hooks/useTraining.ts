@@ -25,10 +25,29 @@ import {
     flattenNeuronGrids,
     flattenWeights,
 } from '../worker/frameBufferLayout.ts';
-import type { NetworkSnapshot } from '@nn-playground/engine';
-import type { CheckpointTimeline, WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
+import type {
+    DataConfig,
+    FeatureFlags,
+    NetworkConfig,
+    NetworkSnapshot,
+    TrainingConfig,
+} from '@nn-playground/engine';
+import type {
+    ArenaScalarSnapshot,
+    CheckpointTimeline,
+    WorkerArenaSnapshotMessage,
+    WorkerSnapshotMessage,
+    WorkerToMainMessage,
+} from '@nn-playground/shared';
 import { structuralEqual } from '@nn-playground/shared';
 
+export interface LiveArenaModelInput {
+    label?: string;
+    network: NetworkConfig;
+    training: TrainingConfig;
+    data: DataConfig;
+    features: FeatureFlags;
+}
 
 export interface TrainingHook {
     play: () => void;
@@ -36,6 +55,8 @@ export interface TrainingHook {
     step: () => void;
     reset: () => void;
     restoreCheckpoint: (id: number) => Promise<void>;
+    initializeArena: (modelA: LiveArenaModelInput, modelB: LiveArenaModelInput) => Promise<void>;
+    stepArena: (iterations?: number) => Promise<void>;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -112,6 +133,14 @@ function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot)
 async function syncCheckpointTimelineToStore(): Promise<void> {
     const timeline = await getWorkerApi().getCheckpointTimeline();
     useTrainingStore.getState().setCheckpointTimeline(timeline as CheckpointTimeline);
+}
+
+function applyArenaSnapshotToStore(snapshot: ArenaScalarSnapshot | WorkerArenaSnapshotMessage): void {
+    const summaries = snapshot.summaries.map((summary) => ({ ...summary }));
+    updateFrameBuffer({ arenaSummaries: summaries });
+    const ts = useTrainingStore.getState();
+    ts.setFrameVersions(getFrameVersions());
+    ts.setArenaSummaries(summaries);
 }
 
 function createStreamSnapshot(
@@ -297,6 +326,8 @@ export function useTraining(): TrainingHook {
                 ts.setWorkerError(msg.message);
                 ts.setPauseReason('error');
                 ts.setStatus('paused');
+            } else if (msg.type === 'arenaSnapshot') {
+                applyArenaSnapshotToStore(msg);
             }
         });
 
@@ -530,6 +561,39 @@ export function useTraining(): TrainingHook {
         }
     }, [initializeWorker, reportWorkerError]);
 
+    const initializeArena = useCallback(async (modelA: LiveArenaModelInput, modelB: LiveArenaModelInput) => {
+        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+            return;
+        }
+        if (isPlayingRef.current) {
+            pause();
+        }
+        try {
+            if (!initializedRef.current) {
+                await initializeWorker();
+            }
+            const snapshot = await getWorkerApi().initializeArena({ modelA, modelB });
+            applyArenaSnapshotToStore(snapshot as ArenaScalarSnapshot);
+        } catch (error) {
+            reportWorkerError(error, 'Failed to initialize live arena.');
+        }
+    }, [initializeWorker, pause, reportWorkerError]);
+
+    const stepArena = useCallback(async (iterations: number = 1) => {
+        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+            return;
+        }
+        try {
+            if (!initializedRef.current) {
+                await initializeWorker();
+            }
+            const snapshot = await getWorkerApi().stepArena(iterations);
+            applyArenaSnapshotToStore(snapshot as ArenaScalarSnapshot);
+        } catch (error) {
+            reportWorkerError(error, 'Failed to step live arena.');
+        }
+    }, [initializeWorker, reportWorkerError]);
+
     // Cleanup on unmount
     useEffect(() => {
         return () => {
@@ -541,5 +605,5 @@ export function useTraining(): TrainingHook {
         };
     }, []);
 
-    return { play, pause, step, reset, restoreCheckpoint };
+    return { play, pause, step, reset, restoreCheckpoint, initializeArena, stepArena };
 }
