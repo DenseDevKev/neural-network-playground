@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `bb4aac1`; `pnpm test`, `pnpm lint`, `pnpm build`, repeated `pnpm test:perf`, targeted protocol/frame-buffer/worker tests, and `git diff --check` passed before the Wave 7 scalar live arena runtime commit.
+- Last verified commit: `0344bbe`; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, targeted web hook/control tests, Browser QA Mode B, and `git diff --check` passed before the Wave 7 live arena UI commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Live Side-by-Side Model Arena scalar runtime prototype
+- Slice: Live Side-by-Side Model Arena scalar UI prototype
 - Risk: High
-- Status: Scalar-only one-worker/two-model-slot runtime prototype is implemented and verified. Paired heavy visualizations, URL/config serialization, persistence, public config shape changes, dependencies, and engine math changes remain forbidden/deferred.
+- Status: Scalar-only one-worker/two-model-slot runtime and UI prototype is implemented and verified. Paired heavy visualizations, URL/config serialization, persistence, public config shape changes, dependencies, engine math changes, and multiple-worker execution remain forbidden/deferred without separate approval.
 
 ## Completed Slices
 
@@ -59,15 +59,16 @@
 | 2026-05-12 | Wave 7 | Saved-run side-by-side arena comparison | `76c37ae` | Red targeted test failed before implementation; targeted web run passed with 51 files and 345 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and Browser QA Mode B passed before evidence packaging | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/components/controls/RunHistoryPanel.test.tsx`, `docs/qa/browser-qa/wave-7-side-by-side-arena.md` |
 | 2026-05-12 | Wave 7 | Live Side-by-Side Model Arena runtime design note | `37c7d57` | Docs-only design note; `git diff --check` passed before commit | `docs/design-notes/live-side-by-side-model-arena.md` |
 | 2026-05-12 | Wave 7 | Scalar live arena runtime prototype | `bb4aac1` | Red targeted protocol/frame-buffer/worker tests failed before implementation; targeted shared run passed with 5 files and 70 tests; targeted web run passed with 51 files and 348 tests; `pnpm test`, `pnpm lint`, `pnpm build`, repeated `pnpm test:perf`, and `git diff --check` passed before commit | `packages/shared/src/workerProtocol.ts`, `apps/web/src/worker/frameBuffer.ts`, `apps/web/src/worker/training.worker.ts`, `docs/worker-protocol.md` |
+| 2026-05-12 | Wave 7 | Scalar live arena UI prototype | `0344bbe` | Red targeted web tests failed before implementation; targeted web run passed with 51 files and 350 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before commit | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/hooks/useTraining.ts`, `apps/web/src/store/useTrainingStore.ts`, `docs/qa/browser-qa/wave-7-live-arena-ui.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-12 after the Wave 7 scalar live arena runtime implementation with engine 276 tests, shared 70 tests, and web 348 tests.
-- Lint: `pnpm lint` passed on 2026-05-12 after the Wave 7 scalar live arena runtime implementation.
-- Build: `pnpm build` passed on 2026-05-12 after the Wave 7 scalar live arena runtime implementation with the existing Vite chunk-size warning. Relevant chunks: `training.worker-CUaUykZz.js` 79.35 kB, `RunHistoryPanel-DKXx4SLe.js` 15.13 kB gzip 4.84 kB, `index-DE01l2hl.js` 365.16 kB gzip 110.67 kB.
+- Tests: `pnpm test` passed on 2026-05-12 after the Wave 7 live arena UI implementation with engine 276 tests, shared 70 tests, and web 350 tests.
+- Lint: `pnpm lint` passed on 2026-05-12 after the Wave 7 live arena UI implementation.
+- Build: `pnpm build` passed on 2026-05-12 after the Wave 7 live arena UI implementation with the existing Vite chunk-size warning. Relevant chunks: `training.worker-CUaUykZz.js` 79.35 kB, `RunHistoryPanel-Dw3ve2v5.js` 16.70 kB gzip 5.14 kB, `index-BPXCw-bD.js` 366.75 kB gzip 111.03 kB.
 - Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Wave 7 included desktop and compact viewport verification with no console errors.
-- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run arena uses native labelled selects, labelled model regions, and contextual thumbnail text alternatives covered by component tests and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-12 after the Wave 7 scalar live arena runtime implementation with 2 benchmark files and 4 benchmark tests. It was repeated because the first run was noisy; the repeat returned to the established range.
+- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run/live arena uses native labelled selects, native buttons, labelled model regions, grouped scalar summaries, and keyboard activation covered by component tests and Browser QA.
+- Performance: `pnpm test:perf` passed on 2026-05-12 after the Wave 7 live arena UI implementation with 2 benchmark files and 4 benchmark tests.
 
 ## Browser QA Evidence
 
@@ -80,6 +81,7 @@
 - `docs/qa/browser-qa/wave-6d-dataset-lab.md`
 - `docs/qa/browser-qa/wave-6e-checkpoint-timeline.md`
 - `docs/qa/browser-qa/wave-7-side-by-side-arena.md`
+- `docs/qa/browser-qa/wave-7-live-arena-ui.md`
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
@@ -95,6 +97,7 @@
 - Wave 7 saved-run arena desktop scrolled screenshot: `docs/qa/browser-qa/wave-7-side-by-side-arena-scrolled.png`
 - Wave 7 saved-run arena compact screenshot: `docs/qa/browser-qa/wave-7-side-by-side-arena-compact.png`
 - Wave 7 saved-run arena compact scrolled screenshot: `docs/qa/browser-qa/wave-7-side-by-side-arena-compact-scrolled.png`
+- Wave 7 live arena UI screenshot: unavailable; Browser screenshot capture timed out. DOM snapshots and console checks are recorded in `docs/qa/browser-qa/wave-7-live-arena-ui.md`.
 
 ## Performance Evidence
 
@@ -116,6 +119,7 @@
 - Wave 6E checkpoint timeline UI and protocol guard fix changed the main web UI bundle and shared runtime guard. `pnpm test:perf` passed with `predictGrid` 1141.9338 ms, `predictGridInto` 1122.8077 ms, `predictGridWithNeurons` 684.5251 ms, `predictGridWithNeuronsInto` 587.9544 ms, Adam/L2/Clip applyGradients 4.5803 ms, SGD applyGradients 1.4364 ms.
 - Wave 7 saved-run arena changed the lazy run-history UI chunk only. `pnpm test:perf` passed with `predictGrid` 1286.9436 ms, `predictGridInto` 1278.7490 ms, `predictGridWithNeurons` 773.1364 ms, `predictGridWithNeuronsInto` 653.8458 ms, Adam/L2/Clip applyGradients 6.0251 ms, SGD applyGradients 1.5177 ms.
 - Wave 7 scalar live arena runtime changed the worker bundle and scalar frame-buffer/protocol contracts. Initial `pnpm test:perf` was noisy; repeated `pnpm test:perf` passed with `predictGrid` 1138.0670 ms, `predictGridInto` 1093.3958 ms, `predictGridWithNeurons` 696.0030 ms, `predictGridWithNeuronsInto` 592.8361 ms, Adam/L2/Clip applyGradients 4.4625 ms, SGD applyGradients 1.4232 ms.
+- Wave 7 live arena UI changed the lazy run-history UI chunk and App/MainArea callback wiring only. `pnpm test:perf` passed with `predictGrid` 1093.0898 ms, `predictGridInto` 1076.1186 ms, `predictGridWithNeurons` 681.7128 ms, `predictGridWithNeuronsInto` 579.4028 ms, Adam/L2/Clip applyGradients 3.9796 ms, SGD applyGradients 1.4334 ms.
 
 ## Design Decisions
 
@@ -143,6 +147,7 @@
 | 2026-05-12 | Implement Wave 7 Phase 1 from saved run history only | Delivers a usable side-by-side arena without live dual-model runtime, worker, protocol, persistence, URL/config, public config, or dependency changes | `docs/design-notes/side-by-side-model-arena.md`, `76c37ae` |
 | 2026-05-12 | Prefer one-worker sequential live arena before multi-worker designs | Minimizes concurrency, lifecycle, and memory risk while preserving deterministic stepping and the existing single-model path | `docs/design-notes/live-side-by-side-model-arena.md`, `37c7d57` |
 | 2026-05-12 | Ship the first live arena runtime slice as scalar-only Comlink APIs | Lets tests prove two isolated model slots and side-tagged bounded summaries before adding UI streaming, paired boundaries, persistence, URL/config state, or multiple workers | `docs/design-notes/live-side-by-side-model-arena.md`, `bb4aac1` |
+| 2026-05-12 | Expose live arena UI through saved-run records and scalar summaries only | Gives learners a usable live comparison prototype while avoiding persistence, URL/config state, paired heavy arrays, public config, dependencies, and multiple-worker execution | `docs/design-notes/live-side-by-side-model-arena.md`, `0344bbe` |
 
 ## Known Issues
 
@@ -156,10 +161,11 @@
 - Wave 6C report export does not include images, weights, or raw arrays; richer report media/export formats are deferred.
 - Wave 6D sample controls are bounded presets only. Custom sample count editing and new dataset parameters are deferred.
 - Wave 6E compact viewport visual Browser QA remains pending from that earlier slice; Wave 7 compact viewport Browser QA was executed with the Browser viewport capability.
+- Wave 7 live arena UI Browser QA screenshot capture timed out in the in-app Browser backend; DOM snapshots and console checks passed and are recorded.
 
 ## Blocked Items
 
-- Wave 7 paired heavy visualization, streaming arena UI, URL/config serialization, persistence, public config shape changes, dependencies, engine math changes, and multiple-worker live arena designs remain blocked/deferred. Scalar-only runtime prototype is complete.
+- Wave 7 paired heavy visualization, continuous arena streaming, URL/config serialization, persistence, public config shape changes, dependencies, engine math changes, and multiple-worker live arena designs remain blocked/deferred. Scalar-only runtime and UI prototypes are complete.
 
 ## Deferred Items
 
@@ -168,8 +174,8 @@
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
 - Wave 6E persistence of checkpoints across reloads remains deferred and requires separate approval.
-- Wave 7 live model arena, slow-motion backprop, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
-- Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, and multiple-worker execution are explicitly deferred from the scalar runtime slice.
+- Wave 7 paired live model arena visualizations, slow-motion backprop, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
+- Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, continuous streaming, and multiple-worker execution are explicitly deferred from the scalar runtime/UI prototype.
 
 ## Approval Gates Reached
 
@@ -180,11 +186,12 @@
 - Wave 7 Side-by-Side Model Arena Phase 1 saved-run implementation was approved by the user's `/goal complete everything` continuation and committed as `76c37ae`.
 - Wave 7 live Side-by-Side Model Arena runtime design note was committed as `37c7d57`.
 - Wave 7 scalar live arena runtime slice was approved by the user's continuation and committed as `bb4aac1`.
+- Wave 7 scalar live arena UI slice was approved by the user's continuation and committed as `0344bbe`.
 - Further Wave 7 work that adds paired heavy visualizations, URL/config state, persistence, public config changes, dependencies, engine math changes, or multiple-worker execution requires a separate approval gate.
 
 ## Next Recommended Slice
 
-Next recommended safe slice: expose the scalar live arena prototype in UI using the existing `initializeArena`/`stepArena` worker APIs and bounded summaries only. Do not add paired boundaries, histograms, checkpoints, URL/config serialization, persistence, public config changes, dependencies, engine math changes, or multiple workers without separate approval.
+Next recommended step: stop for a fresh approval gate before any further Wave 7 product bet. The safe scalar live arena prototype is now exposed in the UI. Paired boundaries, histograms, checkpoints, URL/config serialization, persistence, public config changes, dependencies, engine math changes, continuous streaming, and multiple workers all require separate approval/design before implementation.
 
 ## Handoff Notes
 

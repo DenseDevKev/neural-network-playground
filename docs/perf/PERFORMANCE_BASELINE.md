@@ -482,3 +482,37 @@ The repeated `pnpm test:perf` run passed and returned to the established range:
 - Average `applyGradients` time (SGD): 1.4232 ms
 
 The repeat suggests the first perf run was machine noise. The implemented runtime slice does not alter engine prediction or gradient hot paths.
+
+## Wave 7 Live Arena UI
+
+Date: 2026-05-12
+
+Scope: expose the scalar live arena prototype in the lazy Run History UI by wiring saved runs to existing `initializeArena` and `stepArena` worker APIs. This slice keeps arena data bounded to scalar summaries, leaves large model arrays in the worker/frame buffer, and does not change URL/config serialization, persistence schema, public config shape, dependencies, engine math, or paired heavy visualizations.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the live arena UI slice. Relevant production output:
+
+- `dist/assets/training.worker-CUaUykZz.js`: 79.35 kB
+- `dist/assets/index-B3wCX0gO.css`: 66.18 kB, gzip 11.49 kB
+- `dist/assets/InspectionPanel-p_Q4BzX6.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-Dw3ve2v5.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-BPXCw-bD.js`: 366.75 kB, gzip 111.03 kB
+
+Compared with the scalar runtime slice, the worker bundle was unchanged. The lazy `RunHistoryPanel` chunk increased from 15.13 kB to 16.70 kB because it now renders live arena controls and scalar summaries. The main app bundle increased from 365.16 kB to 366.75 kB because App/MainArea now pass the arena callbacks. These changes are below the roadmap 10% build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the live arena UI slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1093.0898 ms total for 100 iterations
+- `predictGridInto`: 1076.1186 ms total for 100 iterations
+- `predictGridWithNeurons`: 681.7128 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 579.4028 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9796 ms
+- Average `applyGradients` time (SGD): 1.4334 ms
+
+These values are within the established range and below the roadmap warning thresholds. This UI slice does not alter engine prediction or gradient hot paths.
