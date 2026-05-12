@@ -2642,6 +2642,112 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     background: linear-gradient(90deg, #3b82f6, #f97316);
 }
 
+/* ── Saved-run Arena ── */
+.run-arena {
+    margin-top: var(--space-md);
+    padding: var(--space-sm) 0;
+    border-top: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.run-arena__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+}
+
+.run-arena__summary {
+    margin: 2px 0 0;
+    color: var(--text-tertiary);
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.run-arena__selectors {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-xs);
+}
+
+.run-arena__selectors label {
+    display: grid;
+    gap: 3px;
+    color: var(--text-tertiary);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.run-arena__selectors select {
+    min-width: 0;
+    height: 30px;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.18);
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.run-arena__models {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-xs);
+    margin-top: var(--space-sm);
+}
+
+.run-arena__model {
+    min-width: 0;
+    padding: var(--space-xs);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+}
+
+.run-arena__model-title {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
+.run-arena__model-title strong {
+    overflow: hidden;
+    color: var(--text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.run-arena__metrics,
+.run-arena__comparison {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: var(--space-xs);
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+}
+
+.run-arena__metrics span,
+.run-arena__comparison span {
+    min-width: 0;
+    padding: 2px 5px;
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.run-arena__comparison {
+    color: var(--text-primary);
+}
+
+@media (max-width: 560px) {
+    .run-arena__selectors,
+    .run-arena__models {
+        grid-template-columns: 1fr;
+    }
+}
+
 .inspection__histogram {
     display: flex;
     align-items: flex-end;

@@ -142,6 +142,61 @@ describe('RunHistoryPanel', () => {
         expect(screen.getByText('Steps +80')).toBeInTheDocument();
     });
 
+    it('renders a side-by-side arena from two saved runs with accessible model regions', async () => {
+        const user = userEvent.setup();
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'baseline',
+                title: 'Baseline',
+                updatedAt: '2026-04-26T00:00:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 100,
+                    trainLoss: 0.4,
+                    testLoss: 0.6,
+                },
+                history: [
+                    { step: 0, trainLoss: 0.7, testLoss: 0.8 },
+                    { step: 100, trainLoss: 0.4, testLoss: 0.6 },
+                ],
+            }));
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'tuned',
+                title: 'Tuned model',
+                updatedAt: '2026-04-26T00:01:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 180,
+                    trainLoss: 0.25,
+                    testLoss: 0.42,
+                },
+                history: [
+                    { step: 0, trainLoss: 0.7, testLoss: 0.8 },
+                    { step: 180, trainLoss: 0.25, testLoss: 0.42 },
+                ],
+            }));
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+
+        expect(screen.getByRole('region', { name: 'Side-by-side model arena' })).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Model A: Tuned model' })).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Model B: Baseline' })).toBeInTheDocument();
+        expect(screen.getByRole('group', { name: 'Arena comparison summary' })).toHaveTextContent(
+            'Model A lower test loss by 0.1800',
+        );
+        expect(screen.getByRole('group', { name: 'Arena comparison summary' })).toHaveTextContent(
+            'Model A trained 80 more steps',
+        );
+
+        await user.selectOptions(screen.getByLabelText('Model A run'), 'baseline');
+
+        expect(screen.getByRole('region', { name: 'Model A: Baseline' })).toBeInTheDocument();
+        expect(screen.getByRole('group', { name: 'Arena comparison summary' })).toHaveTextContent(
+            'Both models have the same test loss.',
+        );
+    });
+
     it('renders accessible loss-history thumbnails from saved history points', () => {
         act(() => {
             useExperimentMemoryStore.getState().saveRecord(makeRecord({

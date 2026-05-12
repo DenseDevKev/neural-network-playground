@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useState } from 'react';
 import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
 import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -39,6 +39,28 @@ function generalizationGap(record: ExperimentRunRecordV1): number {
     return record.summary.testLoss - record.summary.trainLoss;
 }
 
+function formatArenaLossComparison(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
+    const diff = a.summary.testLoss - b.summary.testLoss;
+    if (!Number.isFinite(diff)) return 'Test loss comparison unavailable.';
+    if (Math.abs(diff) < 0.00005) return 'Both models have the same test loss.';
+    const direction = diff < 0 ? 'lower' : 'higher';
+    return `Model A ${direction} test loss by ${Math.abs(diff).toFixed(4)}.`;
+}
+
+function formatArenaStepComparison(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
+    const diff = a.summary.step - b.summary.step;
+    if (diff === 0) return 'Both models trained for the same number of steps.';
+    return `Model A trained ${Math.abs(diff).toLocaleString()} ${diff > 0 ? 'more' : 'fewer'} steps.`;
+}
+
+function formatArenaGapComparison(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
+    const diff = generalizationGap(a) - generalizationGap(b);
+    if (!Number.isFinite(diff)) return 'Generalization gap comparison unavailable.';
+    if (Math.abs(diff) < 0.00005) return 'Both models have the same generalization gap.';
+    const direction = diff < 0 ? 'smaller' : 'larger';
+    return `Model A ${direction} generalization gap by ${Math.abs(diff).toFixed(4)}.`;
+}
+
 function formatFeatureList(record: ExperimentRunRecordV1): string {
     const enabled = Object.entries(record.config.features)
         .filter(([, value]) => value)
@@ -46,15 +68,16 @@ function formatFeatureList(record: ExperimentRunRecordV1): string {
     return enabled.length ? enabled.join(', ') : 'none';
 }
 
-function createLossThumbnailLabel(record: ExperimentRunRecordV1): string {
+function createLossThumbnailLabel(record: ExperimentRunRecordV1, labelPrefix?: string): string {
     const first = record.history[0];
     const last = record.history.at(-1);
     if (!first || !last) return `No loss history thumbnail for ${getRecordLabel(record)}.`;
-    return [
+    const label = [
         `Loss thumbnail for ${getRecordLabel(record)}: ${record.history.length} points`,
         `train loss ${formatMetric(first.trainLoss)} to ${formatMetric(last.trainLoss)}`,
         `test loss ${formatMetric(first.testLoss)} to ${formatMetric(last.testLoss)}.`,
     ].join(', ');
+    return labelPrefix ? `${labelPrefix}: ${label}` : label;
 }
 
 function createSparklinePath(
@@ -78,11 +101,17 @@ function createSparklinePath(
     }).join(' ');
 }
 
-function RunHistoryThumbnail({ record }: { record: ExperimentRunRecordV1 }) {
+function RunHistoryThumbnail({
+    record,
+    labelPrefix,
+}: {
+    record: ExperimentRunRecordV1;
+    labelPrefix?: string;
+}) {
     if (record.history.length < 2) {
         return (
             <div className="inspection__empty" style={{ marginTop: 8 }}>
-                No loss history thumbnail
+                {labelPrefix ? `${labelPrefix} has no loss history thumbnail` : 'No loss history thumbnail'}
             </div>
         );
     }
@@ -92,7 +121,7 @@ function RunHistoryThumbnail({ record }: { record: ExperimentRunRecordV1 }) {
         <div style={{ marginTop: 8 }}>
             <svg
                 role="img"
-                aria-label={createLossThumbnailLabel(record)}
+                aria-label={createLossThumbnailLabel(record, labelPrefix)}
                 viewBox="0 0 180 56"
                 preserveAspectRatio="none"
                 style={{ display: 'block', width: '100%', height: 56 }}
@@ -105,6 +134,79 @@ function RunHistoryThumbnail({ record }: { record: ExperimentRunRecordV1 }) {
                 <text x="40" y="53" fill="currentColor" fontSize="8">test</text>
             </svg>
         </div>
+    );
+}
+
+function ArenaModelPane({
+    label,
+    record,
+}: {
+    label: 'Model A' | 'Model B';
+    record: ExperimentRunRecordV1;
+}) {
+    return (
+        <section className="run-arena__model" aria-label={`${label}: ${getRecordLabel(record)}`}>
+            <div className="run-arena__model-title">
+                <span>{label}</span>
+                <strong>{getRecordLabel(record)}</strong>
+            </div>
+            <div className="run-arena__metrics">
+                <span>step {record.summary.step.toLocaleString()}</span>
+                <span>train {formatMetric(record.summary.trainLoss)}</span>
+                <span>test {formatMetric(record.summary.testLoss)}</span>
+                <span>gap {formatMetric(generalizationGap(record))}</span>
+            </div>
+            <RunHistoryThumbnail record={record} labelPrefix={label} />
+        </section>
+    );
+}
+
+function SideBySideModelArena({ records }: { records: ExperimentRunRecordV1[] }) {
+    const [modelAId, setModelAId] = useState(records[0]?.id ?? '');
+    const [modelBId, setModelBId] = useState(records[1]?.id ?? records[0]?.id ?? '');
+    if (records.length < 2) return null;
+
+    const modelA = records.find((record) => record.id === modelAId) ?? records[0];
+    const modelB = records.find((record) => record.id === modelBId) ?? records[1] ?? records[0];
+
+    return (
+        <section className="run-arena" aria-label="Side-by-side model arena">
+            <div className="run-arena__header">
+                <div>
+                    <div className="inspection__layer-name">Side-by-side model arena</div>
+                    <p className="run-arena__summary">
+                        Compare two saved runs using existing metrics and loss thumbnails.
+                    </p>
+                </div>
+            </div>
+            <div className="run-arena__selectors">
+                <label>
+                    <span>Model A run</span>
+                    <select value={modelA.id} onChange={(event) => setModelAId(event.currentTarget.value)}>
+                        {records.map((record) => (
+                            <option key={record.id} value={record.id}>{getRecordLabel(record)}</option>
+                        ))}
+                    </select>
+                </label>
+                <label>
+                    <span>Model B run</span>
+                    <select value={modelB.id} onChange={(event) => setModelBId(event.currentTarget.value)}>
+                        {records.map((record) => (
+                            <option key={record.id} value={record.id}>{getRecordLabel(record)}</option>
+                        ))}
+                    </select>
+                </label>
+            </div>
+            <div className="run-arena__models">
+                <ArenaModelPane label="Model A" record={modelA} />
+                <ArenaModelPane label="Model B" record={modelB} />
+            </div>
+            <div className="run-arena__comparison" role="group" aria-label="Arena comparison summary">
+                <span>{formatArenaLossComparison(modelA, modelB)}</span>
+                <span>{formatArenaGapComparison(modelA, modelB)}</span>
+                <span>{formatArenaStepComparison(modelA, modelB)}</span>
+            </div>
+        </section>
     );
 }
 
@@ -223,78 +325,81 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({ onRestore }: RunH
             {records.length === 0 ? (
                 <div className="inspection__empty" style={{ marginTop: 12 }}>No saved runs</div>
             ) : (
-                <div className="inspection__layers" style={{ marginTop: 12 }}>
-                    {records.map((record, index) => {
-                        const baseline = records[index + 1];
-                        return (
-                            <article key={record.id} className="inspection__layer" aria-label={getRecordLabel(record)}>
-                                <div className="inspection__layer-name">{record.title ?? 'Saved run'}</div>
-                                <div className="inspection__stat-row">
-                                    <span className="inspection__stat-label">step</span>
-                                    <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
-                                        {record.summary.step.toLocaleString()}
-                                    </span>
-                                </div>
-                                <div className="inspection__stat-row">
-                                    <span className="inspection__stat-label">loss</span>
-                                    <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
-                                        {formatMetric(record.summary.trainLoss)} / {formatMetric(record.summary.testLoss)}
-                                    </span>
-                                </div>
-                                <RunHistoryThumbnail record={record} />
-                                {baseline && (
-                                    <div
-                                        role="group"
-                                        aria-label={`Comparison for ${getRecordLabel(record)} against ${getRecordLabel(baseline)}`}
-                                        style={{ marginTop: 8 }}
-                                    >
-                                        <div className="inspection__stat-label">Compared with {getRecordLabel(baseline)}</div>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                                            <span className="inspection__stat-value">
-                                                Train loss {formatSignedMetric(record.summary.trainLoss - baseline.summary.trainLoss)}
-                                            </span>
-                                            <span className="inspection__stat-value">
-                                                Test loss {formatSignedMetric(record.summary.testLoss - baseline.summary.testLoss)}
-                                            </span>
-                                            <span className="inspection__stat-value">
-                                                Gap {formatSignedMetric(generalizationGap(record) - generalizationGap(baseline))}
-                                            </span>
-                                            <span className="inspection__stat-value">
-                                                Steps {formatSignedInteger(record.summary.step - baseline.summary.step)}
-                                            </span>
-                                        </div>
+                <>
+                    <SideBySideModelArena records={records} />
+                    <div className="inspection__layers" style={{ marginTop: 12 }}>
+                        {records.map((record, index) => {
+                            const baseline = records[index + 1];
+                            return (
+                                <article key={record.id} className="inspection__layer" aria-label={getRecordLabel(record)}>
+                                    <div className="inspection__layer-name">{record.title ?? 'Saved run'}</div>
+                                    <div className="inspection__stat-row">
+                                        <span className="inspection__stat-label">step</span>
+                                        <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
+                                            {record.summary.step.toLocaleString()}
+                                        </span>
                                     </div>
-                                )}
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                                    <button
-                                        type="button"
-                                        className="btn btn--ghost btn--sm"
-                                        onClick={() => handleRestore(record)}
-                                        aria-label={`Restore config for ${record.title ?? record.id}`}
-                                    >
-                                        Restore config
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="btn btn--ghost btn--sm"
-                                        onClick={() => downloadMarkdown(record)}
-                                        aria-label={`Export report for ${record.title ?? record.id}`}
-                                    >
-                                        Export report
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="btn btn--ghost btn--sm"
-                                        onClick={() => removeRecord(record.id)}
-                                        aria-label={`Delete ${record.title ?? record.id}`}
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            </article>
-                        );
-                    })}
-                </div>
+                                    <div className="inspection__stat-row">
+                                        <span className="inspection__stat-label">loss</span>
+                                        <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
+                                            {formatMetric(record.summary.trainLoss)} / {formatMetric(record.summary.testLoss)}
+                                        </span>
+                                    </div>
+                                    <RunHistoryThumbnail record={record} />
+                                    {baseline && (
+                                        <div
+                                            role="group"
+                                            aria-label={`Comparison for ${getRecordLabel(record)} against ${getRecordLabel(baseline)}`}
+                                            style={{ marginTop: 8 }}
+                                        >
+                                            <div className="inspection__stat-label">Compared with {getRecordLabel(baseline)}</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                                                <span className="inspection__stat-value">
+                                                    Train loss {formatSignedMetric(record.summary.trainLoss - baseline.summary.trainLoss)}
+                                                </span>
+                                                <span className="inspection__stat-value">
+                                                    Test loss {formatSignedMetric(record.summary.testLoss - baseline.summary.testLoss)}
+                                                </span>
+                                                <span className="inspection__stat-value">
+                                                    Gap {formatSignedMetric(generalizationGap(record) - generalizationGap(baseline))}
+                                                </span>
+                                                <span className="inspection__stat-value">
+                                                    Steps {formatSignedInteger(record.summary.step - baseline.summary.step)}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                        <button
+                                            type="button"
+                                            className="btn btn--ghost btn--sm"
+                                            onClick={() => handleRestore(record)}
+                                            aria-label={`Restore config for ${record.title ?? record.id}`}
+                                        >
+                                            Restore config
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn--ghost btn--sm"
+                                            onClick={() => downloadMarkdown(record)}
+                                            aria-label={`Export report for ${record.title ?? record.id}`}
+                                        >
+                                            Export report
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn--ghost btn--sm"
+                                            onClick={() => removeRecord(record.id)}
+                                            aria-label={`Delete ${record.title ?? record.id}`}
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                </>
             )}
             {pauseReason && <span className="sr-only">Last pause reason: {pauseReason}</span>}
         </div>
