@@ -100,3 +100,38 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4921 ms
 
 These benchmark values remain within the roadmap warning thresholds compared with the Wave 0 baseline. The existing benchmark suite does not directly time activation histogram computation; runtime protection for this slice is covered by demand/cadence tests and by keeping compact bins in the frame buffer instead of React state.
+
+## Wave 5 Runtime Hardening Comparison
+
+Date: 2026-05-11
+
+Scope: runtime and worker hardening through regression tests and documentation. Wave 5 did not change production runtime code, worker protocol fields, frame-buffer semantics, SharedArrayBuffer behavior, WebGPU transport, engine math, persistence, URL/config serialization, or public config shape.
+
+Commands:
+
+- `pnpm test`
+- `pnpm lint`
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the Wave 5 hardening slices. Relevant production output:
+
+- `dist/assets/training.worker--UxrksoV.js`: 71.53 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/InspectionPanel-D2P7wqJz.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/index-Do23QsAR.js`: 360.52 kB, gzip 109.51 kB
+
+Compared with the Wave 4 activation histogram build, the relevant production bundle sizes were unchanged. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the Wave 5 hardening slices with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1148.0024 ms total for 100 iterations
+- `predictGridInto`: 1148.9127 ms total for 100 iterations
+- `predictGridWithNeurons`: 719.4125 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 604.6402 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.8508 ms
+- Average `applyGradients` time (SGD): 1.6078 ms
+
+These benchmark values remain within the roadmap warning thresholds compared with the Wave 0 and Wave 4 baselines. One earlier Wave 5 worker-lifecycle perf run was noisy, so it was repeated before commit; the repeated and final values did not indicate a sustained regression. Because Wave 5 changed tests and docs only, no runtime performance impact is expected from the completed slices.
