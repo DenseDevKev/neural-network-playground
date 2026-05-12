@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `67b7c9f`; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed on 2026-05-12 before the Wave 6E checkpoint timeline UI commit.
+- Last verified commit: `64ed867`; `git diff --check` passed before the Wave 7 Side-by-Side Model Arena design-note commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Larger product bets approval gate
+- Slice: Side-by-Side Model Arena design note
 - Risk: High
-- Status: Waves 0 through 6E are implemented and committed. Wave 7 proposal is prepared; no Wave 7 implementation is approved yet.
+- Status: Side-by-Side Model Arena design note is complete. No Wave 7 implementation is approved yet.
 
 ## Completed Slices
 
@@ -55,6 +55,7 @@
 | 2026-05-12 | Wave 6E | Worker checkpoint ring buffer and restore RPC | `69d4ffe` | Red targeted web worker tests failed before implementation; targeted web run passed with 51 files and 342 tests; after fixing a shared type export caught by `pnpm build`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `packages/shared/src/index.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-12 | Wave 6E | Protocol guard for omitted activation histograms | `972ec04` | Red targeted shared protocol test failed before implementation; targeted shared run passed with 5 files and 68 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit as part of the Wave 6E verification sweep | `packages/shared/src/workerProtocol.ts`, `packages/shared/src/__tests__/workerProtocol.test.ts` |
 | 2026-05-12 | Wave 6E | Checkpoint timeline UI and QA evidence | `67b7c9f` | Red targeted web hook/control tests failed before implementation; targeted web run passed with 51 files and 344 tests; `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed before commit; Browser QA Mode B passed at desktop size | `apps/web/src/hooks/useTraining.ts`, `apps/web/src/components/controls/TrainingControls.tsx`, `apps/web/src/store/useTrainingStore.ts`, `docs/qa/browser-qa/wave-6e-checkpoint-timeline.md` |
+| 2026-05-12 | Wave 7 | Side-by-Side Model Arena design note | `64ed867` | Design-note-only commit; `git diff --check` passed before commit | `docs/design-notes/side-by-side-model-arena.md` |
 
 ## Current Verification Status
 
@@ -161,10 +162,11 @@
 - Wave 4 activation histogram explorer was approved by the user on 2026-05-11 and implemented in `590114d`.
 - Wave 6E checkpoints and timeline scrubber design note was prepared in `c2896a2`; implementation was explicitly approved by the user on 2026-05-12 with "YES".
 - Wave 7 larger product bets require separate proposal and explicit approval before each feature. Proposal prepared in `docs/roadmap/WAVE_7_PROPOSAL.md`.
+- Wave 7 Side-by-Side Model Arena design note was approved to create on 2026-05-12 and committed as `64ed867`; implementation still requires separate explicit approval.
 
 ## Next Recommended Slice
 
-Stop at the Wave 7 approval gate. Recommended next step: approve or revise `docs/roadmap/WAVE_7_PROPOSAL.md`, starting with the Side-by-Side Model Arena design note if desired.
+Stop at the Wave 7 implementation approval gate. Recommended next step: approve or revise Phase 1 in `docs/design-notes/side-by-side-model-arena.md`.
 
 ## Handoff Notes
 
