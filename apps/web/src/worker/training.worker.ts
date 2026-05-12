@@ -51,6 +51,9 @@ import type {
     WorkerSharedBuffersMessage,
     CheckpointTimeline,
     CheckpointSummary,
+    ArenaScalarSnapshot,
+    ArenaSide,
+    ArenaModelSummary,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 import {
@@ -191,6 +194,36 @@ interface RuntimeCheckpoint {
     snapshotsSinceLastTestEval: number;
     snapshotsSinceLastGrid: number;
     snapshotsSinceLastActivationHistogram: number;
+}
+
+interface ArenaModelInput {
+    label?: string;
+    network: NetworkConfig;
+    training: TrainingConfig;
+    data: DataConfig;
+    features: FeatureFlags;
+}
+
+interface InitializeArenaRequest {
+    modelA: ArenaModelInput;
+    modelB: ArenaModelInput;
+}
+
+interface ArenaSlot {
+    side: ArenaSide;
+    label: string;
+    network: Network;
+    trainingConfig: TrainingConfig;
+    dataConfig: DataConfig;
+    trainInputs: number[][];
+    trainTargets: number[][];
+    testInputs: number[][];
+    testTargets: number[][];
+    epoch: number;
+    shuffledIndices: number[];
+    shufflePrng: PRNG;
+    status: ArenaModelSummary['status'];
+    pauseReason: PauseReason | null;
 }
 
 export type PredictionTraceSampleSource = 'train' | 'test' | 'custom';
@@ -387,6 +420,16 @@ const state: WorkerState = {
     awaitingAck: false,
 };
 
+const arenaState: {
+    slots: [ArenaSlot, ArenaSlot] | null;
+    runId: number;
+    snapshotId: number;
+} = {
+    slots: null,
+    runId: 0,
+    snapshotId: 0,
+};
+
 function cloneMetrics<T extends { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null>(metrics: T): T {
     if (metrics === null) return null as T;
     return {
@@ -453,6 +496,132 @@ function resetCheckpoints(): void {
     state.nextCheckpointId = 1;
     state.checkpointEvictedCount = 0;
     state.restoredCheckpointId = null;
+}
+
+function buildArenaSlot(side: ArenaSide, input: ArenaModelInput): ArenaSlot {
+    const config = normalizeWorkerConfig(
+        input.network,
+        input.training,
+        input.data,
+        input.features,
+    );
+    const activeFeatures = getActiveFeatures(config.features);
+    const split = generateDataset(
+        config.data.dataset,
+        config.data.numSamples,
+        config.data.noise,
+        config.data.trainTestRatio,
+        config.data.seed,
+    );
+    const networkConfig = {
+        ...config.network,
+        inputSize: countActiveFeatures(config.features),
+    };
+    const network = new Network(networkConfig, networkConfig.seed);
+    const trainInputs = transformDataset(split.train, activeFeatures);
+    const trainTargets = split.train.map((point) => [point.label]);
+    const testInputs = transformDataset(split.test, activeFeatures);
+    const testTargets = split.test.map((point) => [point.label]);
+    const shuffledIndices = Array.from({ length: trainInputs.length }, (_, index) => index);
+    const shufflePrng = new PRNG((config.data.seed ?? 42) + (side === 'A' ? 2234 : 3234));
+    if (shuffledIndices.length > 0) {
+        shufflePrng.shuffle(shuffledIndices);
+    }
+
+    return {
+        side,
+        label: input.label ?? `Model ${side}`,
+        network,
+        trainingConfig: config.training,
+        dataConfig: config.data,
+        trainInputs,
+        trainTargets,
+        testInputs,
+        testTargets,
+        epoch: 0,
+        shuffledIndices,
+        shufflePrng,
+        status: 'idle',
+        pauseReason: null,
+    };
+}
+
+function trainArenaSlot(slot: ArenaSlot): void {
+    const n = slot.trainInputs.length;
+    if (n === 0) return;
+
+    const batchSize = slot.trainingConfig.batchSize;
+    const stepBefore = slot.network.getStep();
+    const numBatches = Math.ceil(n / batchSize);
+    const batchSlot = stepBefore % numBatches;
+
+    if (batchSlot === 0 && stepBefore > 0) {
+        slot.shufflePrng.shuffle(slot.shuffledIndices);
+    }
+
+    const startIdx = batchSlot * batchSize;
+    const endIdx = Math.min(startIdx + batchSize, n);
+    if (startIdx === endIdx) return;
+
+    const batchLoss = slot.network.trainBatchIndexed(
+        slot.trainInputs,
+        slot.trainTargets,
+        slot.shuffledIndices,
+        startIdx,
+        endIdx,
+        slot.trainingConfig,
+    );
+    if (!Number.isFinite(batchLoss)) {
+        slot.status = 'paused';
+        slot.pauseReason = 'diverged';
+    }
+    if (batchSlot === numBatches - 1) {
+        slot.epoch++;
+    }
+}
+
+function buildArenaSummary(slot: ArenaSlot): ArenaModelSummary {
+    const lossType = slot.trainingConfig.lossType;
+    const problemType = slot.dataConfig.problemType;
+    const huberDelta = slot.trainingConfig.huberDelta;
+    const trainMetrics = slot.network.evaluate(
+        slot.trainInputs,
+        slot.trainTargets,
+        lossType,
+        problemType,
+        huberDelta,
+    );
+    const testMetrics = slot.network.evaluate(
+        slot.testInputs,
+        slot.testTargets,
+        lossType,
+        problemType,
+        huberDelta,
+    );
+
+    return {
+        side: slot.side,
+        label: slot.label,
+        status: slot.status,
+        pauseReason: slot.pauseReason,
+        step: slot.network.getStep(),
+        epoch: slot.epoch,
+        trainLoss: trainMetrics.loss,
+        testLoss: testMetrics.loss,
+        trainAccuracy: trainMetrics.accuracy,
+        testAccuracy: testMetrics.accuracy,
+    };
+}
+
+function buildArenaSnapshot(): ArenaScalarSnapshot {
+    if (!arenaState.slots) {
+        throw new Error('Arena is not initialized');
+    }
+    return {
+        runId: arenaState.runId,
+        snapshotId: arenaState.snapshotId++,
+        summaries: arenaState.slots.map(buildArenaSummary),
+    };
 }
 
 // Top-level error backstops — catch anything not handled by the per-function
@@ -1376,6 +1545,43 @@ export const workerApi = {
             trainOneStep();
         }
         return computeSnapshot();
+    },
+
+    initializeArena(request: InitializeArenaRequest): ArenaScalarSnapshot {
+        arenaState.slots = [
+            buildArenaSlot('A', request.modelA),
+            buildArenaSlot('B', request.modelB),
+        ];
+        arenaState.runId++;
+        arenaState.snapshotId = 0;
+        return buildArenaSnapshot();
+    },
+
+    stepArena(iterations: number = 1): ArenaScalarSnapshot {
+        if (!Number.isInteger(iterations) || iterations < 1) {
+            throw new RangeError('arena iterations must be a positive integer');
+        }
+        if (!arenaState.slots) {
+            throw new Error('Arena is not initialized');
+        }
+
+        for (let i = 0; i < iterations; i++) {
+            for (const slot of arenaState.slots) {
+                if (slot.status !== 'paused') {
+                    slot.status = 'running';
+                    trainArenaSlot(slot);
+                }
+            }
+        }
+
+        for (const slot of arenaState.slots) {
+            if (slot.status === 'running') {
+                slot.status = 'paused';
+                slot.pauseReason = null;
+            }
+        }
+
+        return buildArenaSnapshot();
     },
 
     reset(): { snapshot: NetworkSnapshot; runId: number } {

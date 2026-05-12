@@ -67,6 +67,56 @@ describe('isMainToWorkerCommand', () => {
 });
 
 describe('isWorkerToMainMessage', () => {
+    it('accepts scalar-only live arena snapshot summaries', () => {
+        expect(isWorkerToMainMessage({
+            type: 'arenaSnapshot',
+            runId: 2,
+            snapshotId: 1,
+            summaries: [
+                {
+                    side: 'A',
+                    label: 'Model A',
+                    status: 'running',
+                    step: 5,
+                    epoch: 0,
+                    trainLoss: 0.42,
+                    testLoss: 0.51,
+                    trainAccuracy: 0.7,
+                    testAccuracy: 0.65,
+                },
+                {
+                    side: 'B',
+                    label: 'Model B',
+                    status: 'paused',
+                    pauseReason: 'manual',
+                    step: 5,
+                    epoch: 0,
+                    trainLoss: 0.5,
+                    testLoss: 0.58,
+                },
+            ],
+        })).toBe(true);
+    });
+
+    it('rejects malformed live arena snapshot summaries', () => {
+        expect(isWorkerToMainMessage({
+            type: 'arenaSnapshot',
+            runId: 2,
+            snapshotId: 1,
+            summaries: [
+                {
+                    side: 'left',
+                    label: '',
+                    status: 'running',
+                    step: -1,
+                    epoch: 0,
+                    trainLoss: Number.NaN,
+                    testLoss: 0.51,
+                },
+            ],
+        })).toBe(false);
+    });
+
     it('accepts lightweight checkpoint timeline metadata on snapshot messages', () => {
         expect(isWorkerToMainMessage({
             type: 'snapshot',

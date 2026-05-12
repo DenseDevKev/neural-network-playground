@@ -5,7 +5,7 @@
 // in useTrainingStore as a render trigger, then read from here imperatively.
 
 import type { LayerStats, ConfusionMatrixData } from '@nn-playground/engine';
-import type { ActivationHistogramLayout } from '@nn-playground/shared';
+import type { ActivationHistogramLayout, ArenaModelSummary } from '@nn-playground/shared';
 
 export interface FrameVersions {
     frameVersion: number;
@@ -15,6 +15,7 @@ export interface FrameVersions {
     layerStatsVersion: number;
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
+    arenaSummariesVersion: number;
 }
 
 export interface FrameBuffer {
@@ -41,6 +42,9 @@ export interface FrameBuffer {
     // Confusion matrix
     confusionMatrix: ConfusionMatrixData | null;
 
+    // Scalar-only live arena summaries. Heavy per-model arrays stay out of React state.
+    arenaSummaries: ArenaModelSummary[] | null;
+
     // Version counters — `version` is the legacy broad frame version.
     version: number;
     outputGridVersion: number;
@@ -49,6 +53,7 @@ export interface FrameBuffer {
     layerStatsVersion: number;
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
+    arenaSummariesVersion: number;
 }
 
 let _buffer: FrameBuffer = {
@@ -63,6 +68,7 @@ let _buffer: FrameBuffer = {
     activationHistogramBins: null,
     activationHistogramLayout: null,
     confusionMatrix: null,
+    arenaSummaries: null,
     version: 0,
     outputGridVersion: 0,
     neuronGridsVersion: 0,
@@ -70,6 +76,7 @@ let _buffer: FrameBuffer = {
     layerStatsVersion: 0,
     confusionMatrixVersion: 0,
     activationHistogramsVersion: 0,
+    arenaSummariesVersion: 0,
 };
 
 /** Get a readonly view of the current frame buffer. */
@@ -92,6 +99,7 @@ export function getFrameVersions(): FrameVersions {
         layerStatsVersion: _buffer.layerStatsVersion,
         confusionMatrixVersion: _buffer.confusionMatrixVersion,
         activationHistogramsVersion: _buffer.activationHistogramsVersion,
+        arenaSummariesVersion: _buffer.arenaSummariesVersion,
     };
 }
 
@@ -122,13 +130,15 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
     const activationHistogramsChanged =
         hasOwn(patch, 'activationHistogramBins') ||
         hasOwn(patch, 'activationHistogramLayout');
+    const arenaSummariesChanged = hasOwn(patch, 'arenaSummaries');
     const anyDomainChanged =
         outputGridChanged ||
         neuronGridsChanged ||
         paramsChanged ||
         layerStatsChanged ||
         confusionMatrixChanged ||
-        activationHistogramsChanged;
+        activationHistogramsChanged ||
+        arenaSummariesChanged;
 
     _buffer = {
         ..._buffer,
@@ -141,6 +151,7 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         confusionMatrixVersion: _buffer.confusionMatrixVersion + (confusionMatrixChanged ? 1 : 0),
         activationHistogramsVersion:
             _buffer.activationHistogramsVersion + (activationHistogramsChanged ? 1 : 0),
+        arenaSummariesVersion: _buffer.arenaSummariesVersion + (arenaSummariesChanged ? 1 : 0),
     };
     return _buffer.version;
 }
@@ -159,6 +170,7 @@ export function resetFrameBuffer(): void {
         activationHistogramBins: null,
         activationHistogramLayout: null,
         confusionMatrix: null,
+        arenaSummaries: null,
         version: _buffer.version + 1,
         outputGridVersion: _buffer.outputGridVersion + 1,
         neuronGridsVersion: _buffer.neuronGridsVersion + 1,
@@ -166,5 +178,6 @@ export function resetFrameBuffer(): void {
         layerStatsVersion: _buffer.layerStatsVersion + 1,
         confusionMatrixVersion: _buffer.confusionMatrixVersion + 1,
         activationHistogramsVersion: _buffer.activationHistogramsVersion + 1,
+        arenaSummariesVersion: _buffer.arenaSummariesVersion + 1,
     };
 }

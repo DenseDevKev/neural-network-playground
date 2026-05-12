@@ -136,6 +136,42 @@ function isOptionalFiniteNumber(value: unknown): value is number | undefined {
     return value === undefined || isFiniteNumber(value);
 }
 
+function isArenaSide(value: unknown): value is ArenaSide {
+    return value === 'A' || value === 'B';
+}
+
+function isArenaStatus(value: unknown): value is ArenaModelSummary['status'] {
+    return value === 'idle' || value === 'running' || value === 'paused';
+}
+
+function isArenaModelSummary(value: unknown): value is ArenaModelSummary {
+    if (!isRecord(value)) return false;
+    return (
+        isArenaSide(value['side']) &&
+        typeof value['label'] === 'string' &&
+        value['label'].length > 0 &&
+        isArenaStatus(value['status']) &&
+        (
+            !('pauseReason' in value) ||
+            value['pauseReason'] === null ||
+            isPauseReason(value['pauseReason'])
+        ) &&
+        isNonNegativeInteger(value['step']) &&
+        isNonNegativeInteger(value['epoch']) &&
+        isFiniteNumber(value['trainLoss']) &&
+        isFiniteNumber(value['testLoss']) &&
+        isOptionalFiniteNumber(value['trainAccuracy']) &&
+        isOptionalFiniteNumber(value['testAccuracy'])
+    );
+}
+
+function isArenaModelSummaryList(value: unknown): value is ArenaModelSummary[] {
+    if (!Array.isArray(value) || value.length !== 2) return false;
+    if (!value.every(isArenaModelSummary)) return false;
+    const sides = value.map((summary) => summary.side).sort().join('');
+    return sides === 'AB';
+}
+
 function isCheckpointSummary(value: unknown): value is CheckpointSummary {
     if (!isRecord(value)) return false;
     return (
@@ -271,6 +307,31 @@ export interface WorkerSnapshotMessage {
     sharedSeq?: number;
 }
 
+export type ArenaSide = 'A' | 'B';
+
+export interface ArenaModelSummary {
+    side: ArenaSide;
+    label: string;
+    status: 'idle' | 'running' | 'paused';
+    pauseReason?: PauseReason | null;
+    step: number;
+    epoch: number;
+    trainLoss: number;
+    testLoss: number;
+    trainAccuracy?: number;
+    testAccuracy?: number;
+}
+
+export interface ArenaScalarSnapshot {
+    runId: number;
+    snapshotId: number;
+    summaries: ArenaModelSummary[];
+}
+
+export interface WorkerArenaSnapshotMessage extends ArenaScalarSnapshot {
+    type: 'arenaSnapshot';
+}
+
 export interface ActivationHistogramLayout {
     binCount: number;
     layers: ActivationHistogramLayer[];
@@ -338,6 +399,7 @@ export interface WorkerSharedBuffersMessage {
 
 export type WorkerToMainMessage =
     | WorkerSnapshotMessage
+    | WorkerArenaSnapshotMessage
     | WorkerStatusMessage
     | WorkerErrorMessage
     | WorkerSharedBuffersMessage;
@@ -405,6 +467,11 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 typeof m['scalars'] === 'object' &&
                 !hasMalformedActivationHistogramPayload(m) &&
                 !hasMalformedCheckpointTimelinePayload(m)
+            );
+        case 'arenaSnapshot':
+            return (
+                typeof m['snapshotId'] === 'number' &&
+                isArenaModelSummaryList(m['summaries'])
             );
         case 'status':
             return (

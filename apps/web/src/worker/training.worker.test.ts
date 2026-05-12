@@ -125,6 +125,68 @@ describe('training worker activation histogram demand', () => {
 });
 
 describe('training worker lifecycle and demand cadence', () => {
+    it('initializes and steps two scalar-only arena model slots sequentially', () => {
+        const arena = workerApi.initializeArena({
+            modelA: {
+                label: 'Capacity 2',
+                network: { ...DEFAULT_NETWORK, hiddenLayers: [2] },
+                training: { ...DEFAULT_TRAINING },
+                data: { ...DEFAULT_DATA, seed: 910, numSamples: 24 },
+                features: { ...DEFAULT_FEATURES },
+            },
+            modelB: {
+                label: 'Capacity 4',
+                network: { ...DEFAULT_NETWORK, hiddenLayers: [4] },
+                training: { ...DEFAULT_TRAINING },
+                data: { ...DEFAULT_DATA, seed: 910, numSamples: 24 },
+                features: { ...DEFAULT_FEATURES },
+            },
+        });
+
+        expect(arena.summaries.map((summary) => summary.side)).toEqual(['A', 'B']);
+        expect(arena.summaries.map((summary) => summary.label)).toEqual(['Capacity 2', 'Capacity 4']);
+        expect(arena.summaries.every((summary) => summary.step === 0)).toBe(true);
+
+        const stepped = workerApi.stepArena(3);
+
+        expect(stepped.snapshotId).toBeGreaterThan(arena.snapshotId);
+        expect(stepped.summaries.map((summary) => summary.step)).toEqual([3, 3]);
+        expect(stepped.summaries.every((summary) => Number.isFinite(summary.trainLoss))).toBe(true);
+        expect(stepped.summaries.every((summary) => Number.isFinite(summary.testLoss))).toBe(true);
+    });
+
+    it('keeps live arena stepping isolated from the existing single-model worker run', () => {
+        const single = workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 911, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        workerApi.initializeArena({
+            modelA: {
+                label: 'Arena A',
+                network: { ...DEFAULT_NETWORK },
+                training: { ...DEFAULT_TRAINING },
+                data: { ...DEFAULT_DATA, seed: 912, numSamples: 20 },
+                features: { ...DEFAULT_FEATURES },
+            },
+            modelB: {
+                label: 'Arena B',
+                network: { ...DEFAULT_NETWORK },
+                training: { ...DEFAULT_TRAINING },
+                data: { ...DEFAULT_DATA, seed: 913, numSamples: 20 },
+                features: { ...DEFAULT_FEATURES },
+            },
+        });
+        workerApi.stepArena(2);
+
+        const singleAfterArena = workerApi.step(1);
+
+        expect(singleAfterArena.step).toBe(1);
+        expect(workerApi.getCheckpointTimeline().checkpoints[0].step).toBe(single.snapshot.step);
+    });
+
     it('captures bounded checkpoint metadata and restores an earlier checkpoint', () => {
         const init = workerApi.initialize(
             { ...DEFAULT_NETWORK },

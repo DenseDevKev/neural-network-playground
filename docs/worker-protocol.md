@@ -98,6 +98,37 @@ Subsequent snapshots may omit `outputGrid` and `neuronGrids`, set `sharedSeq`,
 and let `workerBridge.ts` copy the latest consistent seqlock-protected data
 into the frame buffer.
 
+### `arenaSnapshot`
+
+Wave 7 live arena prototypes may publish scalar-only, side-tagged arena
+summaries. The first approved runtime slice keeps these summaries bounded and
+does not include heavy arrays, grids, checkpoints, raw activations, or model
+parameters.
+
+| Field | Type | Description |
+|---|---|---|
+| `type` | `'arenaSnapshot'` | Discriminator |
+| `runId` | `number` | Monotonically increasing live-arena run identity |
+| `snapshotId` | `number` | Per-arena-run scalar snapshot counter |
+| `summaries` | `ArenaModelSummary[]` | Exactly two side-tagged summaries for sides `A` and `B` |
+
+Each `ArenaModelSummary` includes:
+
+- `side`: `A` or `B`
+- `label`
+- `status`: `idle`, `running`, or `paused`
+- optional `pauseReason`
+- `step`
+- `epoch`
+- `trainLoss`
+- `testLoss`
+- optional train/test accuracy
+
+The scalar-only arena path is intentionally separate from decision-boundary,
+activation-histogram, checkpoint, and parameter transports. Any paired heavy
+visualization or persistent arena state requires a separate design update and
+approval.
+
 ### `status`
 
 Posted immediately on `startTraining` (-> `'running'`) and `stopTraining`
@@ -241,3 +272,8 @@ read, then imperatively read the current frame buffer during render/memo/paint.
 Where a hook body reads mutable frame-buffer state, the version value is read
 explicitly in that body so the dependency both documents and drives the
 recomputation.
+
+`arenaSummariesVersion` increments when scalar-only live arena summaries are
+written to the frame buffer. The summaries contain bounded scalar metadata only;
+large per-model arrays remain outside React state and outside this scalar
+domain.
