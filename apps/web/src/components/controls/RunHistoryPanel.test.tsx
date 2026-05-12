@@ -186,6 +186,11 @@ describe('RunHistoryPanel', () => {
         await userEvent.click(screen.getByRole('button', { name: /export report for saved xor/i }));
 
         expect(createObjectURL).toHaveBeenCalledTimes(1);
+        const report = await (createObjectURL.mock.calls[0][0] as Blob).text();
+        expect(report).toContain('- Optimizer: sgd');
+        expect(report).toContain('- Active features: x, y');
+        expect(report).toContain('- Generalization gap: 0.0900');
+        expect(report).toContain('- Saved parameters: no');
         expect(click).toHaveBeenCalledTimes(1);
         expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
     });

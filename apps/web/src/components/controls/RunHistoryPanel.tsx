@@ -39,6 +39,13 @@ function generalizationGap(record: ExperimentRunRecordV1): number {
     return record.summary.testLoss - record.summary.trainLoss;
 }
 
+function formatFeatureList(record: ExperimentRunRecordV1): string {
+    const enabled = Object.entries(record.config.features)
+        .filter(([, value]) => value)
+        .map(([key]) => key);
+    return enabled.length ? enabled.join(', ') : 'none';
+}
+
 function createLossThumbnailLabel(record: ExperimentRunRecordV1): string {
     const first = record.history[0];
     const last = record.history.at(-1);
@@ -102,16 +109,40 @@ function RunHistoryThumbnail({ record }: { record: ExperimentRunRecordV1 }) {
 }
 
 function createMarkdownReport(record: ExperimentRunRecordV1): string {
+    const gap = generalizationGap(record);
     const lines = [
         `# ${record.title ?? 'Neural Network Playground Run'}`,
         '',
+        '## Summary',
+        '',
         `- Dataset: ${record.config.data.dataset}`,
+        `- Problem type: ${record.config.data.problemType}`,
         `- Step: ${record.summary.step}`,
         `- Epoch: ${record.summary.epoch}`,
         `- Train loss: ${formatMetric(record.summary.trainLoss)}`,
         `- Test loss: ${formatMetric(record.summary.testLoss)}`,
+        `- Generalization gap: ${formatMetric(gap)}`,
+        `- Train accuracy: ${record.summary.trainMetrics.accuracy === undefined ? 'n/a' : formatMetric(record.summary.trainMetrics.accuracy)}`,
+        `- Test accuracy: ${record.summary.testMetrics.accuracy === undefined ? 'n/a' : formatMetric(record.summary.testMetrics.accuracy)}`,
         `- Pause reason: ${record.summary.pauseReason ?? 'none'}`,
+        '',
+        '## Setup',
+        '',
         `- Hidden layers: [${record.config.network.hiddenLayers.join(', ')}]`,
+        `- Activation: ${record.config.network.activation}`,
+        `- Output activation: ${record.config.network.outputActivation}`,
+        `- Weight init: ${record.config.network.weightInit}`,
+        `- Learning rate: ${record.config.training.learningRate}`,
+        `- Optimizer: ${record.config.training.optimizer}`,
+        `- Batch size: ${record.config.training.batchSize}`,
+        `- Regularization: ${record.config.training.regularization}`,
+        `- Regularization rate: ${record.config.training.regularizationRate}`,
+        `- Gradient clip: ${record.config.training.gradientClip ?? 'none'}`,
+        `- Active features: ${formatFeatureList(record)}`,
+        `- Samples: ${record.config.data.numSamples}`,
+        `- Noise: ${record.config.data.noise}`,
+        `- Train/test ratio: ${record.config.data.trainTestRatio}`,
+        `- Saved parameters: ${record.network ? 'yes' : 'no'}`,
         '',
         '## History',
         '',
