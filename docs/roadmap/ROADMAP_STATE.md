@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `5dd79e7`; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before the Wave 7 live arena UI evidence commit.
+- Last verified commit: `afdc067`; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, targeted engine tests, two subagent review passes, and `git diff --check` passed before the Wave 7 slow-motion backprop engine foundation commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Slow-Motion Backprop Explanation Mode approval gate
+- Slice: Slow-Motion Backprop Engine Foundation
 - Risk: High
-- Status: Scalar-only one-worker/two-model-slot runtime and UI prototype is implemented and verified. A design note for the next Wave 7 candidate, Slow-Motion Backprop Explanation Mode, has been prepared and is pending explicit approval before implementation.
+- Status: Engine-only dry-run bounded backprop summary support is implemented and verified. The next slice, if pursued, should be a separately gated worker one-shot RPC or UI integration slice with two subagent review passes before implementation.
 
 ## Completed Slices
 
@@ -61,15 +61,17 @@
 | 2026-05-12 | Wave 7 | Scalar live arena runtime prototype | `bb4aac1` | Red targeted protocol/frame-buffer/worker tests failed before implementation; targeted shared run passed with 5 files and 70 tests; targeted web run passed with 51 files and 348 tests; `pnpm test`, `pnpm lint`, `pnpm build`, repeated `pnpm test:perf`, and `git diff --check` passed before commit | `packages/shared/src/workerProtocol.ts`, `apps/web/src/worker/frameBuffer.ts`, `apps/web/src/worker/training.worker.ts`, `docs/worker-protocol.md` |
 | 2026-05-12 | Wave 7 | Scalar live arena UI prototype | `0344bbe` | Red targeted web tests failed before implementation; targeted web run passed with 51 files and 350 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before commit | `apps/web/src/components/controls/RunHistoryPanel.tsx`, `apps/web/src/hooks/useTraining.ts`, `apps/web/src/store/useTrainingStore.ts`, `docs/qa/browser-qa/wave-7-live-arena-ui.md` |
 | 2026-05-12 | Wave 7 | Scalar live arena UI QA/state | `5dd79e7` | Docs-only evidence commit after Wave 7 live arena UI full verification and Browser QA passed; `git diff --check` passed before commit | `docs/qa/browser-qa/wave-7-live-arena-ui.md`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
+| 2026-05-12 | Wave 7 | Slow-motion backprop explanation mode design note | `4e08d29` | Docs-only design note; `git diff --check` passed before commit | `docs/design-notes/slow-motion-backprop-explanation-mode.md` |
+| 2026-05-12 | Wave 7 | Dry-run backprop summary engine foundation | `afdc067` | Red targeted engine tests failed before implementation and after review-found gaps; targeted engine run passed with 13 files and 281 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two subagent review passes, and `git diff --check` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/types.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-12 after the Wave 7 live arena UI implementation with engine 276 tests, shared 70 tests, and web 350 tests.
-- Lint: `pnpm lint` passed on 2026-05-12 after the Wave 7 live arena UI implementation.
-- Build: `pnpm build` passed on 2026-05-12 after the Wave 7 live arena UI implementation with the existing Vite chunk-size warning. Relevant chunks: `training.worker-CUaUykZz.js` 79.35 kB, `RunHistoryPanel-Dw3ve2v5.js` 16.70 kB gzip 5.14 kB, `index-BPXCw-bD.js` 366.75 kB gzip 111.03 kB.
-- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Wave 7 included desktop and compact viewport verification with no console errors.
+- Tests: `pnpm test` passed on 2026-05-12 after the Wave 7 slow-motion backprop engine foundation with engine 281 tests, shared 70 tests, and web 350 tests.
+- Lint: `pnpm lint` passed on 2026-05-12 after the Wave 7 slow-motion backprop engine foundation.
+- Build: `pnpm build` passed on 2026-05-12 after the Wave 7 slow-motion backprop engine foundation with the existing Vite chunk-size warning. Relevant chunks: `training.worker-BYsEN3qS.js` 82.68 kB, `RunHistoryPanel-kTi7VzC5.js` 16.70 kB gzip 5.14 kB, `index-DmQTg3mQ.js` 366.75 kB gzip 111.02 kB.
+- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Wave 7 included desktop and compact viewport verification with no console errors. No Browser QA was required for `afdc067` because it was engine-only and browser-invisible.
 - Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run/live arena uses native labelled selects, native buttons, labelled model regions, grouped scalar summaries, and keyboard activation covered by component tests and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-12 after the Wave 7 live arena UI implementation with 2 benchmark files and 4 benchmark tests.
+- Performance: `pnpm test:perf` passed on 2026-05-12 after the Wave 7 slow-motion backprop engine foundation with 2 benchmark files and 4 benchmark tests.
 
 ## Browser QA Evidence
 
@@ -121,6 +123,7 @@
 - Wave 7 saved-run arena changed the lazy run-history UI chunk only. `pnpm test:perf` passed with `predictGrid` 1286.9436 ms, `predictGridInto` 1278.7490 ms, `predictGridWithNeurons` 773.1364 ms, `predictGridWithNeuronsInto` 653.8458 ms, Adam/L2/Clip applyGradients 6.0251 ms, SGD applyGradients 1.5177 ms.
 - Wave 7 scalar live arena runtime changed the worker bundle and scalar frame-buffer/protocol contracts. Initial `pnpm test:perf` was noisy; repeated `pnpm test:perf` passed with `predictGrid` 1138.0670 ms, `predictGridInto` 1093.3958 ms, `predictGridWithNeurons` 696.0030 ms, `predictGridWithNeuronsInto` 592.8361 ms, Adam/L2/Clip applyGradients 4.4625 ms, SGD applyGradients 1.4232 ms.
 - Wave 7 live arena UI changed the lazy run-history UI chunk and App/MainArea callback wiring only. `pnpm test:perf` passed with `predictGrid` 1093.0898 ms, `predictGridInto` 1076.1186 ms, `predictGridWithNeurons` 681.7128 ms, `predictGridWithNeuronsInto` 579.4028 ms, Adam/L2/Clip applyGradients 3.9796 ms, SGD applyGradients 1.4334 ms.
+- Wave 7 slow-motion backprop engine foundation changed the engine class imported by the worker. `pnpm test:perf` passed with `predictGrid` 1137.3643 ms, `predictGridInto` 1147.3317 ms, `predictGridWithNeurons` 725.1739 ms, `predictGridWithNeuronsInto` 606.6910 ms, Adam/L2/Clip applyGradients 4.1593 ms, SGD applyGradients 1.5099 ms. The worker bundle increased from 79.35 kB to 82.68 kB, about 4.2%, below the 10% threshold.
 
 ## Design Decisions
 
@@ -149,6 +152,7 @@
 | 2026-05-12 | Prefer one-worker sequential live arena before multi-worker designs | Minimizes concurrency, lifecycle, and memory risk while preserving deterministic stepping and the existing single-model path | `docs/design-notes/live-side-by-side-model-arena.md`, `37c7d57` |
 | 2026-05-12 | Ship the first live arena runtime slice as scalar-only Comlink APIs | Lets tests prove two isolated model slots and side-tagged bounded summaries before adding UI streaming, paired boundaries, persistence, URL/config state, or multiple workers | `docs/design-notes/live-side-by-side-model-arena.md`, `bb4aac1` |
 | 2026-05-12 | Expose live arena UI through saved-run records and scalar summaries only | Gives learners a usable live comparison prototype while avoiding persistence, URL/config state, paired heavy arrays, public config, dependencies, and multiple-worker execution | `docs/design-notes/live-side-by-side-model-arena.md`, `0344bbe` |
+| 2026-05-12 | Implement slow-motion backprop as an engine-only dry-run foundation first | Provides deterministic, bounded layer-level summaries while avoiding worker/protocol/frame-buffer/UI/URL/config/persistence/dependency changes in the first slice | `docs/design-notes/slow-motion-backprop-explanation-mode.md`, `afdc067` |
 
 ## Known Issues
 
@@ -175,7 +179,7 @@
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
 - Wave 6E persistence of checkpoints across reloads remains deferred and requires separate approval.
-- Wave 7 paired live model arena visualizations, slow-motion backprop, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
+- Wave 7 paired live model arena visualizations, slow-motion backprop worker/UI integration, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
 - Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, continuous streaming, and multiple-worker execution are explicitly deferred from the scalar runtime/UI prototype.
 
 ## Approval Gates Reached
@@ -189,11 +193,11 @@
 - Wave 7 scalar live arena runtime slice was approved by the user's continuation and committed as `bb4aac1`.
 - Wave 7 scalar live arena UI slice was approved by the user's continuation and committed as `0344bbe`.
 - Further Wave 7 work that adds paired heavy visualizations, URL/config state, persistence, public config changes, dependencies, engine math changes, or multiple-worker execution requires a separate approval gate.
-- Wave 7 Slow-Motion Backprop Explanation Mode design note prepared in `docs/design-notes/slow-motion-backprop-explanation-mode.md`; implementation is blocked until explicit approval.
+- Wave 7 Slow-Motion Backprop Explanation Mode design note was committed as `4e08d29`. The user asked to continue and required two subagent review passes at approval gates; the first engine-only bounded dry-run foundation was implemented in `afdc067` after two subagent reviews rejected the initial draft, fixes were applied, and two re-review passes approved the corrected slice.
 
 ## Next Recommended Slice
 
-Next recommended step: request explicit approval for `docs/design-notes/slow-motion-backprop-explanation-mode.md`. If approved, implement only the bounded layer-level slow-motion backprop explanation slice. If not approved, defer it and choose another Wave 7 design-only approval packet.
+Next recommended step: prepare the next slow-motion backprop slice as a separately gated worker one-shot RPC or UI integration plan. Before implementation, spawn two subagents per the user's instruction: one spec/code reviewer and one proceed-or-fix reviewer. Keep the next slice bounded; do not add streaming gradients, raw arrays in React state, URL/config serialization, persistence schema, public config shape changes, dependencies, or frame-buffer redesign without explicit approval.
 
 ## Handoff Notes
 
