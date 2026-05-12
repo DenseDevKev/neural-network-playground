@@ -33,6 +33,7 @@ import type {
     PredictionTrace,
     ActivationHistogramResult,
     NetworkCheckpoint,
+    BackpropExplanation,
 } from '@nn-playground/engine';
 import {
     GRID_SIZE,
@@ -247,6 +248,13 @@ export interface PredictionTraceResponse {
         label?: number;
     };
     trace: PredictionTrace;
+}
+
+export interface BackpropExplanationResponse {
+    runId: number;
+    step: number;
+    epoch: number;
+    explanation: BackpropExplanation;
 }
 
 // Helper: reset back-pressure state. Called when the consumer on the other
@@ -1493,6 +1501,37 @@ function resolveTraceSample(request: PredictionTraceRequest): {
     throw new RangeError('trace source must be train, test, or custom');
 }
 
+function resolveBackpropPreviewBatch(): { inputs: number[][]; targets: number[][] } {
+    if (!state.network || !state.trainingConfig) {
+        throw new Error('Not initialized');
+    }
+
+    const n = state.trainInputs.length;
+    if (n === 0) {
+        throw new Error('No training samples are available for backprop preview');
+    }
+
+    const batchSize = state.trainingConfig.batchSize;
+    const stepBefore = state.network.getStep();
+    const numBatches = Math.ceil(n / batchSize);
+    const batchSlot = stepBefore % numBatches;
+    if (batchSlot === 0 && stepBefore > 0) {
+        throw new Error('Backprop preview is unavailable at the epoch shuffle boundary; step once before previewing.');
+    }
+
+    const startIdx = batchSlot * batchSize;
+    const endIdx = Math.min(startIdx + batchSize, n);
+    const inputs: number[][] = [];
+    const targets: number[][] = [];
+    for (let i = startIdx; i < endIdx; i++) {
+        const sampleIdx = state.shuffledIndices[i];
+        inputs.push(state.trainInputs[sampleIdx]);
+        targets.push(state.trainTargets[sampleIdx]);
+    }
+
+    return { inputs, targets };
+}
+
 // ── Comlink API ──
 
 export const workerApi = {
@@ -1661,6 +1700,24 @@ export const workerApi = {
             step: state.network.getStep(),
             sample,
             trace,
+        };
+    },
+
+    getBackpropExplanation(): BackpropExplanationResponse {
+        if (!state.network || !state.trainingConfig) {
+            throw new Error('Not initialized');
+        }
+
+        const batch = resolveBackpropPreviewBatch();
+        return {
+            runId: state.runId,
+            step: state.network.getStep(),
+            epoch: state.epoch,
+            explanation: state.network.explainBackpropStep(
+                batch.inputs,
+                batch.targets,
+                state.trainingConfig,
+            ),
         };
     },
 

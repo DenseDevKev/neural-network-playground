@@ -56,6 +56,8 @@ through the MessageChannel commands below.
 | `restoreCheckpoint(id)` | `{ snapshot, runId, timeline }` | Stops streaming, restores a bounded runtime checkpoint, invalidates stale visualizations, and returns a fresh snapshot plus timeline metadata. |
 | `getTrainPoints()` | `DataPoint[]` | Returns current transformed training points for immediate UI render after init/config/reset. |
 | `getTestPoints()` | `DataPoint[]` | Returns current transformed test points for immediate UI render after init/config/reset. |
+| `getPredictionTrace(request)` | `PredictionTraceResponse` | One-shot point inspection for a train/test/custom sample. Returns bounded per-layer prediction trace metadata, not streamed frame-buffer data. |
+| `getBackpropExplanation()` | `BackpropExplanationResponse` | One-shot preview of the current mini-batch backprop update. Returns bounded scalar `BackpropExplanation` layer summaries only; it does not train, snapshot, stream, checkpoint, or expose raw activations/gradients. Throws at the epoch reshuffle boundary instead of mutating shuffle state. |
 | `updateDemand(demand)` | `void` | Validates with `normalizeVisualizationDemand`; invalid demand throws. Valid demand also marks expensive work due immediately. |
 | `setWebGpuEnabled(enabled)` | `void` | Toggles the optional WebGPU grid path; disabling disposes the predictor and marks grids stale. |
 | `setStreamPort(port)` | `void` | Installs the worker side of the MessageChannel and replays the SAB handshake if buffers already exist. |

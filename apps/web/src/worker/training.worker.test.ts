@@ -13,6 +13,89 @@ vi.mock('comlink', () => ({
 
 import { workerApi } from './training.worker.ts';
 
+function containsTypedArray(value: unknown): boolean {
+    if (ArrayBuffer.isView(value)) return true;
+    if (value === null || typeof value !== 'object') return false;
+    return Object.values(value).some((child) => containsTypedArray(child));
+}
+
+describe('training worker backprop explanation RPC', () => {
+    it('rejects before worker initialization', () => {
+        expect(() => workerApi.getBackpropExplanation()).toThrow('Not initialized');
+    });
+
+    it('returns finite bounded scalar summaries for the current worker model', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK, hiddenLayers: [3, 2] },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 920, numSamples: 24 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const response = workerApi.getBackpropExplanation();
+
+        expect(response.runId).toBe(init.runId);
+        expect(response.step).toBe(0);
+        expect(response.epoch).toBe(0);
+        expect(response.explanation.batchSize).toBeGreaterThan(0);
+        expect(response.explanation.layers).toHaveLength(3);
+        expect(Number.isFinite(response.explanation.loss)).toBe(true);
+        expect(Number.isFinite(response.explanation.globalGradientNorm)).toBe(true);
+        expect(response.explanation.layers.every((layer) => Number.isFinite(layer.meanAbsUpdate))).toBe(true);
+        expect(containsTypedArray(response)).toBe(false);
+        expect(JSON.stringify(response)).not.toMatch(/inputs|targets|weights|biases/i);
+    });
+
+    it('is deterministic and does not advance the next training step', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 921, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const first = workerApi.getBackpropExplanation();
+        const second = workerApi.getBackpropExplanation();
+        const afterPreviewStep = workerApi.step(1);
+
+        expect(second).toEqual(first);
+        expect(afterPreviewStep.step).toBe(first.step + 1);
+    });
+
+    it('leaves the next real training step equivalent to a control run without preview', () => {
+        const network = { ...DEFAULT_NETWORK, hiddenLayers: [3] };
+        const training = { ...DEFAULT_TRAINING, batchSize: 5 };
+        const data = { ...DEFAULT_DATA, seed: 922, numSamples: 20 };
+        const features = { ...DEFAULT_FEATURES };
+
+        workerApi.initialize(network, training, data, features);
+        workerApi.getBackpropExplanation();
+        const previewThenStep = workerApi.step(1);
+
+        workerApi.initialize(network, training, data, features);
+        const controlStep = workerApi.step(1);
+
+        expect(previewThenStep.step).toBe(controlStep.step);
+        expect(previewThenStep.trainLoss).toBeCloseTo(controlStep.trainLoss, 12);
+        expect(previewThenStep.testLoss).toBeCloseTo(controlStep.testLoss, 12);
+        expect(previewThenStep.weights).toEqual(controlStep.weights);
+        expect(previewThenStep.biases).toEqual(controlStep.biases);
+    });
+
+    it('refuses the epoch reshuffle boundary instead of mutating shuffle state during preview', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING, batchSize: 5 },
+            { ...DEFAULT_DATA, seed: 923, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+        workerApi.step(2);
+
+        expect(() => workerApi.getBackpropExplanation()).toThrow(/epoch shuffle boundary/i);
+        expect(workerApi.step(1).step).toBe(3);
+    });
+});
+
 describe('training worker prediction trace RPC', () => {
     it('returns an on-demand trace for a training sample', () => {
         const init = workerApi.initialize(
