@@ -169,3 +169,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4319 ms
 
 These benchmark values remain within the roadmap warning thresholds. Wave 6A did not touch engine, worker, frame-buffer, persistence, schema, URL/config serialization, or public config code.
+
+## Wave 6B Saved Run Thumbnails
+
+Date: 2026-05-11
+
+Scope: generated, non-persisted SVG saved-run thumbnails using existing bounded `ExperimentRunRecordV1.history` data.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the Wave 6B thumbnail slice. Relevant production output:
+
+- `dist/assets/training.worker--UxrksoV.js`: 71.53 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/InspectionPanel-CUoBhCYz.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-ChJRRFsq.js`: 11.17 kB, gzip 3.79 kB
+- `dist/assets/index-ZPK1SkKu.js`: 360.52 kB, gzip 109.51 kB
+
+Compared with Wave 6A, the main app and worker chunks were unchanged. The lazy run-history chunk increased from 9.57 kB to 11.17 kB because it now renders SVG thumbnail helpers. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the Wave 6B thumbnail slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1137.8122 ms total for 100 iterations
+- `predictGridInto`: 1093.4358 ms total for 100 iterations
+- `predictGridWithNeurons`: 697.4345 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 592.1591 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.7540 ms
+- Average `applyGradients` time (SGD): 1.4204 ms
+
+These benchmark values remain within the roadmap warning thresholds. Wave 6B did not touch engine, worker, frame-buffer, persistence, schema, URL/config serialization, or public config code.
