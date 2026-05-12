@@ -123,3 +123,93 @@ describe('training worker activation histogram demand', () => {
         expect(result.snapshot.activationHistograms?.layers).toHaveLength(2);
     });
 });
+
+describe('training worker lifecycle and demand cadence', () => {
+    it('preserves the run on training-only config updates and rebuilds for shape changes', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 901, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const trainingOnly = workerApi.updateConfig(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING, learningRate: DEFAULT_TRAINING.learningRate / 2 },
+            { ...DEFAULT_DATA, seed: 901, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+            false,
+        );
+        expect(trainingOnly.runId).toBe(init.runId);
+
+        const rebuilt = workerApi.updateConfig(
+            { ...DEFAULT_NETWORK, hiddenLayers: [2] },
+            { ...DEFAULT_TRAINING, learningRate: DEFAULT_TRAINING.learningRate / 2 },
+            { ...DEFAULT_DATA, seed: 901, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+            false,
+        );
+        expect(rebuilt.runId).toBeGreaterThan(init.runId);
+        expect(rebuilt.snapshot.step).toBe(0);
+    });
+
+    it('reset creates a fresh run after manual training steps', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 902, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        expect(workerApi.step(3).step).toBe(3);
+
+        const reset = workerApi.reset();
+        expect(reset.runId).toBeGreaterThan(init.runId);
+        expect(reset.snapshot.step).toBe(0);
+        expect(reset.snapshot.epoch).toBe(0);
+    });
+
+    it('honors decision-boundary cadence without recomputing every snapshot', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 903, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needDecisionBoundary: true,
+            needNeuronGrids: false,
+            gridInterval: 2,
+        });
+
+        const fresh = workerApi.step(1);
+        const skipped = workerApi.step(1);
+
+        expect(fresh.outputGrid).toBeInstanceOf(Float32Array);
+        expect(fresh.outputGrid).toHaveLength(fresh.gridSize * fresh.gridSize);
+        expect(skipped.outputGrid).toHaveLength(0);
+        expect(skipped.neuronGrids).toBeUndefined();
+    });
+
+    it('emits layer stats only while layer-stat demand is enabled', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 904, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needLayerStats: false,
+        });
+        expect(workerApi.step(1).layerStats).toBeUndefined();
+
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needLayerStats: true,
+        });
+        expect(workerApi.step(1).layerStats?.length).toBeGreaterThan(0);
+    });
+});

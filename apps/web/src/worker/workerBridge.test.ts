@@ -65,6 +65,7 @@ import {
     setupStreamChannel,
     onSnapshot,
     newRunTo,
+    postStreamCommand,
     startRenderLoop,
     stopRenderLoop,
     terminateWorker,
@@ -313,6 +314,18 @@ describe('workerBridge streamed snapshots', () => {
         expect(receivedMessages[0].msg.type).toBe('snapshot');
         expect(receivedMessages[0].frameVersion).toBe(frame.version);
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+    });
+
+    it('closes the stream port on termination and drops later stream commands', () => {
+        postStreamCommand({ type: 'stopTraining' });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'stopTraining' });
+
+        terminateWorker();
+        expect(fakePort1.close).toHaveBeenCalledTimes(1);
+        fakePort1.postMessage.mockClear();
+
+        postStreamCommand({ type: 'stopTraining' });
+        expect(fakePort1.postMessage).not.toHaveBeenCalled();
     });
 
     it('installs shared buffers and reads snapshot payloads from the SAB handshake', () => {
