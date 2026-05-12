@@ -304,3 +304,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5587 ms
 
 These benchmark values remain within the roadmap warning thresholds. This slice does not add checkpoint capture to the training hot path yet; it only adds explicit engine copy/restore helpers used by later runtime slices.
+
+## Wave 6E Checkpoint Timeline Protocol Metadata
+
+Date: 2026-05-12
+
+Scope: shared worker-protocol types and runtime guards for lightweight checkpoint timeline metadata on snapshot messages.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the protocol metadata slice. Relevant production output:
+
+- `dist/assets/training.worker-DIGdGEzY.js`: 74.75 kB
+- `dist/assets/index-DJn0joE3.css`: 63.58 kB, gzip 11.14 kB
+- `dist/assets/InspectionPanel-Dh1yWAXN.js`: 8.31 kB, gzip 2.42 kB
+- `dist/assets/RunHistoryPanel-vnZ6qPMo.js`: 12.31 kB, gzip 4.14 kB
+- `dist/assets/index-CGYNOHsy.js`: 361.88 kB, gzip 109.90 kB
+
+Compared with the prior Wave 6E engine checkpoint slice, the worker bundle remained unchanged and the main app bundle increased from 361.36 kB to 361.88 kB because the shared runtime guard now validates optional checkpoint metadata. The existing Vite large chunk warning remains, and the increase is below the roadmap 10% warning threshold.
+
+`pnpm test:perf` passed after the protocol metadata slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1185.8776 ms total for 100 iterations
+- `predictGridInto`: 1139.6066 ms total for 100 iterations
+- `predictGridWithNeurons`: 699.6503 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 578.9710 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.8995 ms
+- Average `applyGradients` time (SGD): 1.4268 ms
+
+These benchmark values remain within the roadmap warning thresholds. This slice adds validation for optional scalar checkpoint metadata only; heavy checkpoint payloads are still worker-local and are not stored in React state.

@@ -132,6 +132,45 @@ function hasMalformedActivationHistogramPayload(m: Record<string, unknown>): boo
     );
 }
 
+function isOptionalFiniteNumber(value: unknown): value is number | undefined {
+    return value === undefined || isFiniteNumber(value);
+}
+
+function isCheckpointSummary(value: unknown): value is CheckpointSummary {
+    if (!isRecord(value)) return false;
+    return (
+        isPositiveInteger(value['id']) &&
+        isNonNegativeInteger(value['step']) &&
+        isNonNegativeInteger(value['epoch']) &&
+        isFiniteNumber(value['trainLoss']) &&
+        isFiniteNumber(value['testLoss']) &&
+        isOptionalFiniteNumber(value['trainAccuracy']) &&
+        isOptionalFiniteNumber(value['testAccuracy']) &&
+        typeof value['label'] === 'string' &&
+        value['label'].length > 0
+    );
+}
+
+function isNullablePositiveInteger(value: unknown): value is number | null {
+    return value === null || isPositiveInteger(value);
+}
+
+function isCheckpointTimeline(value: unknown): value is CheckpointTimeline {
+    if (!isRecord(value)) return false;
+    return (
+        Array.isArray(value['checkpoints']) &&
+        value['checkpoints'].every(isCheckpointSummary) &&
+        isPositiveInteger(value['maxCheckpoints']) &&
+        isNonNegativeInteger(value['evictedCount']) &&
+        isNullablePositiveInteger(value['liveCheckpointId']) &&
+        isNullablePositiveInteger(value['restoredCheckpointId'])
+    );
+}
+
+function hasMalformedCheckpointTimelinePayload(m: Record<string, unknown>): boolean {
+    return 'checkpointTimeline' in m && !isCheckpointTimeline(m['checkpointTimeline']);
+}
+
 export function normalizeVisualizationDemand(value: unknown): VisualizationDemand | null {
     if (!isRecord(value)) return null;
 
@@ -217,6 +256,7 @@ export interface WorkerSnapshotMessage {
     historyPoint: HistoryPoint;
     confusionMatrix?: ConfusionMatrixData;
     confusionMatrixVersion?: number;
+    checkpointTimeline?: CheckpointTimeline;
 
     /**
      * When the worker is publishing heavy buffers (outputGrid, neuronGrids,
@@ -234,6 +274,25 @@ export interface WorkerSnapshotMessage {
 export interface ActivationHistogramLayout {
     binCount: number;
     layers: ActivationHistogramLayer[];
+}
+
+export interface CheckpointSummary {
+    id: number;
+    step: number;
+    epoch: number;
+    trainLoss: number;
+    testLoss: number;
+    trainAccuracy?: number;
+    testAccuracy?: number;
+    label: string;
+}
+
+export interface CheckpointTimeline {
+    checkpoints: CheckpointSummary[];
+    maxCheckpoints: number;
+    evictedCount: number;
+    liveCheckpointId: number | null;
+    restoredCheckpointId: number | null;
 }
 
 export interface WorkerStatusMessage {
@@ -344,7 +403,8 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 typeof m['snapshotId'] === 'number' &&
                 m['scalars'] !== null &&
                 typeof m['scalars'] === 'object' &&
-                !hasMalformedActivationHistogramPayload(m)
+                !hasMalformedActivationHistogramPayload(m) &&
+                !hasMalformedCheckpointTimelinePayload(m)
             );
         case 'status':
             return (

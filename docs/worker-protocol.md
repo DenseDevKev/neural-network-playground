@@ -87,6 +87,7 @@ posting while awaiting a `frameAck`.
 | `activationHistogramVersion` | `number?` | Worker-side freshness counter for histogram payloads |
 | `historyPoint` | `HistoryPoint` | One point appended to the loss-history chart |
 | `confusionMatrix` | `ConfusionMatrixData?` | Only when `needConfusionMatrix` |
+| `checkpointTimeline` | `CheckpointTimeline?` | Lightweight runtime-only checkpoint metadata; heavy checkpoint payloads remain in the worker |
 | `sharedSeq` | `number?` | Present when grid payloads were published to SharedArrayBuffers instead of inline fields |
 
 When SharedArrayBuffer transport is available, the worker first posts a
@@ -166,6 +167,26 @@ Activation histograms are runtime inspection data only. They are computed when
 `needActivationHistograms` is true, throttled by `activationHistogramInterval`,
 and published as bounded bin counts rather than raw per-sample activations.
 The main thread stores those bins in the frame buffer, outside React state.
+
+### Checkpoint Timeline Metadata
+
+Training checkpoints are runtime-only. Snapshot messages may include
+`checkpointTimeline`, a lightweight list of checkpoint summaries:
+
+- `id`
+- `step`
+- `epoch`
+- `trainLoss`
+- `testLoss`
+- optional train/test accuracy
+- display `label`
+
+The metadata also includes `maxCheckpoints`, `evictedCount`,
+`liveCheckpointId`, and `restoredCheckpointId`. This data is safe for React
+state because it contains only bounded scalar summaries. Model weights, biases,
+optimizer buffers, decision-boundary grids, activation arrays, and other heavy
+payloads are not stored in React state and are not persisted in URL/config or
+run-history schemas.
 
 ### `updateSpeed`
 

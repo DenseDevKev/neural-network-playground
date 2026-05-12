@@ -67,6 +67,88 @@ describe('isMainToWorkerCommand', () => {
 });
 
 describe('isWorkerToMainMessage', () => {
+    it('accepts lightweight checkpoint timeline metadata on snapshot messages', () => {
+        expect(isWorkerToMainMessage({
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 20,
+                epoch: 2,
+                trainLoss: 0.4,
+                testLoss: 0.5,
+                gridSize: 2,
+            },
+            historyPoint: {
+                step: 20,
+                trainLoss: 0.4,
+                testLoss: 0.5,
+            },
+            checkpointTimeline: {
+                checkpoints: [
+                    {
+                        id: 1,
+                        step: 10,
+                        epoch: 1,
+                        trainLoss: 0.45,
+                        testLoss: 0.55,
+                        label: 'Step 10',
+                    },
+                    {
+                        id: 2,
+                        step: 20,
+                        epoch: 2,
+                        trainLoss: 0.4,
+                        testLoss: 0.5,
+                        trainAccuracy: 0.75,
+                        testAccuracy: 0.7,
+                        label: 'Step 20',
+                    },
+                ],
+                maxCheckpoints: 8,
+                evictedCount: 1,
+                liveCheckpointId: 2,
+                restoredCheckpointId: null,
+            },
+        })).toBe(true);
+    });
+
+    it('rejects malformed checkpoint timeline metadata on snapshot messages', () => {
+        expect(isWorkerToMainMessage({
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 20,
+                epoch: 2,
+                trainLoss: 0.4,
+                testLoss: 0.5,
+                gridSize: 2,
+            },
+            historyPoint: {
+                step: 20,
+                trainLoss: 0.4,
+                testLoss: 0.5,
+            },
+            checkpointTimeline: {
+                checkpoints: [
+                    {
+                        id: 1,
+                        step: -1,
+                        epoch: 1,
+                        trainLoss: 0.45,
+                        testLoss: 0.55,
+                        label: 'Step -1',
+                    },
+                ],
+                maxCheckpoints: 0,
+                evictedCount: Number.NaN,
+                liveCheckpointId: '1',
+                restoredCheckpointId: null,
+            },
+        })).toBe(false);
+    });
+
     it('accepts bounded activation histogram payloads on snapshot messages', () => {
         expect(isWorkerToMainMessage({
             type: 'snapshot',
