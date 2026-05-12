@@ -23,6 +23,8 @@ const REGRESSION_DATASETS: { id: DatasetType; label: string }[] = [
     { id: 'reg-gauss', label: 'Multi-Gauss' },
 ];
 
+const SAMPLE_COUNT_PRESETS = [100, 300, 600, 1000] as const;
+
 interface DataPanelProps {
     onReset: () => void;
 }
@@ -32,6 +34,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const noise = usePlaygroundStore((s) => s.data.noise);
     const trainTestRatio = usePlaygroundStore((s) => s.data.trainTestRatio);
+    const numSamples = usePlaygroundStore((s) => s.data.numSamples);
     const isLoading = useTrainingStore((s) => s.dataConfigLoading);
     const trainCount = useTrainingStore((s) => s.trainPoints.length);
     const testCount = useTrainingStore((s) => s.testPoints.length);
@@ -109,6 +112,39 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                         </button>
                     </Tooltip>
                 ))}
+            </div>
+
+            <div
+                className="control-row"
+                aria-label={`Dataset settings: ${numSamples} samples, ${noise} noise, ${Math.round(trainTestRatio * 100)}% train`}
+                aria-live="polite"
+                style={{ marginBottom: 8 }}
+            >
+                <span className="control-label">Dataset lab</span>
+                <span className="control-value">{numSamples.toLocaleString()} samples</span>
+                <span className="control-value">{noise} noise</span>
+            </div>
+
+            <div className="control-row">
+                <span className="control-label">Samples</span>
+                <div className="chip-group" aria-label="Sample count presets">
+                    {SAMPLE_COUNT_PRESETS.map((count) => (
+                        <button
+                            key={count}
+                            type="button"
+                            className={`chip ${numSamples === count ? 'active' : ''}`}
+                            aria-pressed={numSamples === count}
+                            disabled={isLoading}
+                            onClick={() => {
+                                if (numSamples === count) return;
+                                beginDataChange();
+                                store.getState().setNumSamples(count);
+                            }}
+                        >
+                            {count} samples
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Train/test ratio */}

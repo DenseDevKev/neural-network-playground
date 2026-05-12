@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { DataPanel } from './DataPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { DEFAULT_DATA } from '@nn-playground/shared';
 
 describe('DataPanel loading feedback', () => {
     beforeEach(() => {
@@ -14,6 +15,7 @@ describe('DataPanel loading feedback', () => {
                 problemType: 'classification',
                 noise: 0,
                 trainTestRatio: 0.5,
+                numSamples: DEFAULT_DATA.numSamples,
                 seed: 42,
             },
         }));
@@ -92,6 +94,23 @@ describe('DataPanel loading feedback', () => {
         expect(screen.getByText('Test 1')).toBeInTheDocument();
     });
 
+    it('summarizes bounded dataset parameters for comparison', () => {
+        render(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByLabelText('Dataset settings: 300 samples, 0 noise, 50% train')).toBeInTheDocument();
+    });
+
+    it('changes sample count through bounded preset controls', async () => {
+        const user = userEvent.setup();
+
+        render(<DataPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: '600 samples' }));
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
+        expect(usePlaygroundStore.getState().data.numSamples).toBe(600);
+        expect(screen.getByRole('button', { name: '600 samples' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
     it('reshuffles by changing the data seed through the data config path', async () => {
         const user = userEvent.setup();
 
@@ -108,5 +127,6 @@ describe('DataPanel loading feedback', () => {
         render(<DataPanel onReset={vi.fn()} />);
 
         expect(screen.getByRole('button', { name: 'Reshuffle split' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: '600 samples' })).toBeDisabled();
     });
 });
