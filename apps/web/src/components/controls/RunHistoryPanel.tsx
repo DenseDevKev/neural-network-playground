@@ -39,6 +39,68 @@ function generalizationGap(record: ExperimentRunRecordV1): number {
     return record.summary.testLoss - record.summary.trainLoss;
 }
 
+function createLossThumbnailLabel(record: ExperimentRunRecordV1): string {
+    const first = record.history[0];
+    const last = record.history.at(-1);
+    if (!first || !last) return `No loss history thumbnail for ${getRecordLabel(record)}.`;
+    return [
+        `Loss thumbnail for ${getRecordLabel(record)}: ${record.history.length} points`,
+        `train loss ${formatMetric(first.trainLoss)} to ${formatMetric(last.trainLoss)}`,
+        `test loss ${formatMetric(first.testLoss)} to ${formatMetric(last.testLoss)}.`,
+    ].join(', ');
+}
+
+function createSparklinePath(
+    record: ExperimentRunRecordV1,
+    key: 'trainLoss' | 'testLoss',
+): string {
+    const width = 180;
+    const height = 42;
+    const padding = 4;
+    const values = record.history.flatMap((point) => [point.trainLoss, point.testLoss])
+        .filter((value) => Number.isFinite(value));
+    if (record.history.length < 2 || values.length === 0) return '';
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    return record.history.map((point, index) => {
+        const x = padding + (index / (record.history.length - 1)) * (width - padding * 2);
+        const normalized = (point[key] - min) / span;
+        const y = padding + (1 - normalized) * (height - padding * 2);
+        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }).join(' ');
+}
+
+function RunHistoryThumbnail({ record }: { record: ExperimentRunRecordV1 }) {
+    if (record.history.length < 2) {
+        return (
+            <div className="inspection__empty" style={{ marginTop: 8 }}>
+                No loss history thumbnail
+            </div>
+        );
+    }
+    const trainPath = createSparklinePath(record, 'trainLoss');
+    const testPath = createSparklinePath(record, 'testLoss');
+    return (
+        <div style={{ marginTop: 8 }}>
+            <svg
+                role="img"
+                aria-label={createLossThumbnailLabel(record)}
+                viewBox="0 0 180 56"
+                preserveAspectRatio="none"
+                style={{ display: 'block', width: '100%', height: 56 }}
+            >
+                <rect x="0" y="0" width="180" height="56" rx="4" fill="rgba(255,255,255,0.035)" />
+                <line x1="4" y1="42" x2="176" y2="42" stroke="rgba(255,255,255,0.14)" strokeWidth="1" />
+                <path d={testPath} fill="none" stroke="#f2a65a" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                <path d={trainPath} fill="none" stroke="#7dd3fc" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                <text x="6" y="53" fill="currentColor" fontSize="8">train</text>
+                <text x="40" y="53" fill="currentColor" fontSize="8">test</text>
+            </svg>
+        </div>
+    );
+}
+
 function createMarkdownReport(record: ExperimentRunRecordV1): string {
     const lines = [
         `# ${record.title ?? 'Neural Network Playground Run'}`,
@@ -148,6 +210,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({ onRestore }: RunH
                                         {formatMetric(record.summary.trainLoss)} / {formatMetric(record.summary.testLoss)}
                                     </span>
                                 </div>
+                                <RunHistoryThumbnail record={record} />
                                 {baseline && (
                                     <div
                                         role="group"

@@ -142,6 +142,31 @@ describe('RunHistoryPanel', () => {
         expect(screen.getByText('Steps +80')).toBeInTheDocument();
     });
 
+    it('renders accessible loss-history thumbnails from saved history points', () => {
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                history: [
+                    { step: 1, trainLoss: 0.9, testLoss: 1.1 },
+                    { step: 2, trainLoss: 0.6, testLoss: 0.8 },
+                    { step: 3, trainLoss: 0.3, testLoss: 0.5 },
+                ],
+            }));
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'no-history',
+                title: 'No history',
+                updatedAt: '2026-04-26T00:01:00.000Z',
+                history: [],
+            }));
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+
+        expect(screen.getByRole('img', {
+            name: 'Loss thumbnail for Saved XOR: 3 points, train loss 0.9000 to 0.3000, test loss 1.1000 to 0.5000.',
+        })).toBeInTheDocument();
+        expect(screen.getByText('No loss history thumbnail')).toBeInTheDocument();
+    });
+
     it('exports a markdown report for a saved run', async () => {
         const createObjectURL = vi.fn(() => 'blob:report');
         const revokeObjectURL = vi.fn();
