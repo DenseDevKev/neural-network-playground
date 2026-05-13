@@ -213,6 +213,55 @@ export interface BackpropExplanation {
     summary: string;
 }
 
+/** Runtime-only options for a bounded local loss-landscape probe. */
+export interface LossLandscapeProbeOptions {
+    /** Odd grid size for the 2D probe. Defaults to 7 and is capped at 7. */
+    gridSize?: number;
+    /** Maximum samples to evaluate. Defaults to 64 and is capped at 64. */
+    maxSamples?: number;
+    /** Symmetric scalar weight perturbation radius. Defaults to 0.1 and is capped at 1.0. */
+    radius?: number;
+}
+
+/** Public coordinate metadata for one scalar parameter axis in the probe. */
+export interface LossLandscapeParameter {
+    kind: 'weight';
+    layerIndex: number;
+    neuronIndex: number;
+    inputIndex: number;
+    label: string;
+}
+
+/** One of the two deterministic axes used by a local loss-landscape probe. */
+export interface LossLandscapeProbeAxis {
+    parameter: LossLandscapeParameter;
+    offsets: number[];
+}
+
+/** Best cell found in the bounded 2D loss grid. */
+export interface LossLandscapeBestCell {
+    row: number;
+    col: number;
+    loss: number;
+    offsetA: number;
+    offsetB: number;
+}
+
+/** Bounded, engine-local dry-run result for a tiny 2D loss slice. */
+export interface LossLandscapeProbe {
+    gridSize: number;
+    sampleCount: number;
+    radius: number;
+    axisA: LossLandscapeProbeAxis;
+    axisB: LossLandscapeProbeAxis;
+    losses: Float32Array;
+    centerLoss: number;
+    minLoss: number;
+    maxLoss: number;
+    best: LossLandscapeBestCell;
+    summary: string;
+}
+
 /** Serializable network state for save/restore. */
 export interface SerializedNetwork {
     config: NetworkConfig;

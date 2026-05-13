@@ -630,3 +630,37 @@ The 2026-05-13 pre-commit rerun also passed with 2 benchmark files and 4 benchma
 - Average `applyGradients` time (SGD): 1.6279 ms
 
 The UI slice does not touch engine prediction, gradient hot paths, worker cadence, frame-buffer semantics, or live training behavior. Browser QA passed on 2026-05-13 after restarting the local dev server and manually restoring the in-app browser to the local URL; see `docs/qa/browser-qa/wave-7-backprop-preview.md`.
+
+## Wave 7 Loss Landscape Probe Engine Foundation
+
+Date: 2026-05-13
+
+Scope: engine-only deterministic dry-run loss-landscape probe. This slice adds bounded probe types and `Network.probeLossLandscape()` with a maximum `7x7` grid, maximum 64 evaluated samples, capped radius of 1.0, deterministic first-two-weight axes, and checkpoint-copy evaluation. It does not add worker RPCs, UI, frame-buffer fields, shared protocol changes, URL/config serialization, persistence schema changes, public config shape changes, dependencies, or training behavior changes.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the engine foundation slice. Relevant production output:
+
+- `dist/assets/training.worker-CN1MGCA3.js`: 85.85 kB
+- `dist/assets/index-1WlUmzVU.css`: 66.62 kB, gzip 11.56 kB
+- `dist/assets/InspectionPanel-CmeGnjPP.js`: 10.98 kB, gzip 2.91 kB
+- `dist/assets/RunHistoryPanel-u40Ox7Yv.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-DVvHT95l.js`: 366.75 kB, gzip 111.02 kB
+
+Compared with the Wave 7 backprop preview UI build, the main app, CSS, and lazy UI chunks were effectively unchanged. The worker bundle increased from 83.50 kB to 85.85 kB because the worker imports the engine class that now includes the loss-landscape dry-run method. The increase is about 2.8%, below the roadmap 10% build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the engine foundation slice with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1182.8003 ms total for 100 iterations
+- `predictGridInto`: 1141.2705 ms total for 100 iterations
+- `predictGridWithNeurons`: 716.4242 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 656.4544 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 6.1383 ms
+- Average `applyGradients` time (SGD): 1.5036 ms
+
+These values remain within the established range and below the roadmap warning thresholds. The new probe is an explicit dry-run helper and is not called from the live training loop.

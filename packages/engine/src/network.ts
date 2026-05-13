@@ -26,6 +26,9 @@ import type {
     BackpropExplanation,
     BackpropExplanationLayer,
     BackpropExplanationStatus,
+    LossLandscapeProbe,
+    LossLandscapeProbeOptions,
+    LossLandscapeParameter,
 } from './types.js';
 import { getLoss } from './losses.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
@@ -522,6 +525,52 @@ function describeBackpropLayer(status: BackpropExplanationStatus): string {
         case 'healthy':
             return 'The previewed update is in a moderate range.';
     }
+}
+
+interface LossLandscapeInternalParameter {
+    layerIndex: number;
+    neuronIndex: number;
+    inputIndex: number;
+    flatIndex: number;
+}
+
+function normalizeLossLandscapeGridSize(value: number | undefined): number {
+    const gridSize = value ?? 7;
+    if (!Number.isInteger(gridSize) || gridSize < 3 || gridSize > 7 || gridSize % 2 === 0) {
+        throw new RangeError('loss landscape gridSize must be an odd integer between 3 and 7');
+    }
+    return gridSize;
+}
+
+function normalizeLossLandscapeMaxSamples(value: number | undefined): number {
+    return normalizePositiveIntegerOption(value, 'loss landscape maxSamples', 64, 64);
+}
+
+function normalizeLossLandscapeRadius(value: number | undefined): number {
+    const radius = value ?? 0.1;
+    assertFiniteInRange(radius, 'loss landscape radius', 0, 1, { maxInclusive: true });
+    return radius;
+}
+
+function buildLossLandscapeOffsets(gridSize: number, radius: number): number[] {
+    const center = Math.floor(gridSize / 2);
+    const step = radius / center;
+    const offsets = new Array<number>(gridSize);
+    for (let i = 0; i < gridSize; i++) {
+        offsets[i] = (i - center) * step;
+    }
+    offsets[center] = 0;
+    return offsets;
+}
+
+function toLossLandscapeParameter(parameter: LossLandscapeInternalParameter): LossLandscapeParameter {
+    return {
+        kind: 'weight',
+        layerIndex: parameter.layerIndex,
+        neuronIndex: parameter.neuronIndex,
+        inputIndex: parameter.inputIndex,
+        label: `w${parameter.layerIndex}[${parameter.neuronIndex},${parameter.inputIndex}]`,
+    };
 }
 
 // ── Network ─────────────────────────────────────────────────────────────────
@@ -1182,6 +1231,131 @@ export class Network {
             layers,
             summary,
         };
+    }
+
+    probeLossLandscape(
+        inputs: number[][],
+        targets: number[][],
+        training: TrainingConfig,
+        options: LossLandscapeProbeOptions = {},
+    ): LossLandscapeProbe {
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
+        assertTrainingHyperparams(training);
+        if (inputs.length === 0) {
+            throw new RangeError('loss landscape probe batch must contain at least one sample');
+        }
+
+        const gridSize = normalizeLossLandscapeGridSize(options.gridSize);
+        const maxSamples = normalizeLossLandscapeMaxSamples(options.maxSamples);
+        const radius = normalizeLossLandscapeRadius(options.radius);
+        const sampleCount = Math.min(inputs.length, maxSamples);
+        const [axisA, axisB] = this.getDefaultLossLandscapeAxes();
+        const offsets = buildLossLandscapeOffsets(gridSize, radius);
+        const checkpoint = this.createCheckpoint();
+        const dryRun = new Network(this.config);
+        const losses = new Float32Array(gridSize * gridSize);
+        let minLoss = Number.POSITIVE_INFINITY;
+        let maxLoss = Number.NEGATIVE_INFINITY;
+        let bestLoss = Number.POSITIVE_INFINITY;
+        let bestRow = 0;
+        let bestCol = 0;
+
+        for (let row = 0; row < gridSize; row++) {
+            for (let col = 0; col < gridSize; col++) {
+                dryRun.restoreCheckpoint(checkpoint);
+                dryRun.applyLossLandscapeOffset(axisA, offsets[col]);
+                dryRun.applyLossLandscapeOffset(axisB, offsets[row]);
+                const loss = Math.fround(dryRun.evaluateLossOnly(
+                    inputs,
+                    targets,
+                    sampleCount,
+                    training.lossType,
+                    training.huberDelta,
+                ));
+                const index = row * gridSize + col;
+                losses[index] = loss;
+                if (loss < minLoss) minLoss = loss;
+                if (loss > maxLoss) maxLoss = loss;
+                if (loss < bestLoss) {
+                    bestLoss = loss;
+                    bestRow = row;
+                    bestCol = col;
+                }
+            }
+        }
+
+        const center = Math.floor(gridSize / 2);
+        const centerLoss = losses[center * gridSize + center];
+        return {
+            gridSize,
+            sampleCount,
+            radius,
+            axisA: {
+                parameter: toLossLandscapeParameter(axisA),
+                offsets: [...offsets],
+            },
+            axisB: {
+                parameter: toLossLandscapeParameter(axisB),
+                offsets: [...offsets],
+            },
+            losses,
+            centerLoss,
+            minLoss,
+            maxLoss,
+            best: {
+                row: bestRow,
+                col: bestCol,
+                loss: bestLoss,
+                offsetA: offsets[bestCol],
+                offsetB: offsets[bestRow],
+            },
+            summary: `Loss surface probe found best loss ${bestLoss.toFixed(4)} near ${toLossLandscapeParameter(axisA).label} ${offsets[bestCol].toFixed(3)} and ${toLossLandscapeParameter(axisB).label} ${offsets[bestRow].toFixed(3)}.`,
+        };
+    }
+
+    private getDefaultLossLandscapeAxes(): [LossLandscapeInternalParameter, LossLandscapeInternalParameter] {
+        const axes: LossLandscapeInternalParameter[] = [];
+        for (let layerIndex = 0; layerIndex < this.weights.length; layerIndex++) {
+            const fanIn = this.layerSizes[layerIndex];
+            const layerWeights = this.weights[layerIndex];
+            for (let flatIndex = 0; flatIndex < layerWeights.length; flatIndex++) {
+                axes.push({
+                    layerIndex,
+                    neuronIndex: Math.floor(flatIndex / fanIn),
+                    inputIndex: flatIndex % fanIn,
+                    flatIndex,
+                });
+                if (axes.length === 2) {
+                    return [axes[0], axes[1]];
+                }
+            }
+        }
+        throw new RangeError('loss landscape probe requires at least two trainable weights');
+    }
+
+    private applyLossLandscapeOffset(parameter: LossLandscapeInternalParameter, offset: number): void {
+        this.weights[parameter.layerIndex][parameter.flatIndex] += offset;
+    }
+
+    private evaluateLossOnly(
+        inputs: number[][],
+        targets: number[][],
+        sampleCount: number,
+        lossType: LossType,
+        huberDelta?: number,
+    ): number {
+        const lossFn = getLoss(lossType, { huberDelta });
+        let lossSum = 0;
+        let lossCount = 0;
+        for (let i = 0; i < sampleCount; i++) {
+            const pred = this.forwardInto(inputs[i]);
+            const target = targets[i];
+            for (let o = 0; o < pred.length; o++) {
+                lossSum += lossFn.loss(pred[o], target[o]);
+                lossCount++;
+            }
+        }
+        return lossCount > 0 ? lossSum / lossCount : 0;
     }
 
     // ── Predict helpers ──────────────────────────────────────────────────────

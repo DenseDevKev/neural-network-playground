@@ -773,3 +773,86 @@ describe('backprop explanation', () => {
         expect(() => net.explainBackpropStep([[1, 2]], [[1, 0]], defaultTraining)).toThrow(RangeError);
     });
 });
+
+describe('loss landscape probe', () => {
+    const probeInputs = [
+        [0, 0],
+        [1, 1],
+        [0, 1],
+        [1, 0],
+        [0.25, 0.75],
+        [0.75, 0.25],
+    ];
+    const probeTargets = [[0], [1], [1], [0], [1], [1]];
+
+    it('returns deterministic bounded loss grid metadata', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3] }));
+        net.trainBatch(probeInputs, probeTargets, defaultTraining);
+
+        const probe = net.probeLossLandscape(probeInputs, probeTargets, defaultTraining, {
+            gridSize: 7,
+            maxSamples: 4,
+            radius: 0.1,
+        });
+        const again = net.probeLossLandscape(probeInputs, probeTargets, defaultTraining, {
+            gridSize: 7,
+            maxSamples: 4,
+            radius: 0.1,
+        });
+
+        expect(probe).toEqual(again);
+        expect(probe.gridSize).toBe(7);
+        expect(probe.sampleCount).toBe(4);
+        expect(probe.losses).toHaveLength(49);
+        expect(probe.axisA.parameter.kind).toBe('weight');
+        expect(probe.axisB.parameter.kind).toBe('weight');
+        expect(probe.axisA.parameter).not.toEqual(probe.axisB.parameter);
+        expect(probe.axisA.offsets).toHaveLength(7);
+        expect(probe.axisB.offsets).toHaveLength(7);
+        expect(probe.centerLoss).toBeCloseTo(probe.losses[3 * 7 + 3], 6);
+        expect(probe.minLoss).toBeCloseTo(Math.min(...probe.losses), 6);
+        expect(probe.maxLoss).toBeCloseTo(Math.max(...probe.losses), 6);
+        expect(probe.best.row).toBeGreaterThanOrEqual(0);
+        expect(probe.best.row).toBeLessThan(7);
+        expect(probe.best.col).toBeGreaterThanOrEqual(0);
+        expect(probe.best.col).toBeLessThan(7);
+        expect(probe.summary).toContain('Loss surface');
+
+        for (const loss of probe.losses) {
+            expect(Number.isFinite(loss)).toBe(true);
+            expect(loss).toBeGreaterThanOrEqual(0);
+        }
+    });
+
+    it('does not mutate live weights, biases, optimizer state, or step count', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3] }));
+        const training: TrainingConfig = { ...defaultTraining, optimizer: 'adam' };
+        for (let i = 0; i < 3; i++) {
+            net.trainBatch(probeInputs, probeTargets, training);
+        }
+        const before = net.createCheckpoint();
+
+        net.probeLossLandscape(probeInputs, probeTargets, training, {
+            gridSize: 5,
+            maxSamples: 6,
+            radius: 0.05,
+        });
+
+        expect(net.createCheckpoint()).toEqual(before);
+    });
+
+    it('rejects invalid loss landscape probe bounds and batches', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3] }));
+
+        expect(() => net.probeLossLandscape([], [], defaultTraining)).toThrow(RangeError);
+        expect(() => net.probeLossLandscape([[0, 0]], [[1]], defaultTraining, { gridSize: 8 })).toThrow(RangeError);
+        expect(() => net.probeLossLandscape([[0, 0]], [[1]], defaultTraining, { gridSize: 1 })).toThrow(RangeError);
+        expect(() => net.probeLossLandscape([[0, 0]], [[1]], defaultTraining, { maxSamples: 65 })).toThrow(RangeError);
+        expect(() => net.probeLossLandscape([[0, 0]], [[1]], defaultTraining, { radius: 0 })).toThrow(RangeError);
+        expect(() => net.probeLossLandscape([[0, 0]], [[1]], defaultTraining, { radius: 1.01 })).toThrow(RangeError);
+        expect(() => (
+            new Network(makeConfig({ inputSize: 1, hiddenLayers: [], outputSize: 1 }))
+                .probeLossLandscape([[0]], [[1]], defaultTraining)
+        )).toThrow(RangeError);
+    });
+});
