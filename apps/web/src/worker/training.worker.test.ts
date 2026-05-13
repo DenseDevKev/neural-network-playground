@@ -15,6 +15,7 @@ import { workerApi } from './training.worker.ts';
 
 function containsTypedArray(value: unknown): boolean {
     if (ArrayBuffer.isView(value)) return true;
+    if (value instanceof ArrayBuffer || value instanceof SharedArrayBuffer) return true;
     if (value === null || typeof value !== 'object') return false;
     return Object.values(value).some((child) => containsTypedArray(child));
 }

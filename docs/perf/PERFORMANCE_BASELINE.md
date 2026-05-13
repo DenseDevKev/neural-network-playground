@@ -664,3 +664,37 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5036 ms
 
 These values remain within the established range and below the roadmap warning thresholds. The new probe is an explicit dry-run helper and is not called from the live training loop.
+
+## Wave 7 Loss Landscape Probe Worker RPC
+
+Date: 2026-05-13
+
+Scope: worker-only one-shot Comlink RPC for the approved Loss Landscape Probe path. This slice exposes the already-bounded engine `probeLossLandscape()` result through `getLossLandscapeProbe()`, converts the engine `Float32Array` loss grid into a plain `number[]`, and documents the RPC. It does not add UI state, streamed messages, frame-buffer fields, shared protocol guards, URL/config serialization, persistence schema changes, public config shape changes, dependencies, or training behavior changes.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the worker RPC slice. Relevant production output:
+
+- `dist/assets/training.worker-C2DakSc7.js`: 86.45 kB
+- `dist/assets/index-1WlUmzVU.css`: 66.62 kB, gzip 11.56 kB
+- `dist/assets/InspectionPanel-D13XD3j9.js`: 10.98 kB, gzip 2.91 kB
+- `dist/assets/RunHistoryPanel-DFkFivXN.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-BL2FJMYe.js`: 366.75 kB, gzip 111.02 kB
+
+Compared with the engine foundation build, the main app, CSS, and lazy UI chunks were effectively unchanged. The worker bundle increased from 85.85 kB to 86.45 kB because it now exposes a Comlink one-shot RPC and serializable response wrapper. The increase is about 0.7%, below the roadmap 10% build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed after the worker RPC slice with 2 benchmark files and 4 benchmark tests. The first run after implementation was slightly faster (`predictGrid` 1205.8439 ms, `predictGridInto` 1152.6893 ms, `predictGridWithNeurons` 709.6152 ms, `predictGridWithNeuronsInto` 597.6258 ms, Adam/L2/Clip 5.0184 ms, SGD 1.4061 ms). The pre-commit rerun after tightening raw-buffer test coverage also passed.
+
+Observed pre-commit benchmark output:
+
+- `predictGrid`: 1267.9825 ms total for 100 iterations
+- `predictGridInto`: 1170.3269 ms total for 100 iterations
+- `predictGridWithNeurons`: 724.9360 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 614.3189 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 5.8100 ms
+- Average `applyGradients` time (SGD): 1.5234 ms
+
+These values remain within the established range and below the roadmap warning thresholds. The RPC is one-shot, manual, and not called from the live training loop, so no runtime cadence impact is expected from this slice.
