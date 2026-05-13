@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { InspectionPanel } from './InspectionPanel.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -14,6 +15,7 @@ import {
 
 const workerApi = vi.hoisted(() => ({
     getPredictionTrace: vi.fn(),
+    getBackpropExplanation: vi.fn(),
 }));
 
 vi.mock('../../worker/workerBridge.ts', () => ({
@@ -23,6 +25,7 @@ vi.mock('../../worker/workerBridge.ts', () => ({
 describe('InspectionPanel demand', () => {
     beforeEach(() => {
         workerApi.getPredictionTrace.mockReset();
+        workerApi.getBackpropExplanation.mockReset();
         usePlaygroundStore.setState({
             data: { ...DEFAULT_DATA },
             network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
@@ -152,6 +155,144 @@ describe('InspectionPanel demand', () => {
         expect(screen.getByText(/Layer 1/i)).toBeInTheDocument();
         expect(screen.getByText('loss')).toBeInTheDocument();
         expect(screen.getByText('0.1900')).toBeInTheDocument();
+    });
+
+    it('requests and renders a one-shot backprop preview', async () => {
+        workerApi.getBackpropExplanation.mockResolvedValue({
+            runId: 1,
+            step: 7,
+            epoch: 2,
+            explanation: {
+                batchSize: 5,
+                loss: 0.1234,
+                learningRate: 0.03,
+                globalGradientNorm: 0.0042,
+                globalClipScale: 1,
+                clipped: false,
+                summary: 'Backprop preview found 2 healthy layer updates.',
+                layers: [
+                    {
+                        layerIndex: 0,
+                        meanAbsErrorSignal: 0.012,
+                        maxAbsErrorSignal: 0.02,
+                        meanAbsGradient: 0.003,
+                        maxAbsGradient: 0.01,
+                        meanAbsUpdate: 0.0009,
+                        maxAbsUpdate: 0.002,
+                        meanActivation: 0.4,
+                        activationStd: 0.1,
+                        status: 'healthy',
+                        note: 'The previewed update is in a moderate range.',
+                    },
+                    {
+                        layerIndex: 1,
+                        meanAbsErrorSignal: 0.02,
+                        maxAbsErrorSignal: 0.05,
+                        meanAbsGradient: 0.004,
+                        maxAbsGradient: 0.015,
+                        meanAbsUpdate: 0.001,
+                        maxAbsUpdate: 0.004,
+                        meanActivation: 0.6,
+                        activationStd: 0.2,
+                        status: 'healthy',
+                        note: 'The previewed update is in a moderate range.',
+                    },
+                ],
+            },
+        });
+
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+
+        await waitFor(() => {
+            expect(workerApi.getBackpropExplanation).toHaveBeenCalledTimes(1);
+        });
+        expect(await screen.findByText(/Preview from step 7 \/ epoch 2/i)).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: /slow-motion backprop preview/i })).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent(/Backprop preview found 2 healthy layer updates/i);
+        expect(screen.getByRole('list', { name: /backprop layer summaries/i })).toBeInTheDocument();
+        expect(screen.getByText(/batch 5/i)).toBeInTheDocument();
+        expect(screen.getByText(/gradient norm 0\.004/i)).toBeInTheDocument();
+        expect(screen.getByText(/Hidden 1/i)).toBeInTheDocument();
+        expect(screen.getAllByText(/healthy/i).length).toBeGreaterThan(0);
+        expect(screen.getAllByText(/mean update 0\.001/i).length).toBeGreaterThan(0);
+    });
+
+    it('activates backprop preview from the keyboard', async () => {
+        workerApi.getBackpropExplanation.mockResolvedValue({
+            runId: 1,
+            step: 0,
+            epoch: 0,
+            explanation: {
+                batchSize: 1,
+                loss: 0,
+                learningRate: 0.03,
+                globalGradientNorm: 0,
+                globalClipScale: 1,
+                clipped: false,
+                summary: 'Backprop preview found 0 healthy layer updates.',
+                layers: [],
+            },
+        });
+        render(<InspectionPanel />);
+
+        const button = screen.getByRole('button', { name: /preview backprop/i });
+        button.focus();
+        expect(button).toHaveFocus();
+        await userEvent.keyboard('{Enter}');
+
+        await waitFor(() => {
+            expect(workerApi.getBackpropExplanation).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('guards duplicate backprop requests while loading', async () => {
+        let resolvePreview: (value: unknown) => void = () => {};
+        workerApi.getBackpropExplanation.mockReturnValue(new Promise((resolve) => {
+            resolvePreview = resolve;
+        }));
+
+        render(<InspectionPanel />);
+        const button = screen.getByRole('button', { name: /preview backprop/i });
+
+        fireEvent.click(button);
+        fireEvent.click(button);
+
+        expect(workerApi.getBackpropExplanation).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('button', { name: /previewing backprop/i })).toBeDisabled();
+
+        resolvePreview({
+            runId: 1,
+            step: 0,
+            epoch: 0,
+            explanation: {
+                batchSize: 1,
+                loss: 0,
+                learningRate: 0.03,
+                globalGradientNorm: 0,
+                globalClipScale: 1,
+                clipped: false,
+                summary: 'Backprop preview found 0 healthy layer updates.',
+                layers: [],
+            },
+        });
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /preview backprop/i })).not.toBeDisabled();
+        });
+    });
+
+    it('renders backprop worker errors accessibly', async () => {
+        workerApi.getBackpropExplanation.mockRejectedValue(
+            new Error('Backprop preview is unavailable at the epoch shuffle boundary; step once before previewing.'),
+        );
+
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+
+        expect(await screen.findByRole('status')).toHaveTextContent(
+            /Backprop preview failed: Backprop preview is unavailable at the epoch shuffle boundary/i,
+        );
     });
 
     it('shows a deterministic empty state when no selected sample exists', () => {

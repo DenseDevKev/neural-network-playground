@@ -2620,6 +2620,40 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     text-align: right;
 }
 
+.inspection__backprop-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.inspection__backprop-item {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.inspection__backprop-heading,
+.inspection__backprop-metrics {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.inspection__backprop-metrics {
+    flex-wrap: wrap;
+}
+
+.inspection__backprop-note {
+    color: var(--text-tertiary);
+    font-size: 10px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
 .inspection__bar-track {
     flex: 1;
     height: 6px;

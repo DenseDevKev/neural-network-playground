@@ -1,12 +1,13 @@
 // ── Advanced Inspection Panel ──
 // Displays per-layer gradient magnitudes, activation stats, and weight distributions.
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import { getWorkerApi } from '../../worker/workerBridge.ts';
 import type {
+    BackpropExplanationResponse,
     PredictionTraceResponse,
     PredictionTraceSampleSource,
 } from '../../worker/training.worker.ts';
@@ -18,6 +19,13 @@ function formatPercent(count: number, total: number): string {
 
 function formatRange(value: number): string {
     if (Math.abs(value) >= 1000 || (Math.abs(value) > 0 && Math.abs(value) < 0.001)) {
+        return value.toExponential(1);
+    }
+    return value.toFixed(3);
+}
+
+function formatBackpropMetric(value: number): string {
+    if (Math.abs(value) >= 1000 || (Math.abs(value) > 0 && Math.abs(value) < 0.0001)) {
         return value.toExponential(1);
     }
     return value.toFixed(3);
@@ -51,6 +59,10 @@ export const InspectionPanel = memo(function InspectionPanel() {
     const [traceResult, setTraceResult] = useState<PredictionTraceResponse | null>(null);
     const [traceError, setTraceError] = useState<string | null>(null);
     const [traceLoading, setTraceLoading] = useState(false);
+    const [backpropResult, setBackpropResult] = useState<BackpropExplanationResponse | null>(null);
+    const [backpropError, setBackpropError] = useState<string | null>(null);
+    const [backpropLoading, setBackpropLoading] = useState(false);
+    const backpropRequestInFlightRef = useRef(false);
 
     useEffect(() => {
         const enableInspectionDemand = (enabled: boolean) => {
@@ -166,6 +178,24 @@ export const InspectionPanel = memo(function InspectionPanel() {
             setTraceError(err instanceof Error ? err.message : String(err));
         } finally {
             setTraceLoading(false);
+        }
+    };
+
+    const handleBackpropPreview = async () => {
+        if (backpropRequestInFlightRef.current) return;
+        backpropRequestInFlightRef.current = true;
+        setBackpropLoading(true);
+        setBackpropError(null);
+        setBackpropResult(null);
+        try {
+            const response = await getWorkerApi().getBackpropExplanation();
+            setBackpropResult(response);
+        } catch (err) {
+            setBackpropResult(null);
+            setBackpropError(err instanceof Error ? err.message : String(err));
+        } finally {
+            backpropRequestInFlightRef.current = false;
+            setBackpropLoading(false);
         }
     };
 
@@ -379,6 +409,80 @@ export const InspectionPanel = memo(function InspectionPanel() {
                     ) : null}
                 </div>
             </div>
+            <section className="inspection__layer" aria-label="Slow-motion backprop preview">
+                <div className="inspection__layer-name">Slow-Motion Backprop</div>
+                <button
+                    type="button"
+                    className="btn"
+                    onClick={handleBackpropPreview}
+                    disabled={backpropLoading}
+                >
+                    {backpropLoading ? 'Previewing backprop' : 'Preview backprop'}
+                </button>
+                <div role="status" aria-live="polite" className="inspection__empty">
+                    {backpropLoading
+                        ? 'Preparing backprop preview...'
+                        : backpropError
+                            ? `Backprop preview failed: ${backpropError}`
+                            : backpropResult?.explanation.summary ?? ''}
+                </div>
+                {backpropResult ? (
+                    <div className="inspection__layers">
+                        <div className="inspection__stat-row">
+                            <span className="inspection__stat-label">
+                                Preview from step {backpropResult.step} / epoch {backpropResult.epoch}
+                            </span>
+                        </div>
+                        <div className="inspection__stat-row">
+                            <span className="inspection__stat-label">batch {backpropResult.explanation.batchSize}</span>
+                            <span className="inspection__stat-value">
+                                loss {formatBackpropMetric(backpropResult.explanation.loss)}
+                            </span>
+                            <span className="inspection__stat-value">
+                                lr {formatBackpropMetric(backpropResult.explanation.learningRate)}
+                            </span>
+                        </div>
+                        <div className="inspection__stat-row">
+                            <span className="inspection__stat-label">
+                                gradient norm {formatBackpropMetric(backpropResult.explanation.globalGradientNorm)}
+                            </span>
+                            <span className="inspection__stat-value">
+                                {backpropResult.explanation.clipped
+                                    ? `clipped ${formatBackpropMetric(backpropResult.explanation.globalClipScale)}x`
+                                    : 'not clipped'}
+                            </span>
+                        </div>
+                        <ul className="inspection__backprop-list" aria-label="Backprop layer summaries">
+                            {backpropResult.explanation.layers.map((layer) => (
+                                <li key={layer.layerIndex} className="inspection__backprop-item">
+                                    <div className="inspection__backprop-heading">
+                                        <span className="inspection__stat-label">
+                                            {layerNames[layer.layerIndex] ?? `Layer ${layer.layerIndex + 1}`}
+                                        </span>
+                                        <span className="inspection__stat-value">
+                                            {layer.status}
+                                        </span>
+                                    </div>
+                                    <div className="inspection__backprop-metrics">
+                                        <span className="inspection__stat-value">
+                                            mean update {formatBackpropMetric(layer.meanAbsUpdate)}
+                                        </span>
+                                        <span className="inspection__stat-value">
+                                            mean gradient {formatBackpropMetric(layer.meanAbsGradient)}
+                                        </span>
+                                        <span className="inspection__stat-value">
+                                            error signal {formatBackpropMetric(layer.meanAbsErrorSignal)}
+                                        </span>
+                                    </div>
+                                    <div className="inspection__backprop-note">
+                                        {layer.note}
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ) : null}
+            </section>
         </div>
     );
 });
