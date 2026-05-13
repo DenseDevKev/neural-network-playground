@@ -698,3 +698,37 @@ Observed pre-commit benchmark output:
 - Average `applyGradients` time (SGD): 1.5234 ms
 
 These values remain within the established range and below the roadmap warning thresholds. The RPC is one-shot, manual, and not called from the live training loop, so no runtime cadence impact is expected from this slice.
+
+## Wave 7 Loss Landscape Probe UI
+
+Date: 2026-05-13
+
+Scope: Inspection-panel UI for manually requesting the one-shot Loss Landscape Probe. This slice stores only the bounded RPC response in local component state, renders a compact heatmap and text summary, and adds keyboard/error/loading coverage. It does not add streamed worker messages, frame-buffer fields, raw activation/loss arrays in React state, URL/config serialization, persistence schema changes, public config shape changes, dependencies, or training behavior changes.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the UI slice. Relevant production output:
+
+- `dist/assets/training.worker-C2DakSc7.js`: 86.45 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/InspectionPanel-DcCt75L5.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-8zhhtp04.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-BUF1FoVn.js`: 366.75 kB, gzip 111.02 kB
+
+Compared with the worker RPC build, the worker, run-history, and main app bundles were effectively unchanged. The lazy Inspection panel chunk increased from 10.98 kB to 13.42 kB because it now renders the bounded loss-surface controls, grid, and text summary. The CSS bundle increased from 66.62 kB to 67.02 kB. The existing Vite large chunk warning remains; the overall production build-size change is below the roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1159.3244 ms total for 100 iterations
+- `predictGridInto`: 1101.5146 ms total for 100 iterations
+- `predictGridWithNeurons`: 695.7840 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 590.7820 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.3727 ms
+- Average `applyGradients` time (SGD): 1.4332 ms
+
+These values remain within the established range and below the roadmap warning thresholds. The UI slice does not touch engine prediction, gradient hot paths, worker cadence, frame-buffer semantics, or live training behavior. Browser QA passed on 2026-05-13 after starting the local dev server; see `docs/qa/browser-qa/wave-7-loss-landscape-probe.md`.

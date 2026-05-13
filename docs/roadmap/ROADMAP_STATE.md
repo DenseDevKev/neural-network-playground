@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `e44a76e`; `pnpm --filter @nn-playground/web test -- src/worker/training.worker.test.ts`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and `git diff --check` passed before the Wave 7 Loss Landscape Probe worker RPC commit.
+- Last verified commit: `4d4878b`; `pnpm --filter @nn-playground/web test -- src/components/controls/InspectionPanel.test.tsx`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before the Wave 7 Loss Landscape Probe UI commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Loss Landscape Probe UI approval gate
+- Slice: Loss Landscape Probe UI evidence packaging; next Wave 7 feature approval gate
 - Risk: High
-- Status: Engine dry-run bounded backprop summaries, a worker-only one-shot Comlink RPC, and the Inspection-panel preview UI are implemented and verified. Loss Landscape Probe engine foundation and worker-only one-shot RPC are implemented, verified, and committed after explicit approval. No loss-landscape UI, frame-buffer, streaming protocol, shared protocol guard, persistence, URL/config, public config, dependency, or training-behavior changes are approved yet.
+- Status: Engine dry-run bounded backprop summaries, a worker-only one-shot Comlink RPC, and the Inspection-panel preview UI are implemented and verified. Loss Landscape Probe engine foundation, worker-only one-shot RPC, and local Inspection-panel UI are implemented, verified, and committed after explicit approval. No frame-buffer, streaming protocol, shared protocol guard, persistence, URL/config, public config, dependency, or training-behavior changes were made for the UI slice.
 
 ## Completed Slices
 
@@ -68,15 +68,16 @@
 | 2026-05-13 | Wave 7 | Slow-motion backprop preview QA/state | `775d515` | Docs/evidence commit after the Wave 7 backprop preview UI full verification and Browser QA passed; `git diff --check` passed before commit | `docs/qa/browser-qa/wave-7-backprop-preview.md`, `docs/qa/browser-qa/wave-7-backprop-preview-desktop.png`, `docs/qa/browser-qa/wave-7-backprop-preview-compact.png`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
 | 2026-05-13 | Wave 7 | Loss Landscape Probe engine foundation | `6b3fe73` | Red targeted engine tests failed before implementation and again for the review-found radius cap; targeted engine run passed with 13 files and 284 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two implementation review passes, and `git diff --check` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/types.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-13 | Wave 7 | Loss Landscape Probe worker one-shot RPC | `e44a76e` | Red targeted worker tests failed before implementation with missing `getLossLandscapeProbe`; targeted web run passed with 51 files and 364 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and `git diff --check` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-13 | Wave 7 | Loss Landscape Probe Inspection-panel UI | `4d4878b` | Red targeted component tests failed before implementation with missing `Probe loss surface`; targeted web run passed with 51 files and 368 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before commit | `apps/web/src/components/controls/InspectionPanel.tsx`, `apps/web/src/components/controls/InspectionPanel.test.tsx`, `apps/web/src/styles/index.css`, `docs/qa/browser-qa/wave-7-loss-landscape-probe.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-13 after the Wave 7 loss-landscape worker RPC with engine 284 tests, shared 70 tests, and web 364 tests. Targeted `pnpm --filter @nn-playground/web test -- src/worker/training.worker.test.ts` passed with 51 files and 364 tests after the red run failed on missing `getLossLandscapeProbe`.
-- Lint: `pnpm lint` passed on 2026-05-13 after the Wave 7 loss-landscape worker RPC.
-- Build: `pnpm build` passed on 2026-05-13 after the Wave 7 loss-landscape worker RPC with the existing Vite chunk-size warning. Relevant chunks: `training.worker-C2DakSc7.js` 86.45 kB, `InspectionPanel-D13XD3j9.js` 10.98 kB gzip 2.91 kB, `RunHistoryPanel-DFkFivXN.js` 16.70 kB gzip 5.14 kB, `index-BL2FJMYe.js` 366.75 kB gzip 111.02 kB.
-- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Slow-motion backprop preview Browser QA passed on 2026-05-13 after the dev server was restarted and the user manually restored the in-app browser tab from a generated connection-error page.
-- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run/live arena uses native labelled selects, native buttons, labelled model regions, grouped scalar summaries, and keyboard activation covered by component tests and Browser QA. The slow-motion backprop preview uses a native button, a small `role="status"` live region, semantic layer-summary list, wrapping scalar metrics, and Testing Library plus Browser keyboard assertions.
-- Performance: `pnpm test:perf` passed on 2026-05-13 after the Wave 7 loss-landscape worker RPC with 2 benchmark files and 4 benchmark tests. The final pre-commit run recorded `predictGrid` 1267.9825 ms, `predictGridInto` 1170.3269 ms, `predictGridWithNeurons` 724.9360 ms, `predictGridWithNeuronsInto` 614.3189 ms, Adam/L2/Clip applyGradients 5.8100 ms, and SGD applyGradients 1.5234 ms. Details are recorded in `docs/perf/PERFORMANCE_BASELINE.md`.
+- Tests: `pnpm test` passed on 2026-05-13 after the Wave 7 loss-landscape UI with engine 284 tests, shared 70 tests, and web 368 tests. Targeted `pnpm --filter @nn-playground/web test -- src/components/controls/InspectionPanel.test.tsx` passed with 51 files and 368 tests after the red run failed on the missing `Probe loss surface` UI.
+- Lint: `pnpm lint` passed on 2026-05-13 after the Wave 7 loss-landscape UI.
+- Build: `pnpm build` passed on 2026-05-13 after the Wave 7 loss-landscape UI with the existing Vite chunk-size warning. Relevant chunks: `training.worker-C2DakSc7.js` 86.45 kB, `InspectionPanel-DcCt75L5.js` 13.42 kB gzip 3.49 kB, `RunHistoryPanel-8zhhtp04.js` 16.70 kB gzip 5.14 kB, `index-BUF1FoVn.js` 366.75 kB gzip 111.02 kB, `index-DZR84vix.css` 67.02 kB gzip 11.64 kB.
+- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Loss Landscape Probe UI Browser QA passed on 2026-05-13 with mouse activation, Enter activation, desktop screenshot, compact DOM verification, compact focused-button screenshot, and no console errors.
+- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run/live arena uses native labelled selects, native buttons, labelled model regions, grouped scalar summaries, and keyboard activation covered by component tests and Browser QA. The slow-motion backprop preview uses a native button, a small `role="status"` live region, semantic layer-summary list, wrapping scalar metrics, and Testing Library plus Browser keyboard assertions. The Loss Landscape Probe UI uses a native button, named `role="status"` live region, `role="img"` heatmap text alternative, and non-color scalar summary covered by component tests and Browser QA.
+- Performance: `pnpm test:perf` passed on 2026-05-13 after the Wave 7 loss-landscape UI with 2 benchmark files and 4 benchmark tests. The final pre-commit run recorded `predictGrid` 1159.3244 ms, `predictGridInto` 1101.5146 ms, `predictGridWithNeurons` 695.7840 ms, `predictGridWithNeuronsInto` 590.7820 ms, Adam/L2/Clip applyGradients 4.3727 ms, and SGD applyGradients 1.4332 ms. Details are recorded in `docs/perf/PERFORMANCE_BASELINE.md`.
 
 ## Browser QA Evidence
 
@@ -91,6 +92,7 @@
 - `docs/qa/browser-qa/wave-7-side-by-side-arena.md`
 - `docs/qa/browser-qa/wave-7-live-arena-ui.md`
 - `docs/qa/browser-qa/wave-7-backprop-preview.md`
+- `docs/qa/browser-qa/wave-7-loss-landscape-probe.md`
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
@@ -109,6 +111,8 @@
 - Wave 7 live arena UI screenshot: unavailable; Browser screenshot capture timed out. DOM snapshots and console checks are recorded in `docs/qa/browser-qa/wave-7-live-arena-ui.md`.
 - Wave 7 slow-motion backprop preview desktop screenshot: `docs/qa/browser-qa/wave-7-backprop-preview-desktop.png`
 - Wave 7 slow-motion backprop preview compact screenshot: `docs/qa/browser-qa/wave-7-backprop-preview-compact.png`
+- Wave 7 loss-landscape probe desktop screenshot: `docs/qa/browser-qa/wave-7-loss-landscape-probe-desktop.png`
+- Wave 7 loss-landscape probe compact screenshot: `docs/qa/browser-qa/wave-7-loss-landscape-probe-compact.png`
 
 ## Performance Evidence
 
@@ -136,6 +140,7 @@
 - Wave 7 slow-motion backprop preview UI changed the lazy Inspection panel chunk and CSS only. `pnpm test:perf` passed on 2026-05-13 with `predictGrid` 1370.2497 ms, `predictGridInto` 1239.0260 ms, `predictGridWithNeurons` 750.3219 ms, `predictGridWithNeuronsInto` 646.0797 ms, Adam/L2/Clip applyGradients 6.1264 ms, SGD applyGradients 1.6279 ms. Earlier 2026-05-12 runs were noisy but passed; the best repeat was `predictGrid` 1237.1647 ms, `predictGridInto` 1223.3140 ms, `predictGridWithNeurons` 771.2188 ms, `predictGridWithNeuronsInto` 659.5370 ms, Adam/L2/Clip applyGradients 4.5729 ms, SGD applyGradients 1.5759 ms. The lazy Inspection chunk increased from 8.31 kB to 10.98 kB and CSS from 66.18 kB to 66.62 kB, below the 10% threshold.
 - Wave 7 loss-landscape engine foundation changed the engine class imported by the worker. `pnpm test:perf` passed with `predictGrid` 1182.8003 ms, `predictGridInto` 1141.2705 ms, `predictGridWithNeurons` 716.4242 ms, `predictGridWithNeuronsInto` 656.4544 ms, Adam/L2/Clip applyGradients 6.1383 ms, SGD applyGradients 1.5036 ms. The worker bundle increased from 83.50 kB to 85.85 kB, about 2.8%, below the 10% threshold.
 - Wave 7 loss-landscape worker RPC changed worker code and protocol docs only. Final pre-commit `pnpm test:perf` passed with `predictGrid` 1267.9825 ms, `predictGridInto` 1170.3269 ms, `predictGridWithNeurons` 724.9360 ms, `predictGridWithNeuronsInto` 614.3189 ms, Adam/L2/Clip applyGradients 5.8100 ms, SGD applyGradients 1.5234 ms. The worker bundle increased from 85.85 kB to 86.45 kB, about 0.7%, below the 10% threshold.
+- Wave 7 loss-landscape UI changed the lazy Inspection panel chunk and CSS only. `pnpm test:perf` passed with `predictGrid` 1159.3244 ms, `predictGridInto` 1101.5146 ms, `predictGridWithNeurons` 695.7840 ms, `predictGridWithNeuronsInto` 590.7820 ms, Adam/L2/Clip applyGradients 4.3727 ms, SGD applyGradients 1.4332 ms. The worker bundle stayed at 86.45 kB, the lazy Inspection chunk increased from 10.98 kB to 13.42 kB, and CSS increased from 66.62 kB to 67.02 kB.
 
 ## Design Decisions
 
@@ -169,6 +174,7 @@
 | 2026-05-13 | Require a Loss Landscape Probe design note before implementation | Two approval-gate reviewers recommended revising before code because the feature is high-risk and lacked exact probe bounds, transport choices, and rollback constraints | `docs/design-notes/loss-landscape-probe.md` |
 | 2026-05-13 | Cap Loss Landscape Probe radius at 1.0 | Review found positive but unbounded finite radius could overflow loss values; a hard cap keeps the first slice local and bounded | Wave 7 loss-landscape engine foundation review |
 | 2026-05-13 | Expose the Loss Landscape Probe through a worker one-shot RPC only | Reuses the bounded engine probe while avoiding streaming messages, frame buffers, shared protocol guards, UI state, persistence, URL/config, public config, dependencies, and training behavior changes | `docs/design-notes/loss-landscape-probe.md`, `e44a76e` |
+| 2026-05-13 | Keep the Loss Landscape Probe UI local to the Inspection panel | Uses the already-approved one-shot RPC and stores only bounded response data in local component state while avoiding frame buffers, protocol guards, persistence, URL/config, public config, dependencies, and training changes | Wave 7 loss-landscape UI implementation, `4d4878b` |
 
 ## Known Issues
 
@@ -184,6 +190,7 @@
 - Wave 6E compact viewport visual Browser QA remains pending from that earlier slice; Wave 7 compact viewport Browser QA was executed with the Browser viewport capability.
 - Wave 7 live arena UI Browser QA screenshot capture timed out in the in-app Browser backend; DOM snapshots and console checks passed and are recorded.
 - Wave 7 slow-motion backprop preview Browser QA required the user to manually restore the local URL after the Browser tool could not navigate away from Chrome's generated connection-error `data:` page. After that manual recovery, Browser QA passed with no console errors and two development-mode perf warnings.
+- Wave 7 Loss Landscape Probe compact screenshot capture timed out after the repeated result-render check. Compact DOM verification passed with no console errors, and the compact screenshot captures the focused native probe button before the repeated result check.
 
 ## Blocked Items
 
@@ -196,7 +203,7 @@
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
 - Wave 6E persistence of checkpoints across reloads remains deferred and requires separate approval.
-- Wave 7 paired live model arena visualizations, Loss Landscape Probe UI integration, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
+- Wave 7 paired live model arena visualizations, advanced Loss Landscape Probe controls, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
 - Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, continuous streaming, and multiple-worker execution are explicitly deferred from the scalar runtime/UI prototype.
 
 ## Approval Gates Reached
@@ -216,10 +223,11 @@
 - Wave 7 Loss Landscape Probe reached an approval gate on 2026-05-13. Two subagents recommended design-note-first scope discipline. `docs/design-notes/loss-landscape-probe.md` asks for approval of an engine-only, deterministic, `7x7` maximum, 64-sample maximum, two-scalar-coordinate dry-run probe.
 - Wave 7 Loss Landscape Probe engine-only first slice was explicitly approved by the user on 2026-05-13 and committed as `6b3fe73` after TDD. One review finding required capping radius at 1.0 before commit.
 - Wave 7 Loss Landscape Probe worker one-shot RPC was explicitly approved by the user on 2026-05-13 and committed as `e44a76e` after TDD. It converts the compact engine loss grid to a serializable `number[]` and does not touch MessageChannel streaming, shared protocol guards, frame buffers, UI, URL/config serialization, persistence/run-history schema, public config shape, dependencies, or training behavior.
+- Wave 7 Loss Landscape Probe UI was approved by the user's continuation after the worker RPC and committed as `4d4878b` after TDD. It renders a local Inspection-panel button, bounded heatmap, live status, and text summary without touching worker/protocol/frame-buffer/shared guards, persistence, URL/config serialization, public config shape, dependencies, or training behavior.
 
 ## Next Recommended Slice
 
-Next recommended step: request separate approval for the Loss Landscape Probe UI slice. The safest next slice is an Inspection-panel button and compact heatmap/text summary that calls the committed one-shot worker RPC and stores only the bounded response locally; do not touch frame buffers, streaming protocol, shared protocol guards, URL/config serialization, persistence schema, public config shape, dependencies, or training behavior without separate approval.
+Next recommended step: stop at the next Wave 7 approval gate. The safest candidate is a design-note-first proposal for the next major product bet, such as multiclass mode or advanced loss-landscape controls. Do not implement another Wave 7 feature without separate approval, two review passes where available, and an explicit rollback/test/browser QA plan.
 
 ## Handoff Notes
 
