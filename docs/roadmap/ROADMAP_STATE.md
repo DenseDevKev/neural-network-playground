@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `775d515`; `pnpm --filter @nn-playground/web test -- src/components/controls/InspectionPanel.test.tsx`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before the Wave 7 slow-motion backprop preview UI and QA/state commits. The approved engine-only Loss Landscape Probe slice has fresh verification and is pending commit.
+- Last verified commit: `6b3fe73`; `pnpm --filter @nn-playground/engine test -- src/__tests__/network.test.ts`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and `git diff --check` passed before the Wave 7 engine-only Loss Landscape Probe foundation commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Loss Landscape Probe engine foundation
+- Slice: Loss Landscape Probe worker/UI approval gate
 - Risk: High
-- Status: Engine dry-run bounded backprop summaries, a worker-only one-shot Comlink RPC, and the Inspection-panel preview UI are implemented and verified. Loss Landscape Probe engine-only foundation is implemented and verified after explicit approval; no worker, UI, frame-buffer, protocol, persistence, URL/config, public config, dependency, or training-behavior changes were made.
+- Status: Engine dry-run bounded backprop summaries, a worker-only one-shot Comlink RPC, and the Inspection-panel preview UI are implemented and verified. Loss Landscape Probe engine-only foundation is implemented, verified, and committed after explicit approval. No loss-landscape worker, UI, frame-buffer, protocol, persistence, URL/config, public config, dependency, or training-behavior changes are approved yet.
 
 ## Completed Slices
 
@@ -66,6 +66,7 @@
 | 2026-05-12 | Wave 7 | Backprop explanation worker one-shot RPC | `10d59d1` | Red targeted worker tests failed before implementation; targeted web run passed with 51 files and 355 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two approval-gate subagent passes, two implementation review passes, and `git diff --check` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-13 | Wave 7 | Slow-motion backprop preview UI | `7dce9f9` | Targeted web run passed with 51 files and 359 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, two implementation review passes, and `git diff --check` passed before commit | `apps/web/src/components/controls/InspectionPanel.tsx`, `apps/web/src/components/controls/InspectionPanel.test.tsx`, `apps/web/src/styles/index.css`, `docs/qa/browser-qa/wave-7-backprop-preview.md` |
 | 2026-05-13 | Wave 7 | Slow-motion backprop preview QA/state | `775d515` | Docs/evidence commit after the Wave 7 backprop preview UI full verification and Browser QA passed; `git diff --check` passed before commit | `docs/qa/browser-qa/wave-7-backprop-preview.md`, `docs/qa/browser-qa/wave-7-backprop-preview-desktop.png`, `docs/qa/browser-qa/wave-7-backprop-preview-compact.png`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
+| 2026-05-13 | Wave 7 | Loss Landscape Probe engine foundation | `6b3fe73` | Red targeted engine tests failed before implementation and again for the review-found radius cap; targeted engine run passed with 13 files and 284 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two implementation review passes, and `git diff --check` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/types.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 
 ## Current Verification Status
 
@@ -192,7 +193,7 @@
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
 - Wave 6E persistence of checkpoints across reloads remains deferred and requires separate approval.
-- Wave 7 paired live model arena visualizations, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
+- Wave 7 paired live model arena visualizations, Loss Landscape Probe worker/UI integration, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
 - Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, continuous streaming, and multiple-worker execution are explicitly deferred from the scalar runtime/UI prototype.
 
 ## Approval Gates Reached
@@ -210,11 +211,11 @@
 - Wave 7 Slow-Motion Backprop worker one-shot RPC was implemented in `10d59d1` after two approval-gate subagent passes and two implementation review passes approved the bounded worker-only scope.
 - Wave 7 Slow-Motion Backprop preview UI was implemented in `7dce9f9` and QA/state evidence was recorded in `775d515`.
 - Wave 7 Loss Landscape Probe reached an approval gate on 2026-05-13. Two subagents recommended design-note-first scope discipline. `docs/design-notes/loss-landscape-probe.md` asks for approval of an engine-only, deterministic, `7x7` maximum, 64-sample maximum, two-scalar-coordinate dry-run probe.
-- Wave 7 Loss Landscape Probe engine-only first slice was explicitly approved by the user on 2026-05-13 and implemented with TDD. One review finding required capping radius at 1.0 before commit.
+- Wave 7 Loss Landscape Probe engine-only first slice was explicitly approved by the user on 2026-05-13 and committed as `6b3fe73` after TDD. One review finding required capping radius at 1.0 before commit.
 
 ## Next Recommended Slice
 
-Next recommended step: commit the verified Wave 7 loss-landscape engine foundation as `feat(wave7,engine): add loss landscape probe foundation`. After that, the next feature slice is a separate approval gate for a one-shot worker RPC or UI integration; do not touch worker RPCs, frame buffers, UI, URL/config serialization, persistence schema, public config shape, dependencies, or training behavior without separate approval.
+Next recommended step: request separate approval for the next Loss Landscape Probe slice. The safest next slice is a bounded one-shot worker RPC that reuses the committed engine helper and returns compact loss-grid metadata only; do not touch frame buffers, streaming protocol, UI, URL/config serialization, persistence schema, public config shape, dependencies, or training behavior without separate approval.
 
 ## Handoff Notes
 
