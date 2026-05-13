@@ -273,7 +273,7 @@ These benchmark values remain within the roadmap warning thresholds. Wave 6D did
 
 ## Wave 6E Engine Checkpoint State
 
-Date: 2026-05-12
+Date: 2026-05-13
 
 Scope: engine-local runtime checkpoint and restore support for weights, biases, optimizer state, and step counters.
 
@@ -584,3 +584,49 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5098 ms
 
 These values remain within the established range and below the roadmap warning thresholds. The RPC is one-shot and not called from the live training loop, so no runtime cadence impact is expected from this slice.
+
+## Wave 7 Slow-Motion Backprop Preview UI
+
+Date: 2026-05-12
+
+Scope: Inspection-panel UI for manually requesting the one-shot slow-motion backprop preview. This slice stores only the bounded scalar RPC response in local component state, renders layer-level summaries, and adds keyboard/error/loading coverage. It does not add streamed worker messages, frame-buffer fields, raw activation/gradient arrays, URL/config serialization, persistence schema changes, public config shape changes, dependencies, or training behavior changes.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf` (run three times on 2026-05-12 because the first two runs were noisy, then rerun before commit on 2026-05-13)
+
+`pnpm build` passed after the UI slice. Relevant production output:
+
+- `dist/assets/training.worker-S7ocudoV.js`: 83.50 kB
+- `dist/assets/index-1WlUmzVU.css`: 66.62 kB, gzip 11.56 kB
+- `dist/assets/InspectionPanel-C0sjYXVR.js`: 10.98 kB, gzip 2.91 kB
+- `dist/assets/RunHistoryPanel-CTUmNQkd.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-BtaMrfLu.js`: 366.75 kB, gzip 111.02 kB
+
+Compared with the worker RPC build, the worker and main app bundles were effectively unchanged. The lazy Inspection panel chunk increased from 8.31 kB to 10.98 kB because it now renders the bounded backprop preview UI. The CSS bundle increased from 66.18 kB to 66.62 kB. These changes are below the roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed on all three runs. The first two runs were noisy:
+
+- First run: `predictGrid` 1571.3100 ms, `predictGridInto` 1655.4161 ms, `predictGridWithNeurons` 973.7060 ms, `predictGridWithNeuronsInto` 709.0399 ms, Adam/L2/Clip applyGradients 5.3637 ms, SGD applyGradients 1.6433 ms.
+- Second run: `predictGrid` 1429.3662 ms, `predictGridInto` 1321.5164 ms, `predictGridWithNeurons` 867.0705 ms, `predictGridWithNeuronsInto` 775.4257 ms, Adam/L2/Clip applyGradients 4.9737 ms, SGD applyGradients 2.4415 ms.
+
+The third run returned to the established range:
+
+- `predictGrid`: 1237.1647 ms total for 100 iterations
+- `predictGridInto`: 1223.3140 ms total for 100 iterations
+- `predictGridWithNeurons`: 771.2188 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 659.5370 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.5729 ms
+- Average `applyGradients` time (SGD): 1.5759 ms
+
+The 2026-05-13 pre-commit rerun also passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1370.2497 ms total for 100 iterations
+- `predictGridInto`: 1239.0260 ms total for 100 iterations
+- `predictGridWithNeurons`: 750.3219 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 646.0797 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 6.1264 ms
+- Average `applyGradients` time (SGD): 1.6279 ms
+
+The UI slice does not touch engine prediction, gradient hot paths, worker cadence, frame-buffer semantics, or live training behavior. Browser QA passed on 2026-05-13 after restarting the local dev server and manually restoring the in-app browser to the local URL; see `docs/qa/browser-qa/wave-7-backprop-preview.md`.

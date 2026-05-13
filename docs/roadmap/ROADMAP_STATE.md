@@ -2,12 +2,12 @@
 
 ## Last Updated
 
-2026-05-12
+2026-05-13
 
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `10d59d1`; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, targeted worker tests, two approval-gate subagent passes, two implementation review passes, and `git diff --check` passed before the Wave 7 slow-motion backprop worker RPC commit.
+- Last verified commit: `7dce9f9`; `pnpm --filter @nn-playground/web test -- src/components/controls/InspectionPanel.test.tsx`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before the Wave 7 slow-motion backprop preview UI commit.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Slow-Motion Backprop Worker RPC
+- Slice: Slow-Motion Backprop Preview QA/state evidence
 - Risk: High
-- Status: Engine dry-run bounded backprop summaries and a worker-only one-shot Comlink RPC are implemented and verified. The next slice, if pursued, should be a separately gated UI integration slice with two subagent review passes before implementation.
+- Status: Engine dry-run bounded backprop summaries, a worker-only one-shot Comlink RPC, and the Inspection-panel preview UI are implemented and verified. QA/state evidence is being packaged before moving to the next mandatory Wave 7 approval-gated feature.
 
 ## Completed Slices
 
@@ -64,15 +64,16 @@
 | 2026-05-12 | Wave 7 | Slow-motion backprop explanation mode design note | `4e08d29` | Docs-only design note; `git diff --check` passed before commit | `docs/design-notes/slow-motion-backprop-explanation-mode.md` |
 | 2026-05-12 | Wave 7 | Dry-run backprop summary engine foundation | `afdc067` | Red targeted engine tests failed before implementation and after review-found gaps; targeted engine run passed with 13 files and 281 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two subagent review passes, and `git diff --check` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/types.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-12 | Wave 7 | Backprop explanation worker one-shot RPC | `10d59d1` | Red targeted worker tests failed before implementation; targeted web run passed with 51 files and 355 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two approval-gate subagent passes, two implementation review passes, and `git diff --check` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-13 | Wave 7 | Slow-motion backprop preview UI | `7dce9f9` | Targeted web run passed with 51 files and 359 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, two implementation review passes, and `git diff --check` passed before commit | `apps/web/src/components/controls/InspectionPanel.tsx`, `apps/web/src/components/controls/InspectionPanel.test.tsx`, `apps/web/src/styles/index.css`, `docs/qa/browser-qa/wave-7-backprop-preview.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-12 after the Wave 7 slow-motion backprop worker RPC with engine 281 tests, shared 70 tests, and web 355 tests.
-- Lint: `pnpm lint` passed on 2026-05-12 after the Wave 7 slow-motion backprop worker RPC.
-- Build: `pnpm build` passed on 2026-05-12 after the Wave 7 slow-motion backprop worker RPC with the existing Vite chunk-size warning. Relevant chunks: `training.worker-S7ocudoV.js` 83.50 kB, `RunHistoryPanel-CufaPasd.js` 16.70 kB gzip 5.14 kB, `index-BkhH1qdr.js` 366.75 kB gzip 111.02 kB.
-- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Wave 7 included desktop and compact viewport verification with no console errors. No Browser QA was required for `afdc067` or `10d59d1` because they were browser-invisible engine/worker RPC foundations.
-- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run/live arena uses native labelled selects, native buttons, labelled model regions, grouped scalar summaries, and keyboard activation covered by component tests and Browser QA.
-- Performance: `pnpm test:perf` passed on 2026-05-12 after the Wave 7 slow-motion backprop worker RPC with 2 benchmark files and 4 benchmark tests.
+- Tests: `pnpm test` passed on 2026-05-13 after the Wave 7 slow-motion backprop preview UI with engine 281 tests, shared 70 tests, and web 359 tests. Targeted `pnpm --filter @nn-playground/web test -- src/components/controls/InspectionPanel.test.tsx` passed with 51 files and 359 tests.
+- Lint: `pnpm lint` passed on 2026-05-13 after the Wave 7 slow-motion backprop preview UI.
+- Build: `pnpm build` passed on 2026-05-13 after the Wave 7 slow-motion backprop preview UI with the existing Vite chunk-size warning. Relevant chunks: `training.worker-S7ocudoV.js` 83.50 kB, `InspectionPanel-C0sjYXVR.js` 10.98 kB gzip 2.91 kB, `RunHistoryPanel-CTUmNQkd.js` 16.70 kB gzip 5.14 kB, `index-BtaMrfLu.js` 366.75 kB gzip 111.02 kB.
+- Browser QA: Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks passed. Slow-motion backprop preview Browser QA passed on 2026-05-13 after the dev server was restarted and the user manually restored the in-app browser tab from a generated connection-error page.
+- Accessibility: Wave 1 component `jest-axe` coverage passed for the rendered action-card panel; Wave 4 histogram UI uses a native labelled select and `role="img"` text alternative covered by Testing Library assertions and Browser QA; Wave 6E checkpoint timeline uses a native labelled range and native restore button covered by component tests and Browser QA keyboard checks; Wave 7 saved-run/live arena uses native labelled selects, native buttons, labelled model regions, grouped scalar summaries, and keyboard activation covered by component tests and Browser QA. The slow-motion backprop preview uses a native button, a small `role="status"` live region, semantic layer-summary list, wrapping scalar metrics, and Testing Library plus Browser keyboard assertions.
+- Performance: `pnpm test:perf` passed on 2026-05-13 after the Wave 7 slow-motion backprop preview UI with 2 benchmark files and 4 benchmark tests. Details are recorded in `docs/perf/PERFORMANCE_BASELINE.md`.
 
 ## Browser QA Evidence
 
@@ -86,6 +87,7 @@
 - `docs/qa/browser-qa/wave-6e-checkpoint-timeline.md`
 - `docs/qa/browser-qa/wave-7-side-by-side-arena.md`
 - `docs/qa/browser-qa/wave-7-live-arena-ui.md`
+- `docs/qa/browser-qa/wave-7-backprop-preview.md`
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
@@ -102,6 +104,8 @@
 - Wave 7 saved-run arena compact screenshot: `docs/qa/browser-qa/wave-7-side-by-side-arena-compact.png`
 - Wave 7 saved-run arena compact scrolled screenshot: `docs/qa/browser-qa/wave-7-side-by-side-arena-compact-scrolled.png`
 - Wave 7 live arena UI screenshot: unavailable; Browser screenshot capture timed out. DOM snapshots and console checks are recorded in `docs/qa/browser-qa/wave-7-live-arena-ui.md`.
+- Wave 7 slow-motion backprop preview desktop screenshot: `docs/qa/browser-qa/wave-7-backprop-preview-desktop.png`
+- Wave 7 slow-motion backprop preview compact screenshot: `docs/qa/browser-qa/wave-7-backprop-preview-compact.png`
 
 ## Performance Evidence
 
@@ -126,6 +130,7 @@
 - Wave 7 live arena UI changed the lazy run-history UI chunk and App/MainArea callback wiring only. `pnpm test:perf` passed with `predictGrid` 1093.0898 ms, `predictGridInto` 1076.1186 ms, `predictGridWithNeurons` 681.7128 ms, `predictGridWithNeuronsInto` 579.4028 ms, Adam/L2/Clip applyGradients 3.9796 ms, SGD applyGradients 1.4334 ms.
 - Wave 7 slow-motion backprop engine foundation changed the engine class imported by the worker. `pnpm test:perf` passed with `predictGrid` 1137.3643 ms, `predictGridInto` 1147.3317 ms, `predictGridWithNeurons` 725.1739 ms, `predictGridWithNeuronsInto` 606.6910 ms, Adam/L2/Clip applyGradients 4.1593 ms, SGD applyGradients 1.5099 ms. The worker bundle increased from 79.35 kB to 82.68 kB, about 4.2%, below the 10% threshold.
 - Wave 7 slow-motion backprop worker RPC changed worker code and protocol docs only. `pnpm test:perf` passed with `predictGrid` 1080.3162 ms, `predictGridInto` 1072.9316 ms, `predictGridWithNeurons` 672.7654 ms, `predictGridWithNeuronsInto` 579.6610 ms, Adam/L2/Clip applyGradients 3.8635 ms, SGD applyGradients 1.5098 ms. The worker bundle increased from 82.68 kB to 83.50 kB, about 1.0%, below the 10% threshold.
+- Wave 7 slow-motion backprop preview UI changed the lazy Inspection panel chunk and CSS only. `pnpm test:perf` passed on 2026-05-13 with `predictGrid` 1370.2497 ms, `predictGridInto` 1239.0260 ms, `predictGridWithNeurons` 750.3219 ms, `predictGridWithNeuronsInto` 646.0797 ms, Adam/L2/Clip applyGradients 6.1264 ms, SGD applyGradients 1.6279 ms. Earlier 2026-05-12 runs were noisy but passed; the best repeat was `predictGrid` 1237.1647 ms, `predictGridInto` 1223.3140 ms, `predictGridWithNeurons` 771.2188 ms, `predictGridWithNeuronsInto` 659.5370 ms, Adam/L2/Clip applyGradients 4.5729 ms, SGD applyGradients 1.5759 ms. The lazy Inspection chunk increased from 8.31 kB to 10.98 kB and CSS from 66.18 kB to 66.62 kB, below the 10% threshold.
 
 ## Design Decisions
 
@@ -170,6 +175,7 @@
 - Wave 6D sample controls are bounded presets only. Custom sample count editing and new dataset parameters are deferred.
 - Wave 6E compact viewport visual Browser QA remains pending from that earlier slice; Wave 7 compact viewport Browser QA was executed with the Browser viewport capability.
 - Wave 7 live arena UI Browser QA screenshot capture timed out in the in-app Browser backend; DOM snapshots and console checks passed and are recorded.
+- Wave 7 slow-motion backprop preview Browser QA required the user to manually restore the local URL after the Browser tool could not navigate away from Chrome's generated connection-error `data:` page. After that manual recovery, Browser QA passed with no console errors and two development-mode perf warnings.
 
 ## Blocked Items
 
@@ -182,7 +188,7 @@
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
 - Wave 6E persistence of checkpoints across reloads remains deferred and requires separate approval.
-- Wave 7 paired live model arena visualizations, slow-motion backprop UI integration, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
+- Wave 7 paired live model arena visualizations, loss landscape probe, multiclass mode, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
 - Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, continuous streaming, and multiple-worker execution are explicitly deferred from the scalar runtime/UI prototype.
 
 ## Approval Gates Reached
@@ -201,7 +207,7 @@
 
 ## Next Recommended Slice
 
-Next recommended step: prepare the slow-motion backprop UI integration slice as a separately gated implementation plan. Before implementation, spawn two subagents per the user's instruction: one spec/code reviewer and one proceed-or-fix reviewer. Keep the UI bounded to the existing one-shot RPC and scalar summaries; do not add streaming gradients, raw arrays in React state, URL/config serialization, persistence schema, public config shape changes, dependencies, or frame-buffer redesign without explicit approval.
+Next recommended step: commit the Wave 7 slow-motion backprop preview QA/state evidence as `docs(wave7): record backprop preview qa`, then move to the next Wave 7 approval-gated feature. Before that feature, spawn two subagents per the user's instruction: one spec/code reviewer and one proceed-or-fix reviewer.
 
 ## Handoff Notes
 
