@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified commit: `7dce9f9`; `pnpm --filter @nn-playground/web test -- src/components/controls/InspectionPanel.test.tsx`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before the Wave 7 slow-motion backprop preview UI commit.
+- Last verified commit: `775d515`; `pnpm --filter @nn-playground/web test -- src/components/controls/InspectionPanel.test.tsx`, `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before the Wave 7 slow-motion backprop preview UI and QA/state commits.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Slow-Motion Backprop Preview QA/state evidence
+- Slice: Loss Landscape Probe design note
 - Risk: High
-- Status: Engine dry-run bounded backprop summaries, a worker-only one-shot Comlink RPC, and the Inspection-panel preview UI are implemented and verified. QA/state evidence is being packaged before moving to the next mandatory Wave 7 approval-gated feature.
+- Status: Engine dry-run bounded backprop summaries, a worker-only one-shot Comlink RPC, and the Inspection-panel preview UI are implemented and verified. Loss Landscape Probe has reached a mandatory approval gate; design note is prepared and implementation must wait for explicit approval of the engine-only first slice.
 
 ## Completed Slices
 
@@ -65,6 +65,7 @@
 | 2026-05-12 | Wave 7 | Dry-run backprop summary engine foundation | `afdc067` | Red targeted engine tests failed before implementation and after review-found gaps; targeted engine run passed with 13 files and 281 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two subagent review passes, and `git diff --check` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/types.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-12 | Wave 7 | Backprop explanation worker one-shot RPC | `10d59d1` | Red targeted worker tests failed before implementation; targeted web run passed with 51 files and 355 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two approval-gate subagent passes, two implementation review passes, and `git diff --check` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `docs/worker-protocol.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-13 | Wave 7 | Slow-motion backprop preview UI | `7dce9f9` | Targeted web run passed with 51 files and 359 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, two implementation review passes, and `git diff --check` passed before commit | `apps/web/src/components/controls/InspectionPanel.tsx`, `apps/web/src/components/controls/InspectionPanel.test.tsx`, `apps/web/src/styles/index.css`, `docs/qa/browser-qa/wave-7-backprop-preview.md` |
+| 2026-05-13 | Wave 7 | Slow-motion backprop preview QA/state | `775d515` | Docs/evidence commit after the Wave 7 backprop preview UI full verification and Browser QA passed; `git diff --check` passed before commit | `docs/qa/browser-qa/wave-7-backprop-preview.md`, `docs/qa/browser-qa/wave-7-backprop-preview-desktop.png`, `docs/qa/browser-qa/wave-7-backprop-preview-compact.png`, `docs/perf/PERFORMANCE_BASELINE.md`, `docs/roadmap/ROADMAP_STATE.md` |
 
 ## Current Verification Status
 
@@ -161,6 +162,7 @@
 | 2026-05-12 | Expose live arena UI through saved-run records and scalar summaries only | Gives learners a usable live comparison prototype while avoiding persistence, URL/config state, paired heavy arrays, public config, dependencies, and multiple-worker execution | `docs/design-notes/live-side-by-side-model-arena.md`, `0344bbe` |
 | 2026-05-12 | Implement slow-motion backprop as an engine-only dry-run foundation first | Provides deterministic, bounded layer-level summaries while avoiding worker/protocol/frame-buffer/UI/URL/config/persistence/dependency changes in the first slice | `docs/design-notes/slow-motion-backprop-explanation-mode.md`, `afdc067` |
 | 2026-05-12 | Expose backprop previews through a worker one-shot RPC only | Reuses the bounded engine summary without streamed messages, frame-buffer fields, React state, persistence, URL/config, or public config changes | `docs/design-notes/slow-motion-backprop-explanation-mode.md`, `10d59d1` |
+| 2026-05-13 | Require a Loss Landscape Probe design note before implementation | Two approval-gate reviewers recommended revising before code because the feature is high-risk and lacked exact probe bounds, transport choices, and rollback constraints | `docs/design-notes/loss-landscape-probe.md` |
 
 ## Known Issues
 
@@ -204,10 +206,12 @@
 - Further Wave 7 work that adds paired heavy visualizations, URL/config state, persistence, public config changes, dependencies, engine math changes, or multiple-worker execution requires a separate approval gate.
 - Wave 7 Slow-Motion Backprop Explanation Mode design note was committed as `4e08d29`. The user asked to continue and required two subagent review passes at approval gates; the first engine-only bounded dry-run foundation was implemented in `afdc067` after two subagent reviews rejected the initial draft, fixes were applied, and two re-review passes approved the corrected slice.
 - Wave 7 Slow-Motion Backprop worker one-shot RPC was implemented in `10d59d1` after two approval-gate subagent passes and two implementation review passes approved the bounded worker-only scope.
+- Wave 7 Slow-Motion Backprop preview UI was implemented in `7dce9f9` and QA/state evidence was recorded in `775d515`.
+- Wave 7 Loss Landscape Probe reached an approval gate on 2026-05-13. Two subagents recommended design-note-first scope discipline. `docs/design-notes/loss-landscape-probe.md` asks for approval of an engine-only, deterministic, `7x7` maximum, 64-sample maximum, two-scalar-coordinate dry-run probe.
 
 ## Next Recommended Slice
 
-Next recommended step: commit the Wave 7 slow-motion backprop preview QA/state evidence as `docs(wave7): record backprop preview qa`, then move to the next Wave 7 approval-gated feature. Before that feature, spawn two subagents per the user's instruction: one spec/code reviewer and one proceed-or-fix reviewer.
+Next recommended step: wait for explicit approval of the exact question in `docs/design-notes/loss-landscape-probe.md`. If approved, implement only the first engine-only Loss Landscape Probe slice with TDD. Do not touch worker RPCs, frame buffers, UI, URL/config serialization, persistence schema, public config shape, dependencies, or training behavior in that first slice.
 
 ## Handoff Notes
 
