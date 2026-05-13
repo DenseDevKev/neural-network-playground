@@ -34,6 +34,8 @@ import type {
     ActivationHistogramResult,
     NetworkCheckpoint,
     BackpropExplanation,
+    LossLandscapeProbe,
+    LossLandscapeProbeOptions,
 } from '@nn-playground/engine';
 import {
     GRID_SIZE,
@@ -255,6 +257,33 @@ export interface BackpropExplanationResponse {
     step: number;
     epoch: number;
     explanation: BackpropExplanation;
+}
+
+export interface SerializableLossLandscapeProbe {
+    gridSize: number;
+    sampleCount: number;
+    radius: number;
+    axisA: {
+        parameter: LossLandscapeProbe['axisA']['parameter'];
+        offsets: number[];
+    };
+    axisB: {
+        parameter: LossLandscapeProbe['axisB']['parameter'];
+        offsets: number[];
+    };
+    losses: number[];
+    centerLoss: number;
+    minLoss: number;
+    maxLoss: number;
+    best: LossLandscapeProbe['best'];
+    summary: string;
+}
+
+export interface LossLandscapeProbeResponse {
+    runId: number;
+    step: number;
+    epoch: number;
+    probe: SerializableLossLandscapeProbe;
 }
 
 // Helper: reset back-pressure state. Called when the consumer on the other
@@ -1532,6 +1561,28 @@ function resolveBackpropPreviewBatch(): { inputs: number[][]; targets: number[][
     return { inputs, targets };
 }
 
+function serializeLossLandscapeProbe(probe: LossLandscapeProbe): SerializableLossLandscapeProbe {
+    return {
+        gridSize: probe.gridSize,
+        sampleCount: probe.sampleCount,
+        radius: probe.radius,
+        axisA: {
+            parameter: { ...probe.axisA.parameter },
+            offsets: [...probe.axisA.offsets],
+        },
+        axisB: {
+            parameter: { ...probe.axisB.parameter },
+            offsets: [...probe.axisB.offsets],
+        },
+        losses: Array.from(probe.losses),
+        centerLoss: probe.centerLoss,
+        minLoss: probe.minLoss,
+        maxLoss: probe.maxLoss,
+        best: { ...probe.best },
+        summary: probe.summary,
+    };
+}
+
 // ── Comlink API ──
 
 export const workerApi = {
@@ -1718,6 +1769,26 @@ export const workerApi = {
                 batch.targets,
                 state.trainingConfig,
             ),
+        };
+    },
+
+    getLossLandscapeProbe(options: LossLandscapeProbeOptions = {}): LossLandscapeProbeResponse {
+        if (!state.network || !state.trainingConfig) {
+            throw new Error('Not initialized');
+        }
+
+        const probe = state.network.probeLossLandscape(
+            state.trainInputs,
+            state.trainTargets,
+            state.trainingConfig,
+            options,
+        );
+
+        return {
+            runId: state.runId,
+            step: state.network.getStep(),
+            epoch: state.epoch,
+            probe: serializeLossLandscapeProbe(probe),
         };
     },
 

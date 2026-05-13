@@ -19,9 +19,98 @@ function containsTypedArray(value: unknown): boolean {
     return Object.values(value).some((child) => containsTypedArray(child));
 }
 
+describe('training worker loss landscape probe RPC', () => {
+    it('rejects before worker initialization', async () => {
+        const { workerApi: freshWorkerApi } = await import('./training.worker.ts?loss-landscape-before-init');
+
+        expect(() => freshWorkerApi.getLossLandscapeProbe()).toThrow('Not initialized');
+    });
+
+    it('returns bounded serializable loss-grid metadata for the current worker model', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK, hiddenLayers: [3, 2] },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 930, numSamples: 24 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const response = workerApi.getLossLandscapeProbe({
+            gridSize: 7,
+            maxSamples: 64,
+            radius: 0.1,
+        });
+
+        expect(response.runId).toBe(init.runId);
+        expect(response.step).toBe(0);
+        expect(response.epoch).toBe(0);
+        expect(response.probe.gridSize).toBe(7);
+        expect(response.probe.sampleCount).toBeLessThanOrEqual(64);
+        expect(response.probe.losses).toHaveLength(49);
+        expect(response.probe.losses.every((loss) => Number.isFinite(loss))).toBe(true);
+        expect(Number.isFinite(response.probe.centerLoss)).toBe(true);
+        expect(Number.isFinite(response.probe.minLoss)).toBe(true);
+        expect(Number.isFinite(response.probe.maxLoss)).toBe(true);
+        expect(response.probe.axisA.offsets).toHaveLength(7);
+        expect(response.probe.axisB.offsets).toHaveLength(7);
+        expect(containsTypedArray(response)).toBe(false);
+        expect(JSON.stringify(response)).not.toMatch(/inputs|targets|weights|biases|checkpoint/i);
+    });
+
+    it('is deterministic and does not advance the next training step', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 931, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const first = workerApi.getLossLandscapeProbe();
+        const second = workerApi.getLossLandscapeProbe();
+        const afterProbeStep = workerApi.step(1);
+
+        expect(second).toEqual(first);
+        expect(afterProbeStep.step).toBe(first.step + 1);
+    });
+
+    it('leaves the next real training step equivalent to a control run without probing', () => {
+        const network = { ...DEFAULT_NETWORK, hiddenLayers: [3] };
+        const training = { ...DEFAULT_TRAINING, batchSize: 5 };
+        const data = { ...DEFAULT_DATA, seed: 932, numSamples: 20 };
+        const features = { ...DEFAULT_FEATURES };
+
+        workerApi.initialize(network, training, data, features);
+        workerApi.getLossLandscapeProbe();
+        const probeThenStep = workerApi.step(1);
+
+        workerApi.initialize(network, training, data, features);
+        const controlStep = workerApi.step(1);
+
+        expect(probeThenStep.step).toBe(controlStep.step);
+        expect(probeThenStep.trainLoss).toBeCloseTo(controlStep.trainLoss, 12);
+        expect(probeThenStep.testLoss).toBeCloseTo(controlStep.testLoss, 12);
+        expect(probeThenStep.weights).toEqual(controlStep.weights);
+        expect(probeThenStep.biases).toEqual(controlStep.biases);
+    });
+
+    it('propagates engine bounds for invalid probe options', () => {
+        workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 933, numSamples: 20 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        expect(() => workerApi.getLossLandscapeProbe({ gridSize: 8 })).toThrow(RangeError);
+        expect(() => workerApi.getLossLandscapeProbe({ maxSamples: 65 })).toThrow(RangeError);
+        expect(() => workerApi.getLossLandscapeProbe({ radius: 1.01 })).toThrow(RangeError);
+    });
+});
+
 describe('training worker backprop explanation RPC', () => {
-    it('rejects before worker initialization', () => {
-        expect(() => workerApi.getBackpropExplanation()).toThrow('Not initialized');
+    it('rejects before worker initialization', async () => {
+        const { workerApi: freshWorkerApi } = await import('./training.worker.ts?backprop-before-init');
+
+        expect(() => freshWorkerApi.getBackpropExplanation()).toThrow('Not initialized');
     });
 
     it('returns finite bounded scalar summaries for the current worker model', () => {
