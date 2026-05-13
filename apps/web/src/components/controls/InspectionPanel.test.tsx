@@ -16,6 +16,7 @@ import {
 const workerApi = vi.hoisted(() => ({
     getPredictionTrace: vi.fn(),
     getBackpropExplanation: vi.fn(),
+    getLossLandscapeProbe: vi.fn(),
 }));
 
 vi.mock('../../worker/workerBridge.ts', () => ({
@@ -26,6 +27,7 @@ describe('InspectionPanel demand', () => {
     beforeEach(() => {
         workerApi.getPredictionTrace.mockReset();
         workerApi.getBackpropExplanation.mockReset();
+        workerApi.getLossLandscapeProbe.mockReset();
         usePlaygroundStore.setState({
             data: { ...DEFAULT_DATA },
             network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
@@ -209,7 +211,9 @@ describe('InspectionPanel demand', () => {
         });
         expect(await screen.findByText(/Preview from step 7 \/ epoch 2/i)).toBeInTheDocument();
         expect(screen.getByRole('region', { name: /slow-motion backprop preview/i })).toBeInTheDocument();
-        expect(screen.getByRole('status')).toHaveTextContent(/Backprop preview found 2 healthy layer updates/i);
+        expect(screen.getByRole('status', { name: /backprop preview status/i })).toHaveTextContent(
+            /Backprop preview found 2 healthy layer updates/i,
+        );
         expect(screen.getByRole('list', { name: /backprop layer summaries/i })).toBeInTheDocument();
         expect(screen.getByText(/batch 5/i)).toBeInTheDocument();
         expect(screen.getByText(/gradient norm 0\.004/i)).toBeInTheDocument();
@@ -290,8 +294,146 @@ describe('InspectionPanel demand', () => {
         render(<InspectionPanel />);
         fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
 
-        expect(await screen.findByRole('status')).toHaveTextContent(
+        expect(await screen.findByRole('status', { name: /backprop preview status/i })).toHaveTextContent(
             /Backprop preview failed: Backprop preview is unavailable at the epoch shuffle boundary/i,
+        );
+    });
+
+    it('requests and renders a one-shot loss landscape probe', async () => {
+        workerApi.getLossLandscapeProbe.mockResolvedValue({
+            runId: 2,
+            step: 9,
+            epoch: 1,
+            probe: {
+                gridSize: 3,
+                sampleCount: 12,
+                radius: 0.1,
+                axisA: {
+                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 0, inputIndex: 0, label: 'W1[0,0]' },
+                    offsets: [-0.1, 0, 0.1],
+                },
+                axisB: {
+                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 1, inputIndex: 0, label: 'W1[1,0]' },
+                    offsets: [-0.1, 0, 0.1],
+                },
+                losses: [0.62, 0.58, 0.5, 0.55, 0.49, 0.45, 0.53, 0.44, 0.4],
+                centerLoss: 0.49,
+                minLoss: 0.4,
+                maxLoss: 0.62,
+                best: { row: 2, col: 2, loss: 0.4, offsetA: 0.1, offsetB: 0.1 },
+                summary: 'Loss surface probe found best loss 0.4000 near W1[0,0] 0.100 and W1[1,0] 0.100.',
+            },
+        });
+
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
+
+        await waitFor(() => {
+            expect(workerApi.getLossLandscapeProbe).toHaveBeenCalledTimes(1);
+        });
+        expect(screen.getByRole('region', { name: /loss landscape probe/i })).toBeInTheDocument();
+        expect(screen.getByRole('img', { name: /local 2d loss slice/i })).toBeInTheDocument();
+        expect(screen.getByRole('status', { name: /loss landscape probe status/i })).toHaveTextContent(
+            /best loss 0\.4000/i,
+        );
+        expect(screen.getByText(/Probe from step 9 \/ epoch 1/i)).toBeInTheDocument();
+        expect(screen.getByText(/center 0\.490/i)).toBeInTheDocument();
+        expect(screen.getByText(/min 0\.400/i)).toBeInTheDocument();
+        expect(screen.getByText(/max 0\.620/i)).toBeInTheDocument();
+        expect(screen.getByText(/sampled 12 points on a 3 by 3 grid/i)).toBeInTheDocument();
+        expect(screen.getByText(/best direction W1\[0,0\] \+0\.100, W1\[1,0\] \+0\.100/i)).toBeInTheDocument();
+    });
+
+    it('activates loss landscape probing from the keyboard', async () => {
+        workerApi.getLossLandscapeProbe.mockResolvedValue({
+            runId: 1,
+            step: 0,
+            epoch: 0,
+            probe: {
+                gridSize: 3,
+                sampleCount: 1,
+                radius: 0.1,
+                axisA: {
+                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 0, inputIndex: 0, label: 'W1[0,0]' },
+                    offsets: [-0.1, 0, 0.1],
+                },
+                axisB: {
+                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 1, inputIndex: 0, label: 'W1[1,0]' },
+                    offsets: [-0.1, 0, 0.1],
+                },
+                losses: [1, 1, 1, 1, 0.9, 1, 1, 1, 1],
+                centerLoss: 0.9,
+                minLoss: 0.9,
+                maxLoss: 1,
+                best: { row: 1, col: 1, loss: 0.9, offsetA: 0, offsetB: 0 },
+                summary: 'Loss surface probe found best loss 0.9000 at the current weights.',
+            },
+        });
+        render(<InspectionPanel />);
+
+        const button = screen.getByRole('button', { name: /probe loss surface/i });
+        button.focus();
+        expect(button).toHaveFocus();
+        await userEvent.keyboard('{Enter}');
+
+        await waitFor(() => {
+            expect(workerApi.getLossLandscapeProbe).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    it('guards duplicate loss landscape requests while loading', async () => {
+        let resolveProbe: (value: unknown) => void = () => {};
+        workerApi.getLossLandscapeProbe.mockReturnValue(new Promise((resolve) => {
+            resolveProbe = resolve;
+        }));
+
+        render(<InspectionPanel />);
+        const button = screen.getByRole('button', { name: /probe loss surface/i });
+
+        fireEvent.click(button);
+        fireEvent.click(button);
+
+        expect(workerApi.getLossLandscapeProbe).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('button', { name: /probing loss surface/i })).toBeDisabled();
+
+        resolveProbe({
+            runId: 1,
+            step: 0,
+            epoch: 0,
+            probe: {
+                gridSize: 3,
+                sampleCount: 1,
+                radius: 0.1,
+                axisA: {
+                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 0, inputIndex: 0, label: 'W1[0,0]' },
+                    offsets: [-0.1, 0, 0.1],
+                },
+                axisB: {
+                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 1, inputIndex: 0, label: 'W1[1,0]' },
+                    offsets: [-0.1, 0, 0.1],
+                },
+                losses: [1, 1, 1, 1, 0.9, 1, 1, 1, 1],
+                centerLoss: 0.9,
+                minLoss: 0.9,
+                maxLoss: 1,
+                best: { row: 1, col: 1, loss: 0.9, offsetA: 0, offsetB: 0 },
+                summary: 'Loss surface probe found best loss 0.9000 at the current weights.',
+            },
+        });
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /probe loss surface/i })).not.toBeDisabled();
+        });
+    });
+
+    it('renders loss landscape worker errors accessibly', async () => {
+        workerApi.getLossLandscapeProbe.mockRejectedValue(new Error('Loss landscape probe needs at least two trainable weights.'));
+
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
+
+        expect(await screen.findByRole('status', { name: /loss landscape probe status/i })).toHaveTextContent(
+            /Loss landscape probe failed: Loss landscape probe needs at least two trainable weights/i,
         );
     });
 

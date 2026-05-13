@@ -8,6 +8,7 @@ import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import { getWorkerApi } from '../../worker/workerBridge.ts';
 import type {
     BackpropExplanationResponse,
+    LossLandscapeProbeResponse,
     PredictionTraceResponse,
     PredictionTraceSampleSource,
 } from '../../worker/training.worker.ts';
@@ -29,6 +30,11 @@ function formatBackpropMetric(value: number): string {
         return value.toExponential(1);
     }
     return value.toFixed(3);
+}
+
+function formatSignedOffset(value: number): string {
+    const formatted = formatBackpropMetric(value);
+    return value > 0 ? `+${formatted}` : formatted;
 }
 
 function describeActivationShape(
@@ -63,6 +69,10 @@ export const InspectionPanel = memo(function InspectionPanel() {
     const [backpropError, setBackpropError] = useState<string | null>(null);
     const [backpropLoading, setBackpropLoading] = useState(false);
     const backpropRequestInFlightRef = useRef(false);
+    const [lossLandscapeResult, setLossLandscapeResult] = useState<LossLandscapeProbeResponse | null>(null);
+    const [lossLandscapeError, setLossLandscapeError] = useState<string | null>(null);
+    const [lossLandscapeLoading, setLossLandscapeLoading] = useState(false);
+    const lossLandscapeRequestInFlightRef = useRef(false);
 
     useEffect(() => {
         const enableInspectionDemand = (enabled: boolean) => {
@@ -198,6 +208,31 @@ export const InspectionPanel = memo(function InspectionPanel() {
             setBackpropLoading(false);
         }
     };
+
+    const handleLossLandscapeProbe = async () => {
+        if (lossLandscapeRequestInFlightRef.current) return;
+        lossLandscapeRequestInFlightRef.current = true;
+        setLossLandscapeLoading(true);
+        setLossLandscapeError(null);
+        setLossLandscapeResult(null);
+        try {
+            const response = await getWorkerApi().getLossLandscapeProbe();
+            setLossLandscapeResult(response);
+        } catch (err) {
+            setLossLandscapeResult(null);
+            setLossLandscapeError(err instanceof Error ? err.message : String(err));
+        } finally {
+            lossLandscapeRequestInFlightRef.current = false;
+            setLossLandscapeLoading(false);
+        }
+    };
+
+    const lossLandscapeSummary = lossLandscapeResult
+        ? `Local 2D loss slice: center ${formatBackpropMetric(lossLandscapeResult.probe.centerLoss)}, min ${formatBackpropMetric(lossLandscapeResult.probe.minLoss)}, max ${formatBackpropMetric(lossLandscapeResult.probe.maxLoss)}. Best direction ${lossLandscapeResult.probe.axisA.parameter.label} ${formatSignedOffset(lossLandscapeResult.probe.best.offsetA)}, ${lossLandscapeResult.probe.axisB.parameter.label} ${formatSignedOffset(lossLandscapeResult.probe.best.offsetB)}.`
+        : 'Loss landscape probe has not run yet.';
+    const lossLandscapeSpread = lossLandscapeResult
+        ? Math.max(0.000001, lossLandscapeResult.probe.maxLoss - lossLandscapeResult.probe.minLoss)
+        : 1;
 
     return (
         <div className="inspection-panel">
@@ -419,7 +454,12 @@ export const InspectionPanel = memo(function InspectionPanel() {
                 >
                     {backpropLoading ? 'Previewing backprop' : 'Preview backprop'}
                 </button>
-                <div role="status" aria-live="polite" className="inspection__empty">
+                <div
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Backprop preview status"
+                    className="inspection__empty"
+                >
                     {backpropLoading
                         ? 'Preparing backprop preview...'
                         : backpropError
@@ -480,6 +520,70 @@ export const InspectionPanel = memo(function InspectionPanel() {
                                 </li>
                             ))}
                         </ul>
+                    </div>
+                ) : null}
+            </section>
+            <section className="inspection__layer" aria-label="Loss landscape probe">
+                <div className="inspection__layer-name">Loss Landscape Probe</div>
+                <button
+                    type="button"
+                    className="btn"
+                    onClick={handleLossLandscapeProbe}
+                    disabled={lossLandscapeLoading}
+                >
+                    {lossLandscapeLoading ? 'Probing loss surface' : 'Probe loss surface'}
+                </button>
+                <div
+                    role="status"
+                    aria-live="polite"
+                    aria-label="Loss landscape probe status"
+                    className="inspection__empty"
+                >
+                    {lossLandscapeLoading
+                        ? 'Probing a bounded local loss surface...'
+                        : lossLandscapeError
+                            ? `Loss landscape probe failed: ${lossLandscapeError}`
+                            : lossLandscapeResult?.probe.summary ?? ''}
+                </div>
+                {lossLandscapeResult ? (
+                    <div className="inspection__layers">
+                        <div className="inspection__stat-row">
+                            <span className="inspection__stat-label">
+                                Probe from step {lossLandscapeResult.step} / epoch {lossLandscapeResult.epoch}
+                            </span>
+                        </div>
+                        <div
+                            className="inspection__loss-heatmap"
+                            role="img"
+                            aria-label={lossLandscapeSummary}
+                            style={{
+                                gridTemplateColumns: `repeat(${lossLandscapeResult.probe.gridSize}, minmax(0, 1fr))`,
+                            }}
+                        >
+                            {lossLandscapeResult.probe.losses.map((loss, index) => {
+                                const intensity = 1 - ((loss - lossLandscapeResult.probe.minLoss) / lossLandscapeSpread);
+                                return (
+                                    <span
+                                        key={`${index}-${loss}`}
+                                        className="inspection__loss-cell"
+                                        style={{ opacity: 0.28 + Math.max(0, Math.min(1, intensity)) * 0.72 }}
+                                        aria-hidden="true"
+                                    />
+                                );
+                            })}
+                        </div>
+                        <div className="inspection__histogram-summary">
+                            <strong>Local loss slice</strong>
+                            <span>center {formatBackpropMetric(lossLandscapeResult.probe.centerLoss)}</span>
+                            <span>min {formatBackpropMetric(lossLandscapeResult.probe.minLoss)}</span>
+                            <span>max {formatBackpropMetric(lossLandscapeResult.probe.maxLoss)}</span>
+                            <span>
+                                sampled {lossLandscapeResult.probe.sampleCount} points on a {lossLandscapeResult.probe.gridSize} by {lossLandscapeResult.probe.gridSize} grid
+                            </span>
+                            <span>
+                                best direction {lossLandscapeResult.probe.axisA.parameter.label} {formatSignedOffset(lossLandscapeResult.probe.best.offsetA)}, {lossLandscapeResult.probe.axisB.parameter.label} {formatSignedOffset(lossLandscapeResult.probe.best.offsetB)}
+                            </span>
+                        </div>
                     </div>
                 ) : null}
             </section>
