@@ -2,13 +2,13 @@
 
 Date: 2026-05-12
 
-Status: Approval required before implementation.
+Status: Historical proposal. Several bounded Wave 7 slices have since been approved and implemented. Use `docs/roadmap/ROADMAP_STATE.md` as the current source of truth.
 
 ## Context
 
 Waves 0 through 6E are implemented through verified, reviewable slices. Wave 7 is intentionally treated as a separate initiative because each candidate can affect engine math, worker/runtime data flow, visualization complexity, accessibility, performance, and product direction.
 
-No Wave 7 feature is approved for implementation yet.
+This proposal originally established the Wave 7 approval model. Since then, bounded slices for Side-by-Side Model Arena, Slow-Motion Backprop, and Loss Landscape Probe have been approved and implemented. Any further Wave 7 feature still requires a fresh design note and explicit approval before implementation.
 
 ## Candidate 1: Side-by-Side Model Arena
 
@@ -157,10 +157,12 @@ Keep probe as an isolated inspection panel. Revert probe RPC/UI without touching
 
 ## Recommendation
 
-Start Wave 7 with a design-only slice for the Side-by-Side Model Arena. It has the clearest product value and can begin with comparison UX and existing run data before any high-risk runtime changes.
+The original recommendation to start with Side-by-Side Model Arena has been superseded by completed bounded slices recorded in `docs/roadmap/ROADMAP_STATE.md`.
 
-Do not implement any Wave 7 feature until the specific feature and design are approved.
+Next recommended Wave 7 target after the Loss Landscape Probe UI is Multiclass Classification Mode, documented in `docs/design-notes/multiclass-classification-mode.md`.
+
+Do not implement any additional Wave 7 feature until the specific feature and design are approved.
 
 ## Exact Approval Question
 
-Do you approve starting Wave 7 with a design note for the Side-by-Side Model Arena, without implementation until that design note is reviewed?
+Do you approve creating only the first implementation slice for Multiclass Classification Mode after reviewing `docs/design-notes/multiclass-classification-mode.md`, with the exact slice constrained to the approved first target and no worker protocol, frame-buffer, persistence/run-history schema, URL/config format, public config rollout, dependency, deployment, or UI implementation changes without separate approval?
