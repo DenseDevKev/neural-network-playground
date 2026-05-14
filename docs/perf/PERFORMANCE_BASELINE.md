@@ -732,3 +732,38 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4332 ms
 
 These values remain within the established range and below the roadmap warning thresholds. The UI slice does not touch engine prediction, gradient hot paths, worker cadence, frame-buffer semantics, or live training behavior. Browser QA passed on 2026-05-13 after starting the local dev server; see `docs/qa/browser-qa/wave-7-loss-landscape-probe.md`.
+
+## Wave 7 Multiclass Softmax/Categorical-Loss Helpers
+
+Date: 2026-05-14
+
+Scope: engine-only math foundation for Multiclass Classification Mode. This slice adds a stable vector `softmax()` helper and categorical cross-entropy helpers with normalized-distribution validation and typed-array-friendly inputs. It does not wire the helpers into `Network`, app config, worker/runtime, UI, frame buffers, URL/config serialization, persistence schema, public config shape, code export, dependencies, deployment, or live training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the engine helper slice. Relevant production output:
+
+- `dist/assets/training.worker-C2DakSc7.js`: 86.45 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-DZ1GTedS.js`: 5.68 kB, gzip 2.04 kB
+- `dist/assets/InspectionPanel-DcCt75L5.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-8zhhtp04.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-BUF1FoVn.js`: 366.75 kB, gzip 111.02 kB
+
+Compared with the Wave 7 Loss Landscape Probe UI build, bundle sizes were effectively unchanged. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1438.0162 ms total for 100 iterations
+- `predictGridInto`: 1426.5795 ms total for 100 iterations
+- `predictGridWithNeurons`: 817.1946 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 770.4850 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 7.3476 ms
+- Average `applyGradients` time (SGD): 2.1358 ms
+
+The run was slower than the prior loss-landscape UI benchmark, but this slice only exports standalone math helpers and they are not called by the live training loop, worker cadence path, frame-buffer path, WebGPU path, or prediction grid path. Treat this as benchmark noise unless future integrated multiclass runs reproduce the slowdown while exercising a new path.
