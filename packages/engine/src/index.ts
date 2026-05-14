@@ -1,11 +1,13 @@
 // ── Engine barrel export ──
 export { Network, buildGridInputs } from './network.js';
 export { PRNG } from './prng.js';
-export { getActivation, ACTIVATION_LABELS } from './activations.js';
+export { getActivation, softmax, ACTIVATION_LABELS } from './activations.js';
 export type { ActivationFn } from './activations.js';
 export {
     getLoss,
     batchLoss,
+    categoricalCrossEntropy,
+    categoricalCrossEntropyLogitGradient,
     LOSS_LABELS,
     isLossCompatible,
     describeLossIncompatibility,

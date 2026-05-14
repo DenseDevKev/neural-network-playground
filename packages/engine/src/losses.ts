@@ -9,6 +9,7 @@ export interface LossFn {
 }
 
 const EPSILON = 1e-7;
+const DISTRIBUTION_SUM_TOLERANCE = 1e-5;
 
 const mse: LossFn = {
     loss: (p, t) => 0.5 * (p - t) ** 2,
@@ -25,6 +26,67 @@ const crossEntropy: LossFn = {
         return -(t / clamped) + (1 - t) / (1 - clamped);
     },
 };
+
+function assertCategoricalVectorPair(probabilities: ArrayLike<number>, target: ArrayLike<number>): void {
+    if (probabilities.length === 0) {
+        throw new RangeError('categorical cross-entropy vectors must not be empty');
+    }
+    if (probabilities.length !== target.length) {
+        throw new RangeError('probabilities and target must have the same length');
+    }
+
+    let probabilitySum = 0;
+    let targetSum = 0;
+    for (let i = 0; i < probabilities.length; i++) {
+        const probability = probabilities[i];
+        const targetValue = target[i];
+        if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+            throw new RangeError('probabilities must be finite values in [0, 1]');
+        }
+        if (!Number.isFinite(targetValue) || targetValue < 0) {
+            throw new RangeError('target values must be finite and non-negative');
+        }
+        probabilitySum += probability;
+        targetSum += targetValue;
+    }
+
+    if (Math.abs(probabilitySum - 1) > DISTRIBUTION_SUM_TOLERANCE) {
+        throw new RangeError('probabilities must sum to 1');
+    }
+    if (Math.abs(targetSum - 1) > DISTRIBUTION_SUM_TOLERANCE) {
+        throw new RangeError('target values must sum to 1');
+    }
+}
+
+/** Categorical cross-entropy for one-hot or soft target distributions. */
+export function categoricalCrossEntropy(
+    probabilities: ArrayLike<number>,
+    target: ArrayLike<number>,
+): number {
+    assertCategoricalVectorPair(probabilities, target);
+
+    let sum = 0;
+    for (let i = 0; i < probabilities.length; i++) {
+        if (target[i] === 0) continue;
+        const clamped = Math.max(EPSILON, Math.min(1 - EPSILON, probabilities[i]));
+        sum -= target[i] * Math.log(clamped);
+    }
+    return sum;
+}
+
+/** Gradient of softmax + categorical cross-entropy with respect to logits. */
+export function categoricalCrossEntropyLogitGradient(
+    probabilities: ArrayLike<number>,
+    target: ArrayLike<number>,
+): number[] {
+    assertCategoricalVectorPair(probabilities, target);
+
+    const gradient = new Array<number>(probabilities.length);
+    for (let i = 0; i < probabilities.length; i++) {
+        gradient[i] = probabilities[i] - target[i];
+    }
+    return gradient;
+}
 
 export const DEFAULT_HUBER_DELTA = 1.0;
 

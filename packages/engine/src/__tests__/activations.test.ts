@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getActivation } from '../activations.js';
+import { getActivation, softmax } from '../activations.js';
 import type { ActivationType } from '../types.js';
 
 describe('getActivation', () => {
@@ -158,6 +158,48 @@ describe('Softplus', () => {
         expect(sp.f(-1000)).toBeCloseTo(0, 8);
         expect(sp.df(1000, sp.f(1000))).toBeCloseTo(1, 8);
         expect(sp.df(-1000, sp.f(-1000))).toBeCloseTo(0, 8);
+    });
+});
+
+describe('softmax', () => {
+    it('normalizes logits into probabilities', () => {
+        const probs = softmax([1, 2, 3]);
+        expect(probs).toHaveLength(3);
+        expect(probs.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 12);
+        for (const value of probs) {
+            expect(value).toBeGreaterThan(0);
+            expect(value).toBeLessThan(1);
+        }
+        expect(probs[2]).toBeGreaterThan(probs[1]);
+        expect(probs[1]).toBeGreaterThan(probs[0]);
+    });
+
+    it('is invariant to constant shifts', () => {
+        const base = softmax([-1, 0, 1]);
+        const shifted = softmax([999, 1000, 1001]);
+        expect(shifted[0]).toBeCloseTo(base[0], 12);
+        expect(shifted[1]).toBeCloseTo(base[1], 12);
+        expect(shifted[2]).toBeCloseTo(base[2], 12);
+    });
+
+    it('stays finite for saturated logits', () => {
+        const probs = softmax([1000, 0, -1000]);
+        expect(probs[0]).toBeCloseTo(1, 12);
+        expect(probs[1]).toBeCloseTo(0, 12);
+        expect(probs[2]).toBeCloseTo(0, 12);
+        for (const value of probs) {
+            expect(Number.isFinite(value)).toBe(true);
+        }
+    });
+
+    it('accepts typed-array logits without copying at the call site', () => {
+        const probs = softmax(new Float64Array([0.25, -0.5, 0.75]));
+        expect(probs.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 12);
+        expect(probs[2]).toBeGreaterThan(probs[0]);
+    });
+
+    it('rejects an empty logit vector', () => {
+        expect(() => softmax([])).toThrow(RangeError);
     });
 });
 

@@ -58,6 +58,42 @@ function stableSigmoid(x: number): number {
     return ex / (1 + ex);
 }
 
+/** Stable vector softmax for multiclass probability outputs. */
+export function softmax(logits: ArrayLike<number>): number[] {
+    if (logits.length === 0) {
+        throw new RangeError('softmax logits must not be empty');
+    }
+
+    let maxLogit = -Infinity;
+    for (let i = 0; i < logits.length; i++) {
+        const value = logits[i];
+        if (!Number.isFinite(value)) {
+            throw new RangeError('softmax logits must be finite');
+        }
+        if (value > maxLogit) {
+            maxLogit = value;
+        }
+    }
+
+    const exps = new Array<number>(logits.length);
+    let sum = 0;
+    for (let i = 0; i < logits.length; i++) {
+        const expValue = Math.exp(logits[i] - maxLogit);
+        exps[i] = expValue;
+        sum += expValue;
+    }
+
+    if (!Number.isFinite(sum) || sum <= 0) {
+        throw new RangeError('softmax logits produced an invalid normalizer');
+    }
+
+    const invSum = 1 / sum;
+    for (let i = 0; i < exps.length; i++) {
+        exps[i] *= invSum;
+    }
+    return exps;
+}
+
 const softplus: ActivationFn = {
     f: stableSoftplus,
     df: (x) => stableSigmoid(x),
