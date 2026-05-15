@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { generateDataset, generateThreeClassClusters, getDefaultProblemType } from '../datasets.js';
+import {
+    generateDataset,
+    generateThreeClassClusters,
+    getDefaultProblemType,
+    THREE_CLASS_CLUSTER_DATASET_CONTRACT,
+} from '../datasets.js';
 import * as Engine from '../index.js';
 import type { DatasetType } from '../types.js';
 
@@ -159,6 +164,26 @@ describe('regression datasets', () => {
 });
 
 describe('generateThreeClassClusters', () => {
+    it('has an explicit bounded multiclass dataset contract', () => {
+        expect(THREE_CLASS_CLUSTER_DATASET_CONTRACT).toMatchObject({
+            id: 'three-class-clusters',
+            problemType: 'classification',
+            classCount: 3,
+            outputSize: 3,
+            outputActivation: 'softmax',
+            lossType: 'categoricalCrossEntropy',
+            defaultNumSamples: 300,
+            defaultNoise: 8,
+            defaultTrainRatio: 0.5,
+        });
+        expect(THREE_CLASS_CLUSTER_DATASET_CONTRACT.classLabels).toEqual([0, 1, 2]);
+        expect(Object.isFrozen(THREE_CLASS_CLUSTER_DATASET_CONTRACT.classLabels)).toBe(true);
+
+        const defaultSplit = THREE_CLASS_CLUSTER_DATASET_CONTRACT.generate();
+        expect(defaultSplit.train.length + defaultSplit.test.length).toBe(300);
+        expect(defaultSplit).toEqual(generateThreeClassClusters(300, 8, 0.5, 42));
+    });
+
     it('generates a deterministic bounded dataset with three class labels', () => {
         const split = generateThreeClassClusters(90, 12, 0.6, 123);
         const same = generateThreeClassClusters(90, 12, 0.6, 123);
@@ -201,6 +226,7 @@ describe('generateThreeClassClusters', () => {
 
     it('stays out of the package-level engine API until public config wiring is approved', () => {
         expect('generateThreeClassClusters' in Engine).toBe(false);
+        expect('THREE_CLASS_CLUSTER_DATASET_CONTRACT' in Engine).toBe(false);
     });
 
     it('handles tiny and invalid sample requests like the public dataset generator', () => {

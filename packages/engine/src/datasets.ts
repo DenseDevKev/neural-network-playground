@@ -5,11 +5,28 @@ import type { DataPoint, DataSplit, DatasetType } from './types.js';
 import { PRNG } from './prng.js';
 
 const DEFAULT_NUM_SAMPLES = 300;
+const THREE_CLASS_DEFAULT_NOISE = 8;
+const THREE_CLASS_DEFAULT_TRAIN_RATIO = 0.5;
+const THREE_CLASS_LABELS = Object.freeze([0, 1, 2] as const);
 const THREE_CLASS_CENTERS = [
     { x: -0.55, y: -0.35, label: 0 },
     { x: 0.55, y: -0.35, label: 1 },
     { x: 0, y: 0.55, label: 2 },
 ] as const;
+
+export interface ThreeClassClusterDatasetContract {
+    id: 'three-class-clusters';
+    problemType: 'classification';
+    classCount: 3;
+    classLabels: readonly [0, 1, 2];
+    outputSize: 3;
+    outputActivation: 'softmax';
+    lossType: 'categoricalCrossEntropy';
+    defaultNumSamples: number;
+    defaultNoise: number;
+    defaultTrainRatio: number;
+    generate: typeof generateThreeClassClusters;
+}
 
 /** Generate a full dataset and split into train/test. */
 export function generateDataset(
@@ -65,6 +82,25 @@ export function generateThreeClassClusters(
         test: points.slice(splitIdx),
     };
 }
+
+export const THREE_CLASS_CLUSTER_DATASET_CONTRACT: ThreeClassClusterDatasetContract = Object.freeze({
+    id: 'three-class-clusters',
+    problemType: 'classification',
+    classCount: 3,
+    classLabels: THREE_CLASS_LABELS,
+    outputSize: 3,
+    outputActivation: 'softmax',
+    lossType: 'categoricalCrossEntropy',
+    defaultNumSamples: DEFAULT_NUM_SAMPLES,
+    defaultNoise: THREE_CLASS_DEFAULT_NOISE,
+    defaultTrainRatio: THREE_CLASS_DEFAULT_TRAIN_RATIO,
+    generate: (
+        numSamples = DEFAULT_NUM_SAMPLES,
+        noise = THREE_CLASS_DEFAULT_NOISE,
+        trainRatio = THREE_CLASS_DEFAULT_TRAIN_RATIO,
+        seed = 42,
+    ) => generateThreeClassClusters(numSamples, noise, trainRatio, seed),
+});
 
 function normalizeSampleCount(numSamples: number): number {
     return Number.isFinite(numSamples) ? Math.max(0, Math.floor(numSamples)) : DEFAULT_NUM_SAMPLES;
