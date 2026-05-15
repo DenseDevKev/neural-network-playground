@@ -802,3 +802,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.3856 ms
 
 These values returned to the established benchmark range and remain below the roadmap warning thresholds. The private multiclass `Network` path is not exposed through current worker training configs or UI controls, so no live runtime cadence impact is expected until a separately approved public/shared integration slice wires it into app state and worker target encoding.
+
+## Wave 7 Public/Shared Multiclass Contract Reservation
+
+Date: 2026-05-14
+
+Scope: public/shared contract reservation for Multiclass Classification Mode. This slice expands the engine `ActivationType`/`LossType` contracts to reserve `softmax` and `categoricalCrossEntropy`, keeps scalar activation/loss lookup separate from vector multiclass helpers, makes shared strict imports return a clear gated error for multiclass configs, keeps lenient URL decode on current runtime defaults, and adds web tests proving the future-only controls are not exposed. It does not add worker target encoding, UI controls, protocol/frame-buffer paths, persistence/run-history schema changes, URL/config output-size serialization, code export behavior, dependencies, deployment changes, or live training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the contract reservation slice. Relevant production output:
+
+- `dist/assets/training.worker-goNyCWLR.js`: 89.72 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-CoiZi_rp.js`: 7.25 kB, gzip 2.95 kB
+- `dist/assets/InspectionPanel-CankpUpg.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-BkavPI7R.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-B_bc6EYv.js`: 367.12 kB, gzip 111.13 kB
+
+Compared with the private multiclass `Network` foundation build, the worker bundle increased from 89.00 kB to 89.72 kB, about 0.8%, below the roadmap 10% warning threshold. The main app bundle increased from 366.75 kB to 367.12 kB, about 0.1%. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1131.1425 ms total for 100 iterations
+- `predictGridInto`: 1117.4338 ms total for 100 iterations
+- `predictGridWithNeurons`: 699.5975 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 591.5526 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.1311 ms
+- Average `applyGradients` time (SGD): 1.4898 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The new contract values are not exposed through current worker target encoding or UI controls, so no live runtime cadence impact is expected until a separately approved worker/UI slice wires multiclass configs into the running app.
