@@ -1018,3 +1018,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5844 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice does not touch engine training throughput, worker cadence, visualization payloads, or browser-visible rendering.
+
+## Wave 7 Visualization Non-Exposure Guard
+
+Date: 2026-05-15
+
+Scope: UI-only visualization fallback guard for future Multiclass Classification Mode. `DecisionBoundary` now avoids binary decision-boundary copy and Negative/Positive legends when current classification config or point labels indicate non-binary output. `ConfusionMatrix` now separates "no test data" from "test data exists but no matrix is available yet" with neutral demand-gated copy, after review found that missing matrices can be normal while the panel waits for fresh binary metrics. This slice does not change URL/config serialization, persistence/run-history schema, public config shape, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `d90ec15`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-025rTLae.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-Dvl_owys.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-NHBwCCM0.js`: 16.71 kB, gzip 5.15 kB
+- `dist/assets/index-ClV2IhNJ.js`: 368.30 kB, gzip 111.37 kB
+
+Compared with the run-history persistence guard build, the worker, lazy Code Export, engine, CSS, inspection, and run-history chunks remain effectively unchanged. The main app chunk changed from 367.43 kB to 368.30 kB, about 0.24%, below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1072.2905 ms total for 100 iterations
+- `predictGridInto`: 1062.1561 ms total for 100 iterations
+- `predictGridWithNeurons`: 674.3473 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 577.0119 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9098 ms
+- Average `applyGradients` time (SGD): 1.4554 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is UI/fallback-copy only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
