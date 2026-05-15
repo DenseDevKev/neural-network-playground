@@ -1841,3 +1841,56 @@ These values remain within the established noisy local benchmark range and
 below roadmap warning thresholds. The slice only changes Config Panel validation
 and tests; it does not add runtime hot-path work, worker cadence changes, or
 heavy visualization payloads.
+
+## Wave 7 Public Multiclass Run History
+
+Date: 2026-05-15
+
+Scope: web run-history capture/localStorage preservation for the exact approved
+multiclass tuple. `captureExperimentRun` and the web experiment-memory store now
+use existing opt-in shared experiment-memory validation for
+`three-class-clusters`, `classification`, `outputSize: 3`, `softmax`, and
+`categoricalCrossEntropy`, while malformed partial multiclass records remain
+rejected. The live arena remains scalar-only and disables start for selected
+multiclass saved runs. This slice does not change the localStorage key,
+`schemaVersion`, record shape, URL/config format, public config shape, worker
+protocol, frame-buffer semantics, dependencies, deployment, official
+worker-authored metrics, or raw probability-grid transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-rMnDb0A3.js`: 94.59 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-vWTMtFI9.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-C07kQP5D.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-KLFexW1l.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-ACM6HNa-.js`: 383.84 kB, gzip 115.43 kB
+
+Compared with the public multiclass Config JSON build, the worker, CSS, engine,
+Code Export, React, Inspection, and main chunks stayed effectively unchanged.
+The lazy Run History chunk changed from 18.06 kB to 18.58 kB, about 2.9%,
+below the 10% roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1097.2427 ms total for 100 iterations
+- `predictGridInto`: 1102.0615 ms total for 100 iterations
+- `predictGridWithNeurons`: 696.2501 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 645.4064 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0228 ms
+- Average `applyGradients` time (SGD): 1.4808 ms
+
+These values remain within the established noisy local benchmark range and
+below roadmap warning thresholds. The slice changes web validation/history UI
+only; it does not add runtime hot-path work, worker cadence changes, large
+array transport, or heavy visualization payloads.
