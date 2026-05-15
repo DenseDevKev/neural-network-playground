@@ -69,13 +69,27 @@ export interface ImportedConfigValidationResult {
 
 export interface NormalizeAppConfigOptions {
     mode?: 'strict' | 'lenient';
+    allowMulticlass?: boolean;
+}
+
+export interface UrlStateOptions {
+    allowMulticlass?: boolean;
+}
+
+function isApprovedMulticlassConfig(config: AppConfig): boolean {
+    return (
+        config.data.problemType === 'classification' &&
+        config.network.outputSize === 3 &&
+        config.network.outputActivation === 'softmax' &&
+        config.training.lossType === 'categoricalCrossEntropy'
+    );
 }
 
 /**
  * Encode app config into a URL hash string.
  * Uses short keys for compactness.
  */
-export function encodeUrlState(config: AppConfig): string {
+export function encodeUrlState(config: AppConfig, options: UrlStateOptions = {}): string {
     const p = new URLSearchParams();
 
     // Data
@@ -88,6 +102,9 @@ export function encodeUrlState(config: AppConfig): string {
 
     // Network
     p.set('hl', config.network.hiddenLayers.join(','));
+    if (options.allowMulticlass && isApprovedMulticlassConfig(config)) {
+        p.set('os', String(config.network.outputSize));
+    }
     p.set('a', config.network.activation);
     p.set('oa', config.network.outputActivation);
     p.set('wi', config.network.weightInit);
@@ -136,7 +153,7 @@ export function encodeUrlState(config: AppConfig): string {
 /**
  * Decode URL hash into app config, using defaults for missing values.
  */
-export function decodeUrlState(hash: string): AppConfig {
+export function decodeUrlState(hash: string, options: UrlStateOptions = {}): AppConfig {
     const p = new URLSearchParams(hash.replace(/^#/, ''));
 
     const featureBits = (p.get('f') || '110000000').padEnd(9, '0');
@@ -167,6 +184,14 @@ export function decodeUrlState(hash: string): AppConfig {
         : [...DEFAULT_NETWORK.hiddenLayers];
 
     const inputSize = countActiveFeatures(features);
+    const hasExplicitMulticlassUrlContract = (
+        options.allowMulticlass &&
+        p.get('os') === '3' &&
+        p.get('pt') === 'classification' &&
+        p.get('oa') === 'softmax' &&
+        p.get('l') === 'categoricalCrossEntropy'
+    );
+    const outputSize = hasExplicitMulticlassUrlContract ? 3 : 1;
 
     const data: DataConfig = {
         dataset: getValidValue(p.get('d'), VALID_DATASETS, DEFAULT_DATA.dataset),
@@ -210,7 +235,7 @@ export function decodeUrlState(hash: string): AppConfig {
         network: {
             inputSize,
             hiddenLayers,
-            outputSize: 1,
+            outputSize,
             activation: getValidValue(p.get('a'), VALID_HIDDEN_ACTIVATIONS, DEFAULT_NETWORK.activation),
             outputActivation,
             weightInit: getValidValue(p.get('wi'), VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
@@ -222,7 +247,10 @@ export function decodeUrlState(hash: string): AppConfig {
         ui,
     };
 
-    return normalizeAppConfig(candidate, { mode: 'lenient' }).config ?? fallbackConfig();
+    return normalizeAppConfig(candidate, {
+        mode: 'lenient',
+        allowMulticlass: options.allowMulticlass,
+    }).config ?? fallbackConfig();
 }
 
 function getValidValue<T extends string>(value: string | null, validValues: Set<T>, fallback: T): T {
@@ -284,6 +312,21 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isStrict(options?: NormalizeAppConfigOptions): boolean {
     return options?.mode !== 'lenient';
+}
+
+function isApprovedMulticlassContract(
+    data: Record<string, unknown>,
+    network: Record<string, unknown>,
+    training: Record<string, unknown>,
+    allowMulticlass: boolean,
+): boolean {
+    return (
+        allowMulticlass &&
+        data.problemType === 'classification' &&
+        network.outputSize === 3 &&
+        network.outputActivation === 'softmax' &&
+        training.lossType === 'categoricalCrossEntropy'
+    );
 }
 
 function fallbackConfig(): AppConfig {
@@ -415,6 +458,7 @@ export function normalizeAppConfig(
     options: NormalizeAppConfigOptions = {},
 ): ImportedConfigValidationResult {
     const strict = isStrict(options);
+    const allowMulticlass = options.allowMulticlass === true;
     const defaults = fallbackConfig();
 
     if (!isRecord(candidate)) {
@@ -505,15 +549,23 @@ export function normalizeAppConfig(
         network.outputActivation === 'softmax'
     );
     if (strict && recognizedMulticlassContract) {
-        return { config: null, error: 'Multiclass configurations are not runtime-enabled yet.' };
+        if (!isApprovedMulticlassContract(data, network, training, allowMulticlass)) {
+            return {
+                config: null,
+                error: allowMulticlass
+                    ? 'Multiclass configurations must use classification data, output size 3, softmax output activation, and categorical cross-entropy loss.'
+                    : 'Multiclass configurations are not runtime-enabled yet.',
+            };
+        }
     }
+    const approvedMulticlassContract = isApprovedMulticlassContract(data, network, training, allowMulticlass);
 
     if (
         strict &&
         (
             !isFiniteNumber(network.outputSize) ||
             !Number.isInteger(network.outputSize) ||
-            network.outputSize !== 1
+            (network.outputSize !== 1 && !approvedMulticlassContract)
         )
     ) {
         return { config: null, error: 'Only single-output networks are supported.' };
@@ -585,9 +637,23 @@ export function normalizeAppConfig(
         lossType,
         getValidValue(network.outputActivation as string | null, VALID_OUTPUT_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
     );
-    if (!strict && (lossType === 'categoricalCrossEntropy' || outputActivation === 'softmax')) {
+    const lenientMulticlassContract = (
+        allowMulticlass &&
+        getValidValue(data.problemType as string | null, VALID_PROBLEM_TYPES, DEFAULT_DATA.problemType) === 'classification' &&
+        isFiniteNumber(network.outputSize) &&
+        Number.isInteger(network.outputSize) &&
+        network.outputSize === 3 &&
+        lossType === 'categoricalCrossEntropy' &&
+        outputActivation === 'softmax'
+    );
+    if (!strict && (
+        lossType === 'categoricalCrossEntropy' ||
+        outputActivation === 'softmax' ||
+        (isFiniteNumber(network.outputSize) && network.outputSize !== 1)
+    ) && !lenientMulticlassContract) {
         return { config: defaults, error: null };
     }
+    const normalizedOutputSize = approvedMulticlassContract || lenientMulticlassContract ? 3 : 1;
 
     const gradientClip = training.gradientClip === null || training.gradientClip === undefined
         ? null
@@ -648,9 +714,7 @@ export function normalizeAppConfig(
             network: {
                 inputSize,
                 hiddenLayers,
-                outputSize: isFiniteNumber(network.outputSize) && Number.isInteger(network.outputSize) && network.outputSize === 1
-                    ? network.outputSize
-                    : 1,
+                outputSize: normalizedOutputSize,
                 activation: getValidValue(network.activation as string | null, VALID_HIDDEN_ACTIVATIONS, DEFAULT_NETWORK.activation),
                 outputActivation,
                 weightInit: getValidValue(network.weightInit as string | null, VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
@@ -678,8 +742,11 @@ export function normalizeAppConfig(
     };
 }
 
-export function validateImportedConfig(candidate: unknown): ImportedConfigValidationResult {
-    return normalizeAppConfig(candidate, { mode: 'strict' });
+export function validateImportedConfig(
+    candidate: unknown,
+    options: Omit<NormalizeAppConfigOptions, 'mode'> = {},
+): ImportedConfigValidationResult {
+    return normalizeAppConfig(candidate, { ...options, mode: 'strict' });
 }
 
 /** Import config from JSON string. Returns null if invalid. */

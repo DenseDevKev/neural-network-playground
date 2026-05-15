@@ -22,6 +22,23 @@ const validConfig: AppConfig = {
     ui: { showTestData: false, discretizeOutput: false },
 };
 
+const multiclassConfig: AppConfig = {
+    ...validConfig,
+    data: {
+        ...validConfig.data,
+        problemType: 'classification',
+    },
+    network: {
+        ...validConfig.network,
+        outputSize: 3,
+        outputActivation: 'softmax',
+    },
+    training: {
+        ...validConfig.training,
+        lossType: 'categoricalCrossEntropy',
+    },
+};
+
 describe('URL State Serialization', () => {
     it('round-trips a valid configuration', () => {
         const encoded = encodeUrlState(validConfig);
@@ -71,6 +88,31 @@ describe('URL State Serialization', () => {
         expect(decoded.training.adamBeta2).toBe(0.97);
         expect(decoded.training.huberDelta).toBe(0.4);
         expect(decoded.training.lrSchedule).toEqual({ type: 'step', stepSize: 25, gamma: 0.6 });
+    });
+
+    it('round-trips a bounded multiclass config only when the migration contract is enabled', () => {
+        const encoded = encodeUrlState(multiclassConfig, { allowMulticlass: true });
+
+        expect(encoded).toContain('os=3');
+        expect(decodeUrlState(encoded, { allowMulticlass: true })).toEqual(multiclassConfig);
+
+        const publicDefault = decodeUrlState(encoded);
+        expect(publicDefault.network.outputSize).toBe(1);
+        expect(publicDefault.network.outputActivation).not.toBe('softmax');
+        expect(publicDefault.training.lossType).not.toBe('categoricalCrossEntropy');
+    });
+
+    it('does not encode unsupported output sizes through the multiclass migration option', () => {
+        const encoded = encodeUrlState({
+            ...multiclassConfig,
+            network: {
+                ...multiclassConfig.network,
+                outputSize: 4,
+            },
+        }, { allowMulticlass: true });
+
+        expect(encoded).not.toContain('os=4');
+        expect(decodeUrlState(encoded, { allowMulticlass: true }).network.outputSize).toBe(1);
     });
 });
 
@@ -269,6 +311,76 @@ describe('compatibility normalization', () => {
 
         expect(result.config).toBeNull();
         expect(result.error).toBe('Multiclass configurations are not runtime-enabled yet.');
+    });
+
+    it('accepts the bounded three-class config when the migration contract is enabled', () => {
+        const result = validateImportedConfig(multiclassConfig, { allowMulticlass: true });
+
+        expect(result.error).toBeNull();
+        expect(result.config).toEqual(multiclassConfig);
+    });
+
+    it.each([
+        [
+            'unsupported class count',
+            { network: { outputSize: 4, outputActivation: 'softmax' }, training: { lossType: 'categoricalCrossEntropy' } },
+        ],
+        [
+            'softmax without categorical loss',
+            { network: { outputSize: 3, outputActivation: 'softmax' }, training: { lossType: 'crossEntropy' } },
+        ],
+        [
+            'categorical loss without softmax',
+            { network: { outputSize: 3, outputActivation: 'sigmoid' }, training: { lossType: 'categoricalCrossEntropy' } },
+        ],
+        [
+            'regression multiclass config',
+            {
+                data: { problemType: 'regression' },
+                network: { outputSize: 3, outputActivation: 'softmax' },
+                training: { lossType: 'categoricalCrossEntropy' },
+            },
+        ],
+    ])('rejects multiclass migration configs with %s', (_label, overrides) => {
+        const result = validateImportedConfig({
+            ...multiclassConfig,
+            data: {
+                ...multiclassConfig.data,
+                ...overrides.data,
+            },
+            network: {
+                ...multiclassConfig.network,
+                ...overrides.network,
+            },
+            training: {
+                ...multiclassConfig.training,
+                ...overrides.training,
+            },
+        }, { allowMulticlass: true });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toMatch(/multiclass|single-output/i);
+    });
+
+    it('falls back to scalar defaults for unsupported multiclass URL contracts', () => {
+        const decoded = decodeUrlState('os=4&pt=classification&l=categoricalCrossEntropy&oa=softmax', {
+            allowMulticlass: true,
+        });
+
+        expect(decoded.network.outputSize).toBe(1);
+        expect(decoded.network.outputActivation).not.toBe('softmax');
+        expect(decoded.training.lossType).not.toBe('categoricalCrossEntropy');
+    });
+
+    it.each([
+        ['missing softmax activation', 'os=3&pt=classification&l=categoricalCrossEntropy'],
+        ['missing categorical loss', 'os=3&pt=classification&oa=softmax'],
+    ])('falls back to scalar defaults for partial multiclass URL contracts: %s', (_label, hash) => {
+        const decoded = decodeUrlState(hash, { allowMulticlass: true });
+
+        expect(decoded.network.outputSize).toBe(1);
+        expect(decoded.network.outputActivation).not.toBe('softmax');
+        expect(decoded.training.lossType).not.toBe('categoricalCrossEntropy');
     });
 
     it('strictly rejects unsafe imported numeric ranges through the shared normalizer', () => {
