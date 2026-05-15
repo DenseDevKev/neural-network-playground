@@ -1235,6 +1235,42 @@ Observed benchmark output:
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects shared validation only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
 
+## Wave 7 Shared Multiclass URL/Config Contract
+
+Date: 2026-05-15
+
+Scope: opt-in shared URL/import validation for the future public Multiclass Classification Mode. Shared serialization now accepts and round-trips exactly one bounded 3-class config when callers explicitly pass the multiclass option: classification data, `outputSize: 3`, `softmax`, and `categoricalCrossEntropy`. Default public app paths remain scalar-only. This slice does not add visible UI controls, presets, persistence/run-history schema changes, worker protocol changes, frame-buffer fields, dependencies, deployment changes, training-behavior changes, or visualization payload transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `16e696e`. Relevant production output:
+
+- `dist/assets/training.worker-BFdCjK-A.js`: 91.69 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-DoyOs-i4.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-CKR7X0DG.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-DiKj5nuT.js`: 17.96 kB, gzip 5.43 kB
+- `dist/assets/index-BLRFr57A.js`: 370.76 kB, gzip 112.04 kB
+
+Compared with the serialized-network payload-validation build, the lazy Code Export, engine, inspection, run-history, and CSS chunks remain effectively unchanged. The main app chunk changed from 369.84 kB to 370.76 kB, about 0.25%, and the worker chunk changed from 91.19 kB to 91.69 kB, about 0.55%; both are below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1070.7663 ms total for 100 iterations
+- `predictGridInto`: 1061.2701 ms total for 100 iterations
+- `predictGridWithNeurons`: 671.1200 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 577.2953 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9806 ms
+- Average `applyGradients` time (SGD): 1.4759 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects shared serialization validation only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
 ## Wave 7 Binary Confusion Matrix Guard
 
 Date: 2026-05-15
