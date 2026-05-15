@@ -137,6 +137,8 @@ interface WorkerState {
     stopConditionState: StopConditionState;
     /** Monotonic identity for confusion matrix payload freshness. */
     confusionMatrixVersion: number;
+    /** Monotonic identity for bounded multiclass confusion matrix payload freshness. */
+    multiclassConfusionMatrixVersion: number;
     /** Monotonic identity for activation histogram payload freshness. */
     activationHistogramVersion: number;
     /** Monotonic identity for bounded multiclass boundary payload freshness. */
@@ -510,6 +512,7 @@ const state: WorkerState = {
     restoredCheckpointId: null,
     stopConditionState: createInitialStopConditionState(),
     confusionMatrixVersion: 0,
+    multiclassConfusionMatrixVersion: 0,
     activationHistogramVersion: 0,
     multiclassBoundaryVersion: 0,
     outputGridBuffer: null,
@@ -1267,6 +1270,8 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     let multiclassConfidenceGrid: Float32Array | undefined;
     let multiclassBoundaryLayout: WorkerSnapshotMessage['multiclassBoundaryLayout'] | undefined;
     let multiclassBoundaryVersion: number | undefined;
+    let multiclassConfusionMatrix: WorkerSnapshotMessage['multiclassConfusionMatrix'] | undefined;
+    let multiclassConfusionMatrixVersion: number | undefined;
 
     if (sharedViews) {
         let flags = 0;
@@ -1382,6 +1387,20 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         transferables.push(outputGrid.buffer, neuronGrids.buffer);
     }
 
+    if (
+        !state.testMetricsStale &&
+        state.demand.needConfusionMatrix &&
+        state.networkConfig &&
+        state.trainingConfig &&
+        state.dataConfig &&
+        isApprovedWorkerMulticlassConfig(state.networkConfig, state.trainingConfig, state.dataConfig) &&
+        snap.testMetrics?.multiclassConfusionMatrix
+    ) {
+        multiclassConfusionMatrix = snap.testMetrics.multiclassConfusionMatrix;
+        state.multiclassConfusionMatrixVersion++;
+        multiclassConfusionMatrixVersion = state.multiclassConfusionMatrixVersion;
+    }
+
     // History point
     const historyPoint: HistoryPoint = {
         step: snap.step,
@@ -1422,6 +1441,8 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         historyPoint,
         confusionMatrix: state.testMetricsStale ? undefined : snap.testMetrics?.confusionMatrix,
         confusionMatrixVersion: state.confusionMatrixVersion,
+        multiclassConfusionMatrix,
+        multiclassConfusionMatrixVersion,
         checkpointTimeline: buildCheckpointTimeline(),
         sharedSeq,
     };

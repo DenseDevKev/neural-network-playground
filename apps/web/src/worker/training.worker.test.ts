@@ -5,6 +5,7 @@ import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
+    isWorkerToMainMessage,
 } from '@nn-playground/shared';
 import type { WorkerSnapshotMessage } from '@nn-playground/shared';
 
@@ -51,6 +52,14 @@ function createCapturingPort(): {
 async function advanceOneWorkerTick(): Promise<void> {
     await vi.advanceTimersByTimeAsync(20);
     await Promise.resolve();
+}
+
+function capturedSnapshots(messages: unknown[]): WorkerSnapshotMessage[] {
+    return messages.filter((message): message is WorkerSnapshotMessage => (
+        typeof message === 'object' &&
+        message !== null &&
+        (message as { type?: unknown }).type === 'snapshot'
+    ));
 }
 
 describe('training worker loss landscape probe RPC', () => {
@@ -537,6 +546,142 @@ describe('training worker multiclass target encoding', () => {
         expect(snapshot.outputGrid).toHaveLength(0);
         expect(snapshot.neuronGrids).toBeUndefined();
         expect(snapshot.testMetrics.confusionMatrix).toBeUndefined();
+    });
+
+    it('streams worker-authored multiclass confusion only for fresh demanded approved tuple snapshots', async () => {
+        vi.useFakeTimers();
+        const stream = createCapturingPort();
+        try {
+            workerApi.initialize(
+                multiclassNetwork,
+                multiclassTraining,
+                { ...approvedMulticlassData, seed: 946, numSamples: 60 },
+                { ...DEFAULT_FEATURES },
+            );
+            workerApi.updateDemand({
+                ...DEFAULT_DEMAND,
+                needDecisionBoundary: false,
+                needNeuronGrids: false,
+                needConfusionMatrix: true,
+                testEvalInterval: 2,
+            });
+            const expectedRows = workerApi.getTestPoints().reduce<[number, number, number]>((rows, point) => {
+                rows[point.label as 0 | 1 | 2]++;
+                return rows;
+            }, [0, 0, 0]);
+            const expectedTotal = expectedRows[0] + expectedRows[1] + expectedRows[2];
+            workerApi.setStreamPort(stream.port);
+
+            stream.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            await advanceOneWorkerTick();
+            stream.dispatch({ type: 'frameAck' });
+            await advanceOneWorkerTick();
+            stream.dispatch({ type: 'stopTraining' });
+
+            const snapshots = capturedSnapshots(stream.messages);
+            expect(snapshots).toHaveLength(2);
+
+            const freshSnapshot = snapshots[0];
+            expect(isWorkerToMainMessage(freshSnapshot)).toBe(true);
+            expect(freshSnapshot.scalars.testMetricsStale).toBe(false);
+            expect(freshSnapshot.confusionMatrix).toBeUndefined();
+            expect(freshSnapshot.multiclassConfusionMatrixVersion).toBeGreaterThan(0);
+            expect(freshSnapshot.multiclassConfusionMatrix).toEqual(expect.objectContaining({
+                classCount: 3,
+                classLabels: [0, 1, 2],
+            }));
+            const counts = freshSnapshot.multiclassConfusionMatrix?.counts ?? [];
+            expect(counts).toHaveLength(9);
+            expect(counts.reduce((sum, count) => sum + count, 0)).toBe(expectedTotal);
+            expect([
+                counts[0] + counts[1] + counts[2],
+                counts[3] + counts[4] + counts[5],
+                counts[6] + counts[7] + counts[8],
+            ]).toEqual(expectedRows);
+
+            const staleSnapshot = snapshots[1];
+            expect(isWorkerToMainMessage(staleSnapshot)).toBe(true);
+            expect(staleSnapshot.scalars.testMetricsStale).toBe(true);
+            expect(staleSnapshot.confusionMatrix).toBeUndefined();
+            expect(staleSnapshot.multiclassConfusionMatrix).toBeUndefined();
+            expect(staleSnapshot.multiclassConfusionMatrixVersion).toBeUndefined();
+        } finally {
+            stream.dispatch({ type: 'stopTraining' });
+            vi.useRealTimers();
+        }
+    });
+
+    it('omits streamed multiclass confusion when confusion demand is disabled', async () => {
+        vi.useFakeTimers();
+        const stream = createCapturingPort();
+        try {
+            workerApi.initialize(
+                multiclassNetwork,
+                multiclassTraining,
+                { ...approvedMulticlassData, seed: 947, numSamples: 60 },
+                { ...DEFAULT_FEATURES },
+            );
+            workerApi.updateDemand({
+                ...DEFAULT_DEMAND,
+                needDecisionBoundary: false,
+                needNeuronGrids: false,
+                needConfusionMatrix: false,
+            });
+            workerApi.setStreamPort(stream.port);
+
+            stream.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            await advanceOneWorkerTick();
+            stream.dispatch({ type: 'stopTraining' });
+
+            const [snapshot] = capturedSnapshots(stream.messages);
+            expect(snapshot).toBeDefined();
+            expect(isWorkerToMainMessage(snapshot)).toBe(true);
+            expect(snapshot.confusionMatrix).toBeUndefined();
+            expect(snapshot.multiclassConfusionMatrix).toBeUndefined();
+            expect(snapshot.multiclassConfusionMatrixVersion).toBeUndefined();
+        } finally {
+            stream.dispatch({ type: 'stopTraining' });
+            vi.useRealTimers();
+        }
+    });
+
+    it('continues streaming binary confusion matrices without multiclass payloads for scalar classification', async () => {
+        vi.useFakeTimers();
+        const stream = createCapturingPort();
+        try {
+            workerApi.initialize(
+                { ...DEFAULT_NETWORK },
+                { ...DEFAULT_TRAINING },
+                { ...DEFAULT_DATA, seed: 948, numSamples: 40 },
+                { ...DEFAULT_FEATURES },
+            );
+            workerApi.updateDemand({
+                ...DEFAULT_DEMAND,
+                needDecisionBoundary: false,
+                needNeuronGrids: false,
+                needConfusionMatrix: true,
+            });
+            workerApi.setStreamPort(stream.port);
+
+            stream.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            await advanceOneWorkerTick();
+            stream.dispatch({ type: 'stopTraining' });
+
+            const [snapshot] = capturedSnapshots(stream.messages);
+            expect(snapshot).toBeDefined();
+            expect(isWorkerToMainMessage(snapshot)).toBe(true);
+            expect(snapshot.confusionMatrix).toEqual(expect.objectContaining({
+                tp: expect.any(Number),
+                tn: expect.any(Number),
+                fp: expect.any(Number),
+                fn: expect.any(Number),
+            }));
+            expect(snapshot.multiclassConfusionMatrix).toBeUndefined();
+            expect(snapshot.multiclassConfusionMatrixVersion).toBeUndefined();
+        } finally {
+            stream.dispatch({ type: 'stopTraining' });
+            vi.useRealTimers();
+        }
     });
 
     it('streams bounded multiclass boundary payloads only when decision-boundary demand is enabled and cadence is due', async () => {
