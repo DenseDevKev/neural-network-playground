@@ -68,6 +68,16 @@ describe('lesson registry invariants', () => {
         }
     });
 
+    it('keeps lesson presets on public scalar dataset contracts', () => {
+        for (const lesson of LESSON_DEFINITIONS) {
+            const preset = getLessonPreset(lesson);
+
+            expect(preset.config.network?.outputSize, lesson.id).toBe(1);
+            expect(preset.config.network?.outputActivation, lesson.id).not.toBe('softmax');
+            expect(preset.config.training?.lossType, lesson.id).not.toBe('categoricalCrossEntropy');
+        }
+    });
+
     it('keeps every step text complete and targets valid', () => {
         const validTargets = new Set<string>(VALID_LESSON_TARGETS);
 
