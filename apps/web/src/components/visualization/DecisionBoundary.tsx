@@ -6,6 +6,7 @@ import { useRef, useEffect, useCallback, useState, memo, useId } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { writeGridToImageData, HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
+import type { MulticlassBoundaryLayout } from '@nn-playground/shared';
 import type { DataPoint } from '@nn-playground/engine';
 import { EmptyState } from '../common/EmptyState.tsx';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
@@ -18,6 +19,12 @@ const POINT_STROKE_DARK = 'rgba(0,0,0,0.5)';
 const POINT_STROKE_LIGHT = '#fff';
 const HEATMAP_ALPHA = 255;
 const UNCERTAINTY_THRESHOLD = 0.12;
+const MULTICLASS_LOW_CONFIDENCE_THRESHOLD = 0.6;
+const MULTICLASS_PALETTE = [
+    { label: 'Class 0', color: '#4f8cff', rgb: [79, 140, 255] },
+    { label: 'Class 1', color: '#ff9f43', rgb: [255, 159, 67] },
+    { label: 'Class 2', color: '#52d273', rgb: [82, 210, 115] },
+] as const;
 
 interface Props {
     trainPoints: DataPoint[];
@@ -31,6 +38,20 @@ export type DecisionOverlayMode = 'none' | 'uncertainty' | 'misclassification' |
 
 export interface DecisionOverlayCopy {
     label: string;
+    description: string;
+}
+
+interface MulticlassBoundaryFrame {
+    classGrid: Uint8Array;
+    confidenceGrid: Float32Array;
+    layout: MulticlassBoundaryLayout;
+}
+
+interface MulticlassBoundarySummary {
+    dominantLabel: string;
+    dominantShare: number;
+    averageConfidence: number;
+    lowConfidenceShare: number;
     description: string;
 }
 
@@ -86,6 +107,40 @@ function drawHeatmap(
     writeGridToImageData(grid, imageData, HEATMAP_ALPHA, discretize);
     tempCtx.putImageData(imageData, 0, 0);
 
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(tempCanvas, 0, 0, canvasW, canvasH);
+}
+
+function writeMulticlassBoundaryImageData(
+    classGrid: Uint8Array,
+    confidenceGrid: Float32Array,
+    imageData: ImageData,
+): void {
+    for (let i = 0; i < classGrid.length; i++) {
+        const palette = MULTICLASS_PALETTE[classGrid[i]] ?? MULTICLASS_PALETTE[0];
+        const confidence = Math.max(0, Math.min(1, confidenceGrid[i]));
+        const mix = 0.35 + confidence * 0.65;
+        const idx = i * 4;
+        imageData.data[idx] = Math.round(21 + (palette.rgb[0] - 21) * mix);
+        imageData.data[idx + 1] = Math.round(24 + (palette.rgb[1] - 24) * mix);
+        imageData.data[idx + 2] = Math.round(34 + (palette.rgb[2] - 34) * mix);
+        imageData.data[idx + 3] = HEATMAP_ALPHA;
+    }
+}
+
+function drawMulticlassHeatmap(
+    ctx: CanvasRenderingContext2D,
+    classGrid: Uint8Array,
+    confidenceGrid: Float32Array,
+    canvasW: number,
+    canvasH: number,
+    tempCanvas: HTMLCanvasElement,
+    imageData: ImageData,
+): void {
+    const tempCtx = tempCanvas.getContext('2d')!;
+    writeMulticlassBoundaryImageData(classGrid, confidenceGrid, imageData);
+    tempCtx.putImageData(imageData, 0, 0);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(tempCanvas, 0, 0, canvasW, canvasH);
@@ -172,18 +227,23 @@ function drawPoints(
     canvasW: number,
     canvasH: number,
     isTest: boolean,
+    multiclass: boolean,
 ): void {
     if (points.length === 0) return;
 
     const radius = isTest ? TEST_RADIUS : TRAIN_RADIUS;
-    const orangeBatch: DataPoint[] = [];
-    const blueBatch: DataPoint[] = [];
+    const batches = new Map<string, DataPoint[]>();
 
     for (const p of points) {
-        if (p.label >= 0.5) {
-            orangeBatch.push(p);
+        const classIndex = Number.isInteger(p.label) ? p.label : -1;
+        const color = multiclass && classIndex >= 0 && classIndex < MULTICLASS_PALETTE.length
+            ? MULTICLASS_PALETTE[classIndex].color
+            : p.label >= 0.5 ? HEX_ORANGE : HEX_BLUE;
+        const batch = batches.get(color);
+        if (batch) {
+            batch.push(p);
         } else {
-            blueBatch.push(p);
+            batches.set(color, [p]);
         }
     }
 
@@ -224,12 +284,76 @@ function drawPoints(
         ctx.stroke();
     };
 
-    renderBatch(orangeBatch, HEX_ORANGE);
-    renderBatch(blueBatch, HEX_BLUE);
+    for (const [color, batch] of batches) {
+        renderBatch(batch, color);
+    }
 }
 
 function hasNonBinaryLabels(points: DataPoint[]): boolean {
     return points.some((point) => point.label !== 0 && point.label !== 1);
+}
+
+function getMulticlassBoundaryFrame(): MulticlassBoundaryFrame | null {
+    const frame = getFrameBuffer();
+    if (
+        !frame.multiclassClassGrid ||
+        !frame.multiclassConfidenceGrid ||
+        !frame.multiclassBoundaryLayout
+    ) {
+        return null;
+    }
+    return {
+        classGrid: frame.multiclassClassGrid,
+        confidenceGrid: frame.multiclassConfidenceGrid,
+        layout: frame.multiclassBoundaryLayout,
+    };
+}
+
+function formatPercent(value: number): string {
+    return `${Math.round(value * 100)}%`;
+}
+
+function summarizeMulticlassBoundary(frame: MulticlassBoundaryFrame): MulticlassBoundarySummary | null {
+    const { classGrid, confidenceGrid, layout } = frame;
+    const expectedLength = layout.gridSize * layout.gridSize;
+    if (classGrid.length !== expectedLength || confidenceGrid.length !== expectedLength || expectedLength === 0) {
+        return null;
+    }
+
+    const counts = new Array(layout.classCount).fill(0) as number[];
+    let confidenceTotal = 0;
+    let lowConfidenceCount = 0;
+
+    for (let i = 0; i < expectedLength; i++) {
+        const classIndex = classGrid[i];
+        if (classIndex >= layout.classCount) return null;
+        counts[classIndex]++;
+        confidenceTotal += confidenceGrid[i];
+        if (confidenceGrid[i] < MULTICLASS_LOW_CONFIDENCE_THRESHOLD) {
+            lowConfidenceCount++;
+        }
+    }
+
+    let dominantIndex = 0;
+    for (let i = 1; i < counts.length; i++) {
+        if (counts[i] > counts[dominantIndex]) {
+            dominantIndex = i;
+        }
+    }
+
+    const dominantLabel = `Class ${layout.classLabels[dominantIndex]}`;
+    const dominantShare = counts[dominantIndex] / expectedLength;
+    const averageConfidence = confidenceTotal / expectedLength;
+    const lowConfidenceShare = lowConfidenceCount / expectedLength;
+    const description = `Multiclass decision boundary. ${dominantLabel} covers ${formatPercent(dominantShare)} of sampled cells with ${formatPercent(averageConfidence)} average winning confidence. ${formatPercent(lowConfidenceShare)} of cells are below ${formatPercent(MULTICLASS_LOW_CONFIDENCE_THRESHOLD)} confidence.`;
+
+    return {
+        dominantLabel,
+        dominantShare,
+        averageConfidence,
+        lowConfidenceShare,
+        description,
+    };
 }
 
 // ── Component ──
@@ -254,9 +378,16 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 
     const snapshot = useTrainingStore((s) => s.snapshot);
     const frameVersion = useTrainingStore((s) => s.frameVersion);
+    const multiclassBoundaryVersion = useTrainingStore((s) => s.multiclassBoundaryVersion);
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const outputSize = usePlaygroundStore((s) => s.network.outputSize);
     const outputActivation = usePlaygroundStore((s) => s.network.outputActivation);
+    const supportsMulticlassBoundary =
+        problemType === 'classification' &&
+        outputSize === 3 &&
+        outputActivation === 'softmax';
+    const multiclassBoundary = supportsMulticlassBoundary ? getMulticlassBoundaryFrame() : null;
+    const multiclassSummary = multiclassBoundary ? summarizeMulticlassBoundary(multiclassBoundary) : null;
 
     // Track container size for responsive canvas
     const [canvasSize, setCanvasSize] = useState(320);
@@ -288,6 +419,7 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     // Main paint callback – extracted so useEffect stays clean
     const paint = useCallback(() => {
         void frameVersion;
+        void multiclassBoundaryVersion;
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -315,10 +447,34 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 
         // Draw heatmap when grid data exists
         const frameBuffer = getFrameBuffer();
+        const currentMulticlassBoundary = supportsMulticlassBoundary ? getMulticlassBoundaryFrame() : null;
         const grid = frameBuffer.outputGrid ?? snapshot?.outputGrid;
         const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : snapshot?.gridSize ?? 0;
 
-        if (grid && gridSize > 0) {
+        if (currentMulticlassBoundary) {
+            const { classGrid, confidenceGrid, layout } = currentMulticlassBoundary;
+            if (!tempCanvasRef.current || lastGridSizeRef.current !== layout.gridSize) {
+                const tc = document.createElement('canvas');
+                tc.width = layout.gridSize;
+                tc.height = layout.gridSize;
+                tempCanvasRef.current = tc;
+                imageDataRef.current = tc.getContext('2d')!.createImageData(layout.gridSize, layout.gridSize);
+                overlayImageDataRef.current = tc.getContext('2d')!.createImageData(layout.gridSize, layout.gridSize);
+                lastGridSizeRef.current = layout.gridSize;
+            }
+
+            drawMulticlassHeatmap(
+                ctx,
+                classGrid,
+                confidenceGrid,
+                logicalW,
+                logicalH,
+                tempCanvasRef.current!,
+                imageDataRef.current!,
+            );
+        }
+
+        if (!currentMulticlassBoundary && grid && gridSize > 0) {
             // Allocate / reuse offscreen canvas + ImageData
             if (!tempCanvasRef.current || lastGridSizeRef.current !== gridSize) {
                 const tc = document.createElement('canvas');
@@ -361,12 +517,23 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 
         // Draw data points on top
         if (trainPoints.length > 0) {
-            drawPoints(ctx, trainPoints, logicalW, logicalH, false);
+            drawPoints(ctx, trainPoints, logicalW, logicalH, false, Boolean(currentMulticlassBoundary));
         }
         if ((showTestData || overlayMode === 'split') && testPoints.length > 0) {
-            drawPoints(ctx, testPoints, logicalW, logicalH, true);
+            drawPoints(ctx, testPoints, logicalW, logicalH, true, Boolean(currentMulticlassBoundary));
         }
-    }, [snapshot, frameVersion, trainPoints, testPoints, showTestData, discretize, canvasSize, overlayMode]);
+    }, [
+        snapshot,
+        frameVersion,
+        multiclassBoundaryVersion,
+        trainPoints,
+        testPoints,
+        showTestData,
+        discretize,
+        canvasSize,
+        overlayMode,
+        supportsMulticlassBoundary,
+    ]);
 
     // Paint immediately after React commits the latest frame. Snapshot delivery
     // is already rAF-gated in workerBridge, so an extra rAF here can keep
@@ -395,14 +562,46 @@ export const DecisionBoundary = memo(function DecisionBoundary({
             hasNonBinaryLabels(trainPoints) ||
             hasNonBinaryLabels(testPoints));
 
-    if (isNonBinaryClassification) {
+    if (isNonBinaryClassification && !multiclassSummary) {
         return (
             <div className="decision-boundary" ref={containerRef}>
                 <EmptyState
                     icon="🎯"
                     title="Binary decision boundary unavailable"
-                    description="This visualization supports two-class outputs. Multiclass snapshots stay hidden until a multiclass boundary renderer is approved."
+                    description="This visualization supports two-class outputs unless bounded multiclass boundary data is available from the worker."
                 />
+            </div>
+        );
+    }
+
+    if (multiclassSummary && multiclassBoundary) {
+        return (
+            <div className="decision-boundary" ref={containerRef}>
+                <canvas
+                    ref={canvasRef}
+                    style={{ width: '100%', height: '100%' }}
+                    role="img"
+                    aria-label="Multiclass decision boundary visualization showing predicted class regions and confidence"
+                    aria-describedby={descriptionId}
+                />
+                <p id={descriptionId} className="sr-only">
+                    {multiclassSummary.description}
+                </p>
+                <div className="decision-boundary__overlay-badge" data-overlay-mode="multiclass">
+                    3 classes
+                </div>
+                <div className="decision-boundary__summary" aria-hidden="true">
+                    <span>Dominant class: {multiclassSummary.dominantLabel}</span>
+                    <span>Average confidence: {formatPercent(multiclassSummary.averageConfidence)}</span>
+                </div>
+                <div className="decision-boundary__legend">
+                    {MULTICLASS_PALETTE.map((entry, index) => (
+                        <div className="decision-boundary__legend-item" key={entry.label}>
+                            <div className="decision-boundary__swatch" style={{ background: entry.color }} />
+                            <span>Class {multiclassBoundary.layout.classLabels[index]}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
         );
     }
