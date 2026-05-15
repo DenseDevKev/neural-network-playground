@@ -982,3 +982,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4488 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. One intermediate perf run before the final verification was noisy (`predictGridWithNeurons` 1048.0556 ms and `predictGridWithNeuronsInto` 717.0967 ms), but the repeat final run returned to the recent range. The runtime slice only changes cache invalidation for omitted binary confusion data and should not affect engine training throughput.
+
+## Wave 7 Run-History Persistence Guard
+
+Date: 2026-05-15
+
+Scope: test-stability cleanup plus a capture-time persistence guard for future Multiclass Classification Mode. The test-stability slice narrows the legacy `MainArea` Code Export assertion to panel placement while `CodeExportPanel.test.tsx` continues to cover detailed export tabs and generated code. The persistence guard prevents hidden unsupported multiclass configs from producing run-history records that the existing strict persistence validator would reject later. It does not change URL/config serialization, persistence/run-history schema, public config shape, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, or visible UI.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `ec2ba94` and `4035f9d`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-KaN8hkYP.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-B-yDKSL1.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-DXKu_yh-.js`: 16.71 kB, gzip 5.15 kB
+- `dist/assets/index-wHcTtHlA.js`: 367.43 kB, gzip 111.20 kB
+
+Compared with the stale-confusion guard build, the worker, lazy Code Export, engine, CSS, inspection, and main app chunk sizes remain effectively unchanged. The lazy Run History chunk changed from 16.70 kB to 16.71 kB, about 0.06%, below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1069.2586 ms total for 100 iterations
+- `predictGridInto`: 1058.1727 ms total for 100 iterations
+- `predictGridWithNeurons`: 672.0584 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 575.4159 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.8577 ms
+- Average `applyGradients` time (SGD): 1.5844 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice does not touch engine training throughput, worker cadence, visualization payloads, or browser-visible rendering.
