@@ -72,6 +72,27 @@ describe('experiment run capture', () => {
         expect(captureExperimentRun({ config, snapshot: null, history: [] })).toBeNull();
     });
 
+    it('does not capture runs whose config is not persistence-compatible', () => {
+        const multiclassConfig = {
+            ...config,
+            network: {
+                ...config.network,
+                outputSize: 3,
+                outputActivation: 'softmax' as const,
+            },
+            training: {
+                ...config.training,
+                lossType: 'categoricalCrossEntropy' as const,
+            },
+        };
+
+        expect(captureExperimentRun({
+            config: multiclassConfig,
+            snapshot,
+            history: [],
+        })).toBeNull();
+    });
+
     it('uses current frame-buffer parameters when creating a serialized network', () => {
         resetFrameBuffer();
         updateFrameBuffer({

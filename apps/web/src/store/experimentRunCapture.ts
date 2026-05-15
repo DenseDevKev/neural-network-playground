@@ -10,7 +10,7 @@ import type {
     PauseReason,
     TrainingStatus,
 } from '@nn-playground/shared';
-import { sanitizeExperimentHistory } from '@nn-playground/shared';
+import { sanitizeExperimentHistory, validateImportedConfig } from '@nn-playground/shared';
 import type { HistoryArrays } from './historyBuffer.ts';
 import { getFrameBuffer } from '../worker/frameBuffer.ts';
 import {
@@ -100,6 +100,7 @@ export function captureExperimentRun({
     id = defaultId,
 }: CaptureArgs): ExperimentRunRecordV1 | null {
     if (!snapshot) return null;
+    if (!validateImportedConfig(config).config) return null;
     const timestamp = now().toISOString();
     const stepLabel = snapshot.step.toLocaleString();
     return {

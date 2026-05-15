@@ -73,6 +73,26 @@ describe('experiment memory schema', () => {
         expect(nonFinite.record).toBeNull();
     });
 
+    it('rejects multiclass records until persistence migration is approved', () => {
+        const result = validateExperimentRunRecord(makeRecord({
+            config: {
+                ...config,
+                network: {
+                    ...config.network,
+                    outputSize: 3,
+                    outputActivation: 'softmax',
+                },
+                training: {
+                    ...config.training,
+                    lossType: 'categoricalCrossEntropy',
+                },
+            },
+        }));
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/not runtime-enabled/i);
+    });
+
     it('bounds history and removes invalid history points', () => {
         const history = Array.from({ length: EXPERIMENT_MEMORY_MAX_HISTORY + 20 }, (_, idx) => ({
             step: idx,
