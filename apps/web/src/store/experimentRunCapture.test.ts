@@ -32,6 +32,32 @@ const config = {
     ui: { showTestData: false, discretizeOutput: false },
 };
 
+const approvedMulticlassConfig = {
+    ...config,
+    data: {
+        ...config.data,
+        dataset: 'three-class-clusters' as const,
+        problemType: 'classification' as const,
+    },
+    network: {
+        ...config.network,
+        outputSize: 3,
+        outputActivation: 'softmax' as const,
+    },
+    training: {
+        ...config.training,
+        lossType: 'categoricalCrossEntropy' as const,
+    },
+};
+
+const multiclassSnapshot: NetworkSnapshot = {
+    ...snapshot,
+    weights: [[[0.5, -0.25], [0.1, 0.2], [-0.3, 0.4]]],
+    biases: [[0.1, 0.2, 0.3]],
+    trainMetrics: { loss: 0.2, accuracy: 0.82 },
+    testMetrics: { loss: 0.3, accuracy: 0.78 },
+};
+
 describe('experiment run capture', () => {
     it('converts history typed arrays to serializable history points', () => {
         const points = historyArraysToPoints({
@@ -72,23 +98,56 @@ describe('experiment run capture', () => {
         expect(captureExperimentRun({ config, snapshot: null, history: [] })).toBeNull();
     });
 
-    it('does not capture runs whose config is not persistence-compatible', () => {
-        const multiclassConfig = {
-            ...config,
-            network: {
-                ...config.network,
-                outputSize: 3,
-                outputActivation: 'softmax' as const,
-            },
-            training: {
-                ...config.training,
-                lossType: 'categoricalCrossEntropy' as const,
-            },
-        };
+    it('captures the approved multiclass tuple with matching 3-output parameters', () => {
+        const record = captureExperimentRun({
+            config: approvedMulticlassConfig,
+            snapshot: multiclassSnapshot,
+            history: [{ step: 4, trainLoss: 0.2, testLoss: 0.3, trainAccuracy: 0.82, testAccuracy: 0.78 }],
+            now: () => new Date('2026-04-26T00:00:00.000Z'),
+            id: () => 'run-multiclass',
+        });
 
+        expect(record?.id).toBe('run-multiclass');
+        expect(record?.config.data.dataset).toBe('three-class-clusters');
+        expect(record?.config.network.outputSize).toBe(3);
+        expect(record?.config.network.outputActivation).toBe('softmax');
+        expect(record?.config.training.lossType).toBe('categoricalCrossEntropy');
+        expect(record?.network?.weights[0]).toHaveLength(3);
+    });
+
+    it.each([
+        [
+            'wrong dataset',
+            {
+                ...approvedMulticlassConfig,
+                data: { ...approvedMulticlassConfig.data, dataset: 'circle' as const },
+            },
+        ],
+        [
+            'unsupported output size',
+            {
+                ...approvedMulticlassConfig,
+                network: { ...approvedMulticlassConfig.network, outputSize: 4 },
+            },
+        ],
+        [
+            'softmax without categorical loss',
+            {
+                ...approvedMulticlassConfig,
+                training: { ...approvedMulticlassConfig.training, lossType: 'crossEntropy' as const },
+            },
+        ],
+        [
+            'categorical loss without softmax',
+            {
+                ...approvedMulticlassConfig,
+                network: { ...approvedMulticlassConfig.network, outputActivation: 'sigmoid' as const },
+            },
+        ],
+    ])('does not capture partial multiclass configs with %s', (_label, multiclassConfig) => {
         expect(captureExperimentRun({
             config: multiclassConfig,
-            snapshot,
+            snapshot: multiclassSnapshot,
             history: [],
         })).toBeNull();
     });

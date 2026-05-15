@@ -44,6 +44,40 @@ function makeRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentR
     };
 }
 
+function makeApprovedMulticlassConfig() {
+    return {
+        data: {
+            ...DEFAULT_DATA,
+            dataset: 'three-class-clusters' as const,
+            problemType: 'classification' as const,
+        },
+        network: {
+            ...DEFAULT_NETWORK,
+            inputSize: 2,
+            hiddenLayers: [],
+            outputSize: 3,
+            outputActivation: 'softmax' as const,
+            seed: DEFAULT_DATA.seed,
+        },
+        training: {
+            ...DEFAULT_TRAINING,
+            lossType: 'categoricalCrossEntropy' as const,
+        },
+        features: { ...DEFAULT_FEATURES },
+        ui: { showTestData: true, discretizeOutput: false },
+    };
+}
+
+function makeApprovedMulticlassRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentRunRecordV1 {
+    return makeRecord({
+        id: 'multiclass',
+        title: 'Three class clusters',
+        config: makeApprovedMulticlassConfig(),
+        network: null,
+        ...overrides,
+    });
+}
+
 function makeArenaSummaries(): ArenaModelSummary[] {
     return [
         {
@@ -122,6 +156,33 @@ describe('RunHistoryPanel', () => {
 
         expect(screen.getByText(/circle at step 5/i)).toBeInTheDocument();
         expect(useExperimentMemoryStore.getState().records).toHaveLength(1);
+    });
+
+    it('saves an approved multiclass current run without silently dropping it', async () => {
+        const multiclassConfig = makeApprovedMulticlassConfig();
+        usePlaygroundStore.setState(multiclassConfig);
+        useTrainingStore.setState({
+            snapshot: {
+                step: 7,
+                epoch: 1,
+                trainLoss: 0.36,
+                testLoss: 0.44,
+                trainMetrics: { loss: 0.36, accuracy: 0.76 },
+                testMetrics: { loss: 0.44, accuracy: 0.7 },
+                weights: [[[0.1, 0.2], [0.3, -0.2], [-0.1, 0.4]]],
+                biases: [[0.01, -0.02, 0.03]],
+                outputGrid: [],
+                gridSize: 50,
+                historyPoint: { step: 7, trainLoss: 0.36, testLoss: 0.44 },
+            } as any,
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+
+        expect(screen.getByText(/three-class-clusters at step 7/i)).toBeInTheDocument();
+        expect(useExperimentMemoryStore.getState().records[0].config.network.outputSize).toBe(3);
+        expect(useExperimentMemoryStore.getState().records[0].config.training.lossType).toBe('categoricalCrossEntropy');
     });
 
     it('restores a saved run config and calls reset', async () => {
@@ -290,6 +351,34 @@ describe('RunHistoryPanel', () => {
         await user.click(screen.getByRole('button', { name: 'Step live arena once' }));
 
         expect(onStepArena).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the live arena scalar-only when saved multiclass records are visible', async () => {
+        const user = userEvent.setup();
+        const onInitializeArena = vi.fn();
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'scalar',
+                title: 'Scalar baseline',
+                updatedAt: '2026-04-26T00:00:00.000Z',
+            }));
+            useExperimentMemoryStore.getState().saveRecord(makeApprovedMulticlassRecord({
+                id: 'multiclass',
+                title: 'Three class clusters',
+                updatedAt: '2026-04-26T00:01:00.000Z',
+            }));
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} onInitializeArena={onInitializeArena} />);
+
+        const startButton = screen.getByRole('button', { name: 'Start live arena with selected saved runs' });
+        expect(screen.getByRole('region', { name: 'Model A: Three class clusters' })).toBeInTheDocument();
+        expect(startButton).toBeDisabled();
+        expect(screen.getByText(/live arena supports saved scalar runs/i)).toBeInTheDocument();
+
+        await user.click(startButton);
+
+        expect(onInitializeArena).not.toHaveBeenCalled();
     });
 
     it('renders accessible loss-history thumbnails from saved history points', () => {

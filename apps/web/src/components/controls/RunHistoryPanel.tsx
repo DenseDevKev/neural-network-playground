@@ -41,6 +41,15 @@ function getRecordLabel(record: ExperimentRunRecordV1): string {
     return record.title ?? record.id;
 }
 
+function isScalarLiveArenaRecord(record: ExperimentRunRecordV1): boolean {
+    return (
+        record.config.network.outputSize === 1 &&
+        record.config.network.outputActivation !== 'softmax' &&
+        record.config.training.lossType !== 'categoricalCrossEntropy' &&
+        record.config.data.dataset !== 'three-class-clusters'
+    );
+}
+
 function generalizationGap(record: ExperimentRunRecordV1): number {
     return record.summary.testLoss - record.summary.trainLoss;
 }
@@ -204,6 +213,9 @@ function SideBySideModelArena({
 
     const modelA = records.find((record) => record.id === modelAId) ?? records[0];
     const modelB = records.find((record) => record.id === modelBId) ?? records[1] ?? records[0];
+    const selectedRecordsAreScalar = isScalarLiveArenaRecord(modelA) && isScalarLiveArenaRecord(modelB);
+    const canStartLiveArena = Boolean(onInitializeArena && selectedRecordsAreScalar);
+    const liveArenaNoteId = 'run-arena-live-scalar-note';
 
     return (
         <section className="run-arena" aria-label="Side-by-side model arena">
@@ -237,9 +249,12 @@ function SideBySideModelArena({
                 <button
                     type="button"
                     className="btn btn--ghost btn--sm"
-                    onClick={() => void onInitializeArena?.(modelA, modelB)}
-                    disabled={!onInitializeArena}
+                    onClick={() => {
+                        if (canStartLiveArena) void onInitializeArena?.(modelA, modelB);
+                    }}
+                    disabled={!canStartLiveArena}
                     aria-label="Start live arena with selected saved runs"
+                    aria-describedby={selectedRecordsAreScalar ? undefined : liveArenaNoteId}
                 >
                     Start live arena
                 </button>
@@ -253,6 +268,11 @@ function SideBySideModelArena({
                     Step live arena
                 </button>
             </div>
+            {!selectedRecordsAreScalar && (
+                <div id={liveArenaNoteId} className="inspection__empty" role="status" style={{ marginTop: 8 }}>
+                    Live arena supports saved scalar runs only; restore this multiclass run to train it.
+                </div>
+            )}
             {arenaSummaries && (
                 <div className="run-arena__models" role="group" aria-label="Live arena scalar summaries">
                     {arenaSummaries.map((summary) => (

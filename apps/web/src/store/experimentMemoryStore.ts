@@ -7,6 +7,7 @@ import {
 } from '@nn-playground/shared';
 
 export const EXPERIMENT_MEMORY_STORAGE_KEY = 'nn-playground-experiment-memory';
+const EXPERIMENT_MEMORY_OPTIONS = { allowMulticlass: true } as const;
 
 interface ExperimentMemoryStore {
     records: ExperimentRunRecordV1[];
@@ -19,7 +20,7 @@ function loadRecords(): ExperimentRunRecordV1[] {
     try {
         const raw = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
         if (!raw) return [];
-        return normalizeExperimentMemoryEnvelope(JSON.parse(raw)).records;
+        return normalizeExperimentMemoryEnvelope(JSON.parse(raw), EXPERIMENT_MEMORY_OPTIONS).records;
     } catch {
         return [];
     }
@@ -29,7 +30,7 @@ function persistRecords(
     records: ExperimentRunRecordV1[],
     fallback: ExperimentRunRecordV1[],
 ): ExperimentRunRecordV1[] {
-    const envelope = createExperimentMemoryEnvelope(records);
+    const envelope = createExperimentMemoryEnvelope(records, EXPERIMENT_MEMORY_OPTIONS);
     try {
         window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify(envelope));
         return envelope.records;

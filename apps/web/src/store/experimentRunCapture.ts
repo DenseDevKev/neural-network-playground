@@ -10,7 +10,7 @@ import type {
     PauseReason,
     TrainingStatus,
 } from '@nn-playground/shared';
-import { sanitizeExperimentHistory, validateImportedConfig } from '@nn-playground/shared';
+import { sanitizeExperimentHistory, validateExperimentRunRecord } from '@nn-playground/shared';
 import type { HistoryArrays } from './historyBuffer.ts';
 import { getFrameBuffer } from '../worker/frameBuffer.ts';
 import {
@@ -100,10 +100,9 @@ export function captureExperimentRun({
     id = defaultId,
 }: CaptureArgs): ExperimentRunRecordV1 | null {
     if (!snapshot) return null;
-    if (!validateImportedConfig(config).config) return null;
     const timestamp = now().toISOString();
     const stepLabel = snapshot.step.toLocaleString();
-    return {
+    const record: ExperimentRunRecordV1 = {
         schemaVersion: 1,
         id: id(),
         createdAt: timestamp,
@@ -123,4 +122,5 @@ export function captureExperimentRun({
         network: network === undefined ? networkFromSnapshot(config.network, snapshot) : network,
         history: sanitizeExperimentHistory(history),
     };
+    return validateExperimentRunRecord(record, { allowMulticlass: true }).record;
 }

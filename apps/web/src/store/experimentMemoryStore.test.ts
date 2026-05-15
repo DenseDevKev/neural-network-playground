@@ -33,20 +33,44 @@ function makeRecord(id: string, updatedAt = `2026-04-26T00:00:0${id}.000Z`): Exp
     };
 }
 
-function makeHiddenMulticlassRecord(id: string): ExperimentRunRecordV1 {
-    const record = makeRecord(id);
+function makeApprovedMulticlassRecord(
+    id: string,
+    updatedAt = `2026-04-26T00:00:0${id}.000Z`,
+): ExperimentRunRecordV1 {
+    const record = makeRecord(id, updatedAt);
     return {
         ...record,
         config: {
             ...record.config,
+            data: {
+                ...record.config.data,
+                dataset: 'three-class-clusters',
+                problemType: 'classification',
+            },
             network: {
                 ...record.config.network,
+                hiddenLayers: [],
                 outputSize: 3,
                 outputActivation: 'softmax',
             },
             training: {
                 ...record.config.training,
                 lossType: 'categoricalCrossEntropy',
+            },
+        },
+        network: null,
+    };
+}
+
+function makePartialMulticlassRecord(id: string): ExperimentRunRecordV1 {
+    const record = makeApprovedMulticlassRecord(id, '2026-04-26T00:00:05.000Z');
+    return {
+        ...record,
+        config: {
+            ...record.config,
+            data: {
+                ...record.config.data,
+                dataset: 'circle',
             },
         },
     };
@@ -85,19 +109,30 @@ describe('experimentMemoryStore', () => {
         expect(store.getState().records).toEqual([]);
     });
 
-    it('keeps public localStorage paths scalar-only by default', () => {
-        const scalar = makeRecord('1');
-        const hiddenMulticlass = makeHiddenMulticlassRecord('2');
+    it('loads approved multiclass records from localStorage without changing schema version', () => {
+        const scalar = makeRecord('1', '2026-04-26T00:00:01.000Z');
+        const approvedMulticlass = makeApprovedMulticlassRecord('2', '2026-04-26T00:00:02.000Z');
         window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify({
             schemaVersion: 1,
-            records: [hiddenMulticlass, scalar],
+            records: [approvedMulticlass, scalar],
         }));
 
         const store = createExperimentMemoryStore();
-        store.getState().saveRecord(hiddenMulticlass);
 
-        expect(store.getState().records.map((record) => record.id)).toEqual(['1']);
-        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('categoricalCrossEntropy');
+        expect(store.getState().records.map((record) => record.id)).toEqual(['2', '1']);
+        expect(store.getState().records[0].config.training.lossType).toBe('categoricalCrossEntropy');
+        expect(JSON.parse(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '{}').schemaVersion).toBe(1);
+    });
+
+    it('persists approved multiclass records and drops malformed partial multiclass records', () => {
+        const store = createExperimentMemoryStore();
+
+        store.getState().saveRecord(makeApprovedMulticlassRecord('2', '2026-04-26T00:00:02.000Z'));
+        store.getState().saveRecord(makePartialMulticlassRecord('3'));
+
+        expect(store.getState().records.map((record) => record.id)).toEqual(['2']);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toContain('categoricalCrossEntropy');
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('"id":"3"');
     });
 
     it('keeps the previous state when localStorage writes fail', () => {
