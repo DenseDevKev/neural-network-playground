@@ -1684,3 +1684,54 @@ These values remain within the established noisy local benchmark range and
 below roadmap warning thresholds. The slice only adds a deterministic dataset
 route and shared validation guards; it does not add new hot-path training work,
 worker cadence changes, or heavy visualization payloads.
+
+## Wave 7 Public Multiclass Store URL Transition
+
+Date: 2026-05-15
+
+Scope: web store transition slice for the approved multiclass tuple. The store
+can now preserve `three-class-clusters`, `classification`, `outputSize: 3`,
+`softmax`, and `categoricalCrossEntropy` together through dataset selection,
+synthetic approved preset application, URL sync, and URL load. This slice does
+not add visible Data Panel or Preset Panel controls, public built-in presets,
+worker protocol fields, frame-buffer fields, persistence schema changes,
+dependencies, deployment changes, official 3x3 worker metrics, or new training
+behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DjoNRhXG.js`: 94.62 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-DXv-JB0n.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-C2sFMeY3.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-mFOc1p8b.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-D78bAaVM.js`: 383.78 kB, gzip 115.41 kB
+
+Compared with the public multiclass dataset contract build, the worker and
+engine chunks stayed the same size, while the main app chunk changed from
+383.56 kB to 383.78 kB, about 0.06%. These changes remain below the 10%
+roadmap build-size warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1063.7482 ms total for 100 iterations
+- `predictGridInto`: 1063.5782 ms total for 100 iterations
+- `predictGridWithNeurons`: 671.3207 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 574.3940 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9252 ms
+- Average `applyGradients` time (SGD): 1.4245 ms
+
+These values remain within the established noisy local benchmark range and
+below roadmap warning thresholds. The slice only changes web store normalization
+and URL opt-in calls; it does not add runtime hot-path work, worker cadence
+changes, or heavy visualization payloads.
