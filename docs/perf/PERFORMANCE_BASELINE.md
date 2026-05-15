@@ -1522,3 +1522,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.3872 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is test-only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
+## Wave 7 Multiclass Boundary Transport
+
+Date: 2026-05-15
+
+Scope: bounded worker/protocol/frame-buffer transport for future Multiclass Classification Mode. The worker now computes demand-gated class-index and winning-confidence grids for the approved hidden 3-class softmax runtime, validates all-or-nothing snapshot payloads, stores arrays in the frame buffer behind a dedicated version counter, and keeps large arrays out of React state. This slice does not change public controls, default URL/config serialization, public config shape, persistence/run-history schema, dependencies, deployment, SAB/WebGPU transport, visible UI, or public dataset/preset exposure.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `2088bd3`. Relevant production output:
+
+- `dist/assets/training.worker-CFzxpQkv.js`: 93.78 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-Cd0KZ6ln.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-g6UxHFZZ.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-8Rht9xaF.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-WI4i1D_P.js`: 373.29 kB, gzip 112.50 kB
+
+Compared with the hidden dataset contract build, the worker bundle increased from 91.69 kB to 93.78 kB, about 2.3%, and the main app bundle increased from 370.76 kB to 373.29 kB, about 0.7%. Both remain below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1110.8832 ms total for 100 iterations
+- `predictGridInto`: 1097.1431 ms total for 100 iterations
+- `predictGridWithNeurons`: 684.6906 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 574.9719 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0609 ms
+- Average `applyGradients` time (SGD): 1.5421 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The existing perf suite does not directly time `predictMulticlassBoundaryInto`; runtime protection for this slice is covered by demand/cadence worker tests, protocol guards, frame-buffer version tests, and bounded inline transfer of class/confidence grids only when requested.
