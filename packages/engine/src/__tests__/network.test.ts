@@ -247,6 +247,7 @@ describe('Network evaluate', () => {
         const metrics = net.evaluate(inputs, targets, 'crossEntropy', 'classification');
 
         expect(metrics.confusionMatrix).toEqual({ tp: 1, fn: 1, fp: 1, tn: 1 });
+        expect((metrics as any).multiclassConfusionMatrix).toBeUndefined();
         expect(metrics.accuracy).toBe(0.5); // 2 correct out of 4
     });
 
@@ -291,6 +292,8 @@ describe('Network evaluate', () => {
         );
         expect(typeof metrics.loss).toBe('number');
         expect(metrics.accuracy).toBeUndefined();
+        expect(metrics.confusionMatrix).toBeUndefined();
+        expect((metrics as any).multiclassConfusionMatrix).toBeUndefined();
     });
 });
 
@@ -434,6 +437,74 @@ describe('Network private multiclass softmax foundation', () => {
 
         expect(metrics.loss).toBeCloseTo(expectedLoss, 12);
         expect(metrics.accuracy).toBe(0.5);
+        expect(metrics.confusionMatrix).toBeUndefined();
+    });
+
+    it('returns a bounded 3x3 multiclass confusion matrix distinct from the binary field', () => {
+        const net = new Network(makeSoftmaxConfig({ inputSize: 1 }));
+        vi.spyOn(net, 'forward').mockImplementation((input: number[]) => {
+            switch (input[0]) {
+                case 0:
+                    return [0.8, 0.1, 0.1];
+                case 1:
+                    return [0.1, 0.2, 0.7];
+                case 2:
+                    return [0.1, 0.1, 0.8];
+                case 3:
+                    return [0.1, 0.6, 0.3];
+                default:
+                    return [0.2, 0.7, 0.1];
+            }
+        });
+
+        const metrics = net.evaluate(
+            [[0], [1], [2], [3], [4]],
+            [
+                [1, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+                [0, 0, 1],
+                [0, 1, 0],
+            ],
+            'categoricalCrossEntropy' as unknown as TrainingConfig['lossType'],
+            'classification',
+        );
+
+        expect(metrics.confusionMatrix).toBeUndefined();
+        expect((metrics as any).multiclassConfusionMatrix).toEqual({
+            classCount: 3,
+            classLabels: [0, 1, 2],
+            counts: [
+                1, 0, 0,
+                0, 1, 1,
+                0, 1, 1,
+            ],
+        });
+        expect((metrics as any).multiclassConfusionMatrix.counts.reduce(
+            (sum: number, value: number) => sum + value,
+            0,
+        )).toBe(5);
+        expect(metrics.accuracy).toBe(0.6);
+    });
+
+    it('does not attach a 3x3 metric for multiclass-like non-softmax evaluation', () => {
+        const net = new Network(makeConfig({
+            inputSize: 1,
+            hiddenLayers: [],
+            outputSize: 3,
+            outputActivation: 'sigmoid',
+        }));
+        vi.spyOn(net, 'forward').mockReturnValue([0.8, 0.1, 0.1]);
+
+        const metrics = net.evaluate(
+            [[0]],
+            [[1, 0, 0]],
+            'crossEntropy',
+            'classification',
+        );
+
+        expect(metrics.confusionMatrix).toBeUndefined();
+        expect((metrics as any).multiclassConfusionMatrix).toBeUndefined();
     });
 
     it('rejects categorical cross-entropy without softmax output', () => {

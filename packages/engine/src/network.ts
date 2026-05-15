@@ -29,6 +29,7 @@ import type {
     LossLandscapeProbe,
     LossLandscapeProbeOptions,
     LossLandscapeParameter,
+    MulticlassConfusionMatrixCounts,
 } from './types.js';
 import { categoricalCrossEntropy, categoricalCrossEntropyLogitGradient, getLoss } from './losses.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
@@ -1674,6 +1675,13 @@ export class Network {
 
         if (problemType === 'classification') {
             let correct = 0;
+            const shouldBuildMulticlassMatrix =
+                this.config.outputSize === 3 &&
+                this.config.outputActivation === 'softmax' &&
+                effectiveLossType === 'categoricalCrossEntropy';
+            const multiclassCounts = shouldBuildMulticlassMatrix
+                ? new Array<number>(9).fill(0)
+                : null;
             for (let i = 0; i < N; i++) {
                 const pred = usePublicForward ? this.forward(inputs[i]) : this.forwardInto(inputs[i]);
                 const tgt = targets[i];
@@ -1695,10 +1703,22 @@ export class Network {
                     if (tgt[o] > tgt[tgtIdx]) tgtIdx = o;
                 }
                 if (maxIdx === tgtIdx) correct++;
+                if (multiclassCounts) {
+                    multiclassCounts[tgtIdx * 3 + maxIdx]++;
+                }
             }
             return {
                 loss: lossCount > 0 ? lossSum / lossCount : 0,
                 accuracy: N > 0 ? correct / N : 0,
+                ...(multiclassCounts
+                    ? {
+                        multiclassConfusionMatrix: {
+                            classCount: 3,
+                            classLabels: [0, 1, 2] as const,
+                            counts: multiclassCounts as unknown as MulticlassConfusionMatrixCounts,
+                        },
+                    }
+                    : {}),
             };
         }
 

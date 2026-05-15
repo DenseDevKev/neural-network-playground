@@ -117,11 +117,26 @@ export interface ConfusionMatrixData {
     fn: number;
 }
 
+/** Row-major actual-class by predicted-class counts for the bounded 3-class path. */
+export type MulticlassConfusionMatrixCounts = readonly [
+    number, number, number,
+    number, number, number,
+    number, number, number,
+];
+
+/** Bounded 3x3 confusion matrix for the approved multiclass foundation. */
+export interface MulticlassConfusionMatrixData {
+    classCount: 3;
+    classLabels: readonly [0, 1, 2];
+    counts: MulticlassConfusionMatrixCounts;
+}
+
 /** Metrics for a single evaluation pass. */
 export interface Metrics {
     loss: number;
     accuracy?: number;
     confusionMatrix?: ConfusionMatrixData;
+    multiclassConfusionMatrix?: MulticlassConfusionMatrixData;
 }
 
 /** Per-layer statistics for inspection. */
