@@ -2208,3 +2208,53 @@ The timing values remain within the established local baseline range. The
 slice reserves and validates small protocol metadata only; it does not alter
 worker demand cadence, training updates, frame-buffer transport, or rendered
 visualization payloads.
+
+## Wave 7 Worker Multiclass Confusion Snapshot Packing
+
+Date: 2026-05-15
+
+Scope: worker-only streamed snapshot packing for bounded worker-authored
+`multiclassConfusionMatrix` payloads. The slice emits 9 integer counts plus a
+worker-local version only when the approved three-class tuple has fresh test
+metrics and `VisualizationDemand.needConfusionMatrix` is true. It does not
+change frame-buffer semantics, bridge/store plumbing, UI, URL/config
+serialization, persistence/run-history schema, public config shape,
+dependencies, deployment, arbitrary class counts, raw probability-grid
+transport, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DpiAN4PK.js`: 95.23 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-C3KvICff.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-BV8Sd-_v.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-Bf-L1dDY.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-DL15_sZL.js`: 386.87 kB, gzip 116.24 kB
+
+Compared with the shared protocol reservation build, the CSS, engine, Code
+Export, React, Inspection, Run History, and main app chunks stayed effectively
+unchanged. The worker chunk changed from 94.82 kB to 95.23 kB, about 0.43%,
+below the 10% roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1125.1662 ms total for 100 iterations
+- `predictGridInto`: 1103.8238 ms total for 100 iterations
+- `predictGridWithNeurons`: 708.4860 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 596.7778 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.1818 ms
+- Average `applyGradients` time (SGD): 1.3967 ms
+
+The timing values remain within the established local baseline range. The
+slice adds a bounded payload to fresh demanded streamed test metrics only; it
+does not alter worker training updates, decision-boundary prediction helpers,
+frame-buffer transport, bridge/store plumbing, or rendered visualization
+payloads.
