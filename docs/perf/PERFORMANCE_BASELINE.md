@@ -1054,3 +1054,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4554 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is UI/fallback-copy only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
+## Wave 7 Public Scalar-Control Guard
+
+Date: 2026-05-15
+
+Scope: public-control guard for future Multiclass Classification Mode. `setDataset` now resets `network.outputSize` to `1` when public dataset/problem controls select the existing scalar classification/regression paths, and component/store tests assert that Network, Hyperparams, Data, and built-in preset flows do not expose or retain `softmax`, `categoricalCrossEntropy`, or multi-output runtime config. This slice does not change URL/config serialization, persistence/run-history schema, public config shape, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, or training behavior beyond scalar public dataset normalization.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `4099c24`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-C1Cmj0f9.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-BqR7RALx.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-Djg__emT.js`: 16.71 kB, gzip 5.15 kB
+- `dist/assets/index-B0NOmPKH.js`: 368.31 kB, gzip 111.38 kB
+
+Compared with the visualization non-exposure guard build, the worker, lazy Code Export, engine, CSS, inspection, and run-history chunks remain effectively unchanged. The main app chunk changed from 368.30 kB to 368.31 kB, about 0.003%, below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1073.4571 ms total for 100 iterations
+- `predictGridInto`: 1064.9546 ms total for 100 iterations
+- `predictGridWithNeurons`: 678.7174 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 576.5990 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9368 ms
+- Average `applyGradients` time (SGD): 1.4758 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects store normalization and tests only, and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
