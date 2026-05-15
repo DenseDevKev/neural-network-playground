@@ -16,6 +16,7 @@ const CLASSIFICATION_DATASETS: { id: DatasetType; label: string }[] = [
     { id: 'checkerboard', label: 'Checker' },
     { id: 'rings', label: 'Rings' },
     { id: 'heart', label: 'Heart' },
+    { id: 'three-class-clusters', label: 'Three-Class' },
 ];
 
 const REGRESSION_DATASETS: { id: DatasetType; label: string }[] = [

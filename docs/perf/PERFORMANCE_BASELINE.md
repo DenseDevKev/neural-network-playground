@@ -2016,3 +2016,53 @@ or visualization transport. The build-size comparison stayed below thresholds,
 and the earlier same-slice perf run stayed in the established local benchmark
 range. Treat the final repeated timings as local-machine benchmark noise and
 watch the next perf baseline before making a performance claim.
+
+## Wave 7 Public Multiclass Data Chip
+
+Date: 2026-05-15
+
+Scope: direct Data-panel access to the approved `three-class-clusters`
+multiclass tuple. The chip calls the existing `setDataset` path and applies
+only `three-class-clusters`, `classification`, `outputSize: 3`, `softmax`, and
+`categoricalCrossEntropy`. This slice does not change worker protocol,
+frame-buffer semantics, persistence/run-history schema, URL/config format,
+dependencies, deployment, official worker-authored 3x3 confusion metrics,
+arbitrary class counts, or raw probability-grid transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-rMnDb0A3.js`: 94.59 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-DtboyyfY.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-vUf01Mpo.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-C_W2i5th.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-DNQcd5S4.js`: 385.11 kB, gzip 115.74 kB
+
+Compared with the public preset build, the worker, CSS, engine, Code Export,
+React, Inspection, and Run History chunks stayed effectively unchanged. The
+main app chunk changed from 385.06 kB to 385.11 kB, about 0.01%, below the 10%
+roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests. The
+local machine remained noisy:
+
+- `predictGrid`: 3660.8847 ms total for 100 iterations
+- `predictGridInto`: 4080.3370 ms total for 100 iterations
+- `predictGridWithNeurons`: 2610.7411 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 2807.7720 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 14.5759 ms
+- Average `applyGradients` time (SGD): 4.8969 ms
+
+These values exceed the roadmap timing warning threshold, but the slice changes
+only a Data-panel chip and component tests. It does not touch engine prediction,
+training hot paths, worker execution, or visualization transport. Treat this as
+continuing local benchmark noise from the public preset verification period and
+watch a fresh baseline before making a performance claim.

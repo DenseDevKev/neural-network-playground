@@ -111,6 +111,39 @@ describe('DataPanel loading feedback', () => {
         expect(screen.getByRole('button', { name: '600 samples' })).toHaveAttribute('aria-pressed', 'true');
     });
 
+    it('exposes the approved three-class dataset as a complete multiclass tuple', async () => {
+        const user = userEvent.setup();
+
+        render(<DataPanel onReset={vi.fn()} />);
+
+        const button = screen.getByRole('button', { name: 'Three-Class' });
+        await user.click(button);
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
+        expect(usePlaygroundStore.getState().data.dataset).toBe('three-class-clusters');
+        expect(usePlaygroundStore.getState().data.problemType).toBe('classification');
+        expect(usePlaygroundStore.getState().network.outputSize).toBe(3);
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('softmax');
+        expect(usePlaygroundStore.getState().training.lossType).toBe('categoricalCrossEntropy');
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('returns to a scalar tuple when switching from three-class to a binary dataset', async () => {
+        const user = userEvent.setup();
+        usePlaygroundStore.getState().setDataset('three-class-clusters');
+
+        render(<DataPanel onReset={vi.fn()} />);
+
+        await user.click(screen.getByRole('button', { name: 'XOR' }));
+
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
+        expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
+        expect(usePlaygroundStore.getState().data.problemType).toBe('classification');
+        expect(usePlaygroundStore.getState().network.outputSize).toBe(1);
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('sigmoid');
+        expect(usePlaygroundStore.getState().training.lossType).toBe('crossEntropy');
+    });
+
     it('normalizes hidden multiclass state when public dataset modes are selected', async () => {
         const user = userEvent.setup();
         usePlaygroundStore.setState((state) => ({
