@@ -36,6 +36,7 @@ const VALID_DATASETS = new Set<DatasetType>([
     'checkerboard',
     'rings',
     'heart',
+    'three-class-clusters',
     'reg-plane',
     'reg-gauss',
 ]);
@@ -78,6 +79,7 @@ export interface UrlStateOptions {
 
 function isApprovedMulticlassConfig(config: AppConfig): boolean {
     return (
+        config.data.dataset === 'three-class-clusters' &&
         config.data.problemType === 'classification' &&
         config.network.outputSize === 3 &&
         config.network.outputActivation === 'softmax' &&
@@ -186,6 +188,7 @@ export function decodeUrlState(hash: string, options: UrlStateOptions = {}): App
     const inputSize = countActiveFeatures(features);
     const hasExplicitMulticlassUrlContract = (
         options.allowMulticlass &&
+        p.get('d') === 'three-class-clusters' &&
         p.get('os') === '3' &&
         p.get('pt') === 'classification' &&
         p.get('oa') === 'softmax' &&
@@ -322,6 +325,7 @@ function isApprovedMulticlassContract(
 ): boolean {
     return (
         allowMulticlass &&
+        data.dataset === 'three-class-clusters' &&
         data.problemType === 'classification' &&
         network.outputSize === 3 &&
         network.outputActivation === 'softmax' &&
@@ -483,6 +487,16 @@ export function normalizeAppConfig(
         return { config: null, error: 'Configuration contains an unsupported problem type.' };
     }
 
+    const usesMulticlassDataset = data.dataset === 'three-class-clusters';
+    if (strict && usesMulticlassDataset && !isApprovedMulticlassContract(data, network, training, allowMulticlass)) {
+        return {
+            config: null,
+            error: allowMulticlass
+                ? 'Multiclass configurations must use the approved three-class dataset with classification data, output size 3, softmax output activation, and categorical cross-entropy loss.'
+                : 'Multiclass configurations are not runtime-enabled yet.',
+        };
+    }
+
     if (
         strict &&
         (
@@ -639,6 +653,7 @@ export function normalizeAppConfig(
     );
     const lenientMulticlassContract = (
         allowMulticlass &&
+        data.dataset === 'three-class-clusters' &&
         getValidValue(data.problemType as string | null, VALID_PROBLEM_TYPES, DEFAULT_DATA.problemType) === 'classification' &&
         isFiniteNumber(network.outputSize) &&
         Number.isInteger(network.outputSize) &&
@@ -647,6 +662,7 @@ export function normalizeAppConfig(
         outputActivation === 'softmax'
     );
     if (!strict && (
+        data.dataset === 'three-class-clusters' ||
         lossType === 'categoricalCrossEntropy' ||
         outputActivation === 'softmax' ||
         (isFiniteNumber(network.outputSize) && network.outputSize !== 1)

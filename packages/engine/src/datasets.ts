@@ -50,6 +50,7 @@ export function generateDataset(
         case 'checkerboard': points = genCheckerboard(pairedClassCount, noise, rng); break;
         case 'rings': points = genRings(requestedSamples, noise, rng); break;
         case 'heart': points = genHeart(pairedClassCount, noise, rng); break;
+        case 'three-class-clusters': points = genThreeClassClusters(requestedSamples, noise, rng); break;
         case 'reg-plane': points = genRegPlane(requestedSamples, noise, rng); break;
         case 'reg-gauss': points = genRegGauss(requestedSamples, noise, rng); break;
         default: points = genCircle(pairedClassCount, noise, rng);

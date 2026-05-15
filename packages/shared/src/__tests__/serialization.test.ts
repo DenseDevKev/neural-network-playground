@@ -26,6 +26,7 @@ const multiclassConfig: AppConfig = {
     ...validConfig,
     data: {
         ...validConfig.data,
+        dataset: 'three-class-clusters' as unknown as AppConfig['data']['dataset'],
         problemType: 'classification',
     },
     network: {
@@ -94,12 +95,24 @@ describe('URL State Serialization', () => {
         const encoded = encodeUrlState(multiclassConfig, { allowMulticlass: true });
 
         expect(encoded).toContain('os=3');
+        expect(encoded).toContain('d=three-class-clusters');
         expect(decodeUrlState(encoded, { allowMulticlass: true })).toEqual(multiclassConfig);
 
         const publicDefault = decodeUrlState(encoded);
+        expect(publicDefault.data.dataset).toBe(DEFAULT_DATA.dataset);
         expect(publicDefault.network.outputSize).toBe(1);
         expect(publicDefault.network.outputActivation).not.toBe('softmax');
         expect(publicDefault.training.lossType).not.toBe('categoricalCrossEntropy');
+    });
+
+    it('falls back to scalar defaults for dataset-only multiclass URLs', () => {
+        const publicDefault = decodeUrlState('d=three-class-clusters');
+        const optInMissingPairing = decodeUrlState('d=three-class-clusters', { allowMulticlass: true });
+
+        expect(publicDefault.data.dataset).toBe(DEFAULT_DATA.dataset);
+        expect(publicDefault.network.outputSize).toBe(1);
+        expect(optInMissingPairing.data.dataset).toBe(DEFAULT_DATA.dataset);
+        expect(optInMissingPairing.network.outputSize).toBe(1);
     });
 
     it('does not encode unsupported output sizes through the multiclass migration option', () => {
@@ -168,6 +181,19 @@ describe('validateImportedConfig', () => {
 
         expect(result.config).toBeNull();
         expect(result.error).toBe('Configuration contains an unsupported activation function.');
+    });
+
+    it('rejects the multiclass dataset without the approved multiclass pairing', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            data: {
+                ...validConfig.data,
+                dataset: 'three-class-clusters' as unknown as AppConfig['data']['dataset'],
+            },
+        }, { allowMulticlass: true });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toMatch(/multiclass/i);
     });
 
     it('rejects invalid learning-rate ranges', () => {
@@ -318,6 +344,19 @@ describe('compatibility normalization', () => {
 
         expect(result.error).toBeNull();
         expect(result.config).toEqual(multiclassConfig);
+    });
+
+    it('keeps the multiclass migration contract tied to the approved three-class dataset', () => {
+        const result = validateImportedConfig({
+            ...multiclassConfig,
+            data: {
+                ...multiclassConfig.data,
+                dataset: 'circle',
+            },
+        }, { allowMulticlass: true });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toMatch(/multiclass|dataset|single-output/i);
     });
 
     it.each([

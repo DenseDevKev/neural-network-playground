@@ -1631,3 +1631,56 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5683 ms
 
 These values are slower than the immediately prior boundary-renderer perf sample but remain within the established noisy local benchmark range and below the roadmap warning thresholds. The readout runs only when the paused hidden 3-class confusion panel is rendered, uses bounded test points plus existing frame-buffer params, and does not touch engine training throughput, worker cadence, or large visualization transport.
+
+## Wave 7 Public Multiclass Dataset Contract
+
+Date: 2026-05-15
+
+Scope: engine/shared contract slice for the first public multiclass dataset
+path. The engine `DatasetType` and `generateDataset` now recognize the
+approved bounded `three-class-clusters` generator, while shared URL/import and
+experiment-memory validation only preserve that dataset when the full explicit
+multiclass pairing is present. Dataset-only or partial multiclass URLs fall
+back to scalar defaults. This slice does not add public UI controls, presets,
+worker protocol fields, frame-buffer fields, persistence schema changes,
+dependencies, deployment changes, engine training-behavior changes, or visible
+runtime behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DjoNRhXG.js`: 94.62 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-DPMr_X-H.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-pQIxLNuU.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-BLkg-qRJ.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-et0WGhH2.js`: 383.56 kB, gzip 115.35 kB
+
+Compared with the multiclass confusion readout build, the worker bundle changed
+from 93.78 kB to 94.62 kB, about 0.9%, the engine chunk changed from 5.79 kB
+to 6.15 kB, about 6.2%, and the main app chunk changed from 382.83 kB to
+383.56 kB, about 0.2%. These changes remain below the 10% roadmap build-size
+warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1210.4854 ms total for 100 iterations
+- `predictGridInto`: 1110.5422 ms total for 100 iterations
+- `predictGridWithNeurons`: 700.5530 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 598.3708 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.1164 ms
+- Average `applyGradients` time (SGD): 1.4686 ms
+
+These values remain within the established noisy local benchmark range and
+below roadmap warning thresholds. The slice only adds a deterministic dataset
+route and shared validation guards; it does not add new hot-path training work,
+worker cadence changes, or heavy visualization payloads.

@@ -224,6 +224,15 @@ describe('generateThreeClassClusters', () => {
         expect(new Set(split.test.map((point) => point.label))).toEqual(new Set([0, 1, 2]));
     });
 
+    it('is available through the public dataset generator once public wiring starts', () => {
+        const split = generateDataset('three-class-clusters' as DatasetType, 90, 8, 0.5, 42);
+        const labels = new Set([...split.train, ...split.test].map((point) => point.label));
+
+        expect(labels).toEqual(new Set([0, 1, 2]));
+        expect(split.train.length + split.test.length).toBe(90);
+        expect(getDefaultProblemType('three-class-clusters' as DatasetType)).toBe('classification');
+    });
+
     it('stays out of the package-level engine API until public config wiring is approved', () => {
         expect('generateThreeClassClusters' in Engine).toBe(false);
         expect('THREE_CLASS_CLUSTER_DATASET_CONTRACT' in Engine).toBe(false);

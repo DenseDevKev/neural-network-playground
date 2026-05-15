@@ -9,6 +9,7 @@ export const DATASET_TOOLTIPS: Record<DatasetType, string> = {
     checkerboard: 'Cause: checkerboard labels alternate in many small regions. Effect: the model needs more local bends and may train slowly.',
     rings: 'Cause: rings stack circular bands. Effect: curved features or hidden layers make the class transitions easier to fit.',
     heart: 'Cause: the heart outline has tight curves and a notch. Effect: low-capacity networks underfit the shape.',
+    'three-class-clusters': 'Cause: three compact clusters compete through softmax outputs. Effect: the boundary shows which class wins and how confident the model is.',
     'reg-plane': 'Cause: plane regression is almost linear. Effect: a simple network can fit it without hidden layers.',
     'reg-gauss': 'Cause: multi-Gauss regression has several smooth bumps. Effect: hidden layers help approximate the changing surface.',
 };
@@ -21,7 +22,7 @@ export function getDatasetTopologyHint(dataset: DatasetType, hiddenLayers: reado
         return 'Gaussian blobs are usually simple enough that this much depth can obscure the linear story.';
     }
     if (
-        ['spiral', 'moons', 'checkerboard', 'rings', 'heart', 'reg-gauss'].includes(dataset) &&
+        ['spiral', 'moons', 'checkerboard', 'rings', 'heart', 'three-class-clusters', 'reg-gauss'].includes(dataset) &&
         hiddenLayers.length === 0
     ) {
         return 'This dataset usually needs hidden layers to bend the model beyond a straight boundary.';

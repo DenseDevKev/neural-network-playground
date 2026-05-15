@@ -34,6 +34,7 @@ export type DatasetType =
     | 'checkerboard'
     | 'rings'
     | 'heart'
+    | 'three-class-clusters'
     | 'reg-plane'
     | 'reg-gauss';
 

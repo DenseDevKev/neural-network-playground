@@ -54,6 +54,7 @@ function makeApprovedMulticlassConfig(overrides: Partial<AppConfig> = {}): AppCo
         ...overrides,
         data: {
             ...config.data,
+            dataset: 'three-class-clusters' as unknown as AppConfig['data']['dataset'],
             problemType: 'classification',
             ...overrides.data,
         },
@@ -169,6 +170,12 @@ describe('experiment memory schema', () => {
     });
 
     it.each([
+        [
+            'unsupported multiclass dataset',
+            makeApprovedMulticlassConfig({
+                data: { ...makeApprovedMulticlassConfig().data, dataset: 'circle' },
+            }),
+        ],
         [
             'unsupported output size',
             makeApprovedMulticlassConfig({
