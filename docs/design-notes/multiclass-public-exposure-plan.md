@@ -1,12 +1,22 @@
 # Design Note: Public Multiclass Exposure Plan
 
+## Status Update
+
+This plan is historical background as of 2026-05-15. The shared config
+migration contract, opt-in persistence eligibility, hidden dataset contract,
+bounded multiclass boundary transport, read-only boundary renderer, and
+UI-derived confusion readout have since landed.
+
+Use `docs/design-notes/multiclass-public-ui-controls-browser-qa.md` for the
+next active gate before visible public multiclass controls.
+
 ## Problem
 
 Wave 7 now has private multiclass foundations: engine softmax and categorical cross-entropy helpers, a private `Network` path, direct-call worker target guards, a hidden three-class dataset helper, code-export truthfulness, visualization non-exposure guards, public outbound config guards, and stricter experiment-memory validation.
 
 The app still intentionally does not expose multiclass workflows. Public exposure cannot be a single UI toggle because it crosses URL/config format, public config compatibility, dataset and preset registries, worker/runtime snapshots, visualization payloads, run-history compatibility, code export, accessibility, Browser QA, and performance evidence.
 
-This note supersedes the "first implementation request" guidance in `docs/design-notes/multiclass-classification-mode.md`. That older note was correct when no implementation had landed, but the repository now already contains engine, shared contract, worker, hidden dataset, code-export, visualization-guard, URL/export-guard, runtime-guard, and persistence-guard slices. Future work should use this current-state plan as the active public-exposure gate.
+This note supersedes the "first implementation request" guidance in `docs/design-notes/multiclass-classification-mode.md`. That older note was correct when no implementation had landed, but the repository now already contains engine, shared contract, worker, hidden dataset, code-export, visualization-guard, URL/export-guard, runtime-guard, and persistence-guard slices. This note is now historical background; future public-control work should use `docs/design-notes/multiclass-public-ui-controls-browser-qa.md` as the active gate.
 
 ## Proposed Change
 
@@ -150,7 +160,9 @@ Mitigation:
 7. **Public Controls and Preset Slice**: expose one dataset/preset/control path after the above can support training, visualization, import/export, and history safely.
 8. **Browser QA and Evidence Slice**: run desktop and compact Mode B QA, update performance evidence and `ROADMAP_STATE.md`.
 
-## First Approved Implementation Candidate
+## Historical First Approved Implementation Candidate
+
+Status: completed by the later shared config migration contract slice.
 
 The next code slice should be the **Shared Config Migration Contract Slice** only:
 
