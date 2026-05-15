@@ -219,6 +219,198 @@ describe('training worker prediction trace RPC', () => {
     });
 });
 
+describe('training worker multiclass target encoding', () => {
+    const multiclassNetwork = {
+        ...DEFAULT_NETWORK,
+        outputSize: 3,
+        outputActivation: 'softmax' as const,
+    };
+    const multiclassTraining = {
+        ...DEFAULT_TRAINING,
+        lossType: 'categoricalCrossEntropy' as const,
+    };
+
+    it('encodes classification labels as bounded one-hot targets for worker training and traces', () => {
+        workerApi.initialize(
+            multiclassNetwork,
+            multiclassTraining,
+            { ...DEFAULT_DATA, seed: 934, numSamples: 24 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const snapshot = workerApi.step(1);
+        const trace = workerApi.getPredictionTrace({ source: 'train', index: 0 });
+
+        expect(Number.isFinite(snapshot.trainLoss)).toBe(true);
+        expect(Number.isFinite(snapshot.testLoss)).toBe(true);
+        expect(trace.trace.output).toHaveLength(3);
+        expect(trace.trace.target).toHaveLength(3);
+        expect(trace.trace.target.reduce((sum, value) => sum + value, 0)).toBe(1);
+        expect(trace.trace.target[trace.sample.label ?? -1]).toBe(1);
+    });
+
+    it('encodes custom multiclass trace labels and rejects out-of-range classes', () => {
+        workerApi.initialize(
+            multiclassNetwork,
+            multiclassTraining,
+            { ...DEFAULT_DATA, seed: 935, numSamples: 24 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const trace = workerApi.getPredictionTrace({
+            source: 'custom',
+            x: 0,
+            y: 0,
+            label: 2,
+        });
+
+        expect(trace.trace.target).toEqual([0, 0, 1]);
+        expect(() => workerApi.getPredictionTrace({
+            source: 'custom',
+            x: 0,
+            y: 0,
+            label: -1,
+        })).toThrow(/class index/i);
+        expect(() => workerApi.getPredictionTrace({
+            source: 'custom',
+            x: 0,
+            y: 0,
+            label: 1.5,
+        })).toThrow(/class index/i);
+        expect(() => workerApi.getPredictionTrace({
+            source: 'custom',
+            x: 0,
+            y: 0,
+            label: 3,
+        })).toThrow(/class index/i);
+    });
+
+    it('keeps one-shot inspection RPCs finite and non-mutating with multiclass targets', () => {
+        workerApi.initialize(
+            multiclassNetwork,
+            { ...multiclassTraining, batchSize: 4 },
+            { ...DEFAULT_DATA, seed: 939, numSamples: 24 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const backprop = workerApi.getBackpropExplanation();
+        const landscape = workerApi.getLossLandscapeProbe({ gridSize: 5, maxSamples: 16, radius: 0.05 });
+        const afterPreviewStep = workerApi.step(1);
+
+        expect(Number.isFinite(backprop.explanation.loss)).toBe(true);
+        expect(backprop.explanation.layers.length).toBeGreaterThan(0);
+        expect(containsTypedArray(backprop)).toBe(false);
+        expect(Number.isFinite(landscape.probe.centerLoss)).toBe(true);
+        expect(landscape.probe.losses).toHaveLength(25);
+        expect(containsTypedArray(landscape)).toBe(false);
+        expect(afterPreviewStep.step).toBe(1);
+    });
+
+    it('requires the approved softmax plus categorical cross-entropy worker pairing', () => {
+        expect(() => workerApi.initialize(
+            {
+                ...DEFAULT_NETWORK,
+                outputSize: 3,
+                outputActivation: 'sigmoid',
+            },
+            multiclassTraining,
+            { ...DEFAULT_DATA, seed: 936, numSamples: 24 },
+            { ...DEFAULT_FEATURES },
+        )).toThrow(/softmax.*categorical cross-entropy/i);
+    });
+
+    it.each([
+        [
+            'two outputs',
+            { outputSize: 2, outputActivation: 'softmax' as const },
+            { lossType: 'categoricalCrossEntropy' as const },
+            { problemType: 'classification' as const },
+        ],
+        [
+            'four outputs',
+            { outputSize: 4, outputActivation: 'softmax' as const },
+            { lossType: 'categoricalCrossEntropy' as const },
+            { problemType: 'classification' as const },
+        ],
+        [
+            'softmax with scalar loss',
+            { outputSize: 3, outputActivation: 'softmax' as const },
+            { lossType: 'crossEntropy' as const },
+            { problemType: 'classification' as const },
+        ],
+        [
+            'categorical loss without softmax',
+            { outputSize: 3, outputActivation: 'sigmoid' as const },
+            { lossType: 'categoricalCrossEntropy' as const },
+            { problemType: 'classification' as const },
+        ],
+        [
+            'regression data',
+            { outputSize: 3, outputActivation: 'softmax' as const },
+            { lossType: 'categoricalCrossEntropy' as const },
+            { problemType: 'regression' as const },
+        ],
+    ])('rejects unsupported multiclass worker config: %s', (_label, networkOverrides, trainingOverrides, dataOverrides) => {
+        expect(() => workerApi.initialize(
+            {
+                ...DEFAULT_NETWORK,
+                ...networkOverrides,
+            },
+            {
+                ...DEFAULT_TRAINING,
+                ...trainingOverrides,
+            },
+            {
+                ...DEFAULT_DATA,
+                ...dataOverrides,
+                seed: 936,
+                numSamples: 24,
+            },
+            { ...DEFAULT_FEATURES },
+        )).toThrow(/output size 3, softmax output activation, and categorical cross-entropy loss/i);
+    });
+
+    it('does not emit scalar decision-boundary grids or binary confusion matrices for multiclass snapshots', () => {
+        workerApi.initialize(
+            multiclassNetwork,
+            multiclassTraining,
+            { ...DEFAULT_DATA, seed: 938, numSamples: 24 },
+            { ...DEFAULT_FEATURES },
+        );
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needDecisionBoundary: true,
+            needNeuronGrids: true,
+            needConfusionMatrix: true,
+        });
+
+        const snapshot = workerApi.step(1);
+
+        expect(snapshot.outputGrid).toHaveLength(0);
+        expect(snapshot.neuronGrids).toBeUndefined();
+        expect(snapshot.testMetrics.confusionMatrix).toBeUndefined();
+    });
+
+    it('keeps live arena runtime guarded to scalar models', () => {
+        expect(() => workerApi.initializeArena({
+            modelA: {
+                label: 'Multiclass A',
+                network: multiclassNetwork,
+                training: multiclassTraining,
+                data: { ...DEFAULT_DATA, seed: 937, numSamples: 24 },
+                features: { ...DEFAULT_FEATURES },
+            },
+            modelB: {
+                label: 'Scalar B',
+                network: { ...DEFAULT_NETWORK },
+                training: { ...DEFAULT_TRAINING },
+                data: { ...DEFAULT_DATA, seed: 937, numSamples: 24 },
+                features: { ...DEFAULT_FEATURES },
+            },
+        })).toThrow(/multiclass live arena/i);
+    });
+});
+
 describe('training worker activation histogram demand', () => {
     it('omits activation histograms until explicitly requested', () => {
         workerApi.initialize(

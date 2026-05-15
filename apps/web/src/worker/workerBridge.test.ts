@@ -316,6 +316,31 @@ describe('workerBridge streamed snapshots', () => {
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
     });
 
+    it('clears cached scalar grids when a streamed snapshot sends explicit empty grid payloads', () => {
+        const listener = getRegisteredStreamListener();
+
+        startRenderLoop();
+        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        runNextAnimationFrame();
+        expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
+        expect(getFrameBuffer().neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
+
+        listener({
+            data: makeSnapshotMessage(2, {
+                outputGrid: new Float32Array(0),
+                neuronGrids: new Float32Array(0),
+                neuronGridLayout: undefined,
+                confusionMatrix: undefined,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.outputGrid).toBeNull();
+        expect(frame.neuronGrids).toBeNull();
+        expect(frame.neuronGridLayout).toBeNull();
+    });
+
     it('closes the stream port on termination and drops later stream commands', () => {
         postStreamCommand({ type: 'stopTraining' });
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'stopTraining' });

@@ -229,12 +229,14 @@ function buildSnapshotFramePatch(
     } else {
         // Legacy postMessage path — grids arrived inline.
         if (msg.outputGrid !== undefined) {
-            patch.outputGrid = msg.outputGrid;
-            patch.gridSize = msg.scalars.gridSize;
+            patch.outputGrid = msg.outputGrid.length > 0 ? msg.outputGrid : null;
+            patch.gridSize = msg.outputGrid.length > 0 ? msg.scalars.gridSize : 0;
         }
         if (msg.neuronGrids !== undefined) {
-            patch.neuronGrids = msg.neuronGrids;
-            patch.neuronGridLayout = msg.neuronGridLayout ?? null;
+            patch.neuronGrids = msg.neuronGrids.length > 0 ? msg.neuronGrids : null;
+            patch.neuronGridLayout = msg.neuronGrids.length > 0
+                ? msg.neuronGridLayout ?? null
+                : null;
         }
     }
 

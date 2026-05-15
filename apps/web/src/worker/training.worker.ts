@@ -351,6 +351,59 @@ function validateConfigs(network: NetworkConfig, training: TrainingConfig): void
     }
 }
 
+const WORKER_MULTICLASS_OUTPUT_SIZE = 3;
+
+function hasWorkerMulticlassContract(network: NetworkConfig, training: TrainingConfig): boolean {
+    return (
+        network.outputSize !== 1 ||
+        network.outputActivation === 'softmax' ||
+        training.lossType === 'categoricalCrossEntropy'
+    );
+}
+
+function isApprovedWorkerMulticlassConfig(
+    network: NetworkConfig,
+    training: TrainingConfig,
+    data: DataConfig,
+): boolean {
+    return (
+        data.problemType === 'classification' &&
+        network.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE &&
+        network.outputActivation === 'softmax' &&
+        training.lossType === 'categoricalCrossEntropy'
+    );
+}
+
+function assertApprovedWorkerMulticlassConfig(
+    network: NetworkConfig,
+    training: TrainingConfig,
+    data: DataConfig,
+): void {
+    if (!hasWorkerMulticlassContract(network, training)) return;
+    if (isApprovedWorkerMulticlassConfig(network, training, data)) return;
+
+    throw new Error(
+        'Worker multiclass mode requires classification data, output size 3, softmax output activation, and categorical cross-entropy loss.',
+    );
+}
+
+function normalizeScalarSurrogateForSharedValidation(
+    networkConfig: NetworkConfig,
+    trainingConfig: TrainingConfig,
+): { network: NetworkConfig; training: TrainingConfig } {
+    return {
+        network: {
+            ...networkConfig,
+            outputSize: 1,
+            outputActivation: 'sigmoid',
+        },
+        training: {
+            ...trainingConfig,
+            lossType: 'crossEntropy',
+        },
+    };
+}
+
 function normalizeWorkerConfig(
     networkConfig: NetworkConfig,
     trainingConfig: TrainingConfig,
@@ -362,9 +415,14 @@ function normalizeWorkerConfig(
     data: DataConfig;
     features: FeatureFlags;
 } {
+    const isWorkerMulticlassRequest = hasWorkerMulticlassContract(networkConfig, trainingConfig);
+    const validationConfig = isWorkerMulticlassRequest
+        ? normalizeScalarSurrogateForSharedValidation(networkConfig, trainingConfig)
+        : { network: networkConfig, training: trainingConfig };
+
     const result = normalizeAppConfig({
-        network: networkConfig,
-        training: trainingConfig,
+        network: validationConfig.network,
+        training: validationConfig.training,
         data: dataConfig,
         features,
         ui: { showTestData: false, discretizeOutput: false },
@@ -374,10 +432,28 @@ function normalizeWorkerConfig(
         throw new Error(result.error ?? 'Invalid playground configuration.');
     }
 
-    validateConfigs(result.config.network, result.config.training);
+    if (isWorkerMulticlassRequest) {
+        assertApprovedWorkerMulticlassConfig(networkConfig, trainingConfig, result.config.data);
+    }
+
+    const normalizedNetwork: NetworkConfig = isWorkerMulticlassRequest
+        ? {
+            ...result.config.network,
+            outputSize: WORKER_MULTICLASS_OUTPUT_SIZE,
+            outputActivation: 'softmax',
+        }
+        : result.config.network;
+    const normalizedTraining: TrainingConfig = isWorkerMulticlassRequest
+        ? {
+            ...result.config.training,
+            lossType: 'categoricalCrossEntropy',
+        }
+        : result.config.training;
+
+    validateConfigs(normalizedNetwork, normalizedTraining);
     return {
-        network: result.config.network,
-        training: result.config.training,
+        network: normalizedNetwork,
+        training: normalizedTraining,
         data: result.config.data,
         features: result.config.features,
     };
@@ -392,6 +468,20 @@ const ACTIVATION_HISTOGRAM_BIN_COUNT = 12;
 const ACTIVATION_HISTOGRAM_MAX_SAMPLES = 128;
 const CHECKPOINT_MAX_COUNT = 8;
 const CHECKPOINT_STEP_INTERVAL = 5;
+
+function encodeTargetLabel(label: number, outputSize: number): number[] {
+    if (outputSize === 1) return [label];
+    if (!Number.isFinite(label) || !Number.isInteger(label) || label < 0 || label >= outputSize) {
+        throw new RangeError(`Multiclass class index must be an integer between 0 and ${outputSize - 1}.`);
+    }
+    const target = Array.from({ length: outputSize }, () => 0);
+    target[label] = 1;
+    return target;
+}
+
+function encodeTargets(points: DataPoint[], outputSize: number): number[][] {
+    return points.map((point) => encodeTargetLabel(point.label, outputSize));
+}
 
 function workerPerfMark(name: string): void {
     if (WORKER_PERF_ENABLED) performance.mark(name);
@@ -554,11 +644,14 @@ function buildArenaSlot(side: ArenaSide, input: ArenaModelInput): ArenaSlot {
         ...config.network,
         inputSize: countActiveFeatures(config.features),
     };
+    if (networkConfig.outputSize !== 1) {
+        throw new Error('Multiclass live arena is not enabled; live arena is currently scalar-only.');
+    }
     const network = new Network(networkConfig, networkConfig.seed);
     const trainInputs = transformDataset(split.train, activeFeatures);
-    const trainTargets = split.train.map((point) => [point.label]);
+    const trainTargets = encodeTargets(split.train, networkConfig.outputSize);
     const testInputs = transformDataset(split.test, activeFeatures);
-    const testTargets = split.test.map((point) => [point.label]);
+    const testTargets = encodeTargets(split.test, networkConfig.outputSize);
     const shuffledIndices = Array.from({ length: trainInputs.length }, (_, index) => index);
     const shufflePrng = new PRNG((config.data.seed ?? 42) + (side === 'A' ? 2234 : 3234));
     if (shuffledIndices.length > 0) {
@@ -691,22 +784,24 @@ function buildDataAndNetwork(): void {
         state.dataConfig.seed,
     );
 
-    state.trainPoints = split.train;
-    state.testPoints = split.test;
-    state.trainInputs = transformDataset(split.train, state.activeFeatures);
-    state.trainTargets = split.train.map((p) => [p.label]);
-    state.testInputs = transformDataset(split.test, state.activeFeatures);
-    state.testTargets = split.test.map((p) => [p.label]);
-
-    // Build grid inputs
-    state.gridInputs = buildGridInputs(GRID_SIZE, state.activeFeatures);
-
     // Create network
     const config: NetworkConfig = {
         ...state.networkConfig,
         inputSize,
     };
     state.networkConfig = config;
+
+    state.trainPoints = split.train;
+    state.testPoints = split.test;
+    state.trainInputs = transformDataset(split.train, state.activeFeatures);
+    state.trainTargets = encodeTargets(split.train, config.outputSize);
+    state.testInputs = transformDataset(split.test, state.activeFeatures);
+    state.testTargets = encodeTargets(split.test, config.outputSize);
+
+    // Build grid inputs. Multiclass snapshots intentionally skip the scalar
+    // boundary buffers until a dedicated visualization slice is approved.
+    state.gridInputs = buildGridInputs(GRID_SIZE, state.activeFeatures);
+
     state.network = new Network(config, config.seed);
 
     // Allocate buffers
@@ -755,6 +850,7 @@ function buildDataAndNetwork(): void {
     state.lastTrainMetrics = null;
     state.lossEma = null;
     state.gridStale = true;
+    state.gridFreshFromGpu = false;
     state.testMetricsStale = false;
     state.stopConditionState = createInitialStopConditionState();
     state.confusionMatrixVersion++;
@@ -885,6 +981,7 @@ async function ensureGpuPredictor(): Promise<WebGPUGridPredictor | null> {
  */
 async function runGpuGridIfDue(): Promise<void> {
     if (!state.network) return;
+    if (state.networkConfig?.outputSize !== 1) return;
     const { demand } = state;
     const wantGrid = demand.needDecisionBoundary || demand.needNeuronGrids;
     const due =
@@ -1023,7 +1120,8 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
     let outputGrid: number[] | Float32Array;
     let neuronGrids: number[][] | Float32Array | undefined;
 
-    const wantGrid = demand.needDecisionBoundary || demand.needNeuronGrids;
+    const supportsScalarGrid = state.networkConfig?.outputSize === 1;
+    const wantGrid = supportsScalarGrid && (demand.needDecisionBoundary || demand.needNeuronGrids);
     const shouldRebuildGrid =
         wantGrid &&
         state.gridStale &&
@@ -1033,7 +1131,7 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
     // already populated the grid buffers. Consume the flag here so the CPU
     // branches below stay short-circuited, and so a second call later in
     // the same frame doesn't double-count.
-    if (state.gridFreshFromGpu && state.outputGridBuffer) {
+    if (state.gridFreshFromGpu && supportsScalarGrid && state.outputGridBuffer) {
         outputGrid = state.outputGridBuffer;
         if (demand.needNeuronGrids && state.neuronGridsBuffer) {
             neuronGrids = state.neuronGridsBuffer;
@@ -1041,6 +1139,9 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         state.snapshotsSinceLastGrid = 0;
         state.gridStale = false;
         state.gridFreshFromGpu = false;
+    } else if (state.gridFreshFromGpu && !supportsScalarGrid) {
+        state.gridFreshFromGpu = false;
+        outputGrid = [];
     } else if (shouldRebuildGrid && demand.needNeuronGrids && state.outputGridBuffer && state.neuronGridsBuffer) {
         workerPerfMark('perf:worker:predictGridNeurons:start');
         state.network.predictGridWithNeuronsInto(
@@ -1220,6 +1321,13 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         state.activationHistogramVersion++;
         activationHistogramVersion = state.activationHistogramVersion;
         transferables.push(activationHistogramBins.buffer);
+    }
+
+    if (state.networkConfig?.outputSize !== 1) {
+        outputGrid = new Float32Array(0);
+        neuronGrids = new Float32Array(0);
+        neuronGridLayout = undefined;
+        transferables.push(outputGrid.buffer, neuronGrids.buffer);
     }
 
     // History point
@@ -1738,7 +1846,9 @@ export const workerApi = {
 
         const sample = resolveTraceSample(request);
         const input = transformPoint(sample.x, sample.y, state.activeFeatures);
-        const target = sample.label === undefined ? undefined : [sample.label];
+        const target = sample.label === undefined
+            ? undefined
+            : encodeTargetLabel(sample.label, state.networkConfig?.outputSize ?? 1);
         const trace = state.network.tracePrediction(
             input,
             target,

@@ -163,9 +163,13 @@ function createStreamSnapshot(
         },
         weights: previousSnapshot?.weights ?? [],
         biases: previousSnapshot?.biases ?? [],
-        outputGrid: previousSnapshot?.outputGrid ?? [],
+        outputGrid: msg.outputGrid !== undefined && msg.outputGrid.length === 0
+            ? []
+            : previousSnapshot?.outputGrid ?? [],
         gridSize: msg.scalars.gridSize,
-        neuronGrids: previousSnapshot?.neuronGrids,
+        neuronGrids: msg.neuronGrids !== undefined && msg.neuronGrids.length === 0
+            ? undefined
+            : previousSnapshot?.neuronGrids,
         layerStats: previousSnapshot?.layerStats,
         historyPoint: msg.historyPoint,
     };
