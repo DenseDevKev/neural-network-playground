@@ -5,6 +5,11 @@ import type { DataPoint, DataSplit, DatasetType } from './types.js';
 import { PRNG } from './prng.js';
 
 const DEFAULT_NUM_SAMPLES = 300;
+const THREE_CLASS_CENTERS = [
+    { x: -0.55, y: -0.35, label: 0 },
+    { x: 0.55, y: -0.35, label: 1 },
+    { x: 0, y: 0.55, label: 2 },
+] as const;
 
 /** Generate a full dataset and split into train/test. */
 export function generateDataset(
@@ -42,6 +47,25 @@ export function generateDataset(
     };
 }
 
+/** Generate a bounded three-class cluster split for future multiclass wiring. */
+export function generateThreeClassClusters(
+    numSamples: number = DEFAULT_NUM_SAMPLES,
+    noise: number = 0,
+    trainRatio: number = 0.5,
+    seed: number = 42,
+): DataSplit {
+    const rng = new PRNG(seed);
+    const requestedSamples = normalizeSampleCount(numSamples);
+    const points = genThreeClassClusters(requestedSamples, noise, rng);
+
+    rng.shuffle(points);
+    const splitIdx = getSplitIndex(points.length, trainRatio);
+    return {
+        train: points.slice(0, splitIdx),
+        test: points.slice(splitIdx),
+    };
+}
+
 function normalizeSampleCount(numSamples: number): number {
     return Number.isFinite(numSamples) ? Math.max(0, Math.floor(numSamples)) : DEFAULT_NUM_SAMPLES;
 }
@@ -58,6 +82,27 @@ function getSplitIndex(total: number, trainRatio: number): number {
 }
 
 // ── Classification datasets ──
+
+function genThreeClassClusters(n: number, noise: number, rng: PRNG): DataPoint[] {
+    const points: DataPoint[] = [];
+    const safeNoise = Number.isFinite(noise) ? Math.max(0, noise) : 0;
+    const scale = 0.08 + safeNoise * 0.004;
+
+    for (let i = 0; i < n; i++) {
+        const center = THREE_CLASS_CENTERS[i % THREE_CLASS_CENTERS.length];
+        points.push({
+            x: clampUnit(center.x + rng.gaussian(0, scale)),
+            y: clampUnit(center.y + rng.gaussian(0, scale)),
+            label: center.label,
+        });
+    }
+
+    return points;
+}
+
+function clampUnit(value: number): number {
+    return Math.max(-1, Math.min(1, value));
+}
 
 function genCircle(pointsPerClass: number, noise: number, rng: PRNG): DataPoint[] {
     const points: DataPoint[] = [];

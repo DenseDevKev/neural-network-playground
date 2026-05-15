@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { generateDataset, getDefaultProblemType } from '../datasets.js';
+import { generateDataset, generateThreeClassClusters, getDefaultProblemType } from '../datasets.js';
+import * as Engine from '../index.js';
 import type { DatasetType } from '../types.js';
 
 describe('generateDataset', () => {
@@ -155,6 +156,65 @@ describe('regression datasets', () => {
             });
         });
     }
+});
+
+describe('generateThreeClassClusters', () => {
+    it('generates a deterministic bounded dataset with three class labels', () => {
+        const split = generateThreeClassClusters(90, 12, 0.6, 123);
+        const same = generateThreeClassClusters(90, 12, 0.6, 123);
+        const different = generateThreeClassClusters(90, 12, 0.6, 124);
+        const allPoints = [...split.train, ...split.test];
+
+        expect(split).toEqual(same);
+        expect(split.train).not.toEqual(different.train);
+        expect(split.train).toHaveLength(54);
+        expect(split.test).toHaveLength(36);
+        expect(new Set(allPoints.map((point) => point.label))).toEqual(new Set([0, 1, 2]));
+
+        for (const point of allPoints) {
+            expect(point.x).toBeGreaterThanOrEqual(-1);
+            expect(point.x).toBeLessThanOrEqual(1);
+            expect(point.y).toBeGreaterThanOrEqual(-1);
+            expect(point.y).toBeLessThanOrEqual(1);
+            expect(Number.isInteger(point.label)).toBe(true);
+        }
+    });
+
+    it('keeps class counts balanced within one sample', () => {
+        const split = generateThreeClassClusters(302, 0, 0.5, 42);
+        const counts = [0, 0, 0];
+
+        for (const point of [...split.train, ...split.test]) {
+            counts[point.label]++;
+        }
+
+        expect(counts).toEqual([101, 101, 100]);
+        expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+    });
+
+    it('gives both splits all three classes for the intended preset-sized case', () => {
+        const split = generateThreeClassClusters(300, 8, 0.5, 42);
+
+        expect(new Set(split.train.map((point) => point.label))).toEqual(new Set([0, 1, 2]));
+        expect(new Set(split.test.map((point) => point.label))).toEqual(new Set([0, 1, 2]));
+    });
+
+    it('stays out of the package-level engine API until public config wiring is approved', () => {
+        expect('generateThreeClassClusters' in Engine).toBe(false);
+    });
+
+    it('handles tiny and invalid sample requests like the public dataset generator', () => {
+        expect(generateThreeClassClusters(0, 0, 0.5, 42).train).toHaveLength(0);
+        expect(generateThreeClassClusters(0, 0, 0.5, 42).test).toHaveLength(0);
+
+        const one = generateThreeClassClusters(1, 0, 0.5, 42);
+        expect(one.train).toHaveLength(1);
+        expect(one.test).toHaveLength(0);
+
+        const defensive = generateThreeClassClusters(10, 0, Number.NaN, 42);
+        expect(defensive.train).toHaveLength(5);
+        expect(defensive.test).toHaveLength(5);
+    });
 });
 
 describe('getDefaultProblemType', () => {
