@@ -1789,3 +1789,55 @@ These values remain within the established noisy local benchmark range and
 below roadmap warning thresholds. The slice changes validation and dataset
 acceptance gates only; multiclass boundary arrays remain bounded and
 demand/cadence-gated in the existing worker path.
+
+## Wave 7 Public Multiclass Config JSON
+
+Date: 2026-05-15
+
+Scope: Config Panel JSON import/export slice for the exact approved multiclass
+tuple. The panel now uses the existing shared multiclass opt-in validator for
+JSON export and import, preserving only `three-class-clusters`,
+`classification`, `outputSize: 3`, `softmax`, and
+`categoricalCrossEntropy`. Malformed partial multiclass configs remain
+rejected. This slice does not add visible dataset controls, public built-in
+presets, worker protocol fields, frame-buffer fields, run-history schema
+changes, persistence migrations, dependencies, deployment changes, official 3x3
+worker metrics, or raw probability-grid transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-rMnDb0A3.js`: 94.59 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-Cl8FFv6C.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-i-N0Eknv.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-BALK3S7M.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-CASDv05U.js`: 383.84 kB, gzip 115.43 kB
+
+Compared with the public multiclass runtime acceptance build, the worker and
+engine chunks stayed the same size, while the main app chunk changed from
+383.80 kB to 383.84 kB, about 0.01%. These changes remain below the 10%
+roadmap build-size warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1094.6214 ms total for 100 iterations
+- `predictGridInto`: 1084.8148 ms total for 100 iterations
+- `predictGridWithNeurons`: 693.1046 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 593.2782 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0385 ms
+- Average `applyGradients` time (SGD): 1.4134 ms
+
+These values remain within the established noisy local benchmark range and
+below roadmap warning thresholds. The slice only changes Config Panel validation
+and tests; it does not add runtime hot-path work, worker cadence changes, or
+heavy visualization payloads.
