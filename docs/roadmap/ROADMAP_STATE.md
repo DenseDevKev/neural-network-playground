@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified code commit: `fe41851`; engine-only Multiclass Classification Mode math foundation committed after targeted red/green TDD, two implementation review passes, `git diff --check`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed. Browser QA was not run because the slice has no UI or browser-visible behavior. Post-commit approval-gate reviews found no blockers and recommended stopping for explicit approval before any `Network` integration.
+- Last verified code commit: `8944d4c`; private engine-only Multiclass `Network` path committed after targeted red/green TDD, two implementation review passes, review-found fixes, `git diff --check`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed. Browser QA was not run because the slice has no UI or browser-visible behavior.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Multiclass Classification Mode engine-only math foundation
+- Slice: Multiclass Classification Mode private engine `Network` foundation
 - Risk: High
-- Status: Side-by-Side Model Arena, Slow-Motion Backprop, and Loss Landscape Probe have bounded implemented slices. Multiclass Classification Mode now has a docs-only design gate in `docs/design-notes/multiclass-classification-mode.md` and a first approved engine-only helper slice in `fe41851`. Two post-commit gate reviews agreed there is no blocker in the helper slice and that the next code slice requires separate explicit approval if it wires softmax/categorical cross-entropy into `Network`, changes `ActivationType`/`LossType`, changes training behavior, or touches worker, protocol, frame-buffer, persistence, URL/config, public config, code export, dependencies, deployment, or UI.
+- Status: Side-by-Side Model Arena, Slow-Motion Backprop, and Loss Landscape Probe have bounded implemented slices. Multiclass Classification Mode now has a docs-only design gate in `docs/design-notes/multiclass-classification-mode.md`, an engine-only helper slice in `fe41851`, and a private/cast-only engine `Network` foundation in `8944d4c`. The next code slice requires separate explicit approval if it exposes softmax/categorical cross-entropy through `ActivationType`/`LossType`, public/shared config, URL/config serialization, worker target encoding, protocol/frame-buffer paths, persistence/run-history schema, code export, dependencies, deployment, or UI.
 
 ## Completed Slices
 
@@ -71,15 +71,16 @@
 | 2026-05-13 | Wave 7 | Loss Landscape Probe Inspection-panel UI | `4d4878b` | Red targeted component tests failed before implementation with missing `Probe loss surface`; targeted web run passed with 51 files and 368 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, Browser QA Mode B, and `git diff --check` passed before commit | `apps/web/src/components/controls/InspectionPanel.tsx`, `apps/web/src/components/controls/InspectionPanel.test.tsx`, `apps/web/src/styles/index.css`, `docs/qa/browser-qa/wave-7-loss-landscape-probe.md` |
 | 2026-05-14 | Wave 7 | Multiclass Classification Mode design gate | `d984eae` | Docs-only design gate; `git diff --check` passed before commit | `docs/design-notes/multiclass-classification-mode.md`, `docs/roadmap/WAVE_7_PROPOSAL.md` |
 | 2026-05-14 | Wave 7 | Multiclass softmax/categorical-loss helpers | `fe41851` | First targeted test run failed with 9 expected missing-helper failures; review-targeted run failed with 1 expected distribution-validation failure; final targeted engine run passed with 13 files and 297 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two review passes, and `git diff --check` passed before commit | `packages/engine/src/activations.ts`, `packages/engine/src/losses.ts`, `packages/engine/src/__tests__/activations.test.ts`, `packages/engine/src/__tests__/losses.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-14 | Wave 7 | Private multiclass `Network` path | `8944d4c` | Red targeted `Network` test failed with 5 expected missing-path failures; targeted engine run passed with 13 files and 305 tests after review fixes; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two review passes, and `git diff --check` passed before commit | `packages/engine/src/network.ts`, `packages/engine/src/__tests__/network.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm --filter @nn-playground/engine test -- src/__tests__/activations.test.ts src/__tests__/losses.test.ts` passed on 2026-05-14 with 13 files and 297 tests after the intended red runs. `pnpm test` then passed with engine 13 files/297 tests, shared 5 files/70 tests, and web 51 files/368 tests.
-- Lint: `pnpm lint` passed on 2026-05-14 with no ESLint output after the engine-only Multiclass helper slice.
-- Build: `pnpm build` passed on 2026-05-14 with the existing Vite chunk-size warning. Relevant chunks: `training.worker-C2DakSc7.js` 86.45 kB, `InspectionPanel-DcCt75L5.js` 13.42 kB gzip 3.49 kB, `RunHistoryPanel-8zhhtp04.js` 16.70 kB gzip 5.14 kB, `engine-DZ1GTedS.js` 5.68 kB gzip 2.04 kB, `index-BUF1FoVn.js` 366.75 kB gzip 111.02 kB, `index-DZR84vix.css` 67.02 kB gzip 11.64 kB.
-- Browser QA: Not run for the engine-only Multiclass helper slice because it has no UI or browser-visible behavior. Prior Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks remain recorded. Loss Landscape Probe UI Browser QA passed on 2026-05-13 with mouse activation, Enter activation, desktop screenshot, compact DOM verification, compact focused-button screenshot, and no console errors.
-- Accessibility: No UI was changed in the engine-only Multiclass helper slice. Prior Wave 1, Wave 4, Wave 6E, and Wave 7 accessibility coverage remains recorded.
-- Performance: `pnpm test:perf` passed on 2026-05-14 with 2 benchmark files and 4 benchmark tests. Observed output: `predictGrid` 1438.0162 ms, `predictGridInto` 1426.5795 ms, `predictGridWithNeurons` 817.1946 ms, `predictGridWithNeuronsInto` 770.4850 ms, Adam/L2/Clip applyGradients 7.3476 ms, and SGD applyGradients 2.1358 ms. The helper slice is not called by the live training loop; benchmark variance is recorded in `docs/perf/PERFORMANCE_BASELINE.md` rather than claimed as unchanged performance.
+- Tests: `pnpm --filter @nn-playground/engine test -- src/__tests__/network.test.ts` passed on 2026-05-14 with 13 files and 305 tests after the intended red run and review-found fixes. `pnpm test` then passed with engine 13 files/305 tests, shared 5 files/70 tests, and web 51 files/368 tests.
+- Lint: `pnpm lint` passed on 2026-05-14 with no ESLint output after the private Multiclass `Network` foundation slice.
+- Build: `pnpm build` passed on 2026-05-14 with the existing Vite chunk-size warning. Relevant chunks: `training.worker-DjkiQX_t.js` 89.00 kB, `InspectionPanel-DuOyQ9j7.js` 13.42 kB gzip 3.50 kB, `RunHistoryPanel-DWVn3xNz.js` 16.70 kB gzip 5.14 kB, `engine-DZ1GTedS.js` 5.68 kB gzip 2.04 kB, `index-BgwmzzLI.js` 366.75 kB gzip 111.02 kB, `index-DZR84vix.css` 67.02 kB gzip 11.64 kB.
+- Browser QA: Not run for the private Multiclass `Network` foundation slice because it has no UI or browser-visible behavior. Prior Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks remain recorded. Loss Landscape Probe UI Browser QA passed on 2026-05-13 with mouse activation, Enter activation, desktop screenshot, compact DOM verification, compact focused-button screenshot, and no console errors.
+- Accessibility: No UI was changed in the private Multiclass `Network` foundation slice. Prior Wave 1, Wave 4, Wave 6E, and Wave 7 accessibility coverage remains recorded.
+- Performance: `pnpm test:perf` passed on 2026-05-14 with 2 benchmark files and 4 benchmark tests. Observed output: `predictGrid` 1090.3664 ms, `predictGridInto` 1101.1419 ms, `predictGridWithNeurons` 688.5447 ms, `predictGridWithNeuronsInto` 591.9035 ms, Adam/L2/Clip applyGradients 4.0836 ms, and SGD applyGradients 1.3856 ms. The worker bundle increased from the previously recorded `86.45 kB` to `89.00 kB`, about 3.0%, below the 10% roadmap warning threshold. Details are recorded in `docs/perf/PERFORMANCE_BASELINE.md`.
 
 ## Browser QA Evidence
 
@@ -180,6 +181,8 @@
 | 2026-05-14 | Treat Multiclass Classification Mode as the next fresh Wave 7 approval gate | Prior bounded Wave 7 slices already covered arena, backprop, and loss landscape; multiclass is deferred and crosses multiple protected contracts, so only a design note is safe without approval | `docs/design-notes/multiclass-classification-mode.md`, `d984eae` |
 | 2026-05-14 | Implement the first Multiclass slice as engine-only math helpers | Stable softmax and categorical cross-entropy helpers can be tested without changing public config, URL/config serialization, worker protocol, frame buffers, UI, persistence, dependencies, or live training behavior | `docs/design-notes/multiclass-classification-mode.md`, `fe41851` |
 | 2026-05-14 | Validate categorical helper inputs as normalized distributions | Review found that the `probabilities - target` logit-gradient shortcut is only correct when both vectors sum to 1; the final helper contract rejects malformed distributions and accepts typed arrays | Wave 7 Multiclass helper review, `fe41851` |
+| 2026-05-14 | Keep multiclass `Network` support private until shared contracts are approved | The engine can now exercise softmax plus categorical cross-entropy through local casts and tests, but shared types, serialization, worker target encoding, URL/config, persistence, code export, and UI remain intentionally unchanged | Wave 7 Multiclass `Network` foundation, `8944d4c` |
+| 2026-05-14 | Compute private categorical `Network` loss from logits | Review found probability-clamped loss and `p - target` gradients diverge at extreme logits; log-sum-exp loss keeps the private engine path numerically aligned with the softmax gradient | Wave 7 Multiclass `Network` review, `8944d4c` |
 
 ## Known Issues
 
@@ -198,11 +201,12 @@
 - Wave 7 Loss Landscape Probe compact screenshot capture timed out after the repeated result-render check. Compact DOM verification passed with no console errors, and the compact screenshot captures the focused native probe button before the repeated result check.
 - `docs/roadmap/WAVE_7_PROPOSAL.md` is now historical. Use `docs/roadmap/ROADMAP_STATE.md` and current design notes as the source of truth.
 - Wave 7 Multiclass helper perf results on 2026-05-14 were slower than the prior loss-landscape UI perf run, but the new helpers are exported math utilities and are not called by the live training loop. Treat this as benchmark noise unless repeated future runs show the same regression while exercising an integrated multiclass path.
+- Wave 7 private Multiclass `Network` support is intentionally hidden behind local casts. Public/shared types, worker compatibility guards, UI controls, serialization, and code export still reject or do not expose multiclass config values.
 
 ## Blocked Items
 
 - Wave 7 paired heavy visualization, continuous arena streaming, URL/config serialization, persistence, public config shape changes, dependencies, additional engine training behavior changes, and multiple-worker live arena designs remain blocked/deferred. Scalar-only runtime and UI prototypes are complete.
-- Multiclass `Network` integration, config enum changes, worker target encoding, UI controls, URL/config serialization, persistence/run-history compatibility, and code export remain blocked pending separate explicit approval.
+- Public Multiclass integration, config enum changes, worker target encoding, UI controls, URL/config serialization, persistence/run-history compatibility, and code export remain blocked pending separate explicit approval.
 
 ## Deferred Items
 
@@ -211,8 +215,8 @@
 - Wave 4 follow-up visualization inspection improvements, including any gradient-flow overlay design.
 - Wave 4 existing-data text alternative/accessibility polish beyond the completed activation histogram explorer is explicitly deferred. No additional Wave 4 runtime, protocol, or frame-buffer data path is approved in this run.
 - Wave 6E persistence of checkpoints across reloads remains deferred and requires separate approval.
-- Wave 7 paired live model arena visualizations, advanced Loss Landscape Probe controls, multiclass `Network`/worker/UI integration, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
-- Multiclass Classification Mode implementation beyond the approved engine-only helper slice remains deferred pending separate explicit approval after review of `docs/design-notes/multiclass-classification-mode.md`.
+- Wave 7 paired live model arena visualizations, advanced Loss Landscape Probe controls, public multiclass worker/UI integration, advanced architecture comparison, and interactive gradient explanation mode remain deferred pending separate mandatory approvals.
+- Multiclass Classification Mode implementation beyond the private engine-only helper/`Network` foundation remains deferred pending separate explicit approval after review of `docs/design-notes/multiclass-classification-mode.md`.
 - Live arena URL/config serialization, persistence, paired boundary rendering, paired histograms, checkpoint sharing, continuous streaming, and multiple-worker execution are explicitly deferred from the scalar runtime/UI prototype.
 
 ## Approval Gates Reached
@@ -236,10 +240,11 @@
 - Wave 7 Multiclass Classification Mode design gate was prepared in `d984eae` after two approval-gate review passes. Implementation is not approved. Any code slice requires a separate explicit approval question.
 - Wave 7 first Multiclass engine-only helper slice was approved by the user on 2026-05-14 and committed in `fe41851`. The slice added stable softmax and categorical cross-entropy helpers only; it did not wire the helpers into `Network`, app config, worker/runtime, UI, persistence, URL/config, public config, code export, dependencies, deployment, or training behavior.
 - Post-commit gate reviews after `fe41851`/`f9b1134` found no blocking issues and recommended requesting explicit approval before the next implementation slice. One review observed a transient/flaky `MainArea.test.tsx` web failure on rerun that passed on the targeted retry; the coordinator's pre-commit `pnpm test` had already passed cleanly.
+- Wave 7 private Multiclass `Network` foundation was approved by the user's "continue working" message after the helper-slice update and committed in `8944d4c`. It adds cast-only engine support and tests for softmax plus categorical cross-entropy without exposing public/shared config, URL/config serialization, worker protocol, frame-buffer fields, persistence/run-history schema, code export, dependencies, deployment, or UI.
 
 ## Next Recommended Slice
 
-Next recommended step: request explicit approval for the next Multiclass Classification Mode implementation slice. The safest next candidate is an engine-only `Network` design/test slice that defines how softmax plus categorical cross-entropy would be integrated without exposing it through public config, URL/config serialization, worker protocol, frame buffers, persistence, code export, dependencies, deployment, or UI. Do not implement `ActivationType`/`LossType` changes, app controls, worker/runtime target encoding, serialization migrations, public config rollout, persistence/run-history changes, or UI without separate approval.
+Next recommended step: request explicit approval for the first public/shared Multiclass Classification Mode integration slice. The safest next candidate is a design/test slice for `ActivationType`/`LossType` contract expansion and strict serialization/compatibility migration tests, without UI controls, worker runtime target encoding, frame-buffer changes, persistence/run-history schema changes, code export changes, dependencies, or deployment changes until those are separately approved.
 
 ## Handoff Notes
 

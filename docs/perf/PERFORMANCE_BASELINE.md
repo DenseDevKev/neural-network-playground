@@ -767,3 +767,38 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 2.1358 ms
 
 The run was slower than the prior loss-landscape UI benchmark, but this slice only exports standalone math helpers and they are not called by the live training loop, worker cadence path, frame-buffer path, WebGPU path, or prediction grid path. Treat this as benchmark noise unless future integrated multiclass runs reproduce the slowdown while exercising a new path.
+
+## Wave 7 Private Multiclass Network Foundation
+
+Date: 2026-05-14
+
+Scope: private engine-only `Network` foundation for Multiclass Classification Mode. This slice lets engine tests exercise softmax output plus categorical cross-entropy through local casts, adds log-sum-exp categorical loss from output logits, validates categorical target distributions, and covers hidden-layer finite-difference gradients. It does not expose `ActivationType` or `LossType` publicly, change shared serialization, worker target encoding, protocol/frame-buffer paths, URL/config, persistence/run-history schema, code export, dependencies, deployment, or UI.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the private `Network` foundation slice. Relevant production output:
+
+- `dist/assets/training.worker-DjkiQX_t.js`: 89.00 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-DZ1GTedS.js`: 5.68 kB, gzip 2.04 kB
+- `dist/assets/InspectionPanel-DuOyQ9j7.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-DWVn3xNz.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-BgwmzzLI.js`: 366.75 kB, gzip 111.02 kB
+
+Compared with the prior Multiclass helper build, the worker bundle increased from 86.45 kB to 89.00 kB because the worker imports the engine class that now contains the private multiclass `Network` path. The increase is about 3.0%, below the roadmap 10% build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1090.3664 ms total for 100 iterations
+- `predictGridInto`: 1101.1419 ms total for 100 iterations
+- `predictGridWithNeurons`: 688.5447 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 591.9035 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0836 ms
+- Average `applyGradients` time (SGD): 1.3856 ms
+
+These values returned to the established benchmark range and remain below the roadmap warning thresholds. The private multiclass `Network` path is not exposed through current worker training configs or UI controls, so no live runtime cadence impact is expected until a separately approved public/shared integration slice wires it into app state and worker target encoding.
