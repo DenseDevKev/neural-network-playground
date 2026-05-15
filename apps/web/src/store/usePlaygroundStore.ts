@@ -347,7 +347,8 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
 
         syncToUrl: () => {
             const config = get().getConfig();
-            const hash = encodeUrlState(config);
+            const normalized = normalizeAppConfig(config, { mode: 'lenient' });
+            const hash = encodeUrlState(normalized.config ?? decodeUrlState(''));
             window.history.replaceState(null, '', '#' + hash);
         },
 

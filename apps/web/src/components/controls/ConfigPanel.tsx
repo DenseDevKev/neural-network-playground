@@ -17,7 +17,13 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
 
     const handleExport = useCallback(() => {
         const config = usePlaygroundStore.getState().getConfig();
-        const json = exportConfigJson(config);
+        const validation = validateImportedConfig(config);
+        if (!validation.config) {
+            setFeedback({ message: validation.error ?? 'Current config cannot be exported', tone: 'error' });
+            return;
+        }
+
+        const json = exportConfigJson(validation.config);
         const blob = new Blob([json], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

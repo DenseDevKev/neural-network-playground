@@ -6,6 +6,7 @@ import {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
     PRESETS,
+    decodeUrlState,
 } from '@nn-playground/shared';
 import type { DatasetType } from '@nn-playground/engine';
 import type { Preset } from '@nn-playground/shared';
@@ -53,6 +54,7 @@ describe('usePlaygroundStore compatibility guards', () => {
             features: { ...DEFAULT_FEATURES },
             ui: { showTestData: false, discretizeOutput: false },
         });
+        window.location.hash = '';
     });
 
     it('keeps loss/output activation compatible when loss changes', () => {
@@ -106,6 +108,19 @@ describe('usePlaygroundStore compatibility guards', () => {
 
         expectScalarRuntimeConfig();
         expect(window.location.hash).not.toContain('os=3');
+    });
+
+    it('does not publish hidden multiclass contracts when syncing the URL', () => {
+        seedHiddenMulticlassState();
+
+        usePlaygroundStore.getState().syncToUrl();
+
+        expect(window.location.hash).not.toContain('categoricalCrossEntropy');
+        expect(window.location.hash).not.toContain('softmax');
+        const decoded = decodeUrlState(window.location.hash.slice(1));
+        expect(decoded.network.outputSize).toBe(1);
+        expect(decoded.network.outputActivation).not.toBe('softmax');
+        expect(decoded.training.lossType).not.toBe('categoricalCrossEntropy');
     });
 
     it('updates advanced hyperparameters without disturbing unrelated config', () => {
