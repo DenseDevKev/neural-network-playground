@@ -17,7 +17,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
 
     const handleExport = useCallback(() => {
         const config = usePlaygroundStore.getState().getConfig();
-        const validation = validateImportedConfig(config);
+        const validation = validateImportedConfig(config, { allowMulticlass: true });
         if (!validation.config) {
             setFeedback({ message: validation.error ?? 'Current config cannot be exported', tone: 'error' });
             return;
@@ -69,7 +69,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                 const text = ev.target?.result as string;
                 let validation;
                 try {
-                    validation = validateImportedConfig(JSON.parse(text));
+                    validation = validateImportedConfig(JSON.parse(text), { allowMulticlass: true });
                 } catch {
                     validation = { config: null, error: 'Invalid JSON file' };
                 }
