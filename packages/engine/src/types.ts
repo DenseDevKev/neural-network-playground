@@ -3,7 +3,7 @@
 
 export type ProblemType = 'classification' | 'regression';
 
-export type ActivationType =
+export type ScalarActivationType =
     | 'relu'
     | 'tanh'
     | 'sigmoid'
@@ -13,7 +13,11 @@ export type ActivationType =
     | 'swish'
     | 'softplus';
 
-export type LossType = 'mse' | 'crossEntropy' | 'huber';
+export type ActivationType = ScalarActivationType | 'softmax';
+
+export type ScalarLossType = 'mse' | 'crossEntropy' | 'huber';
+
+export type LossType = ScalarLossType | 'categoricalCrossEntropy';
 
 export type OptimizerType = 'sgd' | 'sgdMomentum' | 'adam';
 

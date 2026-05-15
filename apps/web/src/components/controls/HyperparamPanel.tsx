@@ -19,6 +19,7 @@ import type {
     LRScheduleType,
     OptimizerType,
     RegularizationType,
+    ScalarLossType,
     WeightInitType,
 } from '@nn-playground/engine';
 import { Tooltip } from '../common/Tooltip.tsx';
@@ -219,7 +220,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             value={lossType}
                             onChange={(e) => usePlaygroundStore.getState().setLossType(e.target.value as LossType)}
                         >
-                            {(Object.keys(LOSS_LABELS) as LossType[]).map((l) => (
+                            {(Object.keys(LOSS_LABELS) as ScalarLossType[]).map((l) => (
                                 <option key={l} value={l}>{LOSS_LABELS[l]}</option>
                             ))}
                         </select>

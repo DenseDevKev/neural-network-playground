@@ -1,5 +1,5 @@
 // ── Activation functions with derivatives ──
-import type { ActivationType } from './types.js';
+import type { ActivationType, ScalarActivationType } from './types.js';
 
 export interface ActivationFn {
     f: (x: number) => number;
@@ -99,7 +99,7 @@ const softplus: ActivationFn = {
     df: (x) => stableSigmoid(x),
 };
 
-const ACTIVATIONS: Record<ActivationType, ActivationFn> = {
+const ACTIVATIONS: Record<ScalarActivationType, ActivationFn> = {
     relu,
     tanh: tanh_,
     sigmoid,
@@ -110,8 +110,12 @@ const ACTIVATIONS: Record<ActivationType, ActivationFn> = {
     softplus,
 };
 
-export function getActivation(type: ActivationType): ActivationFn {
-    return ACTIVATIONS[type];
+export function getActivation(type: ScalarActivationType): ActivationFn {
+    const activation = ACTIVATIONS[type];
+    if (activation == null) {
+        throw new RangeError('softmax is a vector activation; use softmax() for logits');
+    }
+    return activation;
 }
 
 /** Human-readable labels for the UI. */
@@ -124,4 +128,5 @@ export const ACTIVATION_LABELS: Record<ActivationType, string> = {
     elu: 'ELU',
     swish: 'Swish',
     softplus: 'Softplus',
+    softmax: 'Softmax',
 };

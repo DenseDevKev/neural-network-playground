@@ -4,6 +4,7 @@ import {
     batchLoss,
     isLossCompatible,
     describeLossIncompatibility,
+    LOSS_LABELS,
     categoricalCrossEntropy,
     categoricalCrossEntropyLogitGradient,
 } from '../losses.js';
@@ -65,6 +66,11 @@ describe('Cross-Entropy loss', () => {
 });
 
 describe('Categorical cross-entropy loss', () => {
+    it('is exposed as a vector loss, not through scalar getLoss', () => {
+        expect(() => getLoss('categoricalCrossEntropy')).toThrow(RangeError);
+        expect(Object.keys(LOSS_LABELS)).not.toContain('categoricalCrossEntropy');
+    });
+
     it('is small for a confident correct class probability', () => {
         expect(categoricalCrossEntropy([0.01, 0.98, 0.01], [0, 1, 0])).toBeLessThan(0.03);
     });
@@ -175,6 +181,13 @@ describe('loss/activation compatibility', () => {
         expect(isLossCompatible('crossEntropy', 'sigmoid')).toBe(true);
         expect(isLossCompatible('crossEntropy', 'linear')).toBe(false);
         expect(isLossCompatible('crossEntropy', 'tanh')).toBe(false);
+        expect(isLossCompatible('crossEntropy', 'softmax')).toBe(false);
+    });
+
+    it('categorical cross-entropy is only compatible with softmax', () => {
+        expect(isLossCompatible('categoricalCrossEntropy', 'softmax')).toBe(true);
+        expect(isLossCompatible('categoricalCrossEntropy', 'sigmoid')).toBe(false);
+        expect(isLossCompatible('categoricalCrossEntropy', 'linear')).toBe(false);
     });
 
     it('MSE and Huber accept unbounded activations', () => {
@@ -186,6 +199,8 @@ describe('loss/activation compatibility', () => {
     it('MSE and Huber reject sigmoid', () => {
         expect(isLossCompatible('mse', 'sigmoid')).toBe(false);
         expect(isLossCompatible('huber', 'sigmoid')).toBe(false);
+        expect(isLossCompatible('mse', 'softmax')).toBe(false);
+        expect(isLossCompatible('huber', 'softmax')).toBe(false);
     });
 
     it('describeLossIncompatibility names both loss and activation', () => {
@@ -193,6 +208,13 @@ describe('loss/activation compatibility', () => {
         expect(msg).toContain('Cross-Entropy');
         expect(msg).toContain('tanh');
         expect(msg).toContain('sigmoid');
+    });
+
+    it('describes categorical loss incompatibility without exposing it in scalar labels', () => {
+        const msg = describeLossIncompatibility('categoricalCrossEntropy', 'sigmoid');
+        expect(msg).toContain('Categorical Cross-Entropy');
+        expect(msg).toContain('sigmoid');
+        expect(msg).toContain('softmax');
     });
 });
 

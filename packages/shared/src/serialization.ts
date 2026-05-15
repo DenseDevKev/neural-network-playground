@@ -6,6 +6,7 @@ import type {
     TrainingConfig,
     DatasetType,
     ActivationType,
+    ScalarActivationType,
     LossType,
     OptimizerType,
     RegularizationType,
@@ -39,7 +40,7 @@ const VALID_DATASETS = new Set<DatasetType>([
     'reg-gauss',
 ]);
 
-const VALID_ACTIVATIONS = new Set<ActivationType>([
+const VALID_HIDDEN_ACTIVATIONS = new Set<ScalarActivationType>([
     'relu',
     'tanh',
     'sigmoid',
@@ -49,9 +50,13 @@ const VALID_ACTIVATIONS = new Set<ActivationType>([
     'swish',
     'softplus',
 ]);
+const VALID_OUTPUT_ACTIVATIONS = new Set<ActivationType>([
+    ...VALID_HIDDEN_ACTIVATIONS,
+    'softmax',
+]);
 
 const VALID_WEIGHT_INITS = new Set<WeightInitType>(['xavier', 'he', 'uniform', 'zeros']);
-const VALID_LOSSES = new Set<LossType>(['mse', 'crossEntropy', 'huber']);
+const VALID_LOSSES = new Set<LossType>(['mse', 'crossEntropy', 'huber', 'categoricalCrossEntropy']);
 const VALID_OPTIMIZERS = new Set<OptimizerType>(['sgd', 'sgdMomentum', 'adam']);
 const VALID_REGULARIZATION = new Set<RegularizationType>(['none', 'l1', 'l2']);
 const VALID_PROBLEM_TYPES = new Set<DataConfig['problemType']>(['classification', 'regression']);
@@ -198,7 +203,7 @@ export function decodeUrlState(hash: string): AppConfig {
 
     const outputActivation = getCompatibleOutputActivation(
         training.lossType,
-        getValidValue(p.get('oa'), VALID_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
+        getValidValue(p.get('oa'), VALID_OUTPUT_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
     );
 
     const candidate: AppConfig = {
@@ -206,7 +211,7 @@ export function decodeUrlState(hash: string): AppConfig {
             inputSize,
             hiddenLayers,
             outputSize: 1,
-            activation: getValidValue(p.get('a'), VALID_ACTIVATIONS, DEFAULT_NETWORK.activation),
+            activation: getValidValue(p.get('a'), VALID_HIDDEN_ACTIVATIONS, DEFAULT_NETWORK.activation),
             outputActivation,
             weightInit: getValidValue(p.get('wi'), VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
             seed: parseNum(p.get('ws'), DEFAULT_NETWORK.seed),
@@ -260,6 +265,7 @@ function getCompatibleOutputActivation(
     if (isLossCompatible(lossType, outputActivation)) {
         return outputActivation;
     }
+    if (lossType === 'categoricalCrossEntropy') return 'softmax';
     return lossType === 'crossEntropy' ? 'sigmoid' : 'linear';
 }
 
@@ -472,7 +478,13 @@ export function normalizeAppConfig(
         return { config: null, error: 'Hidden layer sizes must be between 1 and 32.' };
     }
 
-    if (strict && (!VALID_ACTIVATIONS.has(network.activation as ActivationType) || !VALID_ACTIVATIONS.has(network.outputActivation as ActivationType))) {
+    if (
+        strict &&
+        (
+            !VALID_HIDDEN_ACTIVATIONS.has(network.activation as ScalarActivationType) ||
+            !VALID_OUTPUT_ACTIVATIONS.has(network.outputActivation as ActivationType)
+        )
+    ) {
         return { config: null, error: 'Configuration contains an unsupported activation function.' };
     }
 
@@ -484,6 +496,18 @@ export function normalizeAppConfig(
         return { config: null, error: 'Network seed must be a valid number.' };
     }
 
+    if (strict && !VALID_LOSSES.has(training.lossType as LossType)) {
+        return { config: null, error: 'Configuration contains an unsupported loss function.' };
+    }
+
+    const recognizedMulticlassContract = (
+        training.lossType === 'categoricalCrossEntropy' ||
+        network.outputActivation === 'softmax'
+    );
+    if (strict && recognizedMulticlassContract) {
+        return { config: null, error: 'Multiclass configurations are not runtime-enabled yet.' };
+    }
+
     if (
         strict &&
         (
@@ -493,10 +517,6 @@ export function normalizeAppConfig(
         )
     ) {
         return { config: null, error: 'Only single-output networks are supported.' };
-    }
-
-    if (strict && !VALID_LOSSES.has(training.lossType as LossType)) {
-        return { config: null, error: 'Configuration contains an unsupported loss function.' };
     }
 
     if (strict && !VALID_OPTIMIZERS.has(training.optimizer as OptimizerType)) {
@@ -563,8 +583,11 @@ export function normalizeAppConfig(
     const lossType = getValidValue(training.lossType as string | null, VALID_LOSSES, DEFAULT_TRAINING.lossType);
     const outputActivation = getCompatibleOutputActivation(
         lossType,
-        getValidValue(network.outputActivation as string | null, VALID_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
+        getValidValue(network.outputActivation as string | null, VALID_OUTPUT_ACTIVATIONS, DEFAULT_NETWORK.outputActivation),
     );
+    if (!strict && (lossType === 'categoricalCrossEntropy' || outputActivation === 'softmax')) {
+        return { config: defaults, error: null };
+    }
 
     const gradientClip = training.gradientClip === null || training.gradientClip === undefined
         ? null
@@ -628,7 +651,7 @@ export function normalizeAppConfig(
                 outputSize: isFiniteNumber(network.outputSize) && Number.isInteger(network.outputSize) && network.outputSize === 1
                     ? network.outputSize
                     : 1,
-                activation: getValidValue(network.activation as string | null, VALID_ACTIVATIONS, DEFAULT_NETWORK.activation),
+                activation: getValidValue(network.activation as string | null, VALID_HIDDEN_ACTIVATIONS, DEFAULT_NETWORK.activation),
                 outputActivation,
                 weightInit: getValidValue(network.weightInit as string | null, VALID_WEIGHT_INITS, DEFAULT_NETWORK.weightInit),
                 seed: isFiniteNumber(network.seed) ? network.seed : DEFAULT_NETWORK.seed,

@@ -115,6 +115,19 @@ describe('validateImportedConfig', () => {
         expect(result.error).toBe('Configuration contains an unsupported activation function.');
     });
 
+    it('rejects softmax as a hidden activation even while reserving it for multiclass outputs', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            network: {
+                ...validConfig.network,
+                activation: 'softmax',
+            },
+        });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('Configuration contains an unsupported activation function.');
+    });
+
     it('rejects invalid learning-rate ranges', () => {
         const result = validateImportedConfig({
             ...validConfig,
@@ -177,6 +190,14 @@ describe('decodeUrlState', () => {
         expect(decoded.network.outputActivation).toBe('linear');
     });
 
+    it('keeps multiclass URL experiments gated to the current runtime defaults', () => {
+        const decoded = decodeUrlState('l=categoricalCrossEntropy&oa=softmax');
+
+        expect(decoded.training.lossType).toBe(DEFAULT_TRAINING.lossType);
+        expect(decoded.network.outputActivation).toBe(DEFAULT_NETWORK.outputActivation);
+        expect(decoded.network.outputSize).toBe(1);
+    });
+
     it('keeps malicious numeric URL values within safe runtime limits', () => {
         const decoded = decodeUrlState(
             'ns=999999999&bs=0&lr=Infinity&r=2&n=-10&s=NaN&ws=Infinity&hl=9999,0,-3,nope',
@@ -226,6 +247,28 @@ describe('compatibility normalization', () => {
         expect(result.error).toBeNull();
         expect(result.config?.training.lossType).toBe('mse');
         expect(result.config?.network.outputActivation).toBe('linear');
+    });
+
+    it('recognizes but rejects multiclass imports until worker/runtime support is approved', () => {
+        const result = validateImportedConfig({
+            ...validConfig,
+            data: {
+                ...validConfig.data,
+                problemType: 'classification',
+            },
+            network: {
+                ...validConfig.network,
+                outputSize: 3,
+                outputActivation: 'softmax',
+            },
+            training: {
+                ...validConfig.training,
+                lossType: 'categoricalCrossEntropy',
+            },
+        });
+
+        expect(result.config).toBeNull();
+        expect(result.error).toBe('Multiclass configurations are not runtime-enabled yet.');
     });
 
     it('strictly rejects unsafe imported numeric ranges through the shared normalizer', () => {

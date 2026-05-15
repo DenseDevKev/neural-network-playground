@@ -31,6 +31,16 @@ describe('HyperparamPanel accessibility', () => {
         expect(screen.getByRole('combobox', { name: 'Regularization' })).toBeInTheDocument();
     });
 
+    it('does not expose multiclass-only loss or output activation controls yet', () => {
+        render(<HyperparamPanel />);
+
+        const loss = screen.getByRole('combobox', { name: 'Loss' });
+        expect(loss).not.toHaveTextContent('Categorical Cross-Entropy');
+
+        const outputActivation = screen.getByRole('combobox', { name: 'Output activation' });
+        expect(outputActivation).not.toHaveTextContent('Softmax');
+    });
+
     it('explains cause and effect in hyperparameter tooltips', () => {
         render(<HyperparamPanel />);
 

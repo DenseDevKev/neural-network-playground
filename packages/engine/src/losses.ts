@@ -1,5 +1,5 @@
 // ── Loss functions with output-layer gradients ──
-import type { LossType, ActivationType } from './types.js';
+import type { LossType, ScalarLossType, ActivationType } from './types.js';
 
 export interface LossFn {
     /** Compute loss for a single sample. */
@@ -111,13 +111,16 @@ function makeHuber(delta: number): LossFn {
 }
 
 const DEFAULT_HUBER = makeHuber(DEFAULT_HUBER_DELTA);
-const LOSSES: Record<LossType, LossFn> = { mse, crossEntropy, huber: DEFAULT_HUBER };
+const LOSSES: Record<ScalarLossType, LossFn> = { mse, crossEntropy, huber: DEFAULT_HUBER };
 
 /**
  * Resolve a loss type to its function. For Huber, an optional `huberDelta`
  * produces a delta-configured LossFn; if omitted, the module default is used.
  */
 export function getLoss(type: LossType, opts?: { huberDelta?: number }): LossFn {
+    if (type === 'categoricalCrossEntropy') {
+        throw new RangeError('categoricalCrossEntropy is a vector loss; use categoricalCrossEntropy()');
+    }
     if (type === 'huber' && opts?.huberDelta != null) {
         if (!Number.isFinite(opts.huberDelta) || opts.huberDelta <= 0) {
             throw new RangeError('huberDelta must be finite and greater than 0');
@@ -147,10 +150,15 @@ export function batchLoss(
     return sum / predictions.length;
 }
 
-export const LOSS_LABELS: Record<LossType, string> = {
+export const LOSS_LABELS: Record<ScalarLossType, string> = {
     mse: 'MSE (Squared)',
     crossEntropy: 'Cross-Entropy',
     huber: 'Huber',
+};
+
+const LOSS_DISPLAY_LABELS: Record<LossType, string> = {
+    ...LOSS_LABELS,
+    categoricalCrossEntropy: 'Categorical Cross-Entropy',
 };
 
 /**
@@ -164,6 +172,7 @@ const LOSS_COMPATIBLE_ACTIVATIONS: Record<LossType, ReadonlyArray<ActivationType
     crossEntropy: ['sigmoid'],
     mse: ['linear', 'tanh', 'relu', 'leakyRelu', 'elu', 'swish', 'softplus'],
     huber: ['linear', 'tanh', 'relu', 'leakyRelu', 'elu', 'swish', 'softplus'],
+    categoricalCrossEntropy: ['softmax'],
 };
 
 /** Returns true iff the given loss type can be safely combined with the output activation. */
@@ -178,7 +187,7 @@ export function describeLossIncompatibility(
 ): string {
     const allowed = LOSS_COMPATIBLE_ACTIVATIONS[lossType].join(', ');
     return (
-        `Loss "${LOSS_LABELS[lossType]}" is not compatible with output activation ` +
+        `Loss "${LOSS_DISPLAY_LABELS[lossType]}" is not compatible with output activation ` +
         `"${outputActivation}". Compatible activations: ${allowed}.`
     );
 }

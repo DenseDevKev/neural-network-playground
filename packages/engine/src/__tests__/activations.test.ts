@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { getActivation, softmax } from '../activations.js';
+import { ACTIVATION_LABELS, getActivation, softmax } from '../activations.js';
 import type { ActivationType } from '../types.js';
 
 describe('getActivation', () => {
     it('returns a function pair for all known types', () => {
-        const types: ActivationType[] = [
+        const types: Exclude<ActivationType, 'softmax'>[] = [
             'relu', 'tanh', 'sigmoid', 'linear',
             'leakyRelu', 'elu', 'swish', 'softplus',
         ];
@@ -14,6 +14,11 @@ describe('getActivation', () => {
             expect(typeof act.f).toBe('function');
             expect(typeof act.df).toBe('function');
         }
+    });
+
+    it('keeps softmax as a vector-only activation outside scalar lookup', () => {
+        expect(ACTIVATION_LABELS.softmax).toBe('Softmax');
+        expect(() => getActivation('softmax' as Exclude<ActivationType, 'softmax'>)).toThrow(RangeError);
     });
 });
 
@@ -205,7 +210,7 @@ describe('softmax', () => {
 
 describe('Numerical gradient check (all activations)', () => {
     const h = 1e-5;
-    const types: ActivationType[] = [
+    const types: Exclude<ActivationType, 'softmax'>[] = [
         'relu', 'tanh', 'sigmoid', 'linear',
         'leakyRelu', 'elu', 'swish', 'softplus',
     ];

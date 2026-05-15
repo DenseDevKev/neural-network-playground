@@ -40,7 +40,9 @@ export const MAX_GPU_WIDTH = 64;
 /** Max layers including input + output (must match the const in the shader). */
 export const MAX_GPU_LAYERS = 8;
 
-const ACTIVATION_ID: Record<ActivationType, number> = {
+type GpuActivationType = Exclude<ActivationType, 'softmax'>;
+
+const ACTIVATION_ID: Record<GpuActivationType, number> = {
     relu: 0,
     tanh: 1,
     sigmoid: 2,
@@ -50,6 +52,13 @@ const ACTIVATION_ID: Record<ActivationType, number> = {
     swish: 6,
     softplus: 7,
 };
+
+function getGpuActivationId(activation: ActivationType): number {
+    if (activation === 'softmax') {
+        throw new RangeError('WebGPU grid prediction does not support softmax outputs yet');
+    }
+    return ACTIVATION_ID[activation];
+}
 
 // ── Shader source ──────────────────────────────────────────────────────────
 // Embedded as a string template so we don't depend on any bundler magic
@@ -303,8 +312,8 @@ export class WebGPUGridPredictor {
 
         this.device = args.device;
         this.layerSizes = [...args.layerSizes];
-        this.actHiddenId = ACTIVATION_ID[args.hiddenActivation];
-        this.actOutputId = ACTIVATION_ID[args.outputActivation];
+        this.actHiddenId = getGpuActivationId(args.hiddenActivation);
+        this.actOutputId = getGpuActivationId(args.outputActivation);
         this.gridLen = args.gridLen;
         this.inputSize = args.layerSizes[0];
         this.weightTotal = totalWeights(args.layerSizes);
