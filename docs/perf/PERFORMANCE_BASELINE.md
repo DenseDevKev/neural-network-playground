@@ -1199,6 +1199,42 @@ Observed benchmark output:
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects visualization rendering only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
 
+## Wave 7 Config Panel Import Rejection Guard
+
+Date: 2026-05-15
+
+Scope: test-only guard for future Multiclass Classification Mode. The Config Panel import test now asserts hidden unsupported multiclass JSON is rejected through the existing strict validation path before applying a preset, resetting training state, or mutating public scalar network/training settings. This slice does not change production code, URL/config format, public config shape, persistence/run-history schema, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, training behavior, or visualization payload transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `2545487`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-CJxUHbWK.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-BWFvgAAd.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-XQ4O8pIB.js`: 16.71 kB, gzip 5.15 kB
+- `dist/assets/index-Cr2dBbDY.js`: 369.84 kB, gzip 111.75 kB
+
+Compared with the binary confusion matrix guard build, production output remained unchanged. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1076.4446 ms total for 100 iterations
+- `predictGridInto`: 1060.0425 ms total for 100 iterations
+- `predictGridWithNeurons`: 670.3855 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 577.6365 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9816 ms
+- Average `applyGradients` time (SGD): 1.5374 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is test-only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
 ## Wave 7 Public Store Setter Non-Exposure Guard
 
 Date: 2026-05-15
