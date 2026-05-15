@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { DEFAULT_NETWORK } from '@nn-playground/shared';
 import { ConfusionMatrix } from './ConfusionMatrix';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -16,6 +17,12 @@ function setProblemType(problemType: 'classification' | 'regression') {
 describe('ConfusionMatrix', () => {
   beforeEach(() => {
     setProblemType('classification');
+    usePlaygroundStore.setState((state) => ({
+      network: {
+        ...DEFAULT_NETWORK,
+        inputSize: state.network.inputSize,
+      },
+    }));
     useTrainingStore.getState().resetHistory();
     useTrainingStore.setState({
       status: 'idle',
@@ -50,6 +57,72 @@ describe('ConfusionMatrix', () => {
     expect(screen.getByText(/metrics are still loading/i)).toBeInTheDocument();
     expect(screen.queryByText(/only renders binary classification matrices/i)).not.toBeInTheDocument();
     expect(screen.queryByText('No test data')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pred 1')).not.toBeInTheDocument();
+  });
+
+  it('should not render a stale binary matrix for hidden multiclass config', () => {
+    usePlaygroundStore.setState((state) => ({
+      network: {
+        ...state.network,
+        outputSize: 3,
+        outputActivation: 'softmax',
+      },
+    }));
+    useTrainingStore.setState({
+      testPoints: [{ x: 0, y: 0, label: 0 }],
+      snapshot: {
+        testMetrics: {
+          loss: 0.4,
+          accuracy: 0.6,
+          confusionMatrix: { tn: 40, fp: 10, fn: 5, tp: 45 },
+        },
+      } as any,
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Confusion matrix unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/only renders binary classification matrices/i)).toBeInTheDocument();
+    expect(screen.queryByText('Pred 1')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('TP cell')).not.toBeInTheDocument();
+  });
+
+  it('should not render a stale binary matrix for non-binary test labels', () => {
+    useTrainingStore.setState({
+      testPoints: [{ x: 0, y: 0, label: 2 }],
+      snapshot: {
+        testMetrics: {
+          loss: 0.4,
+          accuracy: 0.6,
+          confusionMatrix: { tn: 40, fp: 10, fn: 5, tp: 45 },
+        },
+      } as any,
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Confusion matrix unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/only renders binary classification matrices/i)).toBeInTheDocument();
+    expect(screen.queryByText('Pred 1')).not.toBeInTheDocument();
+  });
+
+  it('should not render a stale binary matrix when train labels reveal multiclass data', () => {
+    useTrainingStore.setState({
+      trainPoints: [{ x: 0, y: 0, label: 2 }],
+      testPoints: [{ x: 1, y: 1, label: 1 }],
+      snapshot: {
+        testMetrics: {
+          loss: 0.4,
+          accuracy: 0.6,
+          confusionMatrix: { tn: 40, fp: 10, fn: 5, tp: 45 },
+        },
+      } as any,
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Confusion matrix unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/only renders binary classification matrices/i)).toBeInTheDocument();
     expect(screen.queryByText('Pred 1')).not.toBeInTheDocument();
   });
 

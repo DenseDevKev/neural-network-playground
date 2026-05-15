@@ -3,6 +3,7 @@ import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
+import type { DataPoint } from '@nn-playground/engine';
 
 function formatPercent(value: number, total: number): string {
     if (total === 0) return '0.0%';
@@ -14,8 +15,18 @@ function formatRatio(numerator: number, denominator: number): string {
     return `${((numerator / denominator) * 100).toFixed(1)}%`;
 }
 
+function hasNonBinaryLabels(points: DataPoint[]): boolean {
+    return points.some((point) => {
+        const { label } = point;
+        return typeof label === 'number' && label !== 0 && label !== 1;
+    });
+}
+
 export const ConfusionMatrix = memo(function ConfusionMatrix() {
     const problemType = usePlaygroundStore((s) => s.data.problemType);
+    const outputSize = usePlaygroundStore((s) => s.network.outputSize);
+    const outputActivation = usePlaygroundStore((s) => s.network.outputActivation);
+    const trainPoints = useTrainingStore((s) => s.trainPoints);
     const testPoints = useTrainingStore((s) => s.testPoints);
     const cm = useTrainingStore((s) => s.snapshot?.testMetrics.confusionMatrix);
 
@@ -28,6 +39,19 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
                     icon="📊"
                     title="No test data"
                     description="Train the model to generate test predictions and evaluation metrics."
+                />
+            </div>
+        );
+    }
+
+    if (outputSize !== 1 || outputActivation === 'softmax' || hasNonBinaryLabels(trainPoints) || hasNonBinaryLabels(testPoints)) {
+        return (
+            <div className="panel confusion-matrix">
+                <div className="panel__title">Confusion Matrix (Test Set)</div>
+                <EmptyState
+                    icon="📊"
+                    title="Confusion matrix unavailable"
+                    description="This panel only renders binary classification matrices. Use loss and accuracy while multiclass matrix support is unavailable."
                 />
             </div>
         );
