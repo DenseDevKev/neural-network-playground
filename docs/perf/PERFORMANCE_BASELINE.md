@@ -19,7 +19,7 @@ Wave 0 lightweight baseline using existing repository commands only. This file i
 
 Relevant production output:
 
-- `dist/index.html`: 1.29 kB, gzip 0.55 kB
+- `dist/index.html`: 1.29 kB, gzip 0.56 kB
 - `dist/assets/training.worker-DVftvNQG.js`: 68.66 kB
 - `dist/assets/index-BEeM6uz0.css`: 62.39 kB, gzip 10.91 kB
 - `dist/assets/InspectionPanel-DSsWDBeL.js`: 5.57 kB, gzip 1.67 kB
@@ -2066,3 +2066,51 @@ only a Data-panel chip and component tests. It does not touch engine prediction,
 training hot paths, worker execution, or visualization transport. Treat this as
 continuing local benchmark noise from the public preset verification period and
 watch a fresh baseline before making a performance claim.
+
+## Wave 7 Three-Class Softmax Lesson
+
+Date: 2026-05-15
+
+Scope: guided lesson content for the already-approved public
+`three-class-clusters` tuple. The slice adds one lesson definition, lesson
+registry/component tests, and explicit `type="button"` semantics on guided
+lesson controls. It does not change engine prediction, training behavior,
+worker protocol, frame-buffer semantics, URL/config format, persistence schema,
+dependencies, deployment, official worker-authored 3x3 metrics, arbitrary
+class counts, or raw probability-grid transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-rMnDb0A3.js`: 94.59 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-CQ_Mv_Fb.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-DwyCI2Q1.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-Du-Wd4qj.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-ChHSwtYc.js`: 386.32 kB, gzip 116.10 kB
+
+Compared with the public Data-chip build, the worker, CSS, engine, Code Export,
+React, Inspection, and Run History chunks stayed effectively unchanged. The
+main app chunk changed from 385.11 kB to 386.32 kB, about 0.31%, below the 10%
+roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1282.0602 ms total for 100 iterations
+- `predictGridInto`: 1263.4797 ms total for 100 iterations
+- `predictGridWithNeurons`: 964.6508 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 686.3199 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.6885 ms
+- Average `applyGradients` time (SGD): 1.6295 ms
+
+The timing values returned to the established local baseline range after the
+noisy Data-chip verification period. The slice is educational UI content and
+button semantics only, so no runtime performance impact is expected from the
+changed files.
