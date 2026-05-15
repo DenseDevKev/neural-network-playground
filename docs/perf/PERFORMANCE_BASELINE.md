@@ -946,3 +946,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4034 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is code-export-only and does not touch engine training, worker cadence, frame-buffer transport, or live visualization paths.
+
+## Wave 7 Stale Confusion Cache Guard
+
+Date: 2026-05-15
+
+Scope: test-stability cleanup plus a runtime/cache guard for future Multiclass Classification Mode. The test-stability slice widens waits around existing lazy/Suspense panel content under heavy load. The runtime slice clears stale binary confusion data from both the React snapshot and frame buffer when a fresh streamed snapshot omits confusion data, while preserving prior confusion during explicitly stale test-metrics snapshots. It does not change worker protocol fields, frame-buffer version semantics, URL/config serialization, persistence/run-history schema, public config shape, engine math, dependencies, deployment, or visible UI.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `1529904` and `6ef96c2`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-DG3lU0-G.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-D_SGlGP9.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-C9e_zIIf.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-DNwr_meN.js`: 367.43 kB, gzip 111.20 kB
+
+Compared with the code-export guard build, the worker, lazy Code Export, engine, CSS, inspection, and run-history chunk sizes remain effectively unchanged. The main app bundle changed from 367.34 kB to 367.43 kB, about 0.02%, well below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1115.9496 ms total for 100 iterations
+- `predictGridInto`: 1093.1002 ms total for 100 iterations
+- `predictGridWithNeurons`: 686.7536 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 582.5746 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.1261 ms
+- Average `applyGradients` time (SGD): 1.4488 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. One intermediate perf run before the final verification was noisy (`predictGridWithNeurons` 1048.0556 ms and `predictGridWithNeuronsInto` 717.0967 ms), but the repeat final run returned to the recent range. The runtime slice only changes cache invalidation for omitted binary confusion data and should not affect engine training throughput.
