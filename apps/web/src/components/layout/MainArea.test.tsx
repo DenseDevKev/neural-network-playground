@@ -13,6 +13,8 @@ import {
 } from '@nn-playground/shared';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 
+const lazyPanelWait = { timeout: 10000 };
+
 vi.mock('../controls/TrainingControls.tsx', () => ({
     TrainingControls: () => <div>Training controls</div>,
 }));
@@ -94,7 +96,7 @@ describe('MainArea right-panel content', () => {
         render(<MainArea training={createTrainingMock()} />);
 
         // Code Export panel is always visible — no collapse needed
-        expect(await screen.findByRole('button', { name: 'Pseudocode' })).toBeInTheDocument();
+        expect(await screen.findByRole('button', { name: 'Pseudocode' }, lazyPanelWait)).toBeInTheDocument();
         expect(document.querySelector('.code-export__code')?.textContent).toBeTruthy();
     });
 

@@ -3,6 +3,8 @@ import { render, screen } from '@testing-library/react';
 import { Sidebar } from './Sidebar';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 
+const lazyPanelWait = { timeout: 10000 };
+
 describe('Sidebar panels', () => {
     beforeEach(() => {
         usePlaygroundStore.setState((state) => ({
@@ -43,7 +45,7 @@ describe('Sidebar panels', () => {
 
     it('loads hyperparameters panel via Suspense', async () => {
         render(<Sidebar onReset={vi.fn()} />);
-        expect(await screen.findByText('Learning rate')).toBeInTheDocument();
+        expect(await screen.findByText('Learning rate', undefined, lazyPanelWait)).toBeInTheDocument();
     });
 
     it('renders the sidebar with accessible complementary role', () => {

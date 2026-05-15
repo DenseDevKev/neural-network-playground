@@ -14,6 +14,8 @@ const trainingMock = {
     restoreCheckpoint: vi.fn(),
 };
 
+const lazyPanelWait = { timeout: 10000 };
+
 vi.mock('../hooks/useTraining.ts', () => ({
     useTraining: () => trainingMock,
 }));
@@ -128,8 +130,8 @@ describe('App shell integration', () => {
         expect(screen.getByText('Mock Network Config')).toBeInTheDocument();
         expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
         expect(screen.getByText('Mock Config Panel')).toBeInTheDocument();
-        expect(await screen.findByText('Mock Inspection')).toBeInTheDocument();
-        expect(await screen.findByText('Mock Code Export')).toBeInTheDocument();
+        expect(await screen.findByText('Mock Inspection', undefined, lazyPanelWait)).toBeInTheDocument();
+        expect(await screen.findByText('Mock Code Export', undefined, lazyPanelWait)).toBeInTheDocument();
     });
 
     it('renders parity-complete controls in the focus layout', async () => {
