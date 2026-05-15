@@ -1558,3 +1558,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.5421 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The existing perf suite does not directly time `predictMulticlassBoundaryInto`; runtime protection for this slice is covered by demand/cadence worker tests, protocol guards, frame-buffer version tests, and bounded inline transfer of class/confidence grids only when requested.
+
+## Wave 7 Multiclass Decision Boundary Renderer
+
+Date: 2026-05-15
+
+Scope: read-only visualization renderer for future Multiclass Classification Mode. The `DecisionBoundary` component can now render bounded class/confidence grids already held in the frame buffer, adds class legend and confidence summary text, and preserves the scalar snapshot fallback. This slice does not change worker protocol, frame-buffer semantics, SharedArrayBuffer/WebGPU transport, URL/config serialization, persistence/run-history schema, public config shape, public controls, dependencies, deployment, engine math, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `9414244`. Relevant production output:
+
+- `dist/assets/training.worker-CFzxpQkv.js`: 93.78 kB
+- `dist/assets/index-BotKS8Aj.css`: 67.38 kB, gzip 11.68 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-CcEDnnW3.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-BPhjphFy.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-BgBp1Hoe.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-CeJs9-s2.js`: 376.41 kB, gzip 113.46 kB
+
+Compared with the multiclass boundary transport build, the worker bundle stayed at 93.78 kB, CSS increased from 67.02 kB to 67.38 kB (about 0.5%), and the main app bundle increased from 373.29 kB to 376.41 kB (about 0.8%). These changes remain below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1126.5585 ms total for 100 iterations
+- `predictGridInto`: 1105.0490 ms total for 100 iterations
+- `predictGridWithNeurons`: 693.9335 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 595.6118 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.3604 ms
+- Average `applyGradients` time (SGD): 1.3771 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The renderer iterates only bounded frame-buffer grids already produced by the worker and does not introduce new runtime data collection or hot-path training work.
