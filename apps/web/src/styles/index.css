@@ -1497,6 +1497,10 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     align-items: stretch;
 }
 
+.cm-grid--multiclass {
+    grid-template-columns: minmax(58px, auto) repeat(3, minmax(52px, 1fr)) minmax(42px, auto);
+}
+
 .cm-header {
     font-size: 10px;
     color: var(--text-tertiary);
@@ -1526,6 +1530,11 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     padding: 12px 8px;
     font-family: var(--font-mono);
     border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cm-cell--multiclass {
+    min-height: 64px;
+    padding: 8px 6px;
 }
 
 .cm-value {
@@ -1593,6 +1602,13 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     font-size: 13px;
     font-weight: 700;
     color: var(--text-primary);
+}
+
+.cm-note {
+    margin: 10px 0 0;
+    color: var(--text-tertiary);
+    font-size: 11px;
+    line-height: 1.4;
 }
 
 /* ── Footer ── */

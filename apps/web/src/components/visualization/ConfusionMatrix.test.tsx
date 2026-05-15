@@ -4,6 +4,11 @@ import { DEFAULT_NETWORK } from '@nn-playground/shared';
 import { ConfusionMatrix } from './ConfusionMatrix';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import {
+  getFrameVersions,
+  resetFrameBuffer,
+  updateFrameBuffer,
+} from '../../worker/frameBuffer.ts';
 
 function setProblemType(problemType: 'classification' | 'regression') {
   usePlaygroundStore.setState((state) => ({
@@ -16,6 +21,7 @@ function setProblemType(problemType: 'classification' | 'regression') {
 
 describe('ConfusionMatrix', () => {
   beforeEach(() => {
+    resetFrameBuffer();
     setProblemType('classification');
     usePlaygroundStore.setState((state) => ({
       network: {
@@ -29,7 +35,15 @@ describe('ConfusionMatrix', () => {
       snapshot: null,
       trainPoints: [],
       testPoints: [],
+      frameVersion: 0,
+      paramsVersion: 0,
       stepsPerFrame: 5,
+      dataConfigLoading: false,
+      networkConfigLoading: false,
+      featuresConfigLoading: false,
+      trainingConfigLoading: false,
+      presetConfigLoading: false,
+      pendingConfigSource: null,
     });
   });
 
@@ -81,10 +95,147 @@ describe('ConfusionMatrix', () => {
 
     render(<ConfusionMatrix />);
 
-    expect(screen.getByText('Confusion matrix unavailable')).toBeInTheDocument();
-    expect(screen.getByText(/only renders binary classification matrices/i)).toBeInTheDocument();
+    expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/current network parameters are still loading/i)).toBeInTheDocument();
+    expect(screen.queryByText(/only renders binary classification matrices/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Pred 1')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('TP cell')).not.toBeInTheDocument();
+  });
+
+  it('renders a derived 3-class test-set readout from current frame parameters', () => {
+    usePlaygroundStore.setState((state) => ({
+      network: {
+        ...state.network,
+        hiddenLayers: [],
+        inputSize: 2,
+        outputSize: 3,
+        outputActivation: 'softmax',
+      },
+    }));
+    updateFrameBuffer({
+      weights: new Float32Array([
+        2, 0,
+        0, 2,
+        -2, -2,
+      ]),
+      biases: new Float32Array([0, 0, 1]),
+      weightLayout: { layerSizes: [2, 3] },
+    });
+    useTrainingStore.setState({
+      ...getFrameVersions(),
+      testPoints: [
+        { x: 1, y: 0, label: 0 },
+        { x: 0, y: 1, label: 1 },
+        { x: -1, y: -1, label: 2 },
+        { x: 1, y: 0, label: 2 },
+      ],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Multiclass Confusion Readout (Test Set)')).toBeInTheDocument();
+    expect(screen.getByText('Pred Class 0')).toBeInTheDocument();
+    expect(screen.getByText('Actual Class 2')).toBeInTheDocument();
+    expect(screen.getByLabelText(/1 test sample .* actual Class 2 predicted Class 0/i)).toHaveTextContent('1');
+    expect(screen.getByLabelText(/1 test sample .* actual Class 2 predicted Class 2/i)).toHaveTextContent('1');
+    expect(screen.getByLabelText('Actual Class 2 total 2')).toHaveTextContent('2');
+    expect(screen.getByLabelText('Predicted Class 0 total 2')).toHaveTextContent('2');
+    expect(screen.getByText('Accuracy')).toBeInTheDocument();
+    expect(screen.getByText('75.0%')).toBeInTheDocument();
+    expect(screen.getByText(/3 of 4 test samples land on the diagonal/i)).toBeInTheDocument();
+    expect(screen.getByText(/derived from current frame-buffer parameters/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText('TP cell')).not.toBeInTheDocument();
+  });
+
+  it('does not derive a multiclass readout while training is running', () => {
+    usePlaygroundStore.setState((state) => ({
+      network: {
+        ...state.network,
+        hiddenLayers: [],
+        inputSize: 2,
+        outputSize: 3,
+        outputActivation: 'softmax',
+      },
+    }));
+    updateFrameBuffer({
+      weights: new Float32Array([
+        2, 0,
+        0, 2,
+        -2, -2,
+      ]),
+      biases: new Float32Array([0, 0, 1]),
+      weightLayout: { layerSizes: [2, 3] },
+    });
+    useTrainingStore.setState({
+      ...getFrameVersions(),
+      status: 'running',
+      testPoints: [
+        { x: 1, y: 0, label: 0 },
+        { x: 0, y: 1, label: 1 },
+        { x: -1, y: -1, label: 2 },
+      ],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/pause training to inspect/i)).toBeInTheDocument();
+    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
+  });
+
+  it('does not combine frame parameters with a pending config sync', () => {
+    usePlaygroundStore.setState((state) => ({
+      network: {
+        ...state.network,
+        hiddenLayers: [],
+        inputSize: 2,
+        outputSize: 3,
+        outputActivation: 'softmax',
+      },
+    }));
+    updateFrameBuffer({
+      weights: new Float32Array([
+        2, 0,
+        0, 2,
+        -2, -2,
+      ]),
+      biases: new Float32Array([0, 0, 1]),
+      weightLayout: { layerSizes: [2, 3] },
+    });
+    useTrainingStore.setState({
+      ...getFrameVersions(),
+      pendingConfigSource: 'network',
+      testPoints: [
+        { x: 1, y: 0, label: 0 },
+        { x: 0, y: 1, label: 1 },
+        { x: -1, y: -1, label: 2 },
+      ],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/configuration is still syncing/i)).toBeInTheDocument();
+    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
+  });
+
+  it('shows a multiclass unavailable state when frame parameters are missing', () => {
+    usePlaygroundStore.setState((state) => ({
+      network: {
+        ...state.network,
+        outputSize: 3,
+        outputActivation: 'softmax',
+      },
+    }));
+    useTrainingStore.setState({
+      testPoints: [{ x: 0, y: 0, label: 2 }],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/current network parameters are still loading/i)).toBeInTheDocument();
+    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
   });
 
   it('should not render a stale binary matrix for non-binary test labels', () => {
