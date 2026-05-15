@@ -3,8 +3,8 @@ import { Fragment, memo, useMemo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
-import { getActiveFeatures, Network, transformPoint } from '@nn-playground/engine';
-import type { DataPoint, FeatureFlags, NetworkConfig, SerializedNetwork } from '@nn-playground/engine';
+import { getActiveFeatures, transformPoint } from '@nn-playground/engine';
+import type { DataPoint, FeatureFlags, NetworkConfig } from '@nn-playground/engine';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 
 const MULTICLASS_LABELS = [0, 1, 2] as const;
@@ -15,6 +15,11 @@ interface MulticlassConfusionReadout {
     columnTotals: number[];
     total: number;
     correct: number;
+}
+
+interface FrameNetworkParams {
+    weights: number[][][];
+    biases: number[][];
 }
 
 function formatPercent(value: number, total: number): string {
@@ -48,6 +53,67 @@ function argmax(values: ArrayLike<number>): number {
 
 function sameLayerSizes(a: readonly number[], b: readonly number[]): boolean {
     return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function stableSigmoid(x: number): number {
+    if (x >= 0) {
+        return 1 / (1 + Math.exp(-x));
+    }
+    const ex = Math.exp(x);
+    return ex / (1 + ex);
+}
+
+function stableSoftplus(x: number): number {
+    return x > 0
+        ? x + Math.log1p(Math.exp(-x))
+        : Math.log1p(Math.exp(x));
+}
+
+function activateScalar(value: number, activation: NetworkConfig['activation']): number | null {
+    switch (activation) {
+        case 'relu':
+            return Math.max(0, value);
+        case 'tanh':
+            return Math.tanh(value);
+        case 'sigmoid':
+            return stableSigmoid(value);
+        case 'linear':
+            return value;
+        case 'leakyRelu':
+            return value > 0 ? value : 0.01 * value;
+        case 'elu':
+            return value >= 0 ? value : Math.exp(value) - 1;
+        case 'swish':
+            return value * stableSigmoid(value);
+        case 'softplus':
+            return stableSoftplus(value);
+        case 'softmax':
+            return null;
+    }
+}
+
+function applySoftmax(logits: readonly number[]): number[] | null {
+    if (logits.length === 0) return null;
+
+    let maxLogit = -Infinity;
+    for (const value of logits) {
+        if (!Number.isFinite(value)) return null;
+        if (value > maxLogit) maxLogit = value;
+    }
+
+    const probabilities = new Array<number>(logits.length);
+    let sum = 0;
+    for (let i = 0; i < logits.length; i++) {
+        const expValue = Math.exp(logits[i] - maxLogit);
+        probabilities[i] = expValue;
+        sum += expValue;
+    }
+
+    if (!Number.isFinite(sum) || sum <= 0) return null;
+    for (let i = 0; i < probabilities.length; i++) {
+        probabilities[i] /= sum;
+    }
+    return probabilities;
 }
 
 function unpackWeights(weights: Float32Array, layerSizes: readonly number[]): number[][][] | null {
@@ -92,7 +158,7 @@ function unpackBiases(biases: Float32Array, layerSizes: readonly number[]): numb
     return offset === biases.length ? unpacked : null;
 }
 
-function getSerializedNetworkFromFrame(networkConfig: NetworkConfig): SerializedNetwork | null {
+function getNetworkParamsFromFrame(networkConfig: NetworkConfig): FrameNetworkParams | null {
     const frame = getFrameBuffer();
     if (!frame.weights || !frame.biases || !frame.weightLayout) return null;
 
@@ -109,11 +175,38 @@ function getSerializedNetworkFromFrame(networkConfig: NetworkConfig): Serialized
     const biases = unpackBiases(frame.biases, layerSizes);
     if (!weights || !biases) return null;
 
-    return {
-        config: { ...networkConfig, hiddenLayers: [...networkConfig.hiddenLayers] },
-        weights,
-        biases,
-    };
+    return { weights, biases };
+}
+
+function forwardFromParams(
+    input: readonly number[],
+    params: FrameNetworkParams,
+    networkConfig: NetworkConfig,
+): number[] | null {
+    let activations = [...input];
+
+    for (let layerIndex = 0; layerIndex < params.weights.length; layerIndex++) {
+        const isOutputLayer = layerIndex === params.weights.length - 1;
+        const logits = params.weights[layerIndex].map((row, neuronIndex) => {
+            let sum = params.biases[layerIndex][neuronIndex];
+            for (let inputIndex = 0; inputIndex < row.length; inputIndex++) {
+                sum += row[inputIndex] * activations[inputIndex];
+            }
+            return sum;
+        });
+
+        if (logits.some((value) => !Number.isFinite(value))) return null;
+
+        if (isOutputLayer) {
+            return applySoftmax(logits);
+        }
+
+        const nextActivations = logits.map((value) => activateScalar(value, networkConfig.activation));
+        if (nextActivations.some((value) => value == null || !Number.isFinite(value))) return null;
+        activations = nextActivations as number[];
+    }
+
+    return null;
 }
 
 export function deriveMulticlassConfusionReadout(
@@ -132,11 +225,10 @@ export function deriveMulticlassConfusionReadout(
     const activeFeatures = getActiveFeatures(features);
     if (activeFeatures.length !== networkConfig.inputSize) return null;
 
-    const serialized = getSerializedNetworkFromFrame(networkConfig);
-    if (!serialized) return null;
+    const params = getNetworkParamsFromFrame(networkConfig);
+    if (!params) return null;
 
     try {
-        const network = Network.deserialize(serialized);
         const matrix = MULTICLASS_LABELS.map(() => MULTICLASS_LABELS.map(() => 0));
         let correct = 0;
 
@@ -145,7 +237,9 @@ export function deriveMulticlassConfusionReadout(
                 return null;
             }
             const input = transformPoint(point.x, point.y, activeFeatures);
-            const predicted = argmax(network.forward(input));
+            const probabilities = forwardFromParams(input, params, networkConfig);
+            if (!probabilities || probabilities.length !== MULTICLASS_LABELS.length) return null;
+            const predicted = argmax(probabilities);
             matrix[point.label][predicted]++;
             if (point.label === predicted) correct++;
         }

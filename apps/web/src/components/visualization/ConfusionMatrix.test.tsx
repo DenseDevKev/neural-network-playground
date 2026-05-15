@@ -147,6 +147,46 @@ describe('ConfusionMatrix', () => {
     expect(screen.queryByLabelText('TP cell')).not.toBeInTheDocument();
   });
 
+  it('derives a 3-class readout through hidden-layer activations without importing the engine network', () => {
+    usePlaygroundStore.setState((state) => ({
+      network: {
+        ...state.network,
+        activation: 'relu',
+        hiddenLayers: [2],
+        inputSize: 2,
+        outputSize: 3,
+        outputActivation: 'softmax',
+      },
+    }));
+    updateFrameBuffer({
+      weights: new Float32Array([
+        1, 0,
+        0, 1,
+        3, 0,
+        0, 3,
+        -3, -3,
+      ]),
+      biases: new Float32Array([0, 0, 0, 0, 2]),
+      weightLayout: { layerSizes: [2, 2, 3] },
+    });
+    useTrainingStore.setState({
+      ...getFrameVersions(),
+      testPoints: [
+        { x: 1, y: 0, label: 0 },
+        { x: 0, y: 1, label: 1 },
+        { x: -1, y: -1, label: 2 },
+      ],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Multiclass Confusion Readout (Test Set)')).toBeInTheDocument();
+    expect(screen.getByLabelText(/1 test sample .* actual Class 0 predicted Class 0/i)).toHaveTextContent('1');
+    expect(screen.getByLabelText(/1 test sample .* actual Class 1 predicted Class 1/i)).toHaveTextContent('1');
+    expect(screen.getByLabelText(/1 test sample .* actual Class 2 predicted Class 2/i)).toHaveTextContent('1');
+    expect(screen.getByText('100.0%')).toBeInTheDocument();
+  });
+
   it('does not derive a multiclass readout while training is running', () => {
     usePlaygroundStore.setState((state) => ({
       network: {
