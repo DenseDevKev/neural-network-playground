@@ -363,6 +363,46 @@ export const LESSON_DEFINITIONS = [
             },
         ],
     },
+    {
+        id: 'lesson-three-class-softmax',
+        title: 'Three-Class Softmax Lab',
+        summary: 'Learn how three output neurons compete through softmax on a compact multiclass dataset.',
+        presetId: 'three-class-clusters',
+        estimatedMinutes: 5,
+        steps: [
+            {
+                id: 'read-three-clusters',
+                title: 'Read the three clusters',
+                target: 'data',
+                tab: 'data',
+                phase: 'build',
+                body: 'Each point belongs to Class 0, Class 1, or Class 2, so the model must choose among three labels instead of drawing a binary split.',
+            },
+            {
+                id: 'inspect-three-outputs',
+                title: 'Inspect the three outputs',
+                target: 'network',
+                tab: 'network',
+                phase: 'build',
+                body: 'The network uses one output neuron per class. Softmax turns those outputs into competing confidence scores.',
+            },
+            {
+                id: 'connect-softmax-loss',
+                title: 'Keep the softmax tuple together',
+                target: 'network',
+                tab: 'network',
+                phase: 'build',
+                body: 'This preset keeps three outputs, softmax, and categorical cross-entropy paired so the highest class score wins after each update.',
+            },
+            {
+                id: 'train-class-regions',
+                title: 'Train three class regions',
+                target: 'transport',
+                phase: 'run',
+                body: 'Start training and watch the boundary divide the plane into three winning-class regions, with uncertainty near class borders.',
+            },
+        ],
+    },
 ] as const satisfies readonly LessonDefinition[];
 
 export function getLessonDefinition(id = DEFAULT_LESSON_ID): LessonDefinition | null {

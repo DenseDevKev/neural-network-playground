@@ -8,6 +8,8 @@ import {
     VALID_LESSON_TARGETS,
 } from './lessonRegistry.ts';
 
+const APPROVED_MULTICLASS_LESSON_ID = 'lesson-three-class-softmax';
+
 function hasFunctionValue(value: unknown): boolean {
     if (typeof value === 'function') return true;
     if (!value || typeof value !== 'object') return false;
@@ -38,6 +40,7 @@ describe('lesson registry invariants', () => {
             'lesson-learning-rate-tuning',
             'lesson-regularization-overfitting',
             'lesson-noisy-data-robustness',
+            APPROVED_MULTICLASS_LESSON_ID,
         ]);
     });
 
@@ -68,9 +71,49 @@ describe('lesson registry invariants', () => {
         }
     });
 
-    it('keeps lesson presets on public scalar dataset contracts', () => {
+    it('exposes exactly one approved multiclass lesson preset', () => {
+        const multiclassLessons = LESSON_DEFINITIONS.filter((lesson) => {
+            const preset = getLessonPreset(lesson);
+            return preset.config.data?.dataset === 'three-class-clusters';
+        });
+
+        expect(multiclassLessons.map((lesson) => lesson.id)).toEqual([APPROVED_MULTICLASS_LESSON_ID]);
+
+        const preset = getLessonPreset(multiclassLessons[0]);
+        expect(preset.config.data).toMatchObject({
+            dataset: 'three-class-clusters',
+            problemType: 'classification',
+        });
+        expect(preset.config.network).toMatchObject({
+            outputSize: 3,
+            outputActivation: 'softmax',
+        });
+        expect(preset.config.training?.lossType).toBe('categoricalCrossEntropy');
+    });
+
+    it('keeps the approved multiclass lesson on visible multiclass surfaces', () => {
+        const lesson = getLessonDefinition(APPROVED_MULTICLASS_LESSON_ID)!;
+
+        expect(lesson.steps.map((step) => step.target)).toEqual([
+            'data',
+            'network',
+            'network',
+            'transport',
+        ]);
+        expect(lesson.steps[2].body).toContain('three outputs, softmax, and categorical cross-entropy');
+    });
+
+    it('keeps lesson presets scalar unless they are the approved multiclass lesson', () => {
         for (const lesson of LESSON_DEFINITIONS) {
             const preset = getLessonPreset(lesson);
+
+            if (lesson.id === APPROVED_MULTICLASS_LESSON_ID) {
+                expect(preset.config.data?.dataset, lesson.id).toBe('three-class-clusters');
+                expect(preset.config.network?.outputSize, lesson.id).toBe(3);
+                expect(preset.config.network?.outputActivation, lesson.id).toBe('softmax');
+                expect(preset.config.training?.lossType, lesson.id).toBe('categoricalCrossEntropy');
+                continue;
+            }
 
             expect(preset.config.network?.outputSize, lesson.id).toBe(1);
             expect(preset.config.network?.outputActivation, lesson.id).not.toBe('softmax');

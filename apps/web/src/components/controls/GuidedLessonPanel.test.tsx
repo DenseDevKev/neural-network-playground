@@ -122,6 +122,56 @@ describe('GuidedLessonPanel', () => {
         expect(screen.getByText(regressionLesson.steps[0].title)).toBeInTheDocument();
     });
 
+    it('starts the three-class softmax lesson with the approved multiclass tuple', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const lesson = getLessonDefinition('lesson-three-class-softmax')!;
+
+        expect(lesson).not.toBeNull();
+        if (!lesson) return;
+
+        render(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
+
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), lesson.id);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+
+        expect(usePlaygroundStore.getState().data.dataset).toBe('three-class-clusters');
+        expect(usePlaygroundStore.getState().network.outputSize).toBe(3);
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('softmax');
+        expect(usePlaygroundStore.getState().training.lossType).toBe('categoricalCrossEntropy');
+        expect(onReset).toHaveBeenCalledTimes(1);
+        expect(onHighlightChange).toHaveBeenLastCalledWith('data');
+        expect(useLayoutStore.getState().activeLessonId).toBe(lesson.id);
+        expect(screen.getByText(`Step 1 of ${lesson.steps.length}`)).toBeInTheDocument();
+        expect(screen.getByText('Three-Class Softmax Lab')).toBeInTheDocument();
+    });
+
+    it('uses explicit button semantics and keyboard activation for lesson navigation', async () => {
+        const user = userEvent.setup();
+
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        const startButton = screen.getByRole('button', { name: 'Start guided lesson' });
+        expect(startButton).toHaveAttribute('type', 'button');
+        await user.click(startButton);
+
+        const backButton = screen.getByRole('button', { name: 'Back' });
+        const nextButton = screen.getByRole('button', { name: 'Next lesson step' });
+        expect(backButton).toHaveAttribute('type', 'button');
+        expect(nextButton).toHaveAttribute('type', 'button');
+
+        nextButton.focus();
+        await user.keyboard('{Enter}');
+
+        expect(screen.getByText('Give the model capacity')).toBeInTheDocument();
+
+        screen.getByRole('button', { name: 'Next lesson step' }).focus();
+        await user.keyboard(' ');
+
+        expect(screen.getByText('Use steady updates')).toBeInTheDocument();
+    });
+
     it('starts each registry lesson preset from a fresh selector render', () => {
         for (const lesson of LESSON_DEFINITIONS) {
             usePlaygroundStore.setState({

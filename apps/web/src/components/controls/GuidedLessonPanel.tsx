@@ -135,6 +135,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                             <p className="guided-lesson__body">{activeStep.body}</p>
                             <div className="guided-lesson__actions">
                                 <button
+                                    type="button"
                                     className="btn btn--ghost btn--sm"
                                     onClick={() => activeStepIndex! > 0 && goToStep(activeStepIndex! - 1)}
                                     disabled={activeStepIndex === 0}
@@ -143,6 +144,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                                 </button>
                                 {activeStepIndex === selectedLesson.steps.length - 1 ? (
                                     <button
+                                        type="button"
                                         className="btn btn--accent btn--sm"
                                         onClick={finishLesson}
                                         aria-label="Finish guided lesson"
@@ -151,6 +153,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                                     </button>
                                 ) : (
                                     <button
+                                        type="button"
                                         className="btn btn--accent btn--sm"
                                         onClick={() => goToStep(activeStepIndex! + 1)}
                                         aria-label="Next lesson step"
@@ -184,6 +187,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                                 </div>
                             )}
                             <button
+                                type="button"
                                 className="btn btn--accent btn--sm guided-lesson__start"
                                 onClick={startLesson}
                                 aria-label="Start guided lesson"
