@@ -1162,3 +1162,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4398 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is test-only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
+## Wave 7 Worker/API Multiclass Data-Path Guard
+
+Date: 2026-05-15
+
+Scope: test-only worker/API guard for future Multiclass Classification Mode. Worker tests now assert that the approved direct multiclass worker config still sources train/test points from the current public binary dataset generator, not the hidden three-class helper. Existing engine tests continue to assert `generateThreeClassClusters` stays out of the package-level engine barrel export. This slice does not change production code, URL/config format, public config shape, persistence/run-history schema, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `2534b4b`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-yT0kjw6V.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-BJ2CGnxX.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-BB7ZDyoe.js`: 16.71 kB, gzip 5.15 kB
+- `dist/assets/index-CmVkBTE8.js`: 368.46 kB, gzip 111.44 kB
+
+Compared with the previous test-only guard build, production output remained unchanged. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1077.5484 ms total for 100 iterations
+- `predictGridInto`: 1059.6036 ms total for 100 iterations
+- `predictGridWithNeurons`: 672.3662 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 573.6489 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9601 ms
+- Average `applyGradients` time (SGD): 1.3872 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is test-only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
