@@ -63,6 +63,7 @@ export type {
     PauseReason,
 } from './types.js';
 export type {
+    ExperimentMemoryValidationOptions,
     ExperimentRunSummary,
     ExperimentRunRecordV1,
     ExperimentMemoryEnvelopeV1,

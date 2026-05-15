@@ -48,6 +48,10 @@ interface ValidationResult {
     error: string | null;
 }
 
+export interface ExperimentMemoryValidationOptions {
+    allowMulticlass?: boolean;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -146,6 +150,7 @@ function validateSerializedNetworkParams(
 function validateSerializedNetwork(
     value: unknown,
     recordConfig: AppConfig,
+    options: ExperimentMemoryValidationOptions = {},
 ): { network: SerializedNetwork | null; error: string | null } {
     if (value === null) return { network: null, error: null };
     if (!isRecord(value)) return { network: null, error: 'Run record network is invalid.' };
@@ -160,6 +165,8 @@ function validateSerializedNetwork(
     const embeddedConfig = validateImportedConfig({
         ...recordConfig,
         network: serializedNetwork.config,
+    }, {
+        allowMulticlass: options.allowMulticlass,
     });
     if (!embeddedConfig.config) {
         return {
@@ -223,7 +230,10 @@ function validateSummary(value: unknown): ExperimentRunSummary | null {
     };
 }
 
-export function validateExperimentRunRecord(value: unknown): ValidationResult {
+export function validateExperimentRunRecord(
+    value: unknown,
+    options: ExperimentMemoryValidationOptions = {},
+): ValidationResult {
     if (!isRecord(value)) return { record: null, error: 'Run record must be an object.' };
     if (value.schemaVersion !== EXPERIMENT_MEMORY_SCHEMA_VERSION) {
         return { record: null, error: 'Unsupported experiment-memory record version.' };
@@ -234,13 +244,15 @@ export function validateExperimentRunRecord(value: unknown): ValidationResult {
     if (!isIsoDateString(value.createdAt) || !isIsoDateString(value.updatedAt)) {
         return { record: null, error: 'Run record timestamps are invalid.' };
     }
-    const configResult = validateImportedConfig(value.config);
+    const configResult = validateImportedConfig(value.config, {
+        allowMulticlass: options.allowMulticlass,
+    });
     if (!configResult.config) {
         return { record: null, error: configResult.error ?? 'Run record config is invalid.' };
     }
     const summary = validateSummary(value.summary);
     if (!summary) return { record: null, error: 'Run record summary is invalid.' };
-    const networkResult = validateSerializedNetwork(value.network, configResult.config);
+    const networkResult = validateSerializedNetwork(value.network, configResult.config, options);
     if (networkResult.error) return { record: null, error: networkResult.error };
     const history = sanitizeExperimentHistory(value.history);
     return {
@@ -259,9 +271,12 @@ export function validateExperimentRunRecord(value: unknown): ValidationResult {
     };
 }
 
-export function createExperimentMemoryEnvelope(records: unknown[]): ExperimentMemoryEnvelopeV1 {
+export function createExperimentMemoryEnvelope(
+    records: unknown[],
+    options: ExperimentMemoryValidationOptions = {},
+): ExperimentMemoryEnvelopeV1 {
     const normalized = records
-        .map((record) => validateExperimentRunRecord(record).record)
+        .map((record) => validateExperimentRunRecord(record, options).record)
         .filter((record): record is ExperimentRunRecordV1 => record !== null)
         .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
         .slice(0, EXPERIMENT_MEMORY_MAX_RECORDS);
@@ -271,9 +286,12 @@ export function createExperimentMemoryEnvelope(records: unknown[]): ExperimentMe
     };
 }
 
-export function normalizeExperimentMemoryEnvelope(value: unknown): ExperimentMemoryEnvelopeV1 {
+export function normalizeExperimentMemoryEnvelope(
+    value: unknown,
+    options: ExperimentMemoryValidationOptions = {},
+): ExperimentMemoryEnvelopeV1 {
     if (!isRecord(value) || value.schemaVersion !== EXPERIMENT_MEMORY_SCHEMA_VERSION || !Array.isArray(value.records)) {
-        return createExperimentMemoryEnvelope([]);
+        return createExperimentMemoryEnvelope([], options);
     }
-    return createExperimentMemoryEnvelope(value.records);
+    return createExperimentMemoryEnvelope(value.records, options);
 }

@@ -48,6 +48,45 @@ function makeRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentR
     };
 }
 
+function makeApprovedMulticlassConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+    return {
+        ...config,
+        ...overrides,
+        data: {
+            ...config.data,
+            problemType: 'classification',
+            ...overrides.data,
+        },
+        network: {
+            ...config.network,
+            outputSize: 3,
+            outputActivation: 'softmax',
+            ...overrides.network,
+        },
+        training: {
+            ...config.training,
+            lossType: 'categoricalCrossEntropy',
+            ...overrides.training,
+        },
+    };
+}
+
+function makeApprovedMulticlassRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentRunRecordV1 {
+    return makeRecord({
+        config: makeApprovedMulticlassConfig(),
+        network: null,
+        ...overrides,
+    });
+}
+
+function makeApprovedMulticlassNetwork(): NonNullable<ExperimentRunRecordV1['network']> {
+    return {
+        config: makeApprovedMulticlassConfig().network,
+        weights: [[[0.1, -0.2], [0.2, 0.3], [-0.1, 0.4]]],
+        biases: [[0.05, -0.05, 0.1]],
+    };
+}
+
 function sparseNumberArray(length: number): number[] {
     return new Array(length) as number[];
 }
@@ -85,24 +124,124 @@ describe('experiment memory schema', () => {
         expect(nonFinite.record).toBeNull();
     });
 
-    it('rejects multiclass records until persistence migration is approved', () => {
-        const result = validateExperimentRunRecord(makeRecord({
-            config: {
-                ...config,
-                network: {
-                    ...config.network,
-                    outputSize: 3,
-                    outputActivation: 'softmax',
-                },
-                training: {
-                    ...config.training,
-                    lossType: 'categoricalCrossEntropy',
-                },
-            },
-        }));
+    it('rejects multiclass records by default', () => {
+        const result = validateExperimentRunRecord(makeApprovedMulticlassRecord());
 
         expect(result.record).toBeNull();
         expect(result.error).toMatch(/not runtime-enabled/i);
+    });
+
+    it('accepts approved multiclass records only with explicit persistence opt-in', () => {
+        const result = validateExperimentRunRecord(makeApprovedMulticlassRecord(), {
+            allowMulticlass: true,
+        });
+
+        expect(result.error).toBeNull();
+        expect(result.record?.config.network.outputSize).toBe(3);
+        expect(result.record?.config.network.outputActivation).toBe('softmax');
+        expect(result.record?.config.training.lossType).toBe('categoricalCrossEntropy');
+        expect(result.record?.network).toBeNull();
+    });
+
+    it('accepts matching multiclass serialized network payloads only with explicit persistence opt-in', () => {
+        const network = makeApprovedMulticlassNetwork();
+        const result = validateExperimentRunRecord(makeApprovedMulticlassRecord({ network }), {
+            allowMulticlass: true,
+        });
+
+        expect(result.error).toBeNull();
+        expect(result.record?.network).toEqual(network);
+    });
+
+    it('preserves opt-in multiclass records during envelope normalization', () => {
+        const valid = makeRecord({ id: 'scalar', updatedAt: '2026-04-26T00:02:00.000Z' });
+        const multiclass = makeApprovedMulticlassRecord({ id: 'multiclass' });
+        const envelope = createExperimentMemoryEnvelope([multiclass, valid], {
+            allowMulticlass: true,
+        });
+        const normalized = normalizeExperimentMemoryEnvelope(envelope, {
+            allowMulticlass: true,
+        });
+
+        expect(normalized.records.map((record) => record.id)).toEqual(['scalar', 'multiclass']);
+        expect(createExperimentMemoryEnvelope([multiclass, valid]).records.map((record) => record.id)).toEqual(['scalar']);
+        expect(normalizeExperimentMemoryEnvelope(envelope).records.map((record) => record.id)).toEqual(['scalar']);
+    });
+
+    it.each([
+        [
+            'unsupported output size',
+            makeApprovedMulticlassConfig({
+                network: { ...makeApprovedMulticlassConfig().network, outputSize: 4 },
+            }),
+        ],
+        [
+            'softmax without categorical loss',
+            makeApprovedMulticlassConfig({
+                training: { ...makeApprovedMulticlassConfig().training, lossType: 'crossEntropy' },
+            }),
+        ],
+        [
+            'categorical loss without softmax',
+            makeApprovedMulticlassConfig({
+                network: { ...makeApprovedMulticlassConfig().network, outputActivation: 'sigmoid' },
+            }),
+        ],
+        [
+            'regression problem type',
+            makeApprovedMulticlassConfig({
+                data: { ...makeApprovedMulticlassConfig().data, problemType: 'regression' },
+            }),
+        ],
+    ])('rejects opt-in multiclass records with %s', (_label, invalidConfig) => {
+        const result = validateExperimentRunRecord(makeApprovedMulticlassRecord({
+            config: invalidConfig,
+        }), {
+            allowMulticlass: true,
+        });
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/multiclass|single-output/i);
+    });
+
+    it('rejects opt-in multiclass serialized networks whose payload shape does not match three outputs', () => {
+        const result = validateExperimentRunRecord(makeApprovedMulticlassRecord({
+            network: {
+                ...makeApprovedMulticlassNetwork(),
+                weights: [[[0.1, -0.2]]],
+                biases: [[0.05]],
+            },
+        }), {
+            allowMulticlass: true,
+        });
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/network.*parameters/i);
+    });
+
+    it('rejects opt-in scalar records with multiclass serialized network payloads', () => {
+        const result = validateExperimentRunRecord(makeRecord({
+            network: makeApprovedMulticlassNetwork(),
+        }), {
+            allowMulticlass: true,
+        });
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/network config is invalid/i);
+    });
+
+    it('rejects opt-in multiclass records with malformed summaries', () => {
+        const result = validateExperimentRunRecord(makeApprovedMulticlassRecord({
+            summary: {
+                ...makeRecord().summary,
+                trainLoss: Number.NaN,
+            },
+        }), {
+            allowMulticlass: true,
+        });
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/summary/i);
     });
 
     it('rejects hidden multiclass serialized network payloads in scalar-compatible records', () => {

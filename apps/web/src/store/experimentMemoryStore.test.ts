@@ -33,6 +33,25 @@ function makeRecord(id: string, updatedAt = `2026-04-26T00:00:0${id}.000Z`): Exp
     };
 }
 
+function makeHiddenMulticlassRecord(id: string): ExperimentRunRecordV1 {
+    const record = makeRecord(id);
+    return {
+        ...record,
+        config: {
+            ...record.config,
+            network: {
+                ...record.config.network,
+                outputSize: 3,
+                outputActivation: 'softmax',
+            },
+            training: {
+                ...record.config.training,
+                lossType: 'categoricalCrossEntropy',
+            },
+        },
+    };
+}
+
 describe('experimentMemoryStore', () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -64,6 +83,21 @@ describe('experimentMemoryStore', () => {
         const store = createExperimentMemoryStore();
 
         expect(store.getState().records).toEqual([]);
+    });
+
+    it('keeps public localStorage paths scalar-only by default', () => {
+        const scalar = makeRecord('1');
+        const hiddenMulticlass = makeHiddenMulticlassRecord('2');
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify({
+            schemaVersion: 1,
+            records: [hiddenMulticlass, scalar],
+        }));
+
+        const store = createExperimentMemoryStore();
+        store.getState().saveRecord(hiddenMulticlass);
+
+        expect(store.getState().records.map((record) => record.id)).toEqual(['1']);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('categoricalCrossEntropy');
     });
 
     it('keeps the previous state when localStorage writes fail', () => {
