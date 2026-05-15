@@ -30,8 +30,19 @@ function activationStr(act: string): string {
         elu: 'ELU',
         swish: 'Swish',
         softplus: 'Softplus',
+        softmax: 'Softmax',
     };
     return map[act] || act;
+}
+
+function lossStr(loss: TrainingConfig['lossType']): string {
+    const map: Record<TrainingConfig['lossType'], string> = {
+        mse: 'MSE',
+        crossEntropy: 'Cross-Entropy',
+        categoricalCrossEntropy: 'Categorical Cross-Entropy',
+        huber: 'Huber',
+    };
+    return map[loss];
 }
 
 function lrScheduleStr(training: TrainingConfig): string | null {
@@ -71,10 +82,16 @@ export function generatePseudocode(
     code += `LAYER output:\n`;
     code += `  neurons = ${config.outputSize}\n`;
     code += `  activation = ${activationStr(config.outputActivation)}\n`;
-    code += `  prediction = ${activationStr(config.outputActivation)}(bias + SUM(w[j] * hidden[j]))\n\n`;
+    if (config.outputSize > 1) {
+        code += `  FOR each class c:\n`;
+        code += `    logits[c] = bias[c] + SUM(w[c][j] * hidden[j] for j in prev_layer)\n`;
+        code += `  prediction = ${activationStr(config.outputActivation)}(logits)\n\n`;
+    } else {
+        code += `  prediction = ${activationStr(config.outputActivation)}(bias + SUM(w[j] * hidden[j]))\n\n`;
+    }
 
     code += `TRAINING:\n`;
-    code += `  loss = ${training.lossType === 'crossEntropy' ? 'Cross-Entropy' : training.lossType === 'mse' ? 'MSE' : 'Huber'}\n`;
+    code += `  loss = ${lossStr(training.lossType)}\n`;
     code += `  optimizer = ${training.optimizer === 'sgd' ? 'SGD' : training.optimizer === 'sgdMomentum' ? 'SGD+Momentum' : 'Adam'}\n`;
     code += `  learning_rate = ${training.learningRate}\n`;
     code += `  batch_size = ${training.batchSize}\n`;
@@ -105,6 +122,20 @@ export function generatePseudocode(
     return code;
 }
 
+function numpyActivationDefinition(act: string): string {
+    switch (act) {
+        case 'relu': return `def relu(x):\n    return np.maximum(0, x)\n\n`;
+        case 'tanh': return `def tanh(x):\n    return np.tanh(x)\n\n`;
+        case 'sigmoid': return `def sigmoid(x):\n    return 1 / (1 + np.exp(-x))  # sigmoid\n\n`;
+        case 'leakyRelu': return `def leakyRelu(x):\n    return np.where(x > 0, x, 0.01 * x)\n\n`;
+        case 'elu': return `def elu(x):\n    return np.where(x > 0, x, np.exp(x) - 1)\n\n`;
+        case 'swish': return `def swish(x):\n    return x / (1 + np.exp(-x))\n\n`;
+        case 'softplus': return `def softplus(x):\n    return np.log(1 + np.exp(x))\n\n`;
+        case 'softmax': return `def softmax(x):\n    e = np.exp(x - np.max(x))\n    return e / np.sum(e)\n\n`;
+        default: return `def ${act}(x):\n    return x  # linear\n\n`;
+    }
+}
+
 /**
  * Generate NumPy-compatible Python code.
  */
@@ -124,21 +155,10 @@ export function generateNumPy(
     code += `# Features: [${feats.join(', ')}]\n\n`;
 
     // Activation function
-    code += `def ${act}(x):\n`;
-    switch (act) {
-        case 'relu': code += `    return np.maximum(0, x)\n\n`; break;
-        case 'tanh': code += `    return np.tanh(x)\n\n`; break;
-        case 'sigmoid': code += `    return 1 / (1 + np.exp(-x))\n\n`; break;
-        case 'leakyRelu': code += `    return np.where(x > 0, x, 0.01 * x)\n\n`; break;
-        case 'elu': code += `    return np.where(x > 0, x, np.exp(x) - 1)\n\n`; break;
-        case 'swish': code += `    return x / (1 + np.exp(-x))\n\n`; break;
-        case 'softplus': code += `    return np.log(1 + np.exp(x))\n\n`; break;
-        default: code += `    return x  # linear\n\n`;
-    }
+    code += numpyActivationDefinition(act);
 
     if (outAct !== act && outAct !== 'linear') {
-        code += `def ${outAct}(x):\n`;
-        code += `    return 1 / (1 + np.exp(-x))  # sigmoid\n\n`;
+        code += numpyActivationDefinition(outAct);
     }
 
     if (snapshot) {
@@ -213,6 +233,7 @@ export function generateTFJS(
     const lossMap: Record<string, string> = {
         mse: 'meanSquaredError',
         crossEntropy: 'binaryCrossentropy',
+        categoricalCrossEntropy: 'categoricalCrossentropy',
         huber: 'huberLoss',
     };
     const optMap: Record<string, string> = {

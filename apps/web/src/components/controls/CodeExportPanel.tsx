@@ -53,7 +53,6 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         const config = {
             ...network,
             inputSize: Object.values(features).filter(Boolean).length,
-            outputSize: 1,
         };
         switch (activeTab) {
             case 'pseudocode':

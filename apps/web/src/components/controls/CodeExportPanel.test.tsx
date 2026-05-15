@@ -102,6 +102,30 @@ describe('CodeExportPanel', () => {
         expect(code!.textContent).toBeTruthy();
     });
 
+    it('preserves an existing multiclass output size in generated code', () => {
+        usePlaygroundStore.setState((state) => ({
+            network: {
+                ...state.network,
+                outputSize: 3,
+                outputActivation: 'softmax',
+            },
+            training: {
+                ...state.training,
+                lossType: 'categoricalCrossEntropy',
+            },
+        }));
+        useTrainingStore.setState({ snapshot: null });
+        resetFrameBuffer();
+
+        render(<CodeExportPanel />);
+
+        const code = document.querySelector('.code-export__code')?.textContent ?? '';
+        expect(code).toContain('Architecture: 2 → 2 → 3');
+        expect(code).toContain('activation = Softmax');
+        expect(code).toContain('loss = Categorical Cross-Entropy');
+        expect(code).not.toContain('Architecture: 2 → 2 → 1');
+    });
+
     it('switches to NumPy tab and shows numpy code', async () => {
         render(<CodeExportPanel />);
 

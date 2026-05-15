@@ -19,6 +19,17 @@ const mockConfig: NetworkConfig = {
   hiddenLayers: [2], // 2 -> 2 -> 1
 };
 
+const multiclassConfig: NetworkConfig = {
+  ...mockConfig,
+  outputSize: 3,
+  outputActivation: "softmax",
+};
+
+const multiclassTraining = {
+  ...DEFAULT_TRAINING,
+  lossType: "categoricalCrossEntropy" as const,
+};
+
 const mockSnapshot: NetworkSnapshot = {
   step: 100,
   epoch: 1,
@@ -91,6 +102,23 @@ describe("codeExport", () => {
       expect(output).toContain("adam_beta2 = 0.98");
       expect(output).toContain("huber_delta = 0.75");
       expect(output).toContain("lr_schedule = step(step_size=25, gamma=0.5)");
+    });
+
+    it("describes multiclass output and categorical loss without mislabeling it as Huber", () => {
+      const output = generatePseudocode(
+        multiclassConfig,
+        multiclassTraining,
+        DEFAULT_FEATURES,
+        null,
+      );
+
+      expect(output).toContain("Architecture: 2 → 2 → 3");
+      expect(output).toContain("activation = Softmax");
+      expect(output).toContain("logits[c] = bias[c] + SUM(w[c][j] * hidden[j] for j in prev_layer)");
+      expect(output).toContain("prediction = Softmax(logits)");
+      expect(output).toContain("loss = Categorical Cross-Entropy");
+      expect(output).not.toContain("prediction = Softmax(bias + SUM");
+      expect(output).not.toContain("loss = Huber");
     });
   });
 
@@ -239,6 +267,33 @@ describe("codeExport", () => {
       );
       expect(output).toContain("Features: [x, y, x², x·y]");
     });
+
+    it("emits a real softmax helper for multiclass NumPy export", () => {
+      const snapshot: NetworkSnapshot = {
+        ...mockSnapshot,
+        weights: [
+          mockSnapshot.weights[0],
+          [
+            [0.5, 0.6],
+            [0.7, 0.8],
+            [0.9, 1.0],
+          ],
+        ],
+        biases: [mockSnapshot.biases[0], [0.1, 0.2, 0.3]],
+      };
+      const output = generateNumPy(
+        multiclassConfig,
+        multiclassTraining,
+        DEFAULT_FEATURES,
+        snapshot,
+      );
+
+      expect(output).toContain("def softmax(x):");
+      expect(output).toContain("e = np.exp(x - np.max(x))");
+      expect(output).toContain("return e / np.sum(e)");
+      expect(output).toContain("h = softmax(W2 @ h + b2)");
+      expect(output).not.toContain("return 1 / (1 + np.exp(-x))  # sigmoid");
+    });
   });
 
   describe("generateTFJS", () => {
@@ -280,6 +335,20 @@ describe("codeExport", () => {
       );
 
       expect(output).toContain("tf.train.adam(0.03, 0.8, 0.98)");
+    });
+
+    it("maps categorical cross-entropy for multiclass TFJS export", () => {
+      const output = generateTFJS(
+        multiclassConfig,
+        multiclassTraining,
+        DEFAULT_FEATURES,
+        null,
+      );
+
+      expect(output).toContain("units: 3");
+      expect(output).toContain("activation: 'softmax'");
+      expect(output).toContain("loss: 'categoricalCrossentropy'");
+      expect(output).not.toContain("loss: 'meanSquaredError'");
     });
   });
 });
