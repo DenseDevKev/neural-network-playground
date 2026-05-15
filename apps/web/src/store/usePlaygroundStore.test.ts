@@ -67,6 +67,35 @@ describe('usePlaygroundStore compatibility guards', () => {
         expect(usePlaygroundStore.getState().network.outputActivation).toBe('sigmoid');
     });
 
+    it('rejects hidden multiclass loss values through public loss actions', () => {
+        usePlaygroundStore.getState().setLossType('huber');
+
+        usePlaygroundStore.getState().setLossType('categoricalCrossEntropy' as any);
+
+        expectScalarRuntimeConfig();
+        expect(usePlaygroundStore.getState().training.lossType).toBe('huber');
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('linear');
+    });
+
+    it('rejects vector softmax through public hidden-layer activation actions', () => {
+        usePlaygroundStore.getState().setActivation('relu');
+
+        usePlaygroundStore.getState().setActivation('softmax' as any);
+
+        expect(usePlaygroundStore.getState().network.activation).toBe('relu');
+    });
+
+    it('rejects vector softmax through public output activation actions', () => {
+        usePlaygroundStore.getState().setLossType('mse');
+        usePlaygroundStore.getState().setOutputActivation('tanh');
+
+        usePlaygroundStore.getState().setOutputActivation('softmax' as any);
+
+        expectScalarRuntimeConfig();
+        expect(usePlaygroundStore.getState().training.lossType).toBe('mse');
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('tanh');
+    });
+
     it('keeps public dataset actions on single-output scalar contracts', () => {
         for (const dataset of PUBLIC_DATASETS) {
             seedHiddenMulticlassState();

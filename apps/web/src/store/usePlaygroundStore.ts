@@ -60,6 +60,34 @@ const DEFAULT_FEATURES_UI: FeaturesUI = {
     webgpuGrid: true,
 };
 
+const PUBLIC_SCALAR_LOSSES = new Set<LossType>(['mse', 'crossEntropy', 'huber']);
+
+function isPublicScalarLoss(lossType: LossType): boolean {
+    return PUBLIC_SCALAR_LOSSES.has(lossType);
+}
+
+function isPublicScalarActivation(activation: ActivationType): boolean {
+    return activation !== 'softmax';
+}
+
+function getPublicLossType(lossType: LossType): LossType {
+    return isPublicScalarLoss(lossType) ? lossType : DEFAULT_TRAINING.lossType;
+}
+
+function getPublicHiddenActivation(activation: ActivationType): ActivationType {
+    return isPublicScalarActivation(activation) ? activation : DEFAULT_NETWORK.activation;
+}
+
+function getPublicOutputActivation(
+    lossType: LossType,
+    outputActivation: ActivationType,
+): ActivationType {
+    const requestedActivation = isPublicScalarActivation(outputActivation)
+        ? outputActivation
+        : DEFAULT_NETWORK.outputActivation;
+    return getCompatibleOutputActivation(lossType, requestedActivation);
+}
+
 export interface PlaygroundStore {
     // ── Config ──
     network: NetworkConfig;
@@ -241,7 +269,12 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         }),
 
         setActivation: (activation) => set((s) => ({
-            network: { ...s.network, activation },
+            network: {
+                ...s.network,
+                activation: isPublicScalarActivation(activation)
+                    ? activation
+                    : getPublicHiddenActivation(s.network.activation),
+            },
         })),
 
         setLearningRate: (learningRate) => set((s) => ({
@@ -256,13 +289,19 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
             training: { ...s.training, batchSize },
         })),
 
-        setLossType: (lossType) => set((s) => ({
-            training: { ...s.training, lossType },
-            network: {
-                ...s.network,
-                outputActivation: getCompatibleOutputActivation(lossType, s.network.outputActivation),
-            },
-        })),
+        setLossType: (lossType) => set((s) => {
+            const publicLossType = isPublicScalarLoss(lossType)
+                ? lossType
+                : getPublicLossType(s.training.lossType);
+            return {
+                training: { ...s.training, lossType: publicLossType },
+                network: {
+                    ...s.network,
+                    outputSize: 1,
+                    outputActivation: getPublicOutputActivation(publicLossType, s.network.outputActivation),
+                },
+            };
+        }),
 
         setOptimizer: (optimizer) => set((s) => ({
             training: { ...s.training, optimizer },
@@ -300,8 +339,22 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         })),
 
         setOutputActivation: (outputActivation) => set((s) => {
-            if (!isLossCompatible(s.training.lossType, outputActivation)) return s;
-            return { network: { ...s.network, outputActivation } };
+            const publicLossType = getPublicLossType(s.training.lossType);
+            const currentOutputActivation = getPublicOutputActivation(publicLossType, s.network.outputActivation);
+            if (!isPublicScalarActivation(outputActivation) || !isLossCompatible(publicLossType, outputActivation)) {
+                return {
+                    training: { ...s.training, lossType: publicLossType },
+                    network: {
+                        ...s.network,
+                        outputSize: 1,
+                        outputActivation: currentOutputActivation,
+                    },
+                };
+            }
+            return {
+                training: { ...s.training, lossType: publicLossType },
+                network: { ...s.network, outputSize: 1, outputActivation },
+            };
         }),
 
         setRegularization: (regularization) => set((s) => ({
