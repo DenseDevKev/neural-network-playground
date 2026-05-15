@@ -1943,3 +1943,76 @@ Observed benchmark output:
 These values remain within the established noisy local benchmark range and
 below roadmap warning thresholds. The slice changes small UI text/topology
 metadata only and adds no runtime hot-path work.
+
+## Wave 7 Public Multiclass Preset
+
+Date: 2026-05-15
+
+Scope: first visible public multiclass entry point through one built-in preset:
+`Three-Class Softmax Lab`. The preset applies exactly
+`three-class-clusters`, `classification`, `outputSize: 3`, `softmax`, and
+`categoricalCrossEntropy`, using already-approved store, runtime, URL/config,
+boundary, confusion, Config Panel, and run-history paths. This slice does not
+change URL/config format, public config shape beyond the existing approved
+tuple, persistence/run-history schema, worker protocol, frame-buffer semantics,
+dependencies, deployment, official worker-authored 3x3 confusion metrics,
+arbitrary class counts, or raw probability-grid transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-rMnDb0A3.js`: 94.59 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-DvN3hVM_.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-7ccIezSl.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-BKF4C1f-.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-D0pLP9Ob.js`: 385.06 kB, gzip 115.72 kB
+
+Compared with the Network Graph text-alternative build, the worker, CSS, engine,
+Code Export, React, Inspection, and Run History chunks stayed unchanged. The
+main app chunk changed from 384.27 kB to 385.06 kB, about 0.21%, below the 10%
+roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1117.0363 ms total for 100 iterations
+- `predictGridInto`: 1107.3920 ms total for 100 iterations
+- `predictGridWithNeurons`: 706.6348 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 604.2795 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.2409 ms
+- Average `applyGradients` time (SGD): 1.4755 ms
+
+These values remain within the established noisy local benchmark range and
+below roadmap warning thresholds. Browser QA reached Step 90 / Epoch 6 on the
+public preset path and showed bounded multiclass class-index/confidence
+boundary text without adding raw probability grids to React state.
+
+Final pre-commit verification on the same dirty tree repeated `pnpm test:perf`
+twice after Browser QA. Both runs passed but were much slower than the earlier
+slice run:
+
+- First repeat: `predictGrid` 4120.7115 ms, `predictGridInto` 3753.3705 ms,
+  `predictGridWithNeurons` 2280.1543 ms,
+  `predictGridWithNeuronsInto` 2023.4593 ms, Adam/L2/Clip 17.2617 ms, SGD
+  4.7074 ms.
+- Second repeat, after stopping the local Vite dev server: `predictGrid`
+  3847.6081 ms, `predictGridInto` 4437.3385 ms,
+  `predictGridWithNeurons` 2078.2927 ms,
+  `predictGridWithNeuronsInto` 2131.5149 ms, Adam/L2/Clip 15.2108 ms, SGD
+  4.2054 ms.
+
+These repeated values exceed the roadmap timing warning threshold, but the
+slice does not touch engine prediction, training hot paths, worker execution,
+or visualization transport. The build-size comparison stayed below thresholds,
+and the earlier same-slice perf run stayed in the established local benchmark
+range. Treat the final repeated timings as local-machine benchmark noise and
+watch the next perf baseline before making a performance claim.

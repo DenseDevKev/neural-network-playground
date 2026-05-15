@@ -13,10 +13,22 @@ const PUBLIC_DATASETS = new Set<DatasetType>([
     'heart',
     'reg-plane',
     'reg-gauss',
+    'three-class-clusters',
 ]);
 
 describe('preset registry multiclass guardrails', () => {
-    it('keeps built-in presets on public scalar dataset contracts', () => {
+    it('exposes exactly one approved multiclass preset', () => {
+        const multiclassPresets = PRESETS.filter((preset) => preset.config.data?.dataset === 'three-class-clusters');
+
+        expect(multiclassPresets.map((preset) => preset.id)).toEqual(['three-class-clusters']);
+        expect(multiclassPresets[0].config).toMatchObject({
+            data: { dataset: 'three-class-clusters', problemType: 'classification' },
+            network: { outputSize: 3, outputActivation: 'softmax' },
+            training: { lossType: 'categoricalCrossEntropy' },
+        });
+    });
+
+    it('keeps built-in presets on scalar contracts unless they are the approved multiclass tuple', () => {
         for (const preset of PRESETS) {
             const dataset = preset.config.data?.dataset;
             const network = preset.config.network;
@@ -24,6 +36,12 @@ describe('preset registry multiclass guardrails', () => {
 
             expect(dataset, preset.id).toBeDefined();
             expect(PUBLIC_DATASETS.has(dataset!), preset.id).toBe(true);
+            if (preset.id === 'three-class-clusters') {
+                expect(network?.outputSize, preset.id).toBe(3);
+                expect(network?.outputActivation, preset.id).toBe('softmax');
+                expect(training.lossType, preset.id).toBe('categoricalCrossEntropy');
+                continue;
+            }
             expect(network?.outputSize, preset.id).toBe(1);
             expect(network?.outputActivation, preset.id).not.toBe('softmax');
             expect(training.lossType, preset.id).not.toBe('categoricalCrossEntropy');

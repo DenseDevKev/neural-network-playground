@@ -76,4 +76,17 @@ export const PRESETS: Preset[] = [
             features: { x: true, y: true, xSquared: true, ySquared: true, xy: false, sinX: false, sinY: false, cosX: false, cosY: false },
         },
     },
+    {
+        id: 'three-class-clusters',
+        title: 'Three-Class Softmax Lab',
+        description: 'Three compact clusters teach how softmax chooses between competing classes.',
+        learningGoal: 'See that multiclass classification uses one output per class, and the largest softmax output wins.',
+        difficulty: 'advanced',
+        config: {
+            data: { dataset: 'three-class-clusters', problemType: 'classification', noise: 0.05, trainTestRatio: 0.5, numSamples: 300, seed: 42 },
+            network: { inputSize: 2, hiddenLayers: [6, 6], outputSize: 3, activation: 'tanh', outputActivation: 'softmax', weightInit: 'xavier', seed: 42 },
+            training: { learningRate: 0.03, batchSize: 10, lossType: 'categoricalCrossEntropy', optimizer: 'sgd', momentum: 0.9, regularization: 'none', regularizationRate: 0, gradientClip: null },
+            features: { x: true, y: true, xSquared: false, ySquared: false, xy: false, sinX: false, sinY: false, cosX: false, cosY: false },
+        },
+    },
 ];

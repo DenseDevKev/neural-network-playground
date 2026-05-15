@@ -121,10 +121,25 @@ describe('usePlaygroundStore compatibility guards', () => {
 
     it('keeps built-in presets on single-output scalar contracts', () => {
         for (const preset of PRESETS) {
+            if (preset.id === 'three-class-clusters') continue;
             seedHiddenMulticlassState();
             usePlaygroundStore.getState().applyPreset(preset);
             expectScalarRuntimeConfig();
         }
+    });
+
+    it('exposes exactly one built-in approved multiclass preset', () => {
+        const multiclassPresets = PRESETS.filter((preset) => preset.config.data?.dataset === 'three-class-clusters');
+
+        expect(multiclassPresets.map((preset) => preset.id)).toEqual(['three-class-clusters']);
+
+        usePlaygroundStore.getState().applyPreset(multiclassPresets[0]);
+
+        expectApprovedMulticlassRuntimeConfig();
+        expect(window.location.hash).toContain('d=three-class-clusters');
+        expect(window.location.hash).toContain('os=3');
+        expect(window.location.hash).toContain('oa=softmax');
+        expect(window.location.hash).toContain('l=categoricalCrossEntropy');
     });
 
     it('clamps future single-output preset contracts before syncing them to the URL', () => {

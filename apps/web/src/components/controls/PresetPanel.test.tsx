@@ -65,6 +65,25 @@ describe('PresetPanel', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBe('preset');
     });
 
+    it('applies the three-class multiclass preset as a complete public tuple', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+
+        render(<PresetPanel onReset={onReset} />);
+
+        const button = screen.getByRole('button', { name: 'Apply preset: Three-Class Softmax Lab' });
+        await user.click(button);
+
+        expect(usePlaygroundStore.getState().data.dataset).toBe('three-class-clusters');
+        expect(usePlaygroundStore.getState().data.problemType).toBe('classification');
+        expect(usePlaygroundStore.getState().network.outputSize).toBe(3);
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('softmax');
+        expect(usePlaygroundStore.getState().training.lossType).toBe('categoricalCrossEntropy');
+        expect(onReset).toHaveBeenCalledTimes(1);
+        expect(button).toHaveClass('preset-card--selected');
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+    });
+
     it('keeps the applied preset highlighted after the panel remounts', async () => {
         const user = userEvent.setup();
         const onReset = vi.fn();
