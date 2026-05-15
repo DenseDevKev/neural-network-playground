@@ -4,6 +4,7 @@
 
 import { useRef, useEffect, useCallback, useState, memo, useId } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { writeGridToImageData, HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
 import type { DataPoint } from '@nn-playground/engine';
 import { EmptyState } from '../common/EmptyState.tsx';
@@ -227,6 +228,10 @@ function drawPoints(
     renderBatch(blueBatch, HEX_BLUE);
 }
 
+function hasNonBinaryLabels(points: DataPoint[]): boolean {
+    return points.some((point) => point.label !== 0 && point.label !== 1);
+}
+
 // ── Component ──
 
 export const DecisionBoundary = memo(function DecisionBoundary({
@@ -249,6 +254,9 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 
     const snapshot = useTrainingStore((s) => s.snapshot);
     const frameVersion = useTrainingStore((s) => s.frameVersion);
+    const problemType = usePlaygroundStore((s) => s.data.problemType);
+    const outputSize = usePlaygroundStore((s) => s.network.outputSize);
+    const outputActivation = usePlaygroundStore((s) => s.network.outputActivation);
 
     // Track container size for responsive canvas
     const [canvasSize, setCanvasSize] = useState(320);
@@ -375,6 +383,25 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                     icon="🎯"
                     title="No training data"
                     description="Generate data or reset the playground to populate the decision boundary."
+                />
+            </div>
+        );
+    }
+
+    const isNonBinaryClassification =
+        problemType === 'classification' &&
+        (outputSize !== 1 ||
+            outputActivation === 'softmax' ||
+            hasNonBinaryLabels(trainPoints) ||
+            hasNonBinaryLabels(testPoints));
+
+    if (isNonBinaryClassification) {
+        return (
+            <div className="decision-boundary" ref={containerRef}>
+                <EmptyState
+                    icon="🎯"
+                    title="Binary decision boundary unavailable"
+                    description="This visualization supports two-class outputs. Multiclass snapshots stay hidden until a multiclass boundary renderer is approved."
                 />
             </div>
         );

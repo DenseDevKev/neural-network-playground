@@ -4,6 +4,7 @@ import { DecisionBoundary } from './DecisionBoundary.tsx';
 import { classifyPointFromGrid } from './DecisionBoundary.tsx';
 import { resetFrameBuffer, updateFrameBuffer, getFrameVersion } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 
 const drawImage = vi.fn();
 
@@ -55,6 +56,17 @@ describe('DecisionBoundary', () => {
             trainPoints: [],
             testPoints: [],
         });
+        usePlaygroundStore.setState((state) => ({
+            data: {
+                ...state.data,
+                problemType: 'classification',
+            },
+            network: {
+                ...state.network,
+                outputSize: 1,
+                outputActivation: 'sigmoid',
+            },
+        }));
 
         HTMLCanvasElement.prototype.getContext = vi.fn(
             () => createMockContext() as unknown as CanvasRenderingContext2D,
@@ -182,6 +194,70 @@ describe('DecisionBoundary', () => {
         );
 
         expect(document.getElementById(descriptionId ?? '')).toHaveTextContent(/visible test points/i);
+    });
+
+    it('does not render binary legend copy for multiclass classification labels', () => {
+        render(
+            <DecisionBoundary
+                trainPoints={[
+                    { x: -0.5, y: 0.5, label: 0 },
+                    { x: 0, y: 0, label: 1 },
+                    { x: 0.5, y: -0.5, label: 2 },
+                ]}
+                testPoints={[]}
+                showTestData={false}
+                discretize={false}
+            />,
+        );
+
+        expect(screen.getByText('Binary decision boundary unavailable')).toBeInTheDocument();
+        expect(screen.getByText(/supports two-class outputs/i)).toBeInTheDocument();
+        expect(screen.queryByText('Negative')).not.toBeInTheDocument();
+        expect(screen.queryByText('Positive')).not.toBeInTheDocument();
+    });
+
+    it('guards binary boundary copy when hidden test data contains multiclass labels', () => {
+        render(
+            <DecisionBoundary
+                trainPoints={[
+                    { x: -0.5, y: 0.5, label: 0 },
+                    { x: 0, y: 0, label: 1 },
+                ]}
+                testPoints={[{ x: 0.5, y: -0.5, label: 2 }]}
+                showTestData={false}
+                discretize={false}
+            />,
+        );
+
+        expect(screen.getByText('Binary decision boundary unavailable')).toBeInTheDocument();
+        expect(screen.queryByText('Negative')).not.toBeInTheDocument();
+        expect(screen.queryByText('Positive')).not.toBeInTheDocument();
+    });
+
+    it('guards binary boundary copy for multiclass output configs even with binary labels', () => {
+        usePlaygroundStore.setState((state) => ({
+            network: {
+                ...state.network,
+                outputSize: 3,
+                outputActivation: 'softmax' as any,
+            },
+        }));
+
+        render(
+            <DecisionBoundary
+                trainPoints={[
+                    { x: -0.5, y: 0.5, label: 0 },
+                    { x: 0, y: 0, label: 1 },
+                ]}
+                testPoints={[]}
+                showTestData={false}
+                discretize={false}
+            />,
+        );
+
+        expect(screen.getByText('Binary decision boundary unavailable')).toBeInTheDocument();
+        expect(screen.queryByText('Negative')).not.toBeInTheDocument();
+        expect(screen.queryByText('Positive')).not.toBeInTheDocument();
     });
 
     it('classifies a point from the nearest decision grid cell', () => {

@@ -33,6 +33,26 @@ describe('ConfusionMatrix', () => {
     expect(screen.getByText('Train the model to generate test predictions and evaluation metrics.')).toBeInTheDocument();
   });
 
+  it('should render a neutral unavailable state when test data has no confusion matrix yet', () => {
+    useTrainingStore.setState({
+      testPoints: [{ id: 1 } as any],
+      snapshot: {
+        testMetrics: {
+          loss: 0.4,
+          accuracy: 0.6,
+        },
+      } as any,
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Confusion matrix unavailable')).toBeInTheDocument();
+    expect(screen.getByText(/metrics are still loading/i)).toBeInTheDocument();
+    expect(screen.queryByText(/only renders binary classification matrices/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('No test data')).not.toBeInTheDocument();
+    expect(screen.queryByText('Pred 1')).not.toBeInTheDocument();
+  });
+
   it('should render percentages, totals, and summary metrics', () => {
     useTrainingStore.setState({
       testPoints: [{ id: 1 } as any],

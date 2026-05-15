@@ -20,7 +20,7 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
     const cm = useTrainingStore((s) => s.snapshot?.testMetrics.confusionMatrix);
 
     if (problemType !== 'classification') return null;
-    if (testPoints.length === 0 || !cm) {
+    if (testPoints.length === 0) {
         return (
             <div className="panel confusion-matrix">
                 <div className="panel__title">Confusion Matrix (Test Set)</div>
@@ -28,6 +28,19 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
                     icon="📊"
                     title="No test data"
                     description="Train the model to generate test predictions and evaluation metrics."
+                />
+            </div>
+        );
+    }
+
+    if (!cm) {
+        return (
+            <div className="panel confusion-matrix">
+                <div className="panel__title">Confusion Matrix (Test Set)</div>
+                <EmptyState
+                    icon="📊"
+                    title="Confusion matrix unavailable"
+                    description="Metrics are still loading, stale, or unavailable for this snapshot. Use loss and accuracy until a fresh binary matrix arrives."
                 />
             </div>
         );
