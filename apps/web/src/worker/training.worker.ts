@@ -373,6 +373,7 @@ function isApprovedWorkerMulticlassConfig(
     data: DataConfig,
 ): boolean {
     return (
+        data.dataset === 'three-class-clusters' &&
         data.problemType === 'classification' &&
         network.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE &&
         network.outputActivation === 'softmax' &&
@@ -389,25 +390,13 @@ function assertApprovedWorkerMulticlassConfig(
     if (isApprovedWorkerMulticlassConfig(network, training, data)) return;
 
     throw new Error(
-        'Worker multiclass mode requires classification data, output size 3, softmax output activation, and categorical cross-entropy loss.',
+        'Worker multiclass mode requires the approved three-class dataset, classification data, output size 3, softmax output activation, and categorical cross-entropy loss.',
     );
 }
 
-function normalizeScalarSurrogateForSharedValidation(
-    networkConfig: NetworkConfig,
-    trainingConfig: TrainingConfig,
-): { network: NetworkConfig; training: TrainingConfig } {
-    return {
-        network: {
-            ...networkConfig,
-            outputSize: 1,
-            outputActivation: 'sigmoid',
-        },
-        training: {
-            ...trainingConfig,
-            lossType: 'crossEntropy',
-        },
-    };
+function assertScalarLiveArenaConfig(network: NetworkConfig, training: TrainingConfig): void {
+    if (!hasWorkerMulticlassContract(network, training)) return;
+    throw new Error('Multiclass live arena is not enabled; live arena is currently scalar-only.');
 }
 
 function normalizeWorkerConfig(
@@ -422,39 +411,24 @@ function normalizeWorkerConfig(
     features: FeatureFlags;
 } {
     const isWorkerMulticlassRequest = hasWorkerMulticlassContract(networkConfig, trainingConfig);
-    const validationConfig = isWorkerMulticlassRequest
-        ? normalizeScalarSurrogateForSharedValidation(networkConfig, trainingConfig)
-        : { network: networkConfig, training: trainingConfig };
-
     const result = normalizeAppConfig({
-        network: validationConfig.network,
-        training: validationConfig.training,
+        network: networkConfig,
+        training: trainingConfig,
         data: dataConfig,
         features,
         ui: { showTestData: false, discretizeOutput: false },
-    });
+    }, { allowMulticlass: isWorkerMulticlassRequest });
 
     if (!result.config) {
         throw new Error(result.error ?? 'Invalid playground configuration.');
     }
 
     if (isWorkerMulticlassRequest) {
-        assertApprovedWorkerMulticlassConfig(networkConfig, trainingConfig, result.config.data);
+        assertApprovedWorkerMulticlassConfig(result.config.network, result.config.training, result.config.data);
     }
 
-    const normalizedNetwork: NetworkConfig = isWorkerMulticlassRequest
-        ? {
-            ...result.config.network,
-            outputSize: WORKER_MULTICLASS_OUTPUT_SIZE,
-            outputActivation: 'softmax',
-        }
-        : result.config.network;
-    const normalizedTraining: TrainingConfig = isWorkerMulticlassRequest
-        ? {
-            ...result.config.training,
-            lossType: 'categoricalCrossEntropy',
-        }
-        : result.config.training;
+    const normalizedNetwork: NetworkConfig = result.config.network;
+    const normalizedTraining: TrainingConfig = result.config.training;
 
     validateConfigs(normalizedNetwork, normalizedTraining);
     return {
@@ -636,6 +610,7 @@ function resetCheckpoints(): void {
 }
 
 function buildArenaSlot(side: ArenaSide, input: ArenaModelInput): ArenaSlot {
+    assertScalarLiveArenaConfig(input.network, input.training);
     const config = normalizeWorkerConfig(
         input.network,
         input.training,

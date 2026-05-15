@@ -66,7 +66,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function getValidatedPublicRuntimeConfig() {
     const config = usePlaygroundStore.getState().getConfig();
-    const result = validateImportedConfig(config);
+    const result = validateImportedConfig(config, { allowMulticlass: true });
     if (!result.config) {
         throw new Error(result.error ?? 'Invalid playground configuration.');
     }

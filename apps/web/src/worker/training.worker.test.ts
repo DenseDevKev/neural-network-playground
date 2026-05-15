@@ -262,12 +262,17 @@ describe('training worker multiclass target encoding', () => {
         ...DEFAULT_TRAINING,
         lossType: 'categoricalCrossEntropy' as const,
     };
+    const approvedMulticlassData = {
+        ...DEFAULT_DATA,
+        dataset: 'three-class-clusters' as const,
+        problemType: 'classification' as const,
+    };
 
     it('encodes classification labels as bounded one-hot targets for worker training and traces', () => {
         workerApi.initialize(
             multiclassNetwork,
             multiclassTraining,
-            { ...DEFAULT_DATA, seed: 934, numSamples: 24 },
+            { ...approvedMulticlassData, seed: 934, numSamples: 24 },
             { ...DEFAULT_FEATURES },
         );
 
@@ -282,11 +287,11 @@ describe('training worker multiclass target encoding', () => {
         expect(trace.trace.target[trace.sample.label ?? -1]).toBe(1);
     });
 
-    it('does not source hidden three-class samples through public worker dataset generation', () => {
+    it('sources approved three-class samples through worker dataset generation', () => {
         workerApi.initialize(
             multiclassNetwork,
             multiclassTraining,
-            { ...DEFAULT_DATA, seed: 940, numSamples: 60 },
+            { ...approvedMulticlassData, seed: 940, numSamples: 60 },
             { ...DEFAULT_FEATURES },
         );
 
@@ -295,15 +300,102 @@ describe('training worker multiclass target encoding', () => {
             ...workerApi.getTestPoints(),
         ].map((point) => point.label);
 
+        expect(new Set(labels)).toEqual(new Set([0, 1, 2]));
+    });
+
+    it('updates from scalar training to the approved three-class runtime and rebuilds data', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 943, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const updated = workerApi.updateConfig(
+            multiclassNetwork,
+            multiclassTraining,
+            { ...approvedMulticlassData, seed: 943, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+            false,
+        );
+        const labels = [
+            ...workerApi.getTrainPoints(),
+            ...workerApi.getTestPoints(),
+        ].map((point) => point.label);
+
+        expect(updated.runId).toBeGreaterThan(init.runId);
+        expect(updated.snapshot.step).toBe(0);
+        expect(new Set(labels)).toEqual(new Set([0, 1, 2]));
+    });
+
+    it('rejects unsupported multiclass updates before mutating the active run', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 944, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        expect(() => workerApi.updateConfig(
+            multiclassNetwork,
+            multiclassTraining,
+            { ...approvedMulticlassData, dataset: 'circle', seed: 944, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+            false,
+        )).toThrow(/multiclass configurations/i);
+
+        const labels = [
+            ...workerApi.getTrainPoints(),
+            ...workerApi.getTestPoints(),
+        ].map((point) => point.label);
+        const stillScalar = workerApi.updateConfig(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 944, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+            false,
+        );
+
+        expect(stillScalar.runId).toBe(init.runId);
         expect(new Set(labels)).toEqual(new Set([0, 1]));
-        expect(labels).not.toContain(2);
+    });
+
+    it('rejects unsupported multiclass initialization before replacing an existing scalar run', () => {
+        const init = workerApi.initialize(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 945, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        expect(() => workerApi.initialize(
+            multiclassNetwork,
+            multiclassTraining,
+            { ...approvedMulticlassData, dataset: 'circle', seed: 945, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+        )).toThrow(/multiclass configurations/i);
+
+        const labels = [
+            ...workerApi.getTrainPoints(),
+            ...workerApi.getTestPoints(),
+        ].map((point) => point.label);
+        const stillScalar = workerApi.updateConfig(
+            { ...DEFAULT_NETWORK },
+            { ...DEFAULT_TRAINING },
+            { ...DEFAULT_DATA, seed: 945, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+            false,
+        );
+
+        expect(stillScalar.runId).toBe(init.runId);
+        expect(new Set(labels)).toEqual(new Set([0, 1]));
     });
 
     it('encodes custom multiclass trace labels and rejects out-of-range classes', () => {
         workerApi.initialize(
             multiclassNetwork,
             multiclassTraining,
-            { ...DEFAULT_DATA, seed: 935, numSamples: 24 },
+            { ...approvedMulticlassData, seed: 935, numSamples: 24 },
             { ...DEFAULT_FEATURES },
         );
 
@@ -339,7 +431,7 @@ describe('training worker multiclass target encoding', () => {
         workerApi.initialize(
             multiclassNetwork,
             { ...multiclassTraining, batchSize: 4 },
-            { ...DEFAULT_DATA, seed: 939, numSamples: 24 },
+            { ...approvedMulticlassData, seed: 939, numSamples: 24 },
             { ...DEFAULT_FEATURES },
         );
 
@@ -364,7 +456,7 @@ describe('training worker multiclass target encoding', () => {
                 outputActivation: 'sigmoid',
             },
             multiclassTraining,
-            { ...DEFAULT_DATA, seed: 936, numSamples: 24 },
+            { ...approvedMulticlassData, seed: 936, numSamples: 24 },
             { ...DEFAULT_FEATURES },
         )).toThrow(/softmax.*categorical cross-entropy/i);
     });
@@ -374,25 +466,31 @@ describe('training worker multiclass target encoding', () => {
             'two outputs',
             { outputSize: 2, outputActivation: 'softmax' as const },
             { lossType: 'categoricalCrossEntropy' as const },
-            { problemType: 'classification' as const },
+            {},
         ],
         [
             'four outputs',
             { outputSize: 4, outputActivation: 'softmax' as const },
             { lossType: 'categoricalCrossEntropy' as const },
-            { problemType: 'classification' as const },
+            {},
         ],
         [
             'softmax with scalar loss',
             { outputSize: 3, outputActivation: 'softmax' as const },
             { lossType: 'crossEntropy' as const },
-            { problemType: 'classification' as const },
+            {},
         ],
         [
             'categorical loss without softmax',
             { outputSize: 3, outputActivation: 'sigmoid' as const },
             { lossType: 'categoricalCrossEntropy' as const },
-            { problemType: 'classification' as const },
+            {},
+        ],
+        [
+            'unsupported dataset',
+            { outputSize: 3, outputActivation: 'softmax' as const },
+            { lossType: 'categoricalCrossEntropy' as const },
+            { dataset: 'circle' as const },
         ],
         [
             'regression data',
@@ -411,7 +509,7 @@ describe('training worker multiclass target encoding', () => {
                 ...trainingOverrides,
             },
             {
-                ...DEFAULT_DATA,
+                ...approvedMulticlassData,
                 ...dataOverrides,
                 seed: 936,
                 numSamples: 24,
@@ -424,7 +522,7 @@ describe('training worker multiclass target encoding', () => {
         workerApi.initialize(
             multiclassNetwork,
             multiclassTraining,
-            { ...DEFAULT_DATA, seed: 938, numSamples: 24 },
+            { ...approvedMulticlassData, seed: 938, numSamples: 24 },
             { ...DEFAULT_FEATURES },
         );
         workerApi.updateDemand({
@@ -448,7 +546,7 @@ describe('training worker multiclass target encoding', () => {
             workerApi.initialize(
                 multiclassNetwork,
                 multiclassTraining,
-                { ...DEFAULT_DATA, seed: 941, numSamples: 24 },
+                { ...approvedMulticlassData, seed: 941, numSamples: 24 },
                 { ...DEFAULT_FEATURES },
             );
             workerApi.updateDemand({
@@ -479,7 +577,7 @@ describe('training worker multiclass target encoding', () => {
             workerApi.initialize(
                 multiclassNetwork,
                 multiclassTraining,
-                { ...DEFAULT_DATA, seed: 942, numSamples: 24 },
+                { ...approvedMulticlassData, seed: 942, numSamples: 24 },
                 { ...DEFAULT_FEATURES },
             );
             workerApi.updateDemand({

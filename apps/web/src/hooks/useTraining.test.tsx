@@ -204,6 +204,25 @@ function resetStores(): void {
     });
 }
 
+function seedApprovedMulticlassStoreState(): void {
+    usePlaygroundStore.setState((state) => ({
+        data: {
+            ...state.data,
+            dataset: 'three-class-clusters',
+            problemType: 'classification',
+        },
+        network: {
+            ...state.network,
+            outputSize: 3,
+            outputActivation: 'softmax',
+        },
+        training: {
+            ...state.training,
+            lossType: 'categoricalCrossEntropy',
+        },
+    }));
+}
+
 function getStreamHandler(): (msg: WorkerToMainMessage) => void {
     const handler = bridge.onSnapshot.mock.calls[0]?.[0] as ((msg: WorkerToMainMessage) => void) | undefined;
     expect(handler).toBeTypeOf('function');
@@ -279,10 +298,25 @@ describe('useTraining', () => {
 
         renderHook(() => useTraining());
 
-        await waitFor(() => expect(useTrainingStore.getState().workerError).toMatch(/multiclass configurations are not runtime-enabled yet/i));
+        await waitFor(() => expect(useTrainingStore.getState().workerError).toMatch(/multiclass configurations/i));
         expect(bridge.workerApi.initialize).not.toHaveBeenCalled();
         expect(useTrainingStore.getState().status).toBe('paused');
         expect(useTrainingStore.getState().pauseReason).toBe('error');
+    });
+
+    it('initializes approved multiclass configs through the public training hook', async () => {
+        seedApprovedMulticlassStoreState();
+
+        renderHook(() => useTraining());
+
+        await waitFor(() => expect(bridge.workerApi.initialize).toHaveBeenCalledTimes(1));
+        expect(bridge.workerApi.initialize).toHaveBeenCalledWith(
+            expect.objectContaining({ outputSize: 3, outputActivation: 'softmax' }),
+            expect.objectContaining({ lossType: 'categoricalCrossEntropy' }),
+            expect.objectContaining({ dataset: 'three-class-clusters', problemType: 'classification' }),
+            expect.any(Object),
+        );
+        expect(useTrainingStore.getState().workerError).toBeNull();
     });
 
     it('hydrates fresh worker snapshots in the existing store update order', async () => {
@@ -695,6 +729,37 @@ describe('useTraining', () => {
         unmount();
     });
 
+    it('syncs scalar-to-approved multiclass config changes while running', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        act(() => {
+            result.current.play();
+        });
+        bridge.workerApi.updateConfig.mockClear();
+        bridge.postStreamCommand.mockClear();
+        bridge.stopRenderLoop.mockClear();
+
+        act(() => {
+            useTrainingStore.getState().beginConfigChange('data');
+            seedApprovedMulticlassStoreState();
+        });
+
+        await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
+        expect(bridge.workerApi.updateConfig).toHaveBeenCalledWith(
+            expect.objectContaining({ outputSize: 3, outputActivation: 'softmax' }),
+            expect.objectContaining({ lossType: 'categoricalCrossEntropy' }),
+            expect.objectContaining({ dataset: 'three-class-clusters', problemType: 'classification' }),
+            expect.any(Object),
+            false,
+        );
+        expect(bridge.postStreamCommand).toHaveBeenCalledWith(expect.objectContaining({ type: 'stopTraining' }));
+        expect(bridge.stopRenderLoop).toHaveBeenCalledTimes(1);
+        expect(useTrainingStore.getState().configError).toBeNull();
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+        expect(useTrainingStore.getState().dataConfigLoading).toBe(false);
+    });
+
     it('does not sync hidden multiclass configs through the public training hook', async () => {
         renderHook(() => useTraining());
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
@@ -715,7 +780,7 @@ describe('useTraining', () => {
             }));
         });
 
-        await waitFor(() => expect(useTrainingStore.getState().configError).toMatch(/multiclass configurations are not runtime-enabled yet/i));
+        await waitFor(() => expect(useTrainingStore.getState().configError).toMatch(/multiclass configurations/i));
         expect(bridge.workerApi.updateConfig).not.toHaveBeenCalled();
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
         expect(useTrainingStore.getState().networkConfigLoading).toBe(false);
@@ -747,7 +812,7 @@ describe('useTraining', () => {
             }));
         });
 
-        await waitFor(() => expect(useTrainingStore.getState().configError).toMatch(/multiclass configurations are not runtime-enabled yet/i));
+        await waitFor(() => expect(useTrainingStore.getState().configError).toMatch(/multiclass configurations/i));
         expect(bridge.workerApi.updateConfig).not.toHaveBeenCalled();
         expect(bridge.postStreamCommand).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'stopTraining' }));
         expect(bridge.stopRenderLoop).not.toHaveBeenCalled();
