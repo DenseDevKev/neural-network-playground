@@ -1735,3 +1735,57 @@ These values remain within the established noisy local benchmark range and
 below roadmap warning thresholds. The slice only changes web store normalization
 and URL opt-in calls; it does not add runtime hot-path work, worker cadence
 changes, or heavy visualization payloads.
+
+## Wave 7 Public Multiclass Runtime Acceptance
+
+Date: 2026-05-15
+
+Scope: runtime acceptance slice for the exact approved multiclass tuple. The
+training hook now validates public runtime configs with the existing shared
+multiclass opt-in guard, and the worker validates only
+`three-class-clusters`, `classification`, `outputSize: 3`, `softmax`, and
+`categoricalCrossEntropy` before mutating worker state. The worker now sources
+real three-class samples for that tuple and keeps malformed tuples rejected.
+Live arena remains scalar-only. This slice does not add visible controls,
+public built-in presets, Config Panel JSON import/export, run-history
+save/restore, worker protocol fields, frame-buffer fields, persistence schema
+changes, dependencies, deployment changes, official 3x3 worker metrics, or raw
+probability-grid transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-rMnDb0A3.js`: 94.59 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-D0HffnMV.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-SiKCqEa6.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-00aKrwOR.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-BWRyg_P5.js`: 383.80 kB, gzip 115.41 kB
+
+Compared with the public multiclass store URL transition build, the worker
+chunk changed from 94.62 kB to 94.59 kB, the engine chunk stayed at 6.15 kB,
+and the main app chunk changed from 383.78 kB to 383.80 kB, about 0.01%.
+These changes remain below the 10% roadmap build-size warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1096.4730 ms total for 100 iterations
+- `predictGridInto`: 1087.3352 ms total for 100 iterations
+- `predictGridWithNeurons`: 686.9347 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 587.7726 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0566 ms
+- Average `applyGradients` time (SGD): 1.4411 ms
+
+These values remain within the established noisy local benchmark range and
+below roadmap warning thresholds. The slice changes validation and dataset
+acceptance gates only; multiclass boundary arrays remain bounded and
+demand/cadence-gated in the existing worker path.
