@@ -1163,6 +1163,42 @@ Observed benchmark output:
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is test-only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
 
+## Wave 7 Binary Confusion Matrix Guard
+
+Date: 2026-05-15
+
+Scope: visualization-local guard for future Multiclass Classification Mode. The Confusion Matrix panel now refuses to render binary confusion matrices when the current network config or explicit train/test labels indicate unsupported multiclass state. The guard keeps normal scalar binary matrices and demand-gated unavailable states intact. This slice does not change URL/config format, public config shape, persistence/run-history schema, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, training behavior, or multiclass visualization payload transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `b7c3499`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-CJxUHbWK.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-BWFvgAAd.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-XQ4O8pIB.js`: 16.71 kB, gzip 5.15 kB
+- `dist/assets/index-Cr2dBbDY.js`: 369.84 kB, gzip 111.75 kB
+
+Compared with the public runtime config guard build, the worker, CSS, lazy Code Export, engine, inspection, and run-history chunks remain effectively unchanged. The main app chunk changed from 369.27 kB to 369.84 kB, about 0.15%, below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1080.2500 ms total for 100 iterations
+- `predictGridInto`: 1071.1034 ms total for 100 iterations
+- `predictGridWithNeurons`: 672.1155 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 577.5240 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9272 ms
+- Average `applyGradients` time (SGD): 1.3876 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects visualization rendering only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
 ## Wave 7 Public Store Setter Non-Exposure Guard
 
 Date: 2026-05-15
