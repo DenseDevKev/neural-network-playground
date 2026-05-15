@@ -263,6 +263,27 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().paramsVersion).toBeGreaterThan(0);
     });
 
+    it('does not initialize public training with hidden multiclass configs', async () => {
+        usePlaygroundStore.setState((state) => ({
+            network: {
+                ...state.network,
+                outputSize: 3,
+                outputActivation: 'softmax',
+            },
+            training: {
+                ...state.training,
+                lossType: 'categoricalCrossEntropy',
+            },
+        }));
+
+        renderHook(() => useTraining());
+
+        await waitFor(() => expect(useTrainingStore.getState().workerError).toMatch(/multiclass configurations are not runtime-enabled yet/i));
+        expect(bridge.workerApi.initialize).not.toHaveBeenCalled();
+        expect(useTrainingStore.getState().status).toBe('paused');
+        expect(useTrainingStore.getState().pauseReason).toBe('error');
+    });
+
     it('hydrates fresh worker snapshots in the existing store update order', async () => {
         const callOrder: string[] = [];
         const original = useTrainingStore.getState();
@@ -642,6 +663,64 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().configError).toBeNull();
 
         unmount();
+    });
+
+    it('does not sync hidden multiclass configs through the public training hook', async () => {
+        renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        bridge.workerApi.updateConfig.mockClear();
+
+        act(() => {
+            useTrainingStore.getState().beginConfigChange('network');
+            usePlaygroundStore.setState((state) => ({
+                network: {
+                    ...state.network,
+                    outputSize: 3,
+                    outputActivation: 'softmax',
+                },
+                training: {
+                    ...state.training,
+                    lossType: 'categoricalCrossEntropy',
+                },
+            }));
+        });
+
+        await waitFor(() => expect(useTrainingStore.getState().configError).toMatch(/multiclass configurations are not runtime-enabled yet/i));
+        expect(bridge.workerApi.updateConfig).not.toHaveBeenCalled();
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+        expect(useTrainingStore.getState().networkConfigLoading).toBe(false);
+    });
+
+    it('validates hidden multiclass sync before sending worker commands while running', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        act(() => {
+            result.current.play();
+        });
+        bridge.workerApi.updateConfig.mockClear();
+        bridge.postStreamCommand.mockClear();
+        bridge.stopRenderLoop.mockClear();
+
+        act(() => {
+            useTrainingStore.getState().beginConfigChange('network');
+            usePlaygroundStore.setState((state) => ({
+                network: {
+                    ...state.network,
+                    outputSize: 3,
+                    outputActivation: 'softmax',
+                },
+                training: {
+                    ...state.training,
+                    lossType: 'categoricalCrossEntropy',
+                },
+            }));
+        });
+
+        await waitFor(() => expect(useTrainingStore.getState().configError).toMatch(/multiclass configurations are not runtime-enabled yet/i));
+        expect(bridge.workerApi.updateConfig).not.toHaveBeenCalled();
+        expect(bridge.postStreamCommand).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'stopTraining' }));
+        expect(bridge.stopRenderLoop).not.toHaveBeenCalled();
     });
 
     it('records config sync failures and keeps the previous config snapshot retryable', async () => {

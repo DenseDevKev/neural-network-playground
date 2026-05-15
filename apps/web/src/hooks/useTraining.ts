@@ -39,7 +39,7 @@ import type {
     WorkerSnapshotMessage,
     WorkerToMainMessage,
 } from '@nn-playground/shared';
-import { structuralEqual } from '@nn-playground/shared';
+import { structuralEqual, validateImportedConfig } from '@nn-playground/shared';
 
 export interface LiveArenaModelInput {
     label?: string;
@@ -61,6 +61,15 @@ export interface TrainingHook {
 
 function getErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
+}
+
+function getValidatedPublicRuntimeConfig() {
+    const config = usePlaygroundStore.getState().getConfig();
+    const result = validateImportedConfig(config);
+    if (!result.config) {
+        throw new Error(result.error ?? 'Invalid playground configuration.');
+    }
+    return result.config;
 }
 
 function getTotalNeuronCount(layerSizes: number[]): number {
@@ -238,10 +247,9 @@ export function useTraining(): TrainingHook {
     }, []);
 
     const initializeWorker = useCallback(async () => {
+        const config = getValidatedPublicRuntimeConfig();
         const api = getWorkerApi();
-        const ps = usePlaygroundStore.getState();
         const ts = useTrainingStore.getState();
-        const config = ps.getConfig();
         const result = await api.initialize(
             config.network,
             config.training,
@@ -361,6 +369,17 @@ export function useTraining(): TrainingHook {
         const seq = beginConfigSync();
 
         const sync = async () => {
+            let config;
+            try {
+                config = getValidatedPublicRuntimeConfig();
+            } catch (error) {
+                if (!isCurrentConfigSync(seq)) return;
+                prevConfigRef.current = previousConfigSnapshot;
+                useTrainingStore.getState().failConfigChange(getErrorMessage(error, 'Invalid playground configuration.'));
+                finishConfigSyncIfCurrent(seq);
+                return;
+            }
+
             // Stop streaming before config change
             if (isPlayingRef.current) {
                 postStreamCommand({ type: 'stopTraining' });
@@ -369,10 +388,8 @@ export function useTraining(): TrainingHook {
             }
 
             const api = getWorkerApi();
-            const ps = usePlaygroundStore.getState();
             const ts = useTrainingStore.getState();
             try {
-                const config = ps.getConfig();
                 const result = await api.updateConfig(
                     config.network,
                     config.training,
@@ -397,7 +414,7 @@ export function useTraining(): TrainingHook {
                 ts.setTrainPoints(trainPts);
                 ts.setTestPoints(testPts);
 
-                ps.syncToUrl();
+                usePlaygroundStore.getState().syncToUrl();
                 ts.finishConfigChange();
                 finishConfigSyncIfCurrent(seq);
             } catch (error) {
