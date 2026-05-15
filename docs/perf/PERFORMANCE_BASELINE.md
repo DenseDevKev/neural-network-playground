@@ -1307,6 +1307,42 @@ Observed benchmark output:
 
 These values remain below the roadmap performance warning thresholds compared with the prior shared-config run. The largest observed benchmark delta was `predictGrid`, about 8.6%, below the 20% warning threshold; this slice does not touch engine training, worker cadence, frame-buffer transport, or heavy visualization payload generation.
 
+## Wave 7 Hidden Multiclass Dataset Contract
+
+Date: 2026-05-15
+
+Scope: engine-local metadata contract for the hidden deterministic three-class cluster generator. The contract records the bounded class count, labels, default generation parameters, output size, softmax activation, and categorical cross-entropy loss for future public multiclass wiring. It remains out of the package barrel and does not change `DatasetType`, shared serialization, public dataset generation, presets, lessons, UI controls, persistence defaults, worker/protocol behavior, frame-buffer fields, dependencies, deployment behavior, training behavior, or visualization payload transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `ea48342`. Relevant production output:
+
+- `dist/assets/training.worker-BFdCjK-A.js`: 91.69 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-CUKpNtMy.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-K85eKO-k.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-QLHf-fqu.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-Ca4Kgis4.js`: 370.76 kB, gzip 112.04 kB
+
+Compared with the opt-in experiment-memory eligibility build, production output was unchanged. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1162.2222 ms total for 100 iterations
+- `predictGridInto`: 1103.9761 ms total for 100 iterations
+- `predictGridWithNeurons`: 679.0895 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 622.4592 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.3995 ms
+- Average `applyGradients` time (SGD): 1.4579 ms
+
+These values remain below the roadmap performance warning thresholds. The slice adds metadata and tests only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
 ## Wave 7 Binary Confusion Matrix Guard
 
 Date: 2026-05-15
