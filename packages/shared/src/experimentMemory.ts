@@ -109,11 +109,26 @@ function validateHistoryPoint(value: unknown): HistoryPoint | null {
     return point;
 }
 
-function validateSerializedNetwork(value: unknown): SerializedNetwork | null {
-    if (value === null) return null;
-    if (!isRecord(value)) return null;
-    if (!isRecord(value.config) || !Array.isArray(value.weights) || !Array.isArray(value.biases)) return null;
-    return cloneJson(value as unknown as SerializedNetwork);
+function validateSerializedNetwork(
+    value: unknown,
+    recordConfig: AppConfig,
+): { network: SerializedNetwork | null; error: string | null } {
+    if (value === null) return { network: null, error: null };
+    if (!isRecord(value)) return { network: null, error: 'Run record network is invalid.' };
+    if (!isRecord(value.config) || !Array.isArray(value.weights) || !Array.isArray(value.biases)) {
+        return { network: null, error: 'Run record network is invalid.' };
+    }
+    const embeddedConfig = validateImportedConfig({
+        ...recordConfig,
+        network: value.config,
+    });
+    if (!embeddedConfig.config) {
+        return {
+            network: null,
+            error: `Run record network config is invalid: ${embeddedConfig.error ?? 'Invalid network config.'}`,
+        };
+    }
+    return { network: cloneJson(value as unknown as SerializedNetwork), error: null };
 }
 
 export function sanitizeExperimentHistory(value: unknown): HistoryPoint[] {
@@ -176,8 +191,8 @@ export function validateExperimentRunRecord(value: unknown): ValidationResult {
     }
     const summary = validateSummary(value.summary);
     if (!summary) return { record: null, error: 'Run record summary is invalid.' };
-    const network = validateSerializedNetwork(value.network);
-    if (value.network !== null && !network) return { record: null, error: 'Run record network is invalid.' };
+    const networkResult = validateSerializedNetwork(value.network, configResult.config);
+    if (networkResult.error) return { record: null, error: networkResult.error };
     const history = sanitizeExperimentHistory(value.history);
     return {
         record: {
@@ -188,7 +203,7 @@ export function validateExperimentRunRecord(value: unknown): ValidationResult {
             title: typeof value.title === 'string' && value.title.trim() ? value.title : undefined,
             config: configResult.config,
             summary,
-            network,
+            network: networkResult.network,
             history,
         },
         error: null,

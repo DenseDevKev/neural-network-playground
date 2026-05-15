@@ -54,6 +54,14 @@ describe('experiment memory schema', () => {
 
         expect(result.record?.id).toBe('run-1');
         expect(result.error).toBeNull();
+        expect(result.record?.network).toEqual(makeRecord().network);
+    });
+
+    it('accepts records without a serialized network payload', () => {
+        const result = validateExperimentRunRecord(makeRecord({ network: null }));
+
+        expect(result.record?.network).toBeNull();
+        expect(result.error).toBeNull();
     });
 
     it('rejects unversioned or future-version records', () => {
@@ -91,6 +99,43 @@ describe('experiment memory schema', () => {
 
         expect(result.record).toBeNull();
         expect(result.error).toMatch(/not runtime-enabled/i);
+    });
+
+    it('rejects hidden multiclass serialized network payloads in scalar-compatible records', () => {
+        const result = validateExperimentRunRecord(makeRecord({
+            network: {
+                config: {
+                    ...config.network,
+                    outputSize: 3,
+                    outputActivation: 'softmax',
+                },
+                weights: [[[0.1, -0.2], [0.2, 0.3], [-0.1, 0.4]]],
+                biases: [[0.05, -0.05, 0.1]],
+            },
+        }));
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/network.*not runtime-enabled/i);
+    });
+
+    it('drops records with hidden multiclass serialized networks during envelope normalization', () => {
+        const valid = makeRecord({ id: 'valid' });
+        const hiddenNetwork = makeRecord({
+            id: 'hidden-network',
+            network: {
+                config: {
+                    ...config.network,
+                    outputSize: 3,
+                    outputActivation: 'softmax',
+                },
+                weights: [[[0.1, -0.2], [0.2, 0.3], [-0.1, 0.4]]],
+                biases: [[0.05, -0.05, 0.1]],
+            },
+        });
+
+        const envelope = createExperimentMemoryEnvelope([hiddenNetwork, valid]);
+
+        expect(envelope.records.map((record) => record.id)).toEqual(['valid']);
     });
 
     it('bounds history and removes invalid history points', () => {
