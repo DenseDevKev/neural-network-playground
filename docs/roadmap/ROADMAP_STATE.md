@@ -7,7 +7,7 @@
 ## Repository
 
 - Branch: `codex/wave-0-review-packaging`
-- Last verified code commit: `3d9a24b`; hidden engine-only Multiclass dataset helper committed after targeted red/green TDD, two read-only review passes, `git diff --check`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed. Browser QA was not run because the slice intentionally adds no browser-visible controls or worker/runtime path.
+- Last verified code commit: `f869ea2`; Multiclass code-export guard committed after targeted red/green TDD, two approval-gate review passes, two implementation review passes, `git diff --check`, `pnpm test`, `pnpm lint`, `pnpm build`, and `pnpm test:perf` passed. Browser QA is recorded as Mode C pending-human verification because Browser plugin tools were unavailable and Computer Use could not control the Codex app window.
 - Remote: `origin https://github.com/DenseDevKev/neural-network-playground.git`
 - PR: Not created yet
 - Package manager: pnpm with `pnpm-lock.yaml` and `pnpm-workspace.yaml`
@@ -17,9 +17,9 @@
 ## Current Position
 
 - Wave: Wave 7
-- Slice: Hidden Multiclass Classification Mode dataset helper
+- Slice: Multiclass Classification Mode code-export guard
 - Risk: High
-- Status: Side-by-Side Model Arena, Slow-Motion Backprop, and Loss Landscape Probe have bounded implemented slices. Multiclass Classification Mode now has a docs-only design gate in `d984eae`, engine math helpers in `fe41851`, a private engine `Network` foundation in `8944d4c`, a public/shared contract reservation in `2cb5703`, worker-only bounded target guards in `fa34d07`, and a hidden deterministic three-class dataset helper in `3d9a24b`. The helper is intentionally not part of `DatasetType`, `generateDataset`, shared serialization, presets, worker/runtime, persistence, code export, or UI. The next code slice may proceed under the user's broad approval, but should remain small and must explicitly cover URL/config, persistence/run-history, code export, and visualization risks before making multiclass visible.
+- Status: Side-by-Side Model Arena, Slow-Motion Backprop, and Loss Landscape Probe have bounded implemented slices. Multiclass Classification Mode now has a docs-only design gate in `d984eae`, engine math helpers in `fe41851`, a private engine `Network` foundation in `8944d4c`, a public/shared contract reservation in `2cb5703`, worker-only bounded target guards in `fa34d07`, a hidden deterministic three-class dataset helper in `3d9a24b`, and truthful hidden-config code export in `f869ea2`. Multiclass remains intentionally unexposed through public UI, URL/config serialization, persistence/run-history schema, presets, and visualization payloads. The next code slice should continue guard-first work before public exposure.
 
 ## Completed Slices
 
@@ -75,15 +75,16 @@
 | 2026-05-14 | Wave 7 | Public/shared multiclass contract reservation | `2cb5703` | Red targeted engine/shared tests failed with expected missing contract/gate failures; targeted engine run passed with 13 files and 309 tests; targeted shared run passed with 5 files and 73 tests; targeted web non-exposure run passed with 3 files and 33 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, and `git diff --check` passed before commit | `packages/engine/src/types.ts`, `packages/engine/src/activations.ts`, `packages/engine/src/losses.ts`, `packages/shared/src/serialization.ts`, `apps/web/src/components/controls/HyperparamPanel.tsx`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-15 | Wave 7 | Worker multiclass target guards | `fa34d07` | Red targeted worker tests failed first with shared strict runtime gate and then target-shape failures; worker/bridge/hook/frame-buffer targeted run passed with 51 files and 381 tests; targeted engine run passed with 13 files and 309 tests; targeted shared run passed with 5 files and 73 tests; first post-review `pnpm test` hit a transient `InspectionPanel.test.tsx` async loss-probe render failure that passed on targeted rerun and the final `pnpm test`; `pnpm lint`, `pnpm build`, `pnpm test:perf`, and `git diff --check` passed before commit | `apps/web/src/worker/training.worker.ts`, `apps/web/src/worker/training.worker.test.ts`, `apps/web/src/worker/workerBridge.ts`, `apps/web/src/worker/workerBridge.test.ts`, `apps/web/src/hooks/useTraining.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
 | 2026-05-15 | Wave 7 | Hidden multiclass dataset helper | `3d9a24b` | Red targeted engine tests failed first with missing helper failures, then a package-barrel exposure guard failed until the root export was removed; final targeted engine run passed with 13 files and 314 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two read-only review passes, and `git diff --check` passed before commit | `packages/engine/src/datasets.ts`, `packages/engine/src/__tests__/datasets.test.ts`, `docs/perf/PERFORMANCE_BASELINE.md` |
+| 2026-05-15 | Wave 7 | Multiclass code-export guard | `f869ea2` | Red targeted shared tests failed on categorical pseudocode, NumPy softmax, and TFJS categorical loss; red targeted web tests failed on the panel's hard-coded output size; review red tests then caught scalar-shaped pseudocode wording. Final targeted shared run passed with 5 files/76 tests and targeted web run passed with 51 files/382 tests; `pnpm test`, `pnpm lint`, `pnpm build`, `pnpm test:perf`, two approval-gate reviews, two implementation reviews, and `git diff --check` passed before commit. Browser QA Mode C is pending human verification. | `packages/shared/src/codeExport.ts`, `packages/shared/src/__tests__/codeExport.test.ts`, `apps/web/src/components/controls/CodeExportPanel.tsx`, `apps/web/src/components/controls/CodeExportPanel.test.tsx`, `docs/qa/browser-qa/wave-7-code-export-guard.md`, `docs/perf/PERFORMANCE_BASELINE.md` |
 
 ## Current Verification Status
 
-- Tests: `pnpm test` passed on 2026-05-15 with engine 13 files/314 tests, shared 5 files/73 tests, and web 51 files/381 tests after `3d9a24b`. Targeted TDD verification for `packages/engine/src/__tests__/datasets.test.ts` first failed with three missing-helper failures, then failed once on the package-level barrel exposure guard, then passed with 13 files and 314 tests after removing the root export.
-- Lint: `pnpm lint` passed on 2026-05-15 with no ESLint output after the hidden Multiclass dataset-helper slice.
-- Build: `pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning. Relevant chunks: `training.worker-CB34B7zL.js` 91.19 kB, `InspectionPanel-DkdZZarG.js` 13.42 kB gzip 3.49 kB, `RunHistoryPanel-ZSHEaVkq.js` 16.70 kB gzip 5.14 kB, `engine-BT-TiDoL.js` 5.74 kB gzip 2.07 kB, `index-CiRxQBda.js` 367.34 kB gzip 111.18 kB, `index-DZR84vix.css` 67.02 kB gzip 11.64 kB.
-- Browser QA: Not run for the hidden Multiclass dataset-helper slice because it intentionally adds no browser-visible controls, no worker/runtime path, and no app config path. Prior Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks remain recorded.
-- Accessibility: No user-visible UI was changed in the hidden Multiclass dataset-helper slice. Prior Wave 1, Wave 4, Wave 6E, and Wave 7 accessibility coverage remains recorded.
-- Performance: `pnpm test:perf` passed on 2026-05-15 with 2 benchmark files and 4 benchmark tests. Observed output: `predictGrid` 1090.1719 ms, `predictGridInto` 1261.3116 ms, `predictGridWithNeurons` 757.7095 ms, `predictGridWithNeuronsInto` 600.3780 ms, Adam/L2/Clip applyGradients 4.0243 ms, and SGD applyGradients 1.6422 ms. Production bundle sizes were unchanged from the worker target-guard build and below roadmap warning thresholds. Details are recorded in `docs/perf/PERFORMANCE_BASELINE.md`.
+- Tests: `pnpm test` passed on 2026-05-15 with engine 13 files/314 tests, shared 5 files/76 tests, and web 51 files/382 tests after `f869ea2`. Targeted TDD verification passed after red runs: `pnpm --filter @nn-playground/shared test -- src/__tests__/codeExport.test.ts` passed with 5 files/76 tests and `pnpm --filter @nn-playground/web test -- src/components/controls/CodeExportPanel.test.tsx` passed with 51 files/382 tests.
+- Lint: `pnpm lint` passed on 2026-05-15 with no ESLint output after the Multiclass code-export guard slice.
+- Build: `pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning. Relevant chunks: `training.worker-CB34B7zL.js` 91.19 kB, `CodeExportPanel-D0b8h3A8.js` 7.69 kB gzip 3.07 kB, `InspectionPanel-DC1_Y0oi.js` 13.42 kB gzip 3.50 kB, `RunHistoryPanel-QnEaDprS.js` 16.70 kB gzip 5.14 kB, `engine-BT-TiDoL.js` 5.74 kB gzip 2.07 kB, `index-CSTehKAJ.js` 367.34 kB gzip 111.18 kB, `index-DZR84vix.css` 67.02 kB gzip 11.64 kB.
+- Browser QA: Mode C pending human verification for the Multiclass code-export guard in `docs/qa/browser-qa/wave-7-code-export-guard.md`. Browser plugin tools did not surface through tool discovery, and Computer Use could not control the Codex app window. Prior Wave 0, Wave 1, Wave 2, Wave 4, Wave 6A, Wave 6B, Wave 6D, Wave 6E desktop, and Wave 7 Mode B checks remain recorded.
+- Accessibility: No new interactive controls were added in the Multiclass code-export guard slice. Existing Code Export tab buttons and copy button remain native controls and component covered. Prior Wave 1, Wave 4, Wave 6E, and Wave 7 accessibility coverage remains recorded.
+- Performance: `pnpm test:perf` passed on 2026-05-15 with 2 benchmark files and 4 benchmark tests. Observed output: `predictGrid` 1094.3072 ms, `predictGridInto` 1101.6861 ms, `predictGridWithNeurons` 689.8360 ms, `predictGridWithNeuronsInto` 585.9218 ms, Adam/L2/Clip applyGradients 4.0932 ms, and SGD applyGradients 1.4034 ms. Production bundle sizes remained below roadmap warning thresholds. Details are recorded in `docs/perf/PERFORMANCE_BASELINE.md`.
 
 ## Browser QA Evidence
 
@@ -99,6 +100,7 @@
 - `docs/qa/browser-qa/wave-7-live-arena-ui.md`
 - `docs/qa/browser-qa/wave-7-backprop-preview.md`
 - `docs/qa/browser-qa/wave-7-loss-landscape-probe.md`
+- `docs/qa/browser-qa/wave-7-code-export-guard.md` (Mode C pending human verification)
 - Prior decision-boundary screenshot: `/private/tmp/nn-playground-decision-overlay-errors.png`
 - Wave 0 compact screenshot: `/private/tmp/nn-playground-wave0-compact.png`
 - Wave 0 final screenshot: `/private/tmp/nn-playground-wave0-final.png`
@@ -192,6 +194,7 @@
 | 2026-05-15 | Keep the first multiclass worker slice worker-local and direct-call-only | Allows bounded one-hot target encoding and engine compatibility tests without changing URL/config serialization, persistence, code export, UI controls, datasets/presets, or protocol/frame-buffer payload shapes | Wave 7 Multiclass worker target guards, `fa34d07` |
 | 2026-05-15 | Use explicit empty streamed grid payloads to clear stale scalar visualization caches | Omitted streamed grid fields already mean cadence reuse for scalar training; explicit zero-length typed arrays clear cached scalar grids for worker-only multiclass snapshots without adding protocol fields | Wave 7 worker/bridge review, `fa34d07` |
 | 2026-05-15 | Keep the first three-class dataset hidden inside the engine module | Provides deterministic real 3-class samples for future wiring while avoiding `DatasetType`, `generateDataset`, shared serialization, presets, worker/runtime, persistence, code export, and UI exposure until those paths are tested together | Wave 7 hidden Multiclass dataset helper, `3d9a24b` |
+| 2026-05-15 | Make code export truthful before public multiclass exposure | Prevents already-constructed hidden multiclass configs from being documented as scalar, sigmoid, Huber, or MSE exports while keeping public UI/config/persistence/worker/visualization paths unchanged | Wave 7 Multiclass code-export guard, `f869ea2` |
 
 ## Known Issues
 
@@ -212,6 +215,8 @@
 - Wave 7 Multiclass helper perf results on 2026-05-14 were slower than the prior loss-landscape UI perf run, but the new helpers are exported math utilities and are not called by the live training loop. Treat this as benchmark noise unless repeated future runs show the same regression while exercising an integrated multiclass path.
 - Wave 7 worker Multiclass support is direct-call-only and limited to `classification + outputSize 3 + softmax + categoricalCrossEntropy`. A hidden engine helper can generate deterministic real 3-class samples, but it is not wired into `DatasetType`, `generateDataset`, shared serialization, presets, worker/runtime, persistence, code export, or UI.
 - Wave 7 public/shared Multiclass contracts now reserve `softmax` and `categoricalCrossEntropy`, and the worker can encode bounded 3-class one-hot targets for direct calls. UI controls, URL/config output-size serialization, persistence/run-history compatibility, code export, public datasets/presets, and multiclass visualization/protocol payloads remain intentionally unimplemented.
+- Wave 7 code export now handles already-constructed multiclass configs truthfully, but public UI controls, URL/config serialization, persistence/run-history compatibility, public datasets/presets, and multiclass visualization/protocol payloads remain intentionally unimplemented.
+- Wave 7 Code Export Browser QA is pending human verification because the Browser plugin did not surface usable tools in this session and Computer Use could not control the Codex app.
 
 ## Blocked Items
 
@@ -254,10 +259,11 @@
 - Wave 7 public/shared Multiclass contract reservation was approved by the user's "Continue" after the coordinator described the narrow scope. It was committed in `2cb5703` and recognizes `softmax`/`categoricalCrossEntropy` in engine/shared contracts while keeping strict imports gated, lenient URL decode on current defaults, and UI controls scalar-only.
 - Wave 7 worker Multiclass target guards were approved by the user's "continue" after the coordinator requested approval for the first worker/runtime slice. It was committed in `fa34d07` and remains direct-call-only: bounded one-hot target encoding, compatibility guards, scalar-only live arena guard, and explicit scalar-grid cache clearing without UI controls, URL/config serialization, persistence/run-history schema changes, code export, datasets/presets, dependencies, deployment, or multiclass protocol/frame-buffer payloads.
 - Wave 7 hidden Multiclass dataset helper was approved by the user's broad "You're fully approved" continuation on 2026-05-15 and committed in `3d9a24b` after two approval/review agents recommended the narrow engine-only path. It remains hidden from the package-level engine API and is not wired into public config, shared serialization, presets, worker/runtime, persistence, code export, or UI.
+- Wave 7 Multiclass code-export guard was implemented under the user's broad approval and committed in `f869ea2`. Two approval-gate agents recommended guard-first work, and two implementation reviewers approved after the scalar-shaped pseudocode formula and stale snapshot test fixture were fixed.
 
 ## Next Recommended Slice
 
-Next recommended step: continue under the user's broad approval with a small Multiclass guard slice before public exposure. Recommended candidate: shared/web tests that define how a future public multiclass preset/config must behave across URL/import normalization, run-history validation, code export, and scalar visualization fallbacks before adding visible UI.
+Next recommended step: continue under the user's broad approval with a small Multiclass visualization/runtime guard slice before public exposure. Recommended candidate: add tests and minimal fix for stale binary confusion clearing when a direct multiclass worker snapshot omits binary confusion data, while preserving scalar stale-metrics reuse.
 
 ## Handoff Notes
 

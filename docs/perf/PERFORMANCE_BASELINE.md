@@ -910,3 +910,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.6422 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The helper is not reachable from the live app or worker config path, so no runtime cadence or browser performance impact is expected from this slice.
+
+## Wave 7 Multiclass Code Export Guard
+
+Date: 2026-05-15
+
+Scope: shared/web code-export guard for future Multiclass Classification Mode. This slice makes Pseudocode, NumPy, and TF.js exports truthful for an already-constructed `outputSize: 3`, `softmax`, `categoricalCrossEntropy` config, and removes the Code Export panel's hard-coded output-size override. It does not expose multiclass UI controls, datasets, presets, URL/config serialization, persistence/run-history schema, worker protocol/frame-buffer payloads, dependencies, deployment, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the code-export guard slice. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-D0b8h3A8.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-DC1_Y0oi.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-QnEaDprS.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-CSTehKAJ.js`: 367.34 kB, gzip 111.18 kB
+
+Compared with the hidden dataset-helper build, the worker, main app, engine, CSS, inspection, and run-history chunks were unchanged. The lazy Code Export chunk increased from 7.25 kB in the earlier worker-guard build to 7.69 kB, about 6.1%, and remains below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1094.3072 ms total for 100 iterations
+- `predictGridInto`: 1101.6861 ms total for 100 iterations
+- `predictGridWithNeurons`: 689.8360 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 585.9218 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0932 ms
+- Average `applyGradients` time (SGD): 1.4034 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is code-export-only and does not touch engine training, worker cadence, frame-buffer transport, or live visualization paths.
