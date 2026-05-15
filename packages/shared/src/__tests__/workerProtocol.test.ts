@@ -459,6 +459,149 @@ describe('isWorkerToMainMessage', () => {
         })).toBe(false);
     });
 
+    it('accepts bounded multiclass confusion matrix payloads on snapshot messages', () => {
+        expect(isWorkerToMainMessage({
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 0,
+                epoch: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+                gridSize: 2,
+            },
+            historyPoint: {
+                step: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+            },
+            multiclassConfusionMatrix: {
+                classCount: 3,
+                classLabels: [0, 1, 2],
+                counts: [
+                    2, 1, 0,
+                    0, 3, 1,
+                    1, 0, 4,
+                ],
+            },
+            multiclassConfusionMatrixVersion: 1,
+        })).toBe(true);
+    });
+
+    it('rejects malformed multiclass confusion matrix payloads', () => {
+        const validSnapshot = {
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 0,
+                epoch: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+                gridSize: 2,
+            },
+            historyPoint: {
+                step: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+            },
+            multiclassConfusionMatrix: {
+                classCount: 3,
+                classLabels: [0, 1, 2],
+                counts: [
+                    2, 1, 0,
+                    0, 3, 1,
+                    1, 0, 4,
+                ],
+            },
+            multiclassConfusionMatrixVersion: 1,
+        };
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrixVersion: undefined,
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrix: undefined,
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrix: {
+                ...validSnapshot.multiclassConfusionMatrix,
+                classCount: 4,
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrix: {
+                ...validSnapshot.multiclassConfusionMatrix,
+                classLabels: [0, 2, 1],
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrix: {
+                ...validSnapshot.multiclassConfusionMatrix,
+                classLabels: [0, 1],
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrix: {
+                ...validSnapshot.multiclassConfusionMatrix,
+                counts: [2, 1, 0, 0, 3, 1, 1, 0],
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrix: {
+                ...validSnapshot.multiclassConfusionMatrix,
+                counts: Array(9),
+            },
+        })).toBe(false);
+
+        for (const badCount of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '1']) {
+            expect(isWorkerToMainMessage({
+                ...validSnapshot,
+                multiclassConfusionMatrix: {
+                    ...validSnapshot.multiclassConfusionMatrix,
+                    counts: [
+                        badCount, 1, 0,
+                        0, 3, 1,
+                        1, 0, 4,
+                    ],
+                },
+            })).toBe(false);
+        }
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrix: {
+                ...validSnapshot.multiclassConfusionMatrix,
+                counts: new Uint32Array([2, 1, 0, 0, 3, 1, 1, 0, 4]),
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfusionMatrixVersion: -1,
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            confusionMatrix: { tn: 1, fp: 0, fn: 0, tp: 1 },
+            confusionMatrixVersion: 1,
+        })).toBe(false);
+    });
+
     it('accepts status messages without a pause reason for backward compatibility', () => {
         expect(isWorkerToMainMessage({
             type: 'status',

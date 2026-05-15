@@ -6,6 +6,7 @@ import type {
     HistoryPoint,
     LayerStats,
     ConfusionMatrixData,
+    MulticlassConfusionMatrixData,
     ActivationHistogramLayer,
 } from '@nn-playground/engine';
 import { isPauseReason } from './types.js';
@@ -186,6 +187,40 @@ function hasMalformedMulticlassBoundaryPayload(m: Record<string, unknown>): bool
     return false;
 }
 
+function isMulticlassConfusionMatrixData(value: unknown): value is MulticlassConfusionMatrixData {
+    if (!isRecord(value)) return false;
+    if (value['classCount'] !== 3) return false;
+    const labels = value['classLabels'];
+    if (
+        !Array.isArray(labels) ||
+        labels.length !== 3 ||
+        labels[0] !== 0 ||
+        labels[1] !== 1 ||
+        labels[2] !== 2
+    ) {
+        return false;
+    }
+    const counts = value['counts'];
+    if (!Array.isArray(counts) || counts.length !== 9) return false;
+    for (let i = 0; i < 9; i++) {
+        if (!Object.prototype.hasOwnProperty.call(counts, i)) return false;
+        if (!isNonNegativeInteger(counts[i])) return false;
+    }
+    return true;
+}
+
+function hasMalformedMulticlassConfusionMatrixPayload(m: Record<string, unknown>): boolean {
+    const hasMatrix = m['multiclassConfusionMatrix'] !== undefined;
+    const hasVersion = m['multiclassConfusionMatrixVersion'] !== undefined;
+    if (!hasMatrix && !hasVersion) return false;
+    if (!hasMatrix || !hasVersion) return true;
+    if (m['confusionMatrix'] !== undefined) return true;
+    return (
+        !isMulticlassConfusionMatrixData(m['multiclassConfusionMatrix']) ||
+        !isNonNegativeInteger(m['multiclassConfusionMatrixVersion'])
+    );
+}
+
 function isOptionalFiniteNumber(value: unknown): value is number | undefined {
     return value === undefined || isFiniteNumber(value);
 }
@@ -350,6 +385,8 @@ export interface WorkerSnapshotMessage {
     historyPoint: HistoryPoint;
     confusionMatrix?: ConfusionMatrixData;
     confusionMatrixVersion?: number;
+    multiclassConfusionMatrix?: MulticlassConfusionMatrixData;
+    multiclassConfusionMatrixVersion?: number;
     checkpointTimeline?: CheckpointTimeline;
 
     /**
@@ -525,6 +562,7 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 typeof m['scalars'] === 'object' &&
                 !hasMalformedActivationHistogramPayload(m) &&
                 !hasMalformedMulticlassBoundaryPayload(m) &&
+                !hasMalformedMulticlassConfusionMatrixPayload(m) &&
                 !hasMalformedCheckpointTimelinePayload(m)
             );
         case 'arenaSnapshot':

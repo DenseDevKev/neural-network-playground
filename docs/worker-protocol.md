@@ -96,6 +96,9 @@ posting while awaiting a `frameAck`.
 | `multiclassBoundaryVersion` | `number?` | Worker-side freshness counter for multiclass boundary payloads |
 | `historyPoint` | `HistoryPoint` | One point appended to the loss-history chart |
 | `confusionMatrix` | `ConfusionMatrixData?` | Only when `needConfusionMatrix` |
+| `confusionMatrixVersion` | `number?` | Worker-side freshness counter for binary confusion payloads |
+| `multiclassConfusionMatrix` | `{ classCount: 3, classLabels: [0, 1, 2], counts: number[9] }?` | Reserved bounded 3x3 actual-by-predicted count payload for the approved multiclass path |
+| `multiclassConfusionMatrixVersion` | `number?` | Worker-side freshness counter for multiclass confusion payloads |
 | `checkpointTimeline` | `CheckpointTimeline?` | Lightweight runtime-only checkpoint metadata; heavy checkpoint payloads remain in the worker |
 | `sharedSeq` | `number?` | Present when grid payloads were published to SharedArrayBuffers instead of inline fields |
 
@@ -116,6 +119,16 @@ a non-negative integer. Cadence-reuse snapshots omit these fields and retain the
 main-thread frame-buffer cache. Fresh multiclass payloads still send explicit
 empty scalar `outputGrid` and `neuronGrids` arrays so stale binary/scalar grids
 are cleared.
+
+Multiclass confusion matrix fields are protocol-reserved until a later worker
+packing slice emits them. If present, `multiclassConfusionMatrix` and
+`multiclassConfusionMatrixVersion` must appear together and must not be paired
+with the binary `confusionMatrix` field on the same snapshot. The matrix shape
+is bounded to `classCount: 3`, class labels `[0, 1, 2]`, and exactly 9
+non-negative integer counts in row-major actual-class by predicted-class order.
+The version must be a non-negative integer. Frame-buffer counters, bridge
+plumbing, UI preference, and persistence behavior are intentionally deferred to
+later slices.
 
 ### `arenaSnapshot`
 
