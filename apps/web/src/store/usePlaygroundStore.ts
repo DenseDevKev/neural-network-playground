@@ -187,7 +187,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
             const lossType = problemType === 'regression' ? 'mse' : 'crossEntropy';
             set((s) => ({
                 data: { ...s.data, dataset, problemType },
-                network: { ...s.network, outputActivation: outputActivation as ActivationType },
+                network: { ...s.network, outputSize: 1, outputActivation: outputActivation as ActivationType },
                 training: { ...s.training, lossType: lossType as LossType },
             }));
         },

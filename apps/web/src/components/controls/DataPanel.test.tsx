@@ -111,6 +111,33 @@ describe('DataPanel loading feedback', () => {
         expect(screen.getByRole('button', { name: '600 samples' })).toHaveAttribute('aria-pressed', 'true');
     });
 
+    it('normalizes hidden multiclass state when public dataset modes are selected', async () => {
+        const user = userEvent.setup();
+        usePlaygroundStore.setState((state) => ({
+            network: {
+                ...state.network,
+                outputSize: 3,
+                outputActivation: 'softmax',
+            },
+            training: {
+                ...state.training,
+                lossType: 'categoricalCrossEntropy',
+            },
+        }));
+
+        render(<DataPanel onReset={vi.fn()} />);
+
+        await user.click(screen.getByRole('button', { name: 'Regression' }));
+        expect(usePlaygroundStore.getState().network.outputSize).toBe(1);
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('linear');
+        expect(usePlaygroundStore.getState().training.lossType).toBe('mse');
+
+        await user.click(screen.getByRole('button', { name: 'Classification' }));
+        expect(usePlaygroundStore.getState().network.outputSize).toBe(1);
+        expect(usePlaygroundStore.getState().network.outputActivation).toBe('sigmoid');
+        expect(usePlaygroundStore.getState().training.lossType).toBe('crossEntropy');
+    });
+
     it('reshuffles by changing the data seed through the data config path', async () => {
         const user = userEvent.setup();
 

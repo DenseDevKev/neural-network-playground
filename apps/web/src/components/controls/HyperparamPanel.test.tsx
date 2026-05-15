@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HyperparamPanel } from './HyperparamPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -36,9 +36,28 @@ describe('HyperparamPanel accessibility', () => {
 
         const loss = screen.getByRole('combobox', { name: 'Loss' });
         expect(loss).not.toHaveTextContent('Categorical Cross-Entropy');
+        expect(within(loss).queryByRole('option', { name: 'Categorical Cross-Entropy' })).not.toBeInTheDocument();
 
         const outputActivation = screen.getByRole('combobox', { name: 'Output activation' });
         expect(outputActivation).not.toHaveTextContent('Softmax');
+        expect(within(outputActivation).queryByRole('option', { name: 'Softmax' })).not.toBeInTheDocument();
+    });
+
+    it('keeps public hyperparameter changes on scalar output contracts', async () => {
+        const user = userEvent.setup();
+
+        render(<HyperparamPanel />);
+
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Loss' }), 'mse');
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Output activation' }), 'linear');
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Loss' }), 'crossEntropy');
+
+        const { network, training } = usePlaygroundStore.getState();
+        expect(network.outputSize).toBe(1);
+        expect(network.outputActivation).toBe('sigmoid');
+        expect(network.outputActivation).not.toBe('softmax');
+        expect(training.lossType).toBe('crossEntropy');
+        expect(training.lossType).not.toBe('categoricalCrossEntropy');
     });
 
     it('explains cause and effect in hyperparameter tooltips', () => {

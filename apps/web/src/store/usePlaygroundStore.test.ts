@@ -5,7 +5,44 @@ import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
+    PRESETS,
 } from '@nn-playground/shared';
+import type { DatasetType } from '@nn-playground/engine';
+import type { Preset } from '@nn-playground/shared';
+
+const PUBLIC_DATASETS: readonly DatasetType[] = [
+    'circle',
+    'xor',
+    'gauss',
+    'spiral',
+    'moons',
+    'checkerboard',
+    'rings',
+    'heart',
+    'reg-plane',
+    'reg-gauss',
+];
+
+function expectScalarRuntimeConfig() {
+    const { network, training } = usePlaygroundStore.getState();
+    expect(network.outputSize).toBe(1);
+    expect(network.outputActivation).not.toBe('softmax');
+    expect(training.lossType).not.toBe('categoricalCrossEntropy');
+}
+
+function seedHiddenMulticlassState() {
+    usePlaygroundStore.setState((state) => ({
+        network: {
+            ...state.network,
+            outputSize: 3,
+            outputActivation: 'softmax',
+        },
+        training: {
+            ...state.training,
+            lossType: 'categoricalCrossEntropy',
+        },
+    }));
+}
 
 describe('usePlaygroundStore compatibility guards', () => {
     beforeEach(() => {
@@ -26,6 +63,49 @@ describe('usePlaygroundStore compatibility guards', () => {
         usePlaygroundStore.getState().setLossType('crossEntropy');
         expect(usePlaygroundStore.getState().training.lossType).toBe('crossEntropy');
         expect(usePlaygroundStore.getState().network.outputActivation).toBe('sigmoid');
+    });
+
+    it('keeps public dataset actions on single-output scalar contracts', () => {
+        for (const dataset of PUBLIC_DATASETS) {
+            seedHiddenMulticlassState();
+            usePlaygroundStore.getState().setDataset(dataset);
+            expectScalarRuntimeConfig();
+        }
+    });
+
+    it('keeps built-in presets on single-output scalar contracts', () => {
+        for (const preset of PRESETS) {
+            seedHiddenMulticlassState();
+            usePlaygroundStore.getState().applyPreset(preset);
+            expectScalarRuntimeConfig();
+        }
+    });
+
+    it('clamps future single-output preset contracts before syncing them to the URL', () => {
+        const malformedPreset: Preset = {
+            id: 'future-preset',
+            title: 'Future Preset',
+            description: 'Synthetic guard fixture',
+            learningGoal: 'Keep public presets scalar until multiclass UI is ready.',
+            difficulty: 'advanced',
+            config: {
+                data: { ...DEFAULT_DATA, dataset: 'xor', problemType: 'classification' },
+                network: {
+                    ...DEFAULT_NETWORK,
+                    inputSize: 2,
+                    outputSize: 3,
+                    outputActivation: 'sigmoid',
+                    seed: DEFAULT_DATA.seed,
+                },
+                features: { ...DEFAULT_FEATURES },
+                training: { ...DEFAULT_TRAINING, lossType: 'crossEntropy' },
+            },
+        };
+
+        usePlaygroundStore.getState().applyPreset(malformedPreset);
+
+        expectScalarRuntimeConfig();
+        expect(window.location.hash).not.toContain('os=3');
     });
 
     it('updates advanced hyperparameters without disturbing unrelated config', () => {

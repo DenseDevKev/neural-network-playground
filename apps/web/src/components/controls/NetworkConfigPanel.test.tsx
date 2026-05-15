@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NetworkConfigPanel } from './NetworkConfigPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -63,6 +63,20 @@ describe('NetworkConfigPanel loading feedback', () => {
     it('gives the activation select an accessible name', () => {
         render(<NetworkConfigPanel />);
         expect(screen.getByRole('combobox', { name: 'Activation' })).toBeInTheDocument();
+    });
+
+    it('does not expose softmax as a hidden-layer activation', async () => {
+        const user = userEvent.setup();
+
+        render(<NetworkConfigPanel />);
+
+        const activation = screen.getByRole('combobox', { name: 'Activation' });
+        expect(within(activation).queryByRole('option', { name: 'Softmax' })).not.toBeInTheDocument();
+
+        await user.selectOptions(activation, 'tanh');
+        await user.click(screen.getByRole('button', { name: 'Add hidden layer' }));
+
+        expect(usePlaygroundStore.getState().network.activation).toBe('tanh');
     });
 
     it('explains cause and effect in network tooltips', () => {
