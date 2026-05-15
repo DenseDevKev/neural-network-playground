@@ -159,7 +159,11 @@ function createStreamSnapshot(
         testMetrics: {
             loss: msg.scalars.testLoss,
             accuracy: msg.scalars.testAccuracy,
-            confusionMatrix: msg.confusionMatrix ?? previousSnapshot?.testMetrics.confusionMatrix,
+            confusionMatrix: msg.confusionMatrix ?? (
+                msg.scalars.testMetricsStale === false
+                    ? undefined
+                    : previousSnapshot?.testMetrics.confusionMatrix
+            ),
         },
         weights: previousSnapshot?.weights ?? [],
         biases: previousSnapshot?.biases ?? [],

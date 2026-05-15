@@ -101,6 +101,16 @@ function withActivationHistograms(snapshot: NetworkSnapshot): NetworkSnapshot {
     };
 }
 
+function withConfusionMatrix(snapshot: NetworkSnapshot): NetworkSnapshot {
+    return {
+        ...snapshot,
+        testMetrics: {
+            ...snapshot.testMetrics,
+            confusionMatrix: { tp: 5, tn: 4, fp: 3, fn: 2 },
+        },
+    };
+}
+
 function makeArenaSnapshot(step: number): ArenaScalarSnapshot {
     return {
         runId: 501,
@@ -462,6 +472,97 @@ describe('useTraining', () => {
 
         expect(useTrainingStore.getState().snapshot?.step).toBe(9);
         expect(useTrainingStore.getState().pauseReason).toBe('diverged');
+    });
+
+    it('clears stale binary confusion when a fresh streamed snapshot omits confusion data', async () => {
+        bridge.workerApi.initialize.mockResolvedValue({
+            snapshot: withConfusionMatrix(makeSnapshot(1)),
+            runId: 101,
+        });
+
+        renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.testMetrics.confusionMatrix).toEqual({
+            tp: 5,
+            tn: 4,
+            fp: 3,
+            fn: 2,
+        }));
+        const handler = getStreamHandler();
+
+        act(() => {
+            handler({
+                type: 'snapshot',
+                runId: 101,
+                snapshotId: 2,
+                scalars: {
+                    step: 2,
+                    epoch: 0,
+                    trainLoss: 0.25,
+                    testLoss: 0.35,
+                    gridSize: 2,
+                    testMetricsStale: true,
+                },
+                historyPoint: { step: 2, trainLoss: 0.25, testLoss: 0.35 },
+            });
+        });
+
+        expect(useTrainingStore.getState().snapshot?.testMetrics.confusionMatrix).toEqual({
+            tp: 5,
+            tn: 4,
+            fp: 3,
+            fn: 2,
+        });
+
+        act(() => {
+            handler({
+                type: 'snapshot',
+                runId: 101,
+                snapshotId: 3,
+                scalars: {
+                    step: 3,
+                    epoch: 0,
+                    trainLoss: 0.2,
+                    testLoss: 0.3,
+                    gridSize: 2,
+                    testMetricsStale: false,
+                },
+                outputGrid: new Float32Array(),
+                confusionMatrix: {
+                    tp: 1,
+                    tn: 2,
+                    fp: 3,
+                    fn: 4,
+                },
+                historyPoint: { step: 3, trainLoss: 0.2, testLoss: 0.3 },
+            });
+        });
+
+        expect(useTrainingStore.getState().snapshot?.testMetrics.confusionMatrix).toEqual({
+            tp: 1,
+            tn: 2,
+            fp: 3,
+            fn: 4,
+        });
+
+        act(() => {
+            handler({
+                type: 'snapshot',
+                runId: 101,
+                snapshotId: 4,
+                scalars: {
+                    step: 4,
+                    epoch: 0,
+                    trainLoss: 0.2,
+                    testLoss: 0.3,
+                    gridSize: 2,
+                    testMetricsStale: false,
+                },
+                outputGrid: new Float32Array(),
+                historyPoint: { step: 4, trainLoss: 0.2, testLoss: 0.3 },
+            });
+        });
+
+        expect(useTrainingStore.getState().snapshot?.testMetrics.confusionMatrix).toBeUndefined();
     });
 
     it('does not mark config-sync internal stops as manual pauses', async () => {

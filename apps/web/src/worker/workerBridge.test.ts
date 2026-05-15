@@ -242,6 +242,19 @@ function makeSnapshotMessage(
     };
 }
 
+function withTestMetricsStale(
+    msg: WorkerSnapshotMessage,
+    testMetricsStale: boolean,
+): WorkerSnapshotMessage {
+    return {
+        ...msg,
+        scalars: {
+            ...msg.scalars,
+            testMetricsStale,
+        },
+    };
+}
+
 describe('workerBridge streamed snapshots', () => {
     let receivedMessages: Array<{ msg: WorkerToMainMessage; frameVersion: number }>;
     let unsubscribe: () => void;
@@ -339,6 +352,48 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.outputGrid).toBeNull();
         expect(frame.neuronGrids).toBeNull();
         expect(frame.neuronGridLayout).toBeNull();
+    });
+
+    it('clears cached confusion matrix only when fresh streamed metrics omit it', () => {
+        const listener = getRegisteredStreamListener();
+        const confusionMatrix = {
+            tp: 8,
+            tn: 7,
+            fp: 2,
+            fn: 1,
+        };
+
+        startRenderLoop();
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(1, { confusionMatrix }), false),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const afterInitial = getFrameBuffer();
+        const initialConfusionVersion = afterInitial.confusionMatrixVersion;
+        expect(afterInitial.confusionMatrix).toBe(confusionMatrix);
+
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(2, {
+                confusionMatrix: undefined,
+            }), true),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const afterStale = getFrameBuffer();
+        expect(afterStale.confusionMatrix).toBe(confusionMatrix);
+        expect(afterStale.confusionMatrixVersion).toBe(initialConfusionVersion);
+
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(3, {
+                confusionMatrix: undefined,
+            }), false),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const afterFresh = getFrameBuffer();
+        expect(afterFresh.confusionMatrix).toBeNull();
+        expect(afterFresh.confusionMatrixVersion).toBe(initialConfusionVersion + 1);
     });
 
     it('closes the stream port on termination and drops later stream commands', () => {

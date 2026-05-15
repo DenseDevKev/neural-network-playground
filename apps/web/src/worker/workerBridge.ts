@@ -250,7 +250,11 @@ function buildSnapshotFramePatch(
     if (msg.activationHistogramLayout !== undefined) {
         patch.activationHistogramLayout = msg.activationHistogramLayout;
     }
-    if (msg.confusionMatrix !== undefined) patch.confusionMatrix = msg.confusionMatrix;
+    if (msg.confusionMatrix !== undefined) {
+        patch.confusionMatrix = msg.confusionMatrix;
+    } else if (msg.scalars.testMetricsStale === false) {
+        patch.confusionMatrix = null;
+    }
     return patch;
 }
 
