@@ -1163,6 +1163,42 @@ Observed benchmark output:
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice is test-only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
 
+## Wave 7 Experiment Memory Serialized Network Guard
+
+Date: 2026-05-15
+
+Scope: shared persistence-validation guard for future Multiclass Classification Mode. Experiment-memory validation now checks the embedded `SerializedNetwork.config` against the current public compatibility boundary before preserving a run record. The accepted serialized network payload is still cloned unchanged, and `network: null` records remain valid. This slice does not change URL/config format, public config shape, run-history schema version, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, training behavior, or visualization payload transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `f83ac4b`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-CJV4H9e4.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-DQDh5g45.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-CJPPRxN5.js`: 17.01 kB, gzip 5.21 kB
+- `dist/assets/index-ZZGBORoL.js`: 369.84 kB, gzip 111.75 kB
+
+Compared with the Config Panel import rejection guard build, the worker, CSS, lazy Code Export, engine, inspection, and main app chunks remain effectively unchanged. The lazy Run History chunk changed from 16.71 kB to 17.01 kB, about 1.8%, below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1074.3888 ms total for 100 iterations
+- `predictGridInto`: 1055.8439 ms total for 100 iterations
+- `predictGridWithNeurons`: 675.2009 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 570.6535 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0443 ms
+- Average `applyGradients` time (SGD): 1.5450 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects shared validation only and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
 ## Wave 7 Binary Confusion Matrix Guard
 
 Date: 2026-05-15
