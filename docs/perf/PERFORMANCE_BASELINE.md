@@ -2160,3 +2160,51 @@ below the 10% roadmap warning threshold.
 The timing values remain within the established local baseline range. The
 slice adds evaluation metadata only and does not alter prediction grids,
 training updates, worker demand cadence, or visualization transport.
+
+## Wave 7 Shared Multiclass Confusion Protocol Reservation
+
+Date: 2026-05-15
+
+Scope: shared protocol reservation for bounded worker-authored
+`multiclassConfusionMatrix` snapshot fields. The slice adds runtime guards,
+shared protocol tests, and protocol docs only. It does not emit worker payloads,
+change frame-buffer semantics, bridge/store plumbing, UI, URL/config
+serialization, persistence/run-history schema, public config shape,
+dependencies, deployment, arbitrary class counts, raw probability-grid
+transport, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DbL0ovsR.js`: 94.82 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-CdMczXQz.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-yN6cihmc.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-DJJBj92-.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-C9aIqg9E.js`: 386.87 kB, gzip 116.24 kB
+
+Compared with the engine-only metric foundation build, the worker, CSS,
+engine, Code Export, React, Inspection, and Run History chunks stayed
+effectively unchanged. The main app chunk changed from 386.32 kB to 386.87 kB,
+about 0.14%, below the 10% roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1099.0309 ms total for 100 iterations
+- `predictGridInto`: 1100.4085 ms total for 100 iterations
+- `predictGridWithNeurons`: 686.7342 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 600.8287 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9830 ms
+- Average `applyGradients` time (SGD): 1.4671 ms
+
+The timing values remain within the established local baseline range. The
+slice reserves and validates small protocol metadata only; it does not alter
+worker demand cadence, training updates, frame-buffer transport, or rendered
+visualization payloads.
