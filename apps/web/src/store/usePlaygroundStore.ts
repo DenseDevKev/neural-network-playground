@@ -60,7 +60,12 @@ const DEFAULT_FEATURES_UI: FeaturesUI = {
     webgpuGrid: true,
 };
 
+const APPROVED_MULTICLASS_DATASET: DatasetType = 'three-class-clusters';
 const PUBLIC_SCALAR_LOSSES = new Set<LossType>(['mse', 'crossEntropy', 'huber']);
+
+function isApprovedMulticlassDataset(dataset: DatasetType): boolean {
+    return dataset === APPROVED_MULTICLASS_DATASET;
+}
 
 function isPublicScalarLoss(lossType: LossType): boolean {
     return PUBLIC_SCALAR_LOSSES.has(lossType);
@@ -170,7 +175,7 @@ function buildInitialState() {
     const hash = window.location.hash.slice(1);
     if (hash) {
         try {
-            const config = decodeUrlState(hash);
+            const config = decodeUrlState(hash, { allowMulticlass: true });
             return normalizeLossOutputCompatibility(config);
         } catch {
             // fall through to defaults
@@ -211,11 +216,20 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
         // Actions
         setDataset: (dataset) => {
             const problemType = getDefaultProblemType(dataset);
-            const outputActivation = problemType === 'regression' ? 'linear' : 'sigmoid';
-            const lossType = problemType === 'regression' ? 'mse' : 'crossEntropy';
+            const outputSize = isApprovedMulticlassDataset(dataset) ? 3 : 1;
+            const outputActivation = isApprovedMulticlassDataset(dataset)
+                ? 'softmax'
+                : problemType === 'regression'
+                    ? 'linear'
+                    : 'sigmoid';
+            const lossType = isApprovedMulticlassDataset(dataset)
+                ? 'categoricalCrossEntropy'
+                : problemType === 'regression'
+                    ? 'mse'
+                    : 'crossEntropy';
             set((s) => ({
                 data: { ...s.data, dataset, problemType },
-                network: { ...s.network, outputSize: 1, outputActivation: outputActivation as ActivationType },
+                network: { ...s.network, outputSize, outputActivation: outputActivation as ActivationType },
                 training: { ...s.training, lossType: lossType as LossType },
             }));
         },
@@ -400,8 +414,8 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
 
         syncToUrl: () => {
             const config = get().getConfig();
-            const normalized = normalizeAppConfig(config, { mode: 'lenient' });
-            const hash = encodeUrlState(normalized.config ?? decodeUrlState(''));
+            const normalized = normalizeAppConfig(config, { mode: 'lenient', allowMulticlass: true });
+            const hash = encodeUrlState(normalized.config ?? decodeUrlState(''), { allowMulticlass: true });
             window.history.replaceState(null, '', '#' + hash);
         },
 
@@ -409,7 +423,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
             const hash = window.location.hash.slice(1);
             if (!hash) return;
             try {
-                const config = decodeUrlState(hash);
+                const config = decodeUrlState(hash, { allowMulticlass: true });
                 const normalized = normalizeLossOutputCompatibility(config);
                 set({
                     network: normalized.network,
@@ -432,7 +446,7 @@ export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
                 features: c.features ? { ...current.features, ...c.features } : current.features,
                 training: c.training ? { ...current.training, ...c.training } : current.training,
                 ui: c.ui ? { ...current.ui, ...c.ui } : current.ui,
-            }, { mode: 'lenient' });
+            }, { mode: 'lenient', allowMulticlass: true });
             const normalized = normalizeLossOutputCompatibility(result.config ?? current);
             set({
                 network: normalized.network,

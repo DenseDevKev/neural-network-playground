@@ -31,6 +31,15 @@ function expectScalarRuntimeConfig() {
     expect(training.lossType).not.toBe('categoricalCrossEntropy');
 }
 
+function expectApprovedMulticlassRuntimeConfig() {
+    const { data, network, training } = usePlaygroundStore.getState();
+    expect(data.dataset).toBe('three-class-clusters');
+    expect(data.problemType).toBe('classification');
+    expect(network.outputSize).toBe(3);
+    expect(network.outputActivation).toBe('softmax');
+    expect(training.lossType).toBe('categoricalCrossEntropy');
+}
+
 function seedHiddenMulticlassState() {
     usePlaygroundStore.setState((state) => ({
         network: {
@@ -104,6 +113,12 @@ describe('usePlaygroundStore compatibility guards', () => {
         }
     });
 
+    it('applies the approved multiclass tuple when selecting the three-class dataset', () => {
+        usePlaygroundStore.getState().setDataset('three-class-clusters');
+
+        expectApprovedMulticlassRuntimeConfig();
+    });
+
     it('keeps built-in presets on single-output scalar contracts', () => {
         for (const preset of PRESETS) {
             seedHiddenMulticlassState();
@@ -139,6 +154,34 @@ describe('usePlaygroundStore compatibility guards', () => {
         expect(window.location.hash).not.toContain('os=3');
     });
 
+    it('applies approved multiclass preset configs as a complete tuple', () => {
+        const multiclassPreset: Preset = {
+            id: 'three-class-smoke',
+            title: 'Three Class Smoke',
+            description: 'Synthetic approved multiclass fixture',
+            learningGoal: 'Keep public multiclass configs all-or-nothing.',
+            difficulty: 'advanced',
+            config: {
+                data: { ...DEFAULT_DATA, dataset: 'three-class-clusters' as DatasetType, problemType: 'classification' },
+                network: {
+                    ...DEFAULT_NETWORK,
+                    inputSize: 2,
+                    outputSize: 3,
+                    outputActivation: 'softmax',
+                    seed: DEFAULT_DATA.seed,
+                },
+                features: { ...DEFAULT_FEATURES },
+                training: { ...DEFAULT_TRAINING, lossType: 'categoricalCrossEntropy' },
+            },
+        };
+
+        usePlaygroundStore.getState().applyPreset(multiclassPreset);
+
+        expectApprovedMulticlassRuntimeConfig();
+        expect(window.location.hash).toContain('d=three-class-clusters');
+        expect(window.location.hash).toContain('os=3');
+    });
+
     it('does not publish hidden multiclass contracts when syncing the URL', () => {
         seedHiddenMulticlassState();
 
@@ -150,6 +193,31 @@ describe('usePlaygroundStore compatibility guards', () => {
         expect(decoded.network.outputSize).toBe(1);
         expect(decoded.network.outputActivation).not.toBe('softmax');
         expect(decoded.training.lossType).not.toBe('categoricalCrossEntropy');
+    });
+
+    it('round-trips approved multiclass state through URL sync and load', () => {
+        usePlaygroundStore.getState().setDataset('three-class-clusters');
+
+        usePlaygroundStore.getState().syncToUrl();
+
+        const hash = window.location.hash.slice(1);
+        expect(hash).toContain('d=three-class-clusters');
+        expect(hash).toContain('os=3');
+        expect(hash).toContain('oa=softmax');
+        expect(hash).toContain('l=categoricalCrossEntropy');
+        expect(decodeUrlState(hash, { allowMulticlass: true }).network.outputSize).toBe(3);
+
+        usePlaygroundStore.setState({
+            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
+            training: { ...DEFAULT_TRAINING },
+            data: { ...DEFAULT_DATA },
+            features: { ...DEFAULT_FEATURES },
+            ui: { showTestData: false, discretizeOutput: false },
+        });
+
+        usePlaygroundStore.getState().loadFromUrl();
+
+        expectApprovedMulticlassRuntimeConfig();
     });
 
     it('updates advanced hyperparameters without disturbing unrelated config', () => {
