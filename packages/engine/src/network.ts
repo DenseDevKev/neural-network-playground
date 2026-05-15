@@ -30,12 +30,52 @@ import type {
     LossLandscapeProbeOptions,
     LossLandscapeParameter,
 } from './types.js';
-import { getLoss } from './losses.js';
+import { categoricalCrossEntropy, categoricalCrossEntropyLogitGradient, getLoss } from './losses.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
 import { initWeightsInto, initBiasesInto } from './initialization.js';
 import { transformPoint } from './features.js';
 import type { FeatureSpec } from './features.js';
 import { PRNG } from './prng.js';
+
+type NetworkActivationKind = ActivationType | 'softmax';
+type NetworkLossKind = LossType | 'categoricalCrossEntropy';
+const CATEGORICAL_TARGET_SUM_TOLERANCE = 1e-5;
+
+function categoricalCrossEntropyFromLogits(logits: ArrayLike<number>, target: ArrayLike<number>): number {
+    if (logits.length !== target.length) {
+        throw new RangeError('logits and target must have the same length');
+    }
+    if (logits.length === 0) {
+        throw new RangeError('categorical cross-entropy vectors must not be empty');
+    }
+
+    let maxLogit = -Infinity;
+    let targetSum = 0;
+    let targetLogitSum = 0;
+    for (let i = 0; i < logits.length; i++) {
+        const logit = logits[i];
+        const targetValue = target[i];
+        if (!Number.isFinite(logit)) {
+            throw new RangeError('logits must be finite');
+        }
+        if (!Number.isFinite(targetValue) || targetValue < 0) {
+            throw new RangeError('target values must be finite and non-negative');
+        }
+        if (logit > maxLogit) maxLogit = logit;
+        targetSum += targetValue;
+        targetLogitSum += targetValue * logit;
+    }
+
+    let expSum = 0;
+    for (let i = 0; i < logits.length; i++) {
+        expSum += Math.exp(logits[i] - maxLogit);
+    }
+    if (Math.abs(targetSum - 1) > CATEGORICAL_TARGET_SUM_TOLERANCE) {
+        throw new RangeError('target values must sum to 1');
+    }
+    const logNormalizer = maxLogit + Math.log(expSum);
+    return targetSum * logNormalizer - targetLogitSum;
+}
 
 // ── Activation kernels ──────────────────────────────────────────────────────
 // Each kernel is monomorphic — V8 sees exactly one shape at each call site
@@ -100,7 +140,24 @@ function actSoftplus(pre: Buf, out: Buf, n: number): void {
     for (let i = 0; i < n; i++) out[i] = stableSoftplusScalar(pre[i]);
 }
 
-function pickAct(kind: ActivationType): LayerActFn {
+function actSoftmax(pre: Buf, out: Buf, n: number): void {
+    let maxLogit = -Infinity;
+    for (let i = 0; i < n; i++) {
+        if (pre[i] > maxLogit) maxLogit = pre[i];
+    }
+
+    let sum = 0;
+    for (let i = 0; i < n; i++) {
+        const expValue = Math.exp(pre[i] - maxLogit);
+        out[i] = expValue;
+        sum += expValue;
+    }
+
+    const invSum = 1 / sum;
+    for (let i = 0; i < n; i++) out[i] *= invSum;
+}
+
+function pickAct(kind: NetworkActivationKind): LayerActFn {
     switch (kind) {
         case 'relu': return actRelu;
         case 'tanh': return actTanh;
@@ -110,6 +167,7 @@ function pickAct(kind: ActivationType): LayerActFn {
         case 'elu': return actElu;
         case 'swish': return actSwish;
         case 'softplus': return actSoftplus;
+        case 'softmax': return actSoftmax;
     }
 }
 
@@ -155,8 +213,11 @@ function dActSoftplus(delta: Buf, pre: Buf, _out: Buf, n: number): void {
         delta[i] *= stableSigmoidScalar(pre[i]);
     }
 }
+function dActSoftmax(_delta: Buf, _pre: Buf, _out: Buf, _n: number): void {
+    throw new RangeError('softmax output requires categoricalCrossEntropy loss');
+}
 
-function pickDAct(kind: ActivationType): LayerDActFn {
+function pickDAct(kind: NetworkActivationKind): LayerDActFn {
     switch (kind) {
         case 'relu': return dActRelu;
         case 'tanh': return dActTanh;
@@ -166,6 +227,7 @@ function pickDAct(kind: ActivationType): LayerDActFn {
         case 'elu': return dActElu;
         case 'swish': return dActSwish;
         case 'softplus': return dActSoftplus;
+        case 'softmax': return dActSoftmax;
     }
 }
 
@@ -647,9 +709,9 @@ export class Network {
         this.inputScratch = new Float64Array(this.config.inputSize);
 
         this.actFwdHidden = pickAct(this.config.activation);
-        this.actFwdOutput = pickAct(this.config.outputActivation);
+        this.actFwdOutput = pickAct(this.config.outputActivation as NetworkActivationKind);
         this.actDHidden = pickDAct(this.config.activation);
-        this.actDOutput = pickDAct(this.config.outputActivation);
+        this.actDOutput = pickDAct(this.config.outputActivation as NetworkActivationKind);
     }
 
     // ── Forward ──────────────────────────────────────────────────────────────
@@ -702,6 +764,42 @@ export class Network {
         return copy;
     }
 
+    private usesSoftmaxCategoricalLoss(lossType: NetworkLossKind): boolean {
+        const outputActivation = this.config.outputActivation as NetworkActivationKind;
+        if (lossType === 'categoricalCrossEntropy') {
+            if (outputActivation !== 'softmax') {
+                throw new RangeError('categoricalCrossEntropy loss requires softmax output activation');
+            }
+            return true;
+        }
+        if (outputActivation === 'softmax') {
+            throw new RangeError('softmax output activation requires categoricalCrossEntropy loss');
+        }
+        return false;
+    }
+
+    private accumulateLoss(
+        output: ArrayLike<number>,
+        target: ArrayLike<number>,
+        lossType: NetworkLossKind,
+        huberDelta?: number,
+        logits?: ArrayLike<number>,
+    ): { loss: number; count: number } {
+        if (this.usesSoftmaxCategoricalLoss(lossType)) {
+            const loss = logits == null
+                ? categoricalCrossEntropy(output, target)
+                : categoricalCrossEntropyFromLogits(logits, target);
+            return { loss, count: 1 };
+        }
+
+        const lossFn = getLoss(lossType as LossType, { huberDelta });
+        let loss = 0;
+        for (let i = 0; i < output.length; i++) {
+            loss += lossFn.loss(output[i], target[i]);
+        }
+        return { loss, count: output.length };
+    }
+
     /** Capture a pure-copy trace for one prediction without mutating training state. */
     tracePrediction(
         input: number[],
@@ -719,12 +817,14 @@ export class Network {
 
         let lossContribution: number | undefined;
         if (target != null && lossType != null) {
-            const lossFn = getLoss(lossType, { huberDelta });
-            let sum = 0;
-            for (let i = 0; i < output.length; i++) {
-                sum += lossFn.loss(output[i], target[i]);
-            }
-            lossContribution = output.length === 0 ? 0 : sum / output.length;
+            const sampleLoss = this.accumulateLoss(
+                output,
+                target,
+                lossType as NetworkLossKind,
+                huberDelta,
+                this.preActs[this.preActs.length - 1],
+            );
+            lossContribution = sampleLoss.count === 0 ? 0 : sampleLoss.loss / sampleLoss.count;
         }
 
         return {
@@ -745,8 +845,10 @@ export class Network {
 
     backward(target: number[], lossType: LossType, huberDelta?: number): void {
         assertVectorShape(target, this.config.outputSize, 'target');
-        const lossFn = getLoss(lossType, { huberDelta });
-        const dloss = lossFn.dloss;
+        const effectiveLossType = lossType as NetworkLossKind;
+        const useSoftmaxCategoricalDelta = this.usesSoftmaxCategoricalLoss(effectiveLossType);
+        const lossFn = useSoftmaxCategoricalDelta ? null : getLoss(lossType, { huberDelta });
+        const dloss = lossFn?.dloss;
         const numLayers = this.weights.length;
         const outIdx = numLayers - 1;
         const useSigmoidCrossEntropyDelta = (
@@ -757,12 +859,17 @@ export class Network {
         const outputs = this.outputs[outIdx];
         const outDelta = this.deltas[outIdx];
         const outLen = outputs.length;
+        const categoricalGradient = useSoftmaxCategoricalDelta
+            ? categoricalCrossEntropyLogitGradient(outputs, target)
+            : null;
         for (let i = 0; i < outLen; i++) {
-            outDelta[i] = useSigmoidCrossEntropyDelta
+            outDelta[i] = categoricalGradient != null
+                ? categoricalGradient[i]
+                : useSigmoidCrossEntropyDelta
                 ? outputs[i] - target[i]
-                : dloss(outputs[i], target[i]);
+                    : dloss!(outputs[i], target[i]);
         }
-        if (!useSigmoidCrossEntropyDelta) {
+        if (!useSigmoidCrossEntropyDelta && !useSoftmaxCategoricalDelta) {
             // Multiply by output activation derivative.
             this.actDOutput(outDelta, this.preActs[outIdx], outputs, outLen);
         }
@@ -1096,8 +1203,7 @@ export class Network {
         training: TrainingConfig,
         indices?: ArrayLike<number>,
     ): number {
-        const lossFn = getLoss(training.lossType, { huberDelta: training.huberDelta });
-        const lossScalar = lossFn.loss;
+        const effectiveLossType = training.lossType as NetworkLossKind;
         let totalLoss = 0;
         let count = 0;
 
@@ -1105,14 +1211,19 @@ export class Network {
             const sampleIdx = indices == null ? s : indices[s];
             const out = this.forwardInto(inputs[sampleIdx]);
             const tgt = targets[sampleIdx];
-            for (let o = 0, n = out.length; o < n; o++) {
-                totalLoss += lossScalar(out[o], tgt[o]);
-                count++;
-            }
+            const sampleLoss = this.accumulateLoss(
+                out,
+                tgt,
+                effectiveLossType,
+                training.huberDelta,
+                this.preActs[this.preActs.length - 1],
+            );
+            totalLoss += sampleLoss.loss;
+            count += sampleLoss.count;
             this.backward(tgt, training.lossType, training.huberDelta);
         }
 
-        this.applyGradients(training, (end - start) * this.config.outputSize);
+        this.applyGradients(training, count);
         return count > 0 ? totalLoss / count : 0;
     }
 
@@ -1141,7 +1252,7 @@ export class Network {
         const beforeBiases = clonePackedBuffers(this.biases);
         const signalAggregates = this.deltas.map(() => createAbsAggregate());
         const activationAggregates = this.outputs.map(() => createMomentAggregate());
-        const lossFn = getLoss(training.lossType, { huberDelta: training.huberDelta });
+        const effectiveLossType = training.lossType as NetworkLossKind;
         let totalLoss = 0;
         let count = 0;
 
@@ -1151,17 +1262,22 @@ export class Network {
                 addMomentValues(activationAggregates[l], this.outputs[l]);
             }
             const target = targets[s];
-            for (let o = 0; o < out.length; o++) {
-                totalLoss += lossFn.loss(out[o], target[o]);
-                count++;
-            }
+            const sampleLoss = this.accumulateLoss(
+                out,
+                target,
+                effectiveLossType,
+                training.huberDelta,
+                this.preActs[this.preActs.length - 1],
+            );
+            totalLoss += sampleLoss.loss;
+            count += sampleLoss.count;
             this.backward(target, training.lossType, training.huberDelta);
             for (let l = 0; l < this.deltas.length; l++) {
                 addAbsValues(signalAggregates[l], this.deltas[l]);
             }
         }
 
-        const invB = 1 / (inputs.length * this.config.outputSize);
+        const invB = count > 0 ? 1 / count : 0;
         let sqSum = 0;
         for (let l = 0; l < this.weightGrads.length; l++) {
             const wg = this.weightGrads[l];
@@ -1186,7 +1302,7 @@ export class Network {
             summarizeScaledAbsBuffers(weightGrad, this.biasGrads[layerIndex], gradientScale)
         ));
 
-        this.applyGradients(training, inputs.length * this.config.outputSize);
+        this.applyGradients(training, count);
 
         const layers: BackpropExplanationLayer[] = [];
         for (let l = 0; l < this.weights.length; l++) {
@@ -1344,16 +1460,21 @@ export class Network {
         lossType: LossType,
         huberDelta?: number,
     ): number {
-        const lossFn = getLoss(lossType, { huberDelta });
+        const effectiveLossType = lossType as NetworkLossKind;
         let lossSum = 0;
         let lossCount = 0;
         for (let i = 0; i < sampleCount; i++) {
             const pred = this.forwardInto(inputs[i]);
             const target = targets[i];
-            for (let o = 0; o < pred.length; o++) {
-                lossSum += lossFn.loss(pred[o], target[o]);
-                lossCount++;
-            }
+            const sampleLoss = this.accumulateLoss(
+                pred,
+                target,
+                effectiveLossType,
+                huberDelta,
+                this.preActs[this.preActs.length - 1],
+            );
+            lossSum += sampleLoss.loss;
+            lossCount += sampleLoss.count;
         }
         return lossCount > 0 ? lossSum / lossCount : 0;
     }
@@ -1482,8 +1603,7 @@ export class Network {
         problemType: 'classification' | 'regression',
         huberDelta?: number,
     ): Metrics {
-        const lossFn = getLoss(lossType, { huberDelta });
-        const lossScalar = lossFn.loss;
+        const effectiveLossType = lossType as NetworkLossKind;
         assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
         const N = inputs.length;
         const usePublicForward = this.forward !== Network.prototype.forward;
@@ -1497,10 +1617,15 @@ export class Network {
             for (let i = 0; i < N; i++) {
                 const pred = usePublicForward ? this.forward(inputs[i]) : this.forwardInto(inputs[i]);
                 const tgt = targets[i];
-                for (let o = 0, outLen = pred.length; o < outLen; o++) {
-                    lossSum += lossScalar(pred[o], tgt[o]);
-                    lossCount++;
-                }
+                const sampleLoss = this.accumulateLoss(
+                    pred,
+                    tgt,
+                    effectiveLossType,
+                    huberDelta,
+                    usePublicForward ? undefined : this.preActs[this.preActs.length - 1],
+                );
+                lossSum += sampleLoss.loss;
+                lossCount += sampleLoss.count;
                 const predClass = pred[0] >= 0.5 ? 1 : 0;
                 const tgtClass = tgt[0];
                 if (predClass === tgtClass) correct++;
@@ -1521,10 +1646,15 @@ export class Network {
             for (let i = 0; i < N; i++) {
                 const pred = usePublicForward ? this.forward(inputs[i]) : this.forwardInto(inputs[i]);
                 const tgt = targets[i];
-                for (let o = 0, outLen = pred.length; o < outLen; o++) {
-                    lossSum += lossScalar(pred[o], tgt[o]);
-                    lossCount++;
-                }
+                const sampleLoss = this.accumulateLoss(
+                    pred,
+                    tgt,
+                    effectiveLossType,
+                    huberDelta,
+                    usePublicForward ? undefined : this.preActs[this.preActs.length - 1],
+                );
+                lossSum += sampleLoss.loss;
+                lossCount += sampleLoss.count;
                 let maxIdx = 0;
                 for (let o = 1; o < pred.length; o++) {
                     if (pred[o] > pred[maxIdx]) maxIdx = o;
@@ -1545,10 +1675,15 @@ export class Network {
         for (let i = 0; i < N; i++) {
             const pred = usePublicForward ? this.forward(inputs[i]) : this.forwardInto(inputs[i]);
             const tgt = targets[i];
-            for (let o = 0, outLen = pred.length; o < outLen; o++) {
-                lossSum += lossScalar(pred[o], tgt[o]);
-                lossCount++;
-            }
+            const sampleLoss = this.accumulateLoss(
+                pred,
+                tgt,
+                effectiveLossType,
+                huberDelta,
+                usePublicForward ? undefined : this.preActs[this.preActs.length - 1],
+            );
+            lossSum += sampleLoss.loss;
+            lossCount += sampleLoss.count;
         }
         return { loss: lossCount > 0 ? lossSum / lossCount : 0 };
     }

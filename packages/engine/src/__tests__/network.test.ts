@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Network, buildGridInputs } from '../network.js';
 import { getActiveFeatures, defaultFeatureFlags } from '../features.js';
+import { categoricalCrossEntropy } from '../losses.js';
 import type { NetworkConfig, TrainingConfig } from '../types.js';
 
 function makeConfig(overrides: Partial<NetworkConfig> = {}): NetworkConfig {
@@ -26,6 +27,28 @@ const defaultTraining: TrainingConfig = {
     regularizationRate: 0,
     gradientClip: null,
 };
+
+function makeSoftmaxConfig(overrides: Partial<NetworkConfig> = {}): NetworkConfig {
+    return makeConfig({
+        hiddenLayers: [],
+        outputSize: 3,
+        outputActivation: 'softmax' as unknown as NetworkConfig['outputActivation'],
+        ...overrides,
+    });
+}
+
+function makeCategoricalTraining(overrides: Partial<TrainingConfig> = {}): TrainingConfig {
+    return {
+        ...defaultTraining,
+        lossType: 'categoricalCrossEntropy' as unknown as TrainingConfig['lossType'],
+        optimizer: 'sgd',
+        momentum: 0,
+        regularization: 'none',
+        regularizationRate: 0,
+        gradientClip: null,
+        ...overrides,
+    };
+}
 
 describe('Network construction', () => {
     it('creates a network with correct layer sizes', () => {
@@ -268,6 +291,177 @@ describe('Network evaluate', () => {
         );
         expect(typeof metrics.loss).toBe('number');
         expect(metrics.accuracy).toBeUndefined();
+    });
+});
+
+describe('Network private multiclass softmax foundation', () => {
+    it('produces normalized softmax outputs without exposing a shared config value', () => {
+        const net = new Network(makeSoftmaxConfig());
+        const out = net.forward([0.75, -0.25]);
+
+        expect(out).toHaveLength(3);
+        expect(out.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 12);
+        for (const value of out) {
+            expect(value).toBeGreaterThan(0);
+            expect(value).toBeLessThan(1);
+            expect(Number.isFinite(value)).toBe(true);
+        }
+    });
+
+    it('trains categorical cross-entropy by increasing the target-class probability', () => {
+        const net = new Network(makeSoftmaxConfig({ weightInit: 'zeros' }));
+        const input = [0, 0];
+        const target = [0, 1, 0];
+        const before = net.forward(input);
+        const loss = net.trainBatch([input], [target], makeCategoricalTraining({ learningRate: 0.3 }));
+        const after = net.forward(input);
+
+        expect(loss).toBeCloseTo(-Math.log(1 / 3), 10);
+        expect(after[1]).toBeGreaterThan(before[1]);
+        expect(after[0]).toBeLessThan(before[0]);
+        expect(after[2]).toBeLessThan(before[2]);
+    });
+
+    it('matches finite-difference gradients for softmax plus categorical cross-entropy', () => {
+        const net = new Network(makeSoftmaxConfig({ seed: 9 }));
+        const input = [0.4, -0.2];
+        const target = [0.2, 0.3, 0.5];
+        const lossType = 'categoricalCrossEntropy' as unknown as TrainingConfig['lossType'];
+
+        net.forward(input);
+        net.backward(target, lossType);
+        const analyticWeightGrads = net.getWeightGrads();
+        const analyticBiasGrads = net.getBiasGrads();
+        const weights = net.getWeights();
+        const biases = net.getBiases();
+        const eps = 1e-5;
+
+        for (let n = 0; n < weights[0].length; n++) {
+            for (let w = 0; w < weights[0][n].length; w++) {
+                const original = weights[0][n][w];
+                net.setWeight(0, n, w, original + eps);
+                const lossPlus = categoricalCrossEntropy(net.forward(input), target);
+                net.setWeight(0, n, w, original - eps);
+                const lossMinus = categoricalCrossEntropy(net.forward(input), target);
+                net.setWeight(0, n, w, original);
+
+                const numerical = (lossPlus - lossMinus) / (2 * eps);
+                expect(analyticWeightGrads[0][n][w]).toBeCloseTo(numerical, 4);
+            }
+        }
+
+        for (let n = 0; n < biases[0].length; n++) {
+            const original = biases[0][n];
+            net.setBias(0, n, original + eps);
+            const lossPlus = categoricalCrossEntropy(net.forward(input), target);
+            net.setBias(0, n, original - eps);
+            const lossMinus = categoricalCrossEntropy(net.forward(input), target);
+            net.setBias(0, n, original);
+
+            const numerical = (lossPlus - lossMinus) / (2 * eps);
+            expect(analyticBiasGrads[0][n]).toBeCloseTo(numerical, 4);
+        }
+    });
+
+    it('matches finite-difference gradients through a hidden layer', () => {
+        const net = new Network(makeSoftmaxConfig({
+            hiddenLayers: [3],
+            activation: 'tanh',
+            seed: 13,
+        }));
+        const input = [0.25, -0.4];
+        const target = [0.1, 0.2, 0.7];
+        const lossType = 'categoricalCrossEntropy' as unknown as TrainingConfig['lossType'];
+
+        net.forward(input);
+        net.backward(target, lossType);
+        const analyticWeightGrads = net.getWeightGrads();
+        const analyticBiasGrads = net.getBiasGrads();
+        const weights = net.getWeights();
+        const biases = net.getBiases();
+        const eps = 1e-5;
+
+        for (let l = 0; l < weights.length; l++) {
+            for (let n = 0; n < weights[l].length; n++) {
+                for (let w = 0; w < weights[l][n].length; w++) {
+                    const original = weights[l][n][w];
+                    net.setWeight(l, n, w, original + eps);
+                    const lossPlus = categoricalCrossEntropy(net.forward(input), target);
+                    net.setWeight(l, n, w, original - eps);
+                    const lossMinus = categoricalCrossEntropy(net.forward(input), target);
+                    net.setWeight(l, n, w, original);
+
+                    const numerical = (lossPlus - lossMinus) / (2 * eps);
+                    expect(analyticWeightGrads[l][n][w]).toBeCloseTo(numerical, 4);
+                }
+            }
+        }
+
+        for (let l = 0; l < biases.length; l++) {
+            for (let n = 0; n < biases[l].length; n++) {
+                const original = biases[l][n];
+                net.setBias(l, n, original + eps);
+                const lossPlus = categoricalCrossEntropy(net.forward(input), target);
+                net.setBias(l, n, original - eps);
+                const lossMinus = categoricalCrossEntropy(net.forward(input), target);
+                net.setBias(l, n, original);
+
+                const numerical = (lossPlus - lossMinus) / (2 * eps);
+                expect(analyticBiasGrads[l][n]).toBeCloseTo(numerical, 4);
+            }
+        }
+    });
+
+    it('evaluates multiclass accuracy and mean categorical loss per sample', () => {
+        const net = new Network(makeSoftmaxConfig({ weightInit: 'zeros' }));
+        net.setBias(0, 0, 2);
+        net.setBias(0, 1, 0);
+        net.setBias(0, 2, -1);
+
+        const inputs = [[0, 0], [1, 1]];
+        const targets = [[1, 0, 0], [0, 1, 0]];
+        const prediction = net.forward(inputs[0]);
+        const expectedLoss = (
+            categoricalCrossEntropy(prediction, targets[0]) +
+            categoricalCrossEntropy(prediction, targets[1])
+        ) / 2;
+        const metrics = net.evaluate(
+            inputs,
+            targets,
+            'categoricalCrossEntropy' as unknown as TrainingConfig['lossType'],
+            'classification',
+        );
+
+        expect(metrics.loss).toBeCloseTo(expectedLoss, 12);
+        expect(metrics.accuracy).toBe(0.5);
+    });
+
+    it('rejects categorical cross-entropy without softmax output', () => {
+        const net = new Network(makeConfig({ outputSize: 3, outputActivation: 'sigmoid' }));
+        expect(() => net.trainBatch(
+            [[0, 0]],
+            [[1, 0, 0]],
+            makeCategoricalTraining(),
+        )).toThrow(RangeError);
+    });
+
+    it('rejects categorical targets that are not normalized distributions', () => {
+        const net = new Network(makeSoftmaxConfig());
+        expect(() => net.evaluate(
+            [[0, 0]],
+            [[1, 1, 0]],
+            'categoricalCrossEntropy' as unknown as TrainingConfig['lossType'],
+            'classification',
+        )).toThrow(RangeError);
+    });
+
+    it('rejects softmax output with non-categorical losses', () => {
+        const net = new Network(makeSoftmaxConfig());
+        expect(() => net.trainBatch(
+            [[0, 0]],
+            [[1, 0, 0]],
+            { ...defaultTraining, lossType: 'mse' },
+        )).toThrow(RangeError);
     });
 });
 
