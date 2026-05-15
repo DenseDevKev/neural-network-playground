@@ -2114,3 +2114,49 @@ The timing values returned to the established local baseline range after the
 noisy Data-chip verification period. The slice is educational UI content and
 button semantics only, so no runtime performance impact is expected from the
 changed files.
+
+## Wave 7 Engine Multiclass Confusion Metric Foundation
+
+Date: 2026-05-15
+
+Scope: engine-only foundation for a distinct bounded
+`multiclassConfusionMatrix` evaluation metric. The slice keeps binary
+`confusionMatrix` binary-only and does not touch shared protocol, worker
+snapshot packing, frame-buffer semantics, UI, URL/config serialization,
+persistence/run-history schema, public config shape, dependencies, deployment,
+or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DbL0ovsR.js`: 94.82 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-CPmuCH7-.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-MdPvpTq4.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-BVuFiqKd.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-AZ4dCH6z.js`: 386.32 kB, gzip 116.10 kB
+
+Compared with the Three-Class Softmax lesson build, the main app, CSS, engine,
+Code Export, React, Inspection, and Run History chunks stayed effectively
+unchanged. The training worker changed from 94.59 kB to 94.82 kB, about 0.24%,
+below the 10% roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1123.8355 ms total for 100 iterations
+- `predictGridInto`: 1097.1995 ms total for 100 iterations
+- `predictGridWithNeurons`: 690.7828 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 593.6766 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.0217 ms
+- Average `applyGradients` time (SGD): 1.5198 ms
+
+The timing values remain within the established local baseline range. The
+slice adds evaluation metadata only and does not alter prediction grids,
+training updates, worker demand cadence, or visualization transport.
