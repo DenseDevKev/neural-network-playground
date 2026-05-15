@@ -108,4 +108,40 @@ describe('ConfigPanel clipboard feedback', () => {
         expect(URL.createObjectURL).not.toHaveBeenCalled();
         expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();
     });
+
+    it('refuses to import hidden unsupported multiclass configuration JSON', async () => {
+        const onReset = vi.fn();
+        const hiddenMulticlassConfig = usePlaygroundStore.getState().getConfig();
+        hiddenMulticlassConfig.network = {
+            ...hiddenMulticlassConfig.network,
+            outputSize: 3,
+            outputActivation: 'softmax',
+        };
+        hiddenMulticlassConfig.training = {
+            ...hiddenMulticlassConfig.training,
+            lossType: 'categoricalCrossEntropy',
+        } as typeof hiddenMulticlassConfig.training;
+
+        const { container } = render(<ConfigPanel onReset={onReset} />);
+        const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+        expect(input).toBeTruthy();
+
+        await act(async () => {
+            fireEvent.change(input!, {
+                target: {
+                    files: [
+                        new File([JSON.stringify(hiddenMulticlassConfig)], 'hidden-multiclass.json', {
+                            type: 'application/json',
+                        }),
+                    ],
+                },
+            });
+        });
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Multiclass configurations are not runtime-enabled yet.');
+        expect(onReset).not.toHaveBeenCalled();
+        expect(usePlaygroundStore.getState().network.outputSize).toBe(1);
+        expect(usePlaygroundStore.getState().network.outputActivation).not.toBe('softmax');
+        expect(usePlaygroundStore.getState().training.lossType).not.toBe('categoricalCrossEntropy');
+    });
 });
