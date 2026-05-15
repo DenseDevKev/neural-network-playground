@@ -109,6 +109,40 @@ function validateHistoryPoint(value: unknown): HistoryPoint | null {
     return point;
 }
 
+function validateSerializedNetworkParams(
+    value: { weights: unknown[]; biases: unknown[] },
+    layerSizes: number[],
+): string | null {
+    const layerCount = layerSizes.length - 1;
+    if (value.weights.length !== layerCount || value.biases.length !== layerCount) {
+        return 'Run record network parameters are invalid.';
+    }
+    for (let layer = 0; layer < layerCount; layer++) {
+        const weightMatrix = value.weights[layer];
+        const biasVector = value.biases[layer];
+        const previousLayerSize = layerSizes[layer];
+        const nextLayerSize = layerSizes[layer + 1];
+        if (!Array.isArray(weightMatrix) || weightMatrix.length !== nextLayerSize) {
+            return 'Run record network parameters are invalid.';
+        }
+        for (const row of weightMatrix) {
+            if (!Array.isArray(row) || row.length !== previousLayerSize) {
+                return 'Run record network parameters are invalid.';
+            }
+            for (let column = 0; column < previousLayerSize; column++) {
+                if (!isFiniteNumber(row[column])) return 'Run record network parameters are invalid.';
+            }
+        }
+        if (!Array.isArray(biasVector) || biasVector.length !== nextLayerSize) {
+            return 'Run record network parameters are invalid.';
+        }
+        for (let unit = 0; unit < nextLayerSize; unit++) {
+            if (!isFiniteNumber(biasVector[unit])) return 'Run record network parameters are invalid.';
+        }
+    }
+    return null;
+}
+
 function validateSerializedNetwork(
     value: unknown,
     recordConfig: AppConfig,
@@ -118,9 +152,14 @@ function validateSerializedNetwork(
     if (!isRecord(value.config) || !Array.isArray(value.weights) || !Array.isArray(value.biases)) {
         return { network: null, error: 'Run record network is invalid.' };
     }
+    const serializedNetwork = value as {
+        config: Record<string, unknown>;
+        weights: unknown[];
+        biases: unknown[];
+    };
     const embeddedConfig = validateImportedConfig({
         ...recordConfig,
-        network: value.config,
+        network: serializedNetwork.config,
     });
     if (!embeddedConfig.config) {
         return {
@@ -128,6 +167,16 @@ function validateSerializedNetwork(
             error: `Run record network config is invalid: ${embeddedConfig.error ?? 'Invalid network config.'}`,
         };
     }
+    if (serializedNetwork.config.inputSize !== embeddedConfig.config.network.inputSize) {
+        return { network: null, error: 'Run record network input size does not match active features.' };
+    }
+    const layerSizes = [
+        embeddedConfig.config.network.inputSize,
+        ...embeddedConfig.config.network.hiddenLayers,
+        embeddedConfig.config.network.outputSize,
+    ];
+    const paramError = validateSerializedNetworkParams(serializedNetwork, layerSizes);
+    if (paramError) return { network: null, error: paramError };
     return { network: cloneJson(value as unknown as SerializedNetwork), error: null };
 }
 

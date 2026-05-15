@@ -14,7 +14,7 @@ import type { AppConfig, ExperimentRunRecordV1 } from '../index.js';
 
 const config: AppConfig = {
     data: { ...DEFAULT_DATA },
-    network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
+    network: { ...DEFAULT_NETWORK, inputSize: 2, hiddenLayers: [], outputSize: 1, seed: DEFAULT_DATA.seed },
     training: { ...DEFAULT_TRAINING },
     features: { ...DEFAULT_FEATURES },
     ui: { showTestData: false, discretizeOutput: false },
@@ -46,6 +46,10 @@ function makeRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentR
         history: [{ step: 12, trainLoss: 0.4, testLoss: 0.5, trainAccuracy: 0.8, testAccuracy: 0.75 }],
         ...overrides,
     };
+}
+
+function sparseNumberArray(length: number): number[] {
+    return new Array(length) as number[];
 }
 
 describe('experiment memory schema', () => {
@@ -136,6 +140,151 @@ describe('experiment memory schema', () => {
         const envelope = createExperimentMemoryEnvelope([hiddenNetwork, valid]);
 
         expect(envelope.records.map((record) => record.id)).toEqual(['valid']);
+    });
+
+    it('accepts valid multi-hidden-layer serialized network payloads unchanged', () => {
+        const network = {
+            config: {
+                ...config.network,
+                hiddenLayers: [3, 2],
+            },
+            weights: [
+                [
+                    [0.1, -0.2],
+                    [0.2, 0.3],
+                    [-0.1, 0.4],
+                ],
+                [
+                    [0.5, -0.6, 0.7],
+                    [-0.3, 0.2, -0.1],
+                ],
+                [[0.8, -0.4]],
+            ],
+            biases: [
+                [0.01, 0.02, 0.03],
+                [0.04, 0.05],
+                [0.06],
+            ],
+        };
+
+        const result = validateExperimentRunRecord(makeRecord({ network }));
+
+        expect(result.error).toBeNull();
+        expect(result.record?.network).toEqual(network);
+    });
+
+    it.each([
+        [
+            'weight layer count mismatch',
+            {
+                weights: [],
+                biases: [[0.05]],
+            },
+        ],
+        [
+            'bias layer count mismatch',
+            {
+                weights: [[[0.1, -0.2]]],
+                biases: [],
+            },
+        ],
+        [
+            'non-array weight matrix',
+            {
+                weights: [1],
+                biases: [[0.05]],
+            },
+        ],
+        [
+            'non-array weight row',
+            {
+                weights: [[1]],
+                biases: [[0.05]],
+            },
+        ],
+        [
+            'non-array bias vector',
+            {
+                weights: [[[0.1, -0.2]]],
+                biases: [1],
+            },
+        ],
+        [
+            'non-finite weight',
+            {
+                weights: [[[0.1, Number.NaN]]],
+                biases: [[0.05]],
+            },
+        ],
+        [
+            'non-finite bias',
+            {
+                weights: [[[0.1, -0.2]]],
+                biases: [[Number.POSITIVE_INFINITY]],
+            },
+        ],
+        [
+            'wrong weight matrix row count',
+            {
+                weights: [[[0.1, -0.2], [0.2, 0.3]]],
+                biases: [[0.05]],
+            },
+        ],
+        [
+            'wrong weight row width',
+            {
+                weights: [[[0.1]]],
+                biases: [[0.05]],
+            },
+        ],
+        [
+            'wrong bias width',
+            {
+                weights: [[[0.1, -0.2]]],
+                biases: [[0.05, 0.06]],
+            },
+        ],
+        [
+            'sparse weight row',
+            {
+                weights: [[sparseNumberArray(2)]],
+                biases: [[0.05]],
+            },
+        ],
+        [
+            'sparse bias vector',
+            {
+                weights: [[[0.1, -0.2]]],
+                biases: [sparseNumberArray(1)],
+            },
+        ],
+    ])('rejects serialized network payloads with %s', (_label, payload) => {
+        const result = validateExperimentRunRecord(makeRecord({
+            network: {
+                config: config.network,
+                weights: payload.weights,
+                biases: payload.biases,
+            } as any,
+        }));
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/network.*parameters/i);
+    });
+
+    it('rejects serialized network payloads whose raw input size does not match validated features', () => {
+        const result = validateExperimentRunRecord(makeRecord({
+            network: {
+                config: {
+                    ...config.network,
+                    inputSize: 3,
+                },
+                weights: [[[0.1, -0.2, 0.3]]],
+                biases: [[0.05]],
+            },
+        }));
+
+        expect(result.record).toBeNull();
+        expect(result.error).toMatch(/network.*input size/i);
     });
 
     it('bounds history and removes invalid history points', () => {
