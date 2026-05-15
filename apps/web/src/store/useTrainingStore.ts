@@ -31,6 +31,7 @@ export interface TrainingStore {
     layerStatsVersion: number;
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
+    multiclassBoundaryVersion: number;
     arenaSummariesVersion: number;
     /** Bounded scalar summaries only; arena model arrays stay in the worker/frame buffer. */
     arenaSummaries: ArenaModelSummary[] | null;
@@ -103,6 +104,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     layerStatsVersion: 0,
     confusionMatrixVersion: 0,
     activationHistogramsVersion: 0,
+    multiclassBoundaryVersion: 0,
     arenaSummariesVersion: 0,
     arenaSummaries: null,
     trainPoints: [],
@@ -134,6 +136,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 layerStatsVersion: state.layerStatsVersion,
                 confusionMatrixVersion: state.confusionMatrixVersion,
                 activationHistogramsVersion: state.activationHistogramsVersion,
+                multiclassBoundaryVersion: state.multiclassBoundaryVersion,
                 arenaSummariesVersion: state.arenaSummariesVersion,
             };
 
@@ -150,6 +153,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 layerStatsVersion: versions.layerStatsVersion,
                 confusionMatrixVersion: versions.confusionMatrixVersion,
                 activationHistogramsVersion: versions.activationHistogramsVersion,
+                multiclassBoundaryVersion: versions.multiclassBoundaryVersion,
                 arenaSummariesVersion: versions.arenaSummariesVersion,
                 historyVersion,
                 testMetricsStale,
@@ -178,6 +182,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
         layerStatsVersion: versions.layerStatsVersion,
         confusionMatrixVersion: versions.confusionMatrixVersion,
         activationHistogramsVersion: versions.activationHistogramsVersion,
+        multiclassBoundaryVersion: versions.multiclassBoundaryVersion,
         arenaSummariesVersion: versions.arenaSummariesVersion,
     }),
     setTrainPoints: (trainPoints) => set({ trainPoints }),

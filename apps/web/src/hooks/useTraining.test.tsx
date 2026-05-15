@@ -12,7 +12,7 @@ import {
 import type { WorkerToMainMessage } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
-import { getFrameBuffer, resetFrameBuffer } from '../worker/frameBuffer.ts';
+import { getFrameBuffer, resetFrameBuffer, updateFrameBuffer } from '../worker/frameBuffer.ts';
 
 const bridge = vi.hoisted(() => {
     const workerApi = {
@@ -200,6 +200,7 @@ function resetStores(): void {
         testMetricsStale: false,
         arenaSummariesVersion: 0,
         arenaSummaries: null,
+        multiclassBoundaryVersion: 0,
     });
 }
 
@@ -330,6 +331,35 @@ describe('useTraining', () => {
         expect(getFrameBuffer().activationHistogramBins).toEqual(new Float32Array([1, 3, 0, 2]));
         expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(1);
         expect(useTrainingStore.getState().snapshot?.activationHistograms).toBeUndefined();
+    });
+
+    it('clears stale multiclass boundary frames when applying a fresh direct snapshot', async () => {
+        updateFrameBuffer({
+            multiclassClassGrid: new Uint8Array([0, 1, 2, 1]),
+            multiclassConfidenceGrid: new Float32Array([0.8, 0.7, 0.6, 0.5]),
+            multiclassBoundaryLayout: {
+                gridSize: 2,
+                classCount: 3,
+                classLabels: [0, 1, 2],
+            },
+        });
+        const initialMulticlassVersion = getFrameBuffer().multiclassBoundaryVersion;
+        bridge.workerApi.initialize.mockResolvedValue({
+            snapshot: {
+                ...makeSnapshot(1),
+                outputGrid: new Float32Array(0),
+                neuronGrids: new Float32Array(0),
+            },
+            runId: 101,
+        });
+
+        renderHook(() => useTraining());
+
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        expect(getFrameBuffer().multiclassClassGrid).toBeNull();
+        expect(getFrameBuffer().multiclassConfidenceGrid).toBeNull();
+        expect(getFrameBuffer().multiclassBoundaryLayout).toBeNull();
+        expect(getFrameBuffer().multiclassBoundaryVersion).toBe(initialMulticlassVersion + 1);
     });
 
     it('retains the last activation histogram frame data across cadence-skipped snapshots', async () => {

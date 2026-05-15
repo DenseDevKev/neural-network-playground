@@ -354,6 +354,134 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.neuronGridLayout).toBeNull();
     });
 
+    it('stores multiclass boundary payloads and clears cached scalar grids', () => {
+        const listener = getRegisteredStreamListener();
+
+        startRenderLoop();
+        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        runNextAnimationFrame();
+        expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
+
+        listener({
+            data: makeSnapshotMessage(2, {
+                outputGrid: new Float32Array(0),
+                neuronGrids: new Float32Array(0),
+                neuronGridLayout: undefined,
+                multiclassClassGrid: new Uint8Array([0, 1, 2, 1]),
+                multiclassConfidenceGrid: new Float32Array([0.7, 0.6, 0.9, 0.5]),
+                multiclassBoundaryLayout: {
+                    gridSize: 2,
+                    classCount: 3,
+                    classLabels: [0, 1, 2],
+                },
+                multiclassBoundaryVersion: 1,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.outputGrid).toBeNull();
+        expect(frame.neuronGrids).toBeNull();
+        expect(frame.multiclassClassGrid).toEqual(new Uint8Array([0, 1, 2, 1]));
+        expect(frame.multiclassConfidenceGrid).toEqual(new Float32Array([0.7, 0.6, 0.9, 0.5]));
+        expect(frame.multiclassBoundaryLayout).toEqual({
+            gridSize: 2,
+            classCount: 3,
+            classLabels: [0, 1, 2],
+        });
+    });
+
+    it('clears cached scalar grids whenever a multiclass boundary payload arrives', () => {
+        const listener = getRegisteredStreamListener();
+
+        startRenderLoop();
+        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        runNextAnimationFrame();
+        expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
+        expect(getFrameBuffer().neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
+
+        listener({
+            data: makeSnapshotMessage(2, {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                neuronGridLayout: undefined,
+                multiclassClassGrid: new Uint8Array([0, 1, 2, 1]),
+                multiclassConfidenceGrid: new Float32Array([0.7, 0.6, 0.9, 0.5]),
+                multiclassBoundaryLayout: {
+                    gridSize: 2,
+                    classCount: 3,
+                    classLabels: [0, 1, 2],
+                },
+                multiclassBoundaryVersion: 1,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.outputGrid).toBeNull();
+        expect(frame.neuronGrids).toBeNull();
+        expect(frame.neuronGridLayout).toBeNull();
+        expect(frame.multiclassClassGrid).toEqual(new Uint8Array([0, 1, 2, 1]));
+    });
+
+    it('retains cached multiclass boundary payloads on cadence omissions and clears them on fresh scalar grids', () => {
+        const listener = getRegisteredStreamListener();
+
+        startRenderLoop();
+        listener({
+            data: makeSnapshotMessage(1, {
+                outputGrid: new Float32Array(0),
+                neuronGrids: new Float32Array(0),
+                neuronGridLayout: undefined,
+                multiclassClassGrid: new Uint8Array([0, 1, 2, 1]),
+                multiclassConfidenceGrid: new Float32Array([0.7, 0.6, 0.9, 0.5]),
+                multiclassBoundaryLayout: {
+                    gridSize: 2,
+                    classCount: 3,
+                    classLabels: [0, 1, 2],
+                },
+                multiclassBoundaryVersion: 1,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+        const initialMulticlassVersion = getFrameBuffer().multiclassBoundaryVersion;
+
+        listener({
+            data: makeSnapshotMessage(2, {
+                outputGrid: new Float32Array(0),
+                neuronGrids: new Float32Array(0),
+                neuronGridLayout: undefined,
+                multiclassClassGrid: undefined,
+                multiclassConfidenceGrid: undefined,
+                multiclassBoundaryLayout: undefined,
+                multiclassBoundaryVersion: undefined,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(getFrameBuffer().multiclassClassGrid).toEqual(new Uint8Array([0, 1, 2, 1]));
+        expect(getFrameBuffer().multiclassBoundaryVersion).toBe(initialMulticlassVersion);
+
+        listener({
+            data: makeSnapshotMessage(3, {
+                outputGrid: new Float32Array([0.2, 0.3, 0.4, 0.5]),
+                neuronGrids: undefined,
+                multiclassClassGrid: undefined,
+                multiclassConfidenceGrid: undefined,
+                multiclassBoundaryLayout: undefined,
+                multiclassBoundaryVersion: undefined,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.outputGrid).toEqual(new Float32Array([0.2, 0.3, 0.4, 0.5]));
+        expect(frame.multiclassClassGrid).toBeNull();
+        expect(frame.multiclassConfidenceGrid).toBeNull();
+        expect(frame.multiclassBoundaryLayout).toBeNull();
+        expect(frame.multiclassBoundaryVersion).toBe(initialMulticlassVersion + 1);
+    });
+
     it('clears cached confusion matrix only when fresh streamed metrics omit it', () => {
         const listener = getRegisteredStreamListener();
         const confusionMatrix = {

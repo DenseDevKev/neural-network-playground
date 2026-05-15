@@ -78,6 +78,7 @@ export { structuralEqual } from './structural.js';
 export type {
     VisualizationDemand,
     ActivationHistogramLayout,
+    MulticlassBoundaryLayout,
     ArenaSide,
     ArenaModelSummary,
     ArenaScalarSnapshot,

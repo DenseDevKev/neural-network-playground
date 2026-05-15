@@ -6,6 +6,7 @@ import {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
 } from '@nn-playground/shared';
+import type { WorkerSnapshotMessage } from '@nn-playground/shared';
 
 vi.mock('comlink', () => ({
     expose: vi.fn(),
@@ -18,6 +19,38 @@ function containsTypedArray(value: unknown): boolean {
     if (value instanceof ArrayBuffer || value instanceof SharedArrayBuffer) return true;
     if (value === null || typeof value !== 'object') return false;
     return Object.values(value).some((child) => containsTypedArray(child));
+}
+
+function createCapturingPort(): {
+    messages: unknown[];
+    dispatch: (data: unknown) => void;
+    port: MessagePort;
+} {
+    let listener: ((event: MessageEvent<unknown>) => void) | null = null;
+    const messages: unknown[] = [];
+    const port = {
+        addEventListener: vi.fn((_type: string, callback: (event: MessageEvent<unknown>) => void) => {
+            listener = callback;
+        }),
+        start: vi.fn(),
+        postMessage: vi.fn((message: unknown) => {
+            messages.push(message);
+        }),
+    } as unknown as MessagePort;
+
+    return {
+        messages,
+        dispatch(data: unknown): void {
+            if (!listener) throw new Error('stream listener was not registered');
+            listener({ data } as MessageEvent<unknown>);
+        },
+        port,
+    };
+}
+
+async function advanceOneWorkerTick(): Promise<void> {
+    await vi.advanceTimersByTimeAsync(20);
+    await Promise.resolve();
 }
 
 describe('training worker loss landscape probe RPC', () => {
@@ -406,6 +439,97 @@ describe('training worker multiclass target encoding', () => {
         expect(snapshot.outputGrid).toHaveLength(0);
         expect(snapshot.neuronGrids).toBeUndefined();
         expect(snapshot.testMetrics.confusionMatrix).toBeUndefined();
+    });
+
+    it('streams bounded multiclass boundary payloads only when decision-boundary demand is enabled and cadence is due', async () => {
+        vi.useFakeTimers();
+        const stream = createCapturingPort();
+        try {
+            workerApi.initialize(
+                multiclassNetwork,
+                multiclassTraining,
+                { ...DEFAULT_DATA, seed: 941, numSamples: 24 },
+                { ...DEFAULT_FEATURES },
+            );
+            workerApi.updateDemand({
+                ...DEFAULT_DEMAND,
+                needDecisionBoundary: false,
+                needNeuronGrids: false,
+                needConfusionMatrix: true,
+                gridInterval: 2,
+            });
+            workerApi.setStreamPort(stream.port);
+
+            stream.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            await advanceOneWorkerTick();
+            stream.dispatch({ type: 'stopTraining' });
+
+            const firstSnapshot = stream.messages.find((message): message is WorkerSnapshotMessage => (
+                typeof message === 'object' &&
+                message !== null &&
+                (message as { type?: unknown }).type === 'snapshot'
+            ));
+            expect(firstSnapshot).toBeDefined();
+            expect(firstSnapshot?.outputGrid).toBeUndefined();
+            expect(firstSnapshot?.neuronGrids).toBeUndefined();
+            expect(firstSnapshot?.multiclassClassGrid).toBeUndefined();
+            expect(firstSnapshot?.multiclassConfidenceGrid).toBeUndefined();
+
+            const demandOnStream = createCapturingPort();
+            workerApi.initialize(
+                multiclassNetwork,
+                multiclassTraining,
+                { ...DEFAULT_DATA, seed: 942, numSamples: 24 },
+                { ...DEFAULT_FEATURES },
+            );
+            workerApi.updateDemand({
+                ...DEFAULT_DEMAND,
+                needDecisionBoundary: true,
+                needNeuronGrids: true,
+                needConfusionMatrix: true,
+                gridInterval: 2,
+            });
+            workerApi.setStreamPort(demandOnStream.port);
+
+            demandOnStream.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            await advanceOneWorkerTick();
+            demandOnStream.dispatch({ type: 'frameAck' });
+            await advanceOneWorkerTick();
+            demandOnStream.dispatch({ type: 'stopTraining' });
+
+            const snapshots = demandOnStream.messages.filter((message): message is WorkerSnapshotMessage => (
+                typeof message === 'object' &&
+                message !== null &&
+                (message as { type?: unknown }).type === 'snapshot'
+            ));
+
+            expect(snapshots).toHaveLength(2);
+            expect(snapshots[0].outputGrid).toEqual(new Float32Array(0));
+            expect(snapshots[0].neuronGrids).toEqual(new Float32Array(0));
+            expect(snapshots[0].multiclassClassGrid).toBeInstanceOf(Uint8Array);
+            expect(snapshots[0].multiclassClassGrid).toHaveLength(
+                snapshots[0].scalars.gridSize * snapshots[0].scalars.gridSize,
+            );
+            expect(snapshots[0].multiclassConfidenceGrid).toBeInstanceOf(Float32Array);
+            expect(snapshots[0].multiclassConfidenceGrid).toHaveLength(
+                snapshots[0].scalars.gridSize * snapshots[0].scalars.gridSize,
+            );
+            expect(snapshots[0].multiclassBoundaryLayout).toEqual({
+                gridSize: snapshots[0].scalars.gridSize,
+                classCount: 3,
+                classLabels: [0, 1, 2],
+            });
+            expect(snapshots[0].multiclassBoundaryVersion).toBeGreaterThan(0);
+            expect(snapshots[1].multiclassClassGrid).toBeUndefined();
+            expect(snapshots[1].multiclassConfidenceGrid).toBeUndefined();
+            expect(snapshots[1].multiclassBoundaryLayout).toBeUndefined();
+            expect(snapshots[1].multiclassBoundaryVersion).toBeUndefined();
+            expect(snapshots[1].outputGrid).toBeUndefined();
+            expect(snapshots[1].neuronGrids).toBeUndefined();
+        } finally {
+            stream.dispatch({ type: 'stopTraining' });
+            vi.useRealTimers();
+        }
     });
 
     it('keeps live arena runtime guarded to scalar models', () => {

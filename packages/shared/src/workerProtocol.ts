@@ -88,6 +88,10 @@ function isFloat32Array(value: unknown): value is Float32Array {
     return value instanceof Float32Array;
 }
 
+function isUint8Array(value: unknown): value is Uint8Array {
+    return value instanceof Uint8Array;
+}
+
 function isActivationHistogramLayer(value: unknown): value is ActivationHistogramLayer {
     if (!isRecord(value)) return false;
     return (
@@ -130,6 +134,56 @@ function hasMalformedActivationHistogramPayload(m: Record<string, unknown>): boo
     return (
         m['activationHistogramBins'].length < expectedBins
     );
+}
+
+export interface MulticlassBoundaryLayout {
+    gridSize: number;
+    classCount: 3;
+    classLabels: readonly [0, 1, 2];
+}
+
+function isMulticlassBoundaryLayout(
+    value: unknown,
+    expectedGridSize: number,
+): value is MulticlassBoundaryLayout {
+    if (!isRecord(value)) return false;
+    if (value['gridSize'] !== expectedGridSize) return false;
+    if (value['classCount'] !== 3) return false;
+    const labels = value['classLabels'];
+    return (
+        Array.isArray(labels) &&
+        labels.length === 3 &&
+        labels[0] === 0 &&
+        labels[1] === 1 &&
+        labels[2] === 2
+    );
+}
+
+function hasMalformedMulticlassBoundaryPayload(m: Record<string, unknown>): boolean {
+    const hasClassGrid = m['multiclassClassGrid'] !== undefined;
+    const hasConfidenceGrid = m['multiclassConfidenceGrid'] !== undefined;
+    const hasLayout = m['multiclassBoundaryLayout'] !== undefined;
+    const hasVersion = m['multiclassBoundaryVersion'] !== undefined;
+    if (!hasClassGrid && !hasConfidenceGrid && !hasLayout && !hasVersion) return false;
+    if (!isUint8Array(m['multiclassClassGrid'])) return true;
+    if (!isFloat32Array(m['multiclassConfidenceGrid'])) return true;
+    if (!isNonNegativeInteger(m['multiclassBoundaryVersion'])) return true;
+    if (!isRecord(m['scalars']) || !isPositiveInteger(m['scalars']['gridSize'])) return true;
+    const gridSize = m['scalars']['gridSize'];
+    if (!isMulticlassBoundaryLayout(m['multiclassBoundaryLayout'], gridSize)) return true;
+    const expectedLength = gridSize * gridSize;
+    if (
+        m['multiclassClassGrid'].length !== expectedLength ||
+        m['multiclassConfidenceGrid'].length !== expectedLength
+    ) {
+        return true;
+    }
+    for (let i = 0; i < expectedLength; i++) {
+        if (m['multiclassClassGrid'][i] > 2) return true;
+        const confidence = m['multiclassConfidenceGrid'][i];
+        if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) return true;
+    }
+    return false;
 }
 
 function isOptionalFiniteNumber(value: unknown): value is number | undefined {
@@ -288,6 +342,10 @@ export interface WorkerSnapshotMessage {
     activationHistogramBins?: Float32Array;
     activationHistogramLayout?: ActivationHistogramLayout;
     activationHistogramVersion?: number;
+    multiclassClassGrid?: Uint8Array;
+    multiclassConfidenceGrid?: Float32Array;
+    multiclassBoundaryLayout?: MulticlassBoundaryLayout;
+    multiclassBoundaryVersion?: number;
 
     historyPoint: HistoryPoint;
     confusionMatrix?: ConfusionMatrixData;
@@ -466,6 +524,7 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 m['scalars'] !== null &&
                 typeof m['scalars'] === 'object' &&
                 !hasMalformedActivationHistogramPayload(m) &&
+                !hasMalformedMulticlassBoundaryPayload(m) &&
                 !hasMalformedCheckpointTimelinePayload(m)
             );
         case 'arenaSnapshot':

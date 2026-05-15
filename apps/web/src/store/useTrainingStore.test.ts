@@ -36,6 +36,7 @@ describe('useTrainingStore streamed snapshots', () => {
             configError: null,
             configErrorSource: null,
             configSyncNonce: 0,
+            multiclassBoundaryVersion: 0,
         });
     });
 
@@ -60,6 +61,27 @@ describe('useTrainingStore streamed snapshots', () => {
         expect(state.testMetricsStale).toBe(true);
         expect(state.workerError).toBeNull();
         expect(readHistory().count).toBe(1);
+    });
+
+    it('publishes the multiclass boundary frame version from streamed frame versions', () => {
+        useTrainingStore.getState().applyStreamedSnapshot({
+            snapshot: makeSnapshot(4),
+            frameVersion: 9,
+            frameVersions: {
+                frameVersion: 9,
+                outputGridVersion: 1,
+                neuronGridsVersion: 2,
+                paramsVersion: 3,
+                layerStatsVersion: 4,
+                confusionMatrixVersion: 5,
+                activationHistogramsVersion: 6,
+                multiclassBoundaryVersion: 7,
+                arenaSummariesVersion: 8,
+            },
+            testMetricsStale: false,
+        });
+
+        expect(useTrainingStore.getState().multiclassBoundaryVersion).toBe(7);
     });
 
     it('tracks preset config transactions and retries with preset loading state', () => {

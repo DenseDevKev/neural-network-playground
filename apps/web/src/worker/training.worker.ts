@@ -139,9 +139,15 @@ interface WorkerState {
     confusionMatrixVersion: number;
     /** Monotonic identity for activation histogram payload freshness. */
     activationHistogramVersion: number;
+    /** Monotonic identity for bounded multiclass boundary payload freshness. */
+    multiclassBoundaryVersion: number;
     /** Pre-allocated buffers for grid predictions. */
     outputGridBuffer: Float32Array | null;
     neuronGridsBuffer: Float32Array | null;
+    multiclassClassGridBuffer: Uint8Array | null;
+    multiclassConfidenceGridBuffer: Float32Array | null;
+    /** True only for the snapshot that freshly recomputed multiclass boundary data. */
+    multiclassBoundaryFresh: boolean;
     /** True if the last computed grid is still fresh for this network state
      *  (i.e. the worker has trained since the grid was last recomputed). */
     gridStale: boolean;
@@ -531,8 +537,12 @@ const state: WorkerState = {
     stopConditionState: createInitialStopConditionState(),
     confusionMatrixVersion: 0,
     activationHistogramVersion: 0,
+    multiclassBoundaryVersion: 0,
     outputGridBuffer: null,
     neuronGridsBuffer: null,
+    multiclassClassGridBuffer: null,
+    multiclassConfidenceGridBuffer: null,
+    multiclassBoundaryFresh: false,
     gridStale: true,
     sharedViews: null,
     gpuPredictor: null,
@@ -806,6 +816,13 @@ function buildDataAndNetwork(): void {
 
     // Allocate buffers
     state.outputGridBuffer = new Float32Array(GRID_SIZE * GRID_SIZE);
+    state.multiclassClassGridBuffer = config.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE
+        ? new Uint8Array(GRID_SIZE * GRID_SIZE)
+        : null;
+    state.multiclassConfidenceGridBuffer = config.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE
+        ? new Float32Array(GRID_SIZE * GRID_SIZE)
+        : null;
+    state.multiclassBoundaryFresh = false;
     const totalNeurons = state.network.getTotalNeuronCount();
     state.neuronGridsBuffer = new Float32Array(totalNeurons * GRID_SIZE * GRID_SIZE);
     state.epoch = 0;
@@ -1119,11 +1136,20 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
     // was built, and when the cadence counter permits it.
     let outputGrid: number[] | Float32Array;
     let neuronGrids: number[][] | Float32Array | undefined;
+    state.multiclassBoundaryFresh = false;
 
     const supportsScalarGrid = state.networkConfig?.outputSize === 1;
+    const supportsMulticlassBoundary =
+        state.networkConfig?.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE &&
+        state.networkConfig.outputActivation === 'softmax';
     const wantGrid = supportsScalarGrid && (demand.needDecisionBoundary || demand.needNeuronGrids);
+    const wantMulticlassBoundary = supportsMulticlassBoundary && demand.needDecisionBoundary;
     const shouldRebuildGrid =
         wantGrid &&
+        state.gridStale &&
+        state.snapshotsSinceLastGrid >= demand.gridInterval;
+    const shouldRebuildMulticlassBoundary =
+        wantMulticlassBoundary &&
         state.gridStale &&
         state.snapshotsSinceLastGrid >= demand.gridInterval;
 
@@ -1161,11 +1187,33 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         outputGrid = state.outputGridBuffer;
         state.snapshotsSinceLastGrid = 0;
         state.gridStale = false;
+    } else if (
+        shouldRebuildMulticlassBoundary &&
+        state.multiclassClassGridBuffer &&
+        state.multiclassConfidenceGridBuffer
+    ) {
+        workerPerfMark('perf:worker:predictMulticlassBoundary:start');
+        state.network.predictMulticlassBoundaryInto(
+            state.gridInputs,
+            state.multiclassClassGridBuffer,
+            state.multiclassConfidenceGridBuffer,
+        );
+        workerPerfMeasure(
+            'perf:worker:predictMulticlassBoundary',
+            'perf:worker:predictMulticlassBoundary:start',
+        );
+        outputGrid = [];
+        state.snapshotsSinceLastGrid = 0;
+        state.gridStale = false;
+        state.multiclassBoundaryFresh = true;
     } else if (wantGrid && state.outputGridBuffer) {
         // Reuse the last computed grid(s) without recomputing. The main
         // thread retains the previous Float32Arrays in its frame buffer;
         // emitting undefined here causes packSnapshotMessage to skip the
         // buffer transfer entirely.
+        outputGrid = [];
+        state.snapshotsSinceLastGrid++;
+    } else if (wantMulticlassBoundary) {
         outputGrid = [];
         state.snapshotsSinceLastGrid++;
     } else {
@@ -1240,6 +1288,10 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     let activationHistogramBins: Float32Array | undefined;
     let activationHistogramLayout: WorkerSnapshotMessage['activationHistogramLayout'] | undefined;
     let activationHistogramVersion: number | undefined;
+    let multiclassClassGrid: Uint8Array | undefined;
+    let multiclassConfidenceGrid: Float32Array | undefined;
+    let multiclassBoundaryLayout: WorkerSnapshotMessage['multiclassBoundaryLayout'] | undefined;
+    let multiclassBoundaryVersion: number | undefined;
 
     if (sharedViews) {
         let flags = 0;
@@ -1323,7 +1375,32 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         transferables.push(activationHistogramBins.buffer);
     }
 
-    if (state.networkConfig?.outputSize !== 1) {
+    if (
+        state.multiclassBoundaryFresh &&
+        state.multiclassClassGridBuffer &&
+        state.multiclassConfidenceGridBuffer
+    ) {
+        multiclassClassGrid = state.multiclassClassGridBuffer;
+        multiclassConfidenceGrid = state.multiclassConfidenceGridBuffer;
+        state.multiclassClassGridBuffer = null;
+        state.multiclassConfidenceGridBuffer = null;
+        state.multiclassBoundaryVersion++;
+        multiclassBoundaryVersion = state.multiclassBoundaryVersion;
+        multiclassBoundaryLayout = {
+            gridSize,
+            classCount: WORKER_MULTICLASS_OUTPUT_SIZE,
+            classLabels: [0, 1, 2] as const,
+        };
+        transferables.push(multiclassClassGrid.buffer, multiclassConfidenceGrid.buffer);
+    }
+    if (state.multiclassClassGridBuffer === null && state.networkConfig?.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE) {
+        state.multiclassClassGridBuffer = new Uint8Array(GRID_SIZE * GRID_SIZE);
+    }
+    if (state.multiclassConfidenceGridBuffer === null && state.networkConfig?.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE) {
+        state.multiclassConfidenceGridBuffer = new Float32Array(GRID_SIZE * GRID_SIZE);
+    }
+
+    if (multiclassClassGrid && multiclassConfidenceGrid) {
         outputGrid = new Float32Array(0);
         neuronGrids = new Float32Array(0);
         neuronGridLayout = undefined;
@@ -1363,6 +1440,10 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         activationHistogramBins,
         activationHistogramLayout,
         activationHistogramVersion,
+        multiclassClassGrid,
+        multiclassConfidenceGrid,
+        multiclassBoundaryLayout,
+        multiclassBoundaryVersion,
         historyPoint,
         confusionMatrix: state.testMetricsStale ? undefined : snap.testMetrics?.confusionMatrix,
         confusionMatrixVersion: state.confusionMatrixVersion,

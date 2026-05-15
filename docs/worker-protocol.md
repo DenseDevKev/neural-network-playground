@@ -90,6 +90,10 @@ posting while awaiting a `frameAck`.
 | `activationHistogramBins` | `Float32Array?` | Bounded activation histogram counts, flattened by layer (only when `needActivationHistograms` and cadence permits) |
 | `activationHistogramLayout` | `{ binCount, layers }?` | Per-layer histogram ranges and summary counts |
 | `activationHistogramVersion` | `number?` | Worker-side freshness counter for histogram payloads |
+| `multiclassClassGrid` | `Uint8Array?` | Bounded class-index decision-boundary grid for the approved 3-class worker path (only when `needDecisionBoundary` and cadence permits) |
+| `multiclassConfidenceGrid` | `Float32Array?` | Winning-class confidence grid paired with `multiclassClassGrid`; values are finite and within `[0, 1]` |
+| `multiclassBoundaryLayout` | `{ gridSize, classCount: 3, classLabels: [0, 1, 2] }?` | Describes the bounded multiclass boundary payload |
+| `multiclassBoundaryVersion` | `number?` | Worker-side freshness counter for multiclass boundary payloads |
 | `historyPoint` | `HistoryPoint` | One point appended to the loss-history chart |
 | `confusionMatrix` | `ConfusionMatrixData?` | Only when `needConfusionMatrix` |
 | `checkpointTimeline` | `CheckpointTimeline?` | Lightweight runtime-only checkpoint metadata; heavy checkpoint payloads remain in the worker |
@@ -100,6 +104,18 @@ When SharedArrayBuffer transport is available, the worker first posts a
 Subsequent snapshots may omit `outputGrid` and `neuronGrids`, set `sharedSeq`,
 and let `workerBridge.ts` copy the latest consistent seqlock-protected data
 into the frame buffer.
+
+Multiclass boundary payloads are currently inline transferables only. They reuse
+the existing `needDecisionBoundary` and `gridInterval` demand/cadence controls
+and do not add SharedArrayBuffer flags. If any multiclass boundary field is
+present, all four fields must be present and valid: the class grid is a
+`Uint8Array` of length `gridSize * gridSize` with values `0..2`, the confidence
+grid is a `Float32Array` of the same length with values in `[0, 1]`, the layout
+must be exactly the approved 3-class labels `[0, 1, 2]`, and the version must be
+a non-negative integer. Cadence-reuse snapshots omit these fields and retain the
+main-thread frame-buffer cache. Fresh multiclass payloads still send explicit
+empty scalar `outputGrid` and `neuronGrids` arrays so stale binary/scalar grids
+are cleared.
 
 ### `arenaSnapshot`
 
@@ -269,6 +285,7 @@ counter:
 | `layerStatsVersion` | `layerStats` is written |
 | `confusionMatrixVersion` | `confusionMatrix` is written |
 | `activationHistogramsVersion` | `activationHistogramBins` or `activationHistogramLayout` is written |
+| `multiclassBoundaryVersion` | `multiclassClassGrid`, `multiclassConfidenceGrid`, or `multiclassBoundaryLayout` is written or cleared |
 
 React components subscribe to the narrow version counter for the domain they
 read, then imperatively read the current frame buffer during render/memo/paint.

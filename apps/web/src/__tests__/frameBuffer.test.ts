@@ -26,6 +26,7 @@ describe('frameBuffer', () => {
             expect(typeof versions.layerStatsVersion).toBe('number');
             expect(typeof versions.confusionMatrixVersion).toBe('number');
             expect(typeof versions.activationHistogramsVersion).toBe('number');
+            expect(typeof versions.multiclassBoundaryVersion).toBe('number');
             expect(typeof versions.arenaSummariesVersion).toBe('number');
         });
 
@@ -121,6 +122,46 @@ describe('frameBuffer', () => {
             expect(getFrameBuffer().activationHistogramLayout).toBe(activationHistogramLayout);
         });
 
+        it('multiclass boundary patch should bump only multiclass boundary and broad frame versions', () => {
+            const initialVersions = getFrameVersions();
+            const multiclassClassGrid = new Uint8Array([0, 1, 2, 1]);
+            const multiclassConfidenceGrid = new Float32Array([0.7, 0.6, 0.9, 0.5]);
+            const multiclassBoundaryLayout = {
+                gridSize: 2,
+                classCount: 3 as const,
+                classLabels: [0, 1, 2] as const,
+            };
+
+            const newVersion = updateFrameBuffer({
+                multiclassClassGrid,
+                multiclassConfidenceGrid,
+                multiclassBoundaryLayout,
+            });
+
+            expect(newVersion).toBe(initialVersions.frameVersion + 1);
+            expect(getFrameVersions()).toEqual({
+                ...initialVersions,
+                frameVersion: initialVersions.frameVersion + 1,
+                multiclassBoundaryVersion: initialVersions.multiclassBoundaryVersion + 1,
+            });
+            expect(getFrameBuffer().multiclassClassGrid).toBe(multiclassClassGrid);
+            expect(getFrameBuffer().multiclassConfidenceGrid).toBe(multiclassConfidenceGrid);
+            expect(getFrameBuffer().multiclassBoundaryLayout).toBe(multiclassBoundaryLayout);
+        });
+
+        it('clearing an already-empty multiclass boundary should not bump versions', () => {
+            const initialVersions = getFrameVersions();
+
+            const newVersion = updateFrameBuffer({
+                multiclassClassGrid: null,
+                multiclassConfidenceGrid: null,
+                multiclassBoundaryLayout: null,
+            });
+
+            expect(newVersion).toBe(initialVersions.frameVersion);
+            expect(getFrameVersions()).toEqual(initialVersions);
+        });
+
         it('arena summary patch should bump only arena and broad frame versions', () => {
             const initialVersions = getFrameVersions();
             const arenaSummaries = [
@@ -198,6 +239,7 @@ describe('frameBuffer', () => {
                 layerStatsVersion: initialVersions.layerStatsVersion + 1,
                 confusionMatrixVersion: initialVersions.confusionMatrixVersion + 1,
                 activationHistogramsVersion: initialVersions.activationHistogramsVersion + 1,
+                multiclassBoundaryVersion: initialVersions.multiclassBoundaryVersion + 1,
                 arenaSummariesVersion: initialVersions.arenaSummariesVersion + 1,
             });
         });

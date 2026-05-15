@@ -339,6 +339,126 @@ describe('isWorkerToMainMessage', () => {
         })).toBe(false);
     });
 
+    it('accepts bounded multiclass boundary payloads on snapshot messages', () => {
+        expect(isWorkerToMainMessage({
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 0,
+                epoch: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+                gridSize: 2,
+            },
+            historyPoint: {
+                step: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+            },
+            outputGrid: new Float32Array(0),
+            neuronGrids: new Float32Array(0),
+            multiclassClassGrid: new Uint8Array([0, 1, 2, 1]),
+            multiclassConfidenceGrid: new Float32Array([0.7, 0.6, 0.9, 0.5]),
+            multiclassBoundaryLayout: {
+                gridSize: 2,
+                classCount: 3,
+                classLabels: [0, 1, 2],
+            },
+            multiclassBoundaryVersion: 1,
+        })).toBe(true);
+    });
+
+    it('rejects malformed multiclass boundary payloads', () => {
+        const validSnapshot = {
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 0,
+                epoch: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+                gridSize: 2,
+            },
+            historyPoint: {
+                step: 0,
+                trainLoss: 0.5,
+                testLoss: 0.6,
+            },
+            multiclassClassGrid: new Uint8Array([0, 1, 2, 1]),
+            multiclassConfidenceGrid: new Float32Array([0.7, 0.6, 0.9, 0.5]),
+            multiclassBoundaryLayout: {
+                gridSize: 2,
+                classCount: 3,
+                classLabels: [0, 1, 2],
+            },
+            multiclassBoundaryVersion: 1,
+        };
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfidenceGrid: undefined,
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassClassGrid: new Float32Array([0, 1, 2, 1]),
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassClassGrid: new Uint8Array([0, 1, 2]),
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassClassGrid: new Uint8Array([0, 1, 3, 1]),
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfidenceGrid: new Float32Array([0.7, Number.NaN, 0.9, 0.5]),
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassConfidenceGrid: new Float32Array([0.7, 1.1, 0.9, 0.5]),
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassBoundaryLayout: {
+                gridSize: 3,
+                classCount: 3,
+                classLabels: [0, 1, 2],
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassBoundaryLayout: {
+                gridSize: 2,
+                classCount: 4,
+                classLabels: [0, 1, 2],
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassBoundaryLayout: {
+                gridSize: 2,
+                classCount: 3,
+                classLabels: [0, 2, 1],
+            },
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...validSnapshot,
+            multiclassBoundaryVersion: -1,
+        })).toBe(false);
+    });
+
     it('accepts status messages without a pause reason for backward compatibility', () => {
         expect(isWorkerToMainMessage({
             type: 'status',

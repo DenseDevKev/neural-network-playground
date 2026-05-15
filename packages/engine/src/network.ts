@@ -1536,6 +1536,37 @@ export class Network {
         }
     }
 
+    predictMulticlassBoundaryInto(
+        gridInputs: number[][],
+        classTarget: Uint8Array,
+        confidenceTarget: Float32Array | Float64Array,
+    ): void {
+        if (this.config.outputSize !== 3 || this.config.outputActivation !== 'softmax') {
+            throw new RangeError('multiclass boundary prediction requires a 3-output softmax network');
+        }
+        if (classTarget.length !== gridInputs.length || confidenceTarget.length !== gridInputs.length) {
+            throw new RangeError('multiclass boundary targets must match the grid input length');
+        }
+
+        for (let i = 0, len = gridInputs.length; i < len; i++) {
+            const out = this.forwardInto(gridInputs[i]);
+            let bestClass = 0;
+            let bestConfidence = out[0];
+            for (let classIndex = 1; classIndex < out.length; classIndex++) {
+                const confidence = out[classIndex];
+                if (confidence > bestConfidence) {
+                    bestClass = classIndex;
+                    bestConfidence = confidence;
+                }
+            }
+            if (!Number.isFinite(bestConfidence) || bestConfidence < 0 || bestConfidence > 1) {
+                throw new RangeError('multiclass boundary confidence must be finite and within [0, 1]');
+            }
+            classTarget[i] = bestClass;
+            confidenceTarget[i] = bestConfidence;
+        }
+    }
+
     predictGridWithNeuronsInto(
         gridInputs: number[][],
         outputTarget: Float32Array | Float64Array,

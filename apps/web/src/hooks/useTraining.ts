@@ -16,6 +16,7 @@ import {
     terminateWorker,
 } from '../worker/workerBridge.ts';
 import {
+    getFrameBuffer,
     getFrameVersions,
     updateFrameBuffer,
     type FrameVersions,
@@ -113,6 +114,18 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
         layerStats: snapshot.layerStats ?? null,
         confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
     };
+    const currentFrame = getFrameBuffer();
+    if (
+        (
+            currentFrame.multiclassClassGrid !== null ||
+            currentFrame.multiclassConfidenceGrid !== null ||
+            currentFrame.multiclassBoundaryLayout !== null
+        )
+    ) {
+        framePatch.multiclassClassGrid = null;
+        framePatch.multiclassConfidenceGrid = null;
+        framePatch.multiclassBoundaryLayout = null;
+    }
 
     if (snapshot.activationHistograms) {
         framePatch.activationHistogramBins = snapshot.activationHistograms.bins;

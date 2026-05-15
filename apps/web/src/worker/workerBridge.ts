@@ -193,6 +193,7 @@ function buildSnapshotFramePatch(
     sharedNeuronGridLayout: { count: number; gridSize: number } | null,
 ): FrameBufferPatch {
     const patch: FrameBufferPatch = {};
+    const hasMulticlassBoundaryPayload = msg.multiclassClassGrid !== undefined;
 
     // AS-3 fast path: grid payloads were published through SharedArrayBuffers;
     // read them via the seqlock into our stable, non-shared read buffers and
@@ -216,6 +217,9 @@ function buildSnapshotFramePatch(
             if ((result.flags & FLAG_OUTPUT_GRID) !== 0) {
                 patch.outputGrid = sharedOutputReadBuf;
                 patch.gridSize = msg.scalars.gridSize;
+                patch.multiclassClassGrid = null;
+                patch.multiclassConfidenceGrid = null;
+                patch.multiclassBoundaryLayout = null;
             }
             if ((result.flags & FLAG_NEURON_GRIDS) !== 0) {
                 patch.neuronGrids = sharedNeuronReadBuf;
@@ -231,6 +235,11 @@ function buildSnapshotFramePatch(
         if (msg.outputGrid !== undefined) {
             patch.outputGrid = msg.outputGrid.length > 0 ? msg.outputGrid : null;
             patch.gridSize = msg.outputGrid.length > 0 ? msg.scalars.gridSize : 0;
+            if (!hasMulticlassBoundaryPayload && msg.outputGrid.length > 0) {
+                patch.multiclassClassGrid = null;
+                patch.multiclassConfidenceGrid = null;
+                patch.multiclassBoundaryLayout = null;
+            }
         }
         if (msg.neuronGrids !== undefined) {
             patch.neuronGrids = msg.neuronGrids.length > 0 ? msg.neuronGrids : null;
@@ -238,6 +247,22 @@ function buildSnapshotFramePatch(
                 ? msg.neuronGridLayout ?? null
                 : null;
         }
+    }
+
+    if (hasMulticlassBoundaryPayload) {
+        patch.outputGrid = null;
+        patch.neuronGrids = null;
+        patch.neuronGridLayout = null;
+    }
+    if (msg.multiclassClassGrid !== undefined) {
+        patch.multiclassClassGrid = msg.multiclassClassGrid;
+    }
+    if (msg.multiclassConfidenceGrid !== undefined) {
+        patch.multiclassConfidenceGrid = msg.multiclassConfidenceGrid;
+    }
+    if (msg.multiclassBoundaryLayout !== undefined) {
+        patch.multiclassBoundaryLayout = msg.multiclassBoundaryLayout;
+        patch.gridSize = msg.multiclassBoundaryLayout.gridSize;
     }
 
     if (msg.weights !== undefined) patch.weights = msg.weights;

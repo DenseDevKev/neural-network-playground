@@ -5,7 +5,11 @@
 // in useTrainingStore as a render trigger, then read from here imperatively.
 
 import type { LayerStats, ConfusionMatrixData } from '@nn-playground/engine';
-import type { ActivationHistogramLayout, ArenaModelSummary } from '@nn-playground/shared';
+import type {
+    ActivationHistogramLayout,
+    ArenaModelSummary,
+    MulticlassBoundaryLayout,
+} from '@nn-playground/shared';
 
 export interface FrameVersions {
     frameVersion: number;
@@ -15,6 +19,7 @@ export interface FrameVersions {
     layerStatsVersion: number;
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
+    multiclassBoundaryVersion: number;
     arenaSummariesVersion: number;
 }
 
@@ -39,6 +44,11 @@ export interface FrameBuffer {
     activationHistogramBins: Float32Array | null;
     activationHistogramLayout: ActivationHistogramLayout | null;
 
+    // Bounded multiclass decision-boundary payload (class index + confidence)
+    multiclassClassGrid: Uint8Array | null;
+    multiclassConfidenceGrid: Float32Array | null;
+    multiclassBoundaryLayout: MulticlassBoundaryLayout | null;
+
     // Confusion matrix
     confusionMatrix: ConfusionMatrixData | null;
 
@@ -53,6 +63,7 @@ export interface FrameBuffer {
     layerStatsVersion: number;
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
+    multiclassBoundaryVersion: number;
     arenaSummariesVersion: number;
 }
 
@@ -67,6 +78,9 @@ let _buffer: FrameBuffer = {
     layerStats: null,
     activationHistogramBins: null,
     activationHistogramLayout: null,
+    multiclassClassGrid: null,
+    multiclassConfidenceGrid: null,
+    multiclassBoundaryLayout: null,
     confusionMatrix: null,
     arenaSummaries: null,
     version: 0,
@@ -76,6 +90,7 @@ let _buffer: FrameBuffer = {
     layerStatsVersion: 0,
     confusionMatrixVersion: 0,
     activationHistogramsVersion: 0,
+    multiclassBoundaryVersion: 0,
     arenaSummariesVersion: 0,
 };
 
@@ -99,6 +114,7 @@ export function getFrameVersions(): FrameVersions {
         layerStatsVersion: _buffer.layerStatsVersion,
         confusionMatrixVersion: _buffer.confusionMatrixVersion,
         activationHistogramsVersion: _buffer.activationHistogramsVersion,
+        multiclassBoundaryVersion: _buffer.multiclassBoundaryVersion,
         arenaSummariesVersion: _buffer.arenaSummariesVersion,
     };
 }
@@ -112,6 +128,8 @@ type FrameBufferPatch = Partial<Omit<
     | 'layerStatsVersion'
     | 'confusionMatrixVersion'
     | 'activationHistogramsVersion'
+    | 'multiclassBoundaryVersion'
+    | 'arenaSummariesVersion'
 >>;
 
 function hasOwn(patch: FrameBufferPatch, key: keyof FrameBufferPatch): boolean {
@@ -130,6 +148,19 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
     const activationHistogramsChanged =
         hasOwn(patch, 'activationHistogramBins') ||
         hasOwn(patch, 'activationHistogramLayout');
+    const multiclassBoundaryChanged =
+        (
+            hasOwn(patch, 'multiclassClassGrid') &&
+            patch.multiclassClassGrid !== _buffer.multiclassClassGrid
+        ) ||
+        (
+            hasOwn(patch, 'multiclassConfidenceGrid') &&
+            patch.multiclassConfidenceGrid !== _buffer.multiclassConfidenceGrid
+        ) ||
+        (
+            hasOwn(patch, 'multiclassBoundaryLayout') &&
+            patch.multiclassBoundaryLayout !== _buffer.multiclassBoundaryLayout
+        );
     const arenaSummariesChanged = hasOwn(patch, 'arenaSummaries');
     const anyDomainChanged =
         outputGridChanged ||
@@ -138,6 +169,7 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         layerStatsChanged ||
         confusionMatrixChanged ||
         activationHistogramsChanged ||
+        multiclassBoundaryChanged ||
         arenaSummariesChanged;
 
     _buffer = {
@@ -151,6 +183,8 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         confusionMatrixVersion: _buffer.confusionMatrixVersion + (confusionMatrixChanged ? 1 : 0),
         activationHistogramsVersion:
             _buffer.activationHistogramsVersion + (activationHistogramsChanged ? 1 : 0),
+        multiclassBoundaryVersion:
+            _buffer.multiclassBoundaryVersion + (multiclassBoundaryChanged ? 1 : 0),
         arenaSummariesVersion: _buffer.arenaSummariesVersion + (arenaSummariesChanged ? 1 : 0),
     };
     return _buffer.version;
@@ -169,6 +203,9 @@ export function resetFrameBuffer(): void {
         layerStats: null,
         activationHistogramBins: null,
         activationHistogramLayout: null,
+        multiclassClassGrid: null,
+        multiclassConfidenceGrid: null,
+        multiclassBoundaryLayout: null,
         confusionMatrix: null,
         arenaSummaries: null,
         version: _buffer.version + 1,
@@ -178,6 +215,7 @@ export function resetFrameBuffer(): void {
         layerStatsVersion: _buffer.layerStatsVersion + 1,
         confusionMatrixVersion: _buffer.confusionMatrixVersion + 1,
         activationHistogramsVersion: _buffer.activationHistogramsVersion + 1,
+        multiclassBoundaryVersion: _buffer.multiclassBoundaryVersion + 1,
         arenaSummariesVersion: _buffer.arenaSummariesVersion + 1,
     };
 }

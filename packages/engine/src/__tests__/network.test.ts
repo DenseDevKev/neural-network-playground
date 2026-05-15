@@ -730,6 +730,63 @@ describe('predictGridInto', () => {
     });
 });
 
+describe('predictMulticlassBoundaryInto', () => {
+    it('writes deterministic class indexes and winning confidences for softmax outputs', () => {
+        const net = new Network(makeSoftmaxConfig({ hiddenLayers: [3], seed: 12 }));
+        const gridInputs = [
+            [-1, -1],
+            [0, 0],
+            [1, 1],
+            [1, -1],
+        ];
+        const classTarget = new Uint8Array(gridInputs.length);
+        const confidenceTarget = new Float32Array(gridInputs.length);
+
+        net.predictMulticlassBoundaryInto(gridInputs, classTarget, confidenceTarget);
+
+        for (let i = 0; i < gridInputs.length; i++) {
+            const output = net.forward(gridInputs[i]);
+            let expectedClass = 0;
+            for (let classIndex = 1; classIndex < output.length; classIndex++) {
+                if (output[classIndex] > output[expectedClass]) {
+                    expectedClass = classIndex;
+                }
+            }
+
+            expect(classTarget[i]).toBe(expectedClass);
+            expect(classTarget[i]).toBeGreaterThanOrEqual(0);
+            expect(classTarget[i]).toBeLessThan(3);
+            expect(confidenceTarget[i]).toBeCloseTo(output[expectedClass], 6);
+            expect(confidenceTarget[i]).toBeGreaterThanOrEqual(0);
+            expect(confidenceTarget[i]).toBeLessThanOrEqual(1);
+        }
+    });
+
+    it('rejects scalar networks and mismatched target lengths', () => {
+        const scalar = new Network(makeConfig());
+        const multiclass = new Network(makeSoftmaxConfig());
+        const gridInputs = [[0, 0], [1, 1]];
+
+        expect(() => scalar.predictMulticlassBoundaryInto(
+            gridInputs,
+            new Uint8Array(2),
+            new Float32Array(2),
+        )).toThrow(RangeError);
+
+        expect(() => multiclass.predictMulticlassBoundaryInto(
+            gridInputs,
+            new Uint8Array(1),
+            new Float32Array(2),
+        )).toThrow(RangeError);
+
+        expect(() => multiclass.predictMulticlassBoundaryInto(
+            gridInputs,
+            new Uint8Array(2),
+            new Float32Array(1),
+        )).toThrow(RangeError);
+    });
+});
+
 describe('predictGridWithNeuronsInto', () => {
     it('produces results consistent with predictGridWithNeurons', () => {
         const net = new Network(makeConfig({ hiddenLayers: [3, 2] }));
