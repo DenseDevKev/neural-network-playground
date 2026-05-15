@@ -1594,3 +1594,40 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.3771 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The renderer iterates only bounded frame-buffer grids already produced by the worker and does not introduce new runtime data collection or hot-path training work.
+
+## Wave 7 Multiclass Confusion Readout
+
+Date: 2026-05-15
+
+Scope: UI-only derived 3-class confusion readout using existing frame-buffer weights/biases and test points. The initial readout implementation imported `Network` into `ConfusionMatrix`, which made the manual `engine` chunk grow from the prior 5.74 kB range to 38.72 kB. The follow-up lightweight readout path computes a transient local forward pass from frame-buffer parameters instead, keeping the engine chunk small while preserving the no-worker-metric scope. This slice does not change worker protocol, frame-buffer semantics, URL/config format, public config shape, persistence/run-history schema, dependencies, deployment, engine math, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `624eaa6`. Relevant production output:
+
+- `dist/assets/training.worker-CFzxpQkv.js`: 93.78 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-C35zPxVS.js`: 5.79 kB, gzip 2.09 kB
+- `dist/assets/CodeExportPanel-gFVJSU72.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-DEzbHzkU.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-Bg6IE3HT.js`: 18.06 kB, gzip 5.46 kB
+- `dist/assets/index-CQmF4GHR.js`: 382.83 kB, gzip 115.18 kB
+
+Compared with the multiclass decision-boundary renderer build, the worker bundle stayed at 93.78 kB, CSS increased from 67.38 kB to 67.62 kB (about 0.36%), the engine chunk changed from 5.74 kB to 5.79 kB (about 0.9%), and the main app chunk changed from 376.41 kB to 382.83 kB (about 1.7%). These changes remain below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1171.1160 ms total for 100 iterations
+- `predictGridInto`: 1154.5979 ms total for 100 iterations
+- `predictGridWithNeurons`: 737.1576 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 632.1893 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.4114 ms
+- Average `applyGradients` time (SGD): 1.5683 ms
+
+These values are slower than the immediately prior boundary-renderer perf sample but remain within the established noisy local benchmark range and below the roadmap warning thresholds. The readout runs only when the paused hidden 3-class confusion panel is rendered, uses bounded test points plus existing frame-buffer params, and does not touch engine training throughput, worker cadence, or large visualization transport.
