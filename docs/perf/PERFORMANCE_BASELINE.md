@@ -838,3 +838,39 @@ Observed benchmark output:
 - Average `applyGradients` time (SGD): 1.4898 ms
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The new contract values are not exposed through current worker target encoding or UI controls, so no live runtime cadence impact is expected until a separately approved worker/UI slice wires multiclass configs into the running app.
+
+## Wave 7 Worker Multiclass Target Guards
+
+Date: 2026-05-15
+
+Scope: worker-only Multiclass Classification Mode target encoding and compatibility guards. This slice lets direct worker calls use the exact bounded runtime shape `classification + outputSize 3 + softmax + categoricalCrossEntropy`, encodes labels as one-hot targets, keeps live arena scalar-only, and clears scalar grid caches when multiclass streamed snapshots explicitly omit scalar visualization data. It does not expose UI controls, change shared URL/config serialization, change persistence/run-history schema, change code export, add datasets or presets, add dependencies, change deployment, or add multiclass frame-buffer/protocol payloads.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after the worker target-guard slice. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-opI1oGqP.js`: 7.25 kB, gzip 2.95 kB
+- `dist/assets/InspectionPanel-DkdZZarG.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-ZSHEaVkq.js`: 16.70 kB, gzip 5.14 kB
+- `dist/assets/index-CiRxQBda.js`: 367.34 kB, gzip 111.18 kB
+
+Compared with the public/shared multiclass contract reservation build, the worker bundle increased from 89.72 kB to 91.19 kB, about 1.6%, and the main app bundle increased from 367.12 kB to 367.34 kB, about 0.1%. Both are below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1198.2515 ms total for 100 iterations
+- `predictGridInto`: 1150.1891 ms total for 100 iterations
+- `predictGridWithNeurons`: 743.6962 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 593.9905 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.5155 ms
+- Average `applyGradients` time (SGD): 1.4182 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice does not add multiclass UI, URL/config output-size serialization, persistence, code export, datasets/presets, dependencies, or multiclass grid/protocol payloads. No browser QA was run because the feature remains worker-only and is not reachable from visible UI controls.
