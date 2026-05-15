@@ -91,6 +91,8 @@ describe('NetworkGraphCanvas', () => {
             network: {
                 ...usePlaygroundStore.getState().network,
                 hiddenLayers: [],
+                outputSize: 1,
+                outputActivation: 'sigmoid',
                 activation: 'tanh',
             },
             features: {
@@ -169,7 +171,7 @@ describe('NetworkGraphCanvas', () => {
         const desc = container.querySelector('#network-graph-desc');
         expect(desc).not.toBeNull();
         expect(desc!.textContent).toContain('hidden layer');
-        expect(desc!.textContent).toContain('Activation: tanh');
+        expect(desc!.textContent).toContain('Hidden activation: tanh');
     });
 
     it('renders architecture story and capacity badge inside the graph', () => {
@@ -187,6 +189,25 @@ describe('NetworkGraphCanvas', () => {
         expect(summary).toContainElement(story);
         expect(screen.getByText('Moderate capacity')).toBeInTheDocument();
         expect(summary.querySelector('.network-graph-summary__hint')).toHaveTextContent('Gaussian blobs');
+    });
+
+    it('describes approved multiclass output shapes without scalar copy', () => {
+        usePlaygroundStore.setState({
+            network: {
+                ...usePlaygroundStore.getState().network,
+                hiddenLayers: [4, 4],
+                outputSize: 3,
+                outputActivation: 'softmax',
+                activation: 'tanh',
+            },
+        });
+
+        const { container } = render(<NetworkGraphCanvas />);
+
+        expect(screen.getByText('X₁, X₂ -> [4] -> [4] -> 3 outputs (softmax)')).toBeInTheDocument();
+        expect(container.querySelector('#network-graph-desc')).toHaveTextContent(
+            '3 outputs. Hidden activation: tanh. Output activation: softmax.',
+        );
     });
 
     it('shows dataset topology hints only for clear mismatches', () => {
@@ -297,6 +318,7 @@ describe('network topology helpers', () => {
     it('formats architecture stories and capacity labels', () => {
         expect(formatArchitectureStory(['x', 'y'], [])).toBe('x, y -> 1 output (linear)');
         expect(formatArchitectureStory(['x', 'y'], [4, 4])).toBe('x, y -> [4] -> [4] -> 1 output');
+        expect(formatArchitectureStory(['x', 'y'], [4, 4], 3, 'softmax')).toBe('x, y -> [4] -> [4] -> 3 outputs (softmax)');
         expect(getCapacityLabel([])).toBe('Linear model');
         expect(getCapacityLabel([4])).toBe('Low capacity');
         expect(getCapacityLabel([16, 17])).toBe('Overfit risk');

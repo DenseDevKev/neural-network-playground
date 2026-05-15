@@ -163,11 +163,17 @@ function featureLabel(feature: { label?: string; id?: string }, fallbackIndex: n
 export function formatArchitectureStory(
     inputLabels: readonly string[],
     hiddenLayers: readonly number[],
+    outputSize = 1,
+    outputActivation: ActivationType = 'linear',
 ): string {
     const inputStory = inputLabels.length > 0 ? inputLabels.join(', ') : 'inputs';
     const hiddenStory = hiddenLayers.map((count) => `[${count}]`).join(' -> ');
-    if (!hiddenStory) return `${inputStory} -> 1 output (linear)`;
-    return `${inputStory} -> ${hiddenStory} -> 1 output`;
+    const safeOutputSize = Number.isFinite(outputSize) ? Math.max(1, Math.floor(outputSize)) : 1;
+    const outputStory = safeOutputSize === 1
+        ? hiddenStory ? '1 output' : `1 output (${outputActivation})`
+        : `${safeOutputSize} outputs (${outputActivation})`;
+    if (!hiddenStory) return `${inputStory} -> ${outputStory}`;
+    return `${inputStory} -> ${hiddenStory} -> ${outputStory}`;
 }
 
 export function getCapacityLabel(hiddenLayers: readonly number[]): string {
@@ -176,6 +182,16 @@ export function getCapacityLabel(hiddenLayers: readonly number[]): string {
     if (hiddenLayers.length === 1 && hiddenLayers[0] <= 4) return 'Low capacity';
     if (totalNeurons > 32) return 'Overfit risk';
     return 'Moderate capacity';
+}
+
+function formatHiddenLayerSummary(hiddenLayers: readonly number[]): string {
+    const layerCount = hiddenLayers.length;
+    const layerLabel = `${layerCount} hidden layer${layerCount === 1 ? '' : 's'}`;
+    if (layerCount === 0) return layerLabel;
+    const neuronLabel = layerCount === 1
+        ? `${hiddenLayers[0]} neuron${hiddenLayers[0] === 1 ? '' : 's'}`
+        : `${hiddenLayers.join(', ')} neurons`;
+    return `${layerLabel} of ${neuronLabel}`;
 }
 
 export function classifyNeuronActivity(
@@ -253,6 +269,8 @@ function getLayerStatsHint(layerStats: readonly LayerStats[] | null): string | n
 
 export function NetworkGraphCanvas() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
+    const outputSize = usePlaygroundStore((s) => s.network.outputSize);
+    const outputActivation = usePlaygroundStore((s) => s.network.outputActivation);
     const features = usePlaygroundStore((s) => s.features);
     const activation = usePlaygroundStore((s) => s.network.activation);
     const dataset = usePlaygroundStore((s) => s.data.dataset);
@@ -278,8 +296,8 @@ export function NetworkGraphCanvas() {
     );
     const inputSize = activeFeatures.length;
     const architectureStory = useMemo(
-        () => formatArchitectureStory(activeFeatureLabels, hiddenLayers),
-        [activeFeatureLabels, hiddenLayers],
+        () => formatArchitectureStory(activeFeatureLabels, hiddenLayers, outputSize, outputActivation),
+        [activeFeatureLabels, hiddenLayers, outputActivation, outputSize],
     );
     const capacityLabel = useMemo(() => getCapacityLabel(hiddenLayers), [hiddenLayers]);
     const datasetTopologyHint = useMemo(
@@ -293,7 +311,8 @@ export function NetworkGraphCanvas() {
     }, [activeLessonId, activeLessonStepIndex]);
     const networkLessonStep = activeLessonStep?.target === 'network' ? activeLessonStep : null;
 
-    const layers = useMemo(() => [inputSize, ...hiddenLayers, 1], [inputSize, hiddenLayers]);
+    const outputLayerSize = Number.isFinite(outputSize) ? Math.max(1, Math.floor(outputSize)) : 1;
+    const layers = useMemo(() => [inputSize, ...hiddenLayers, outputLayerSize], [inputSize, hiddenLayers, outputLayerSize]);
     const maxNodes = Math.max(...layers);
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -793,11 +812,11 @@ export function NetworkGraphCanvas() {
     const showLessonGhostLayer = networkLessonStep?.id === 'give-model-capacity' && hiddenLayers.length === 0;
 
     const accessibilitySummary = useMemo(() => {
+        const outputLabel = `${outputLayerSize} output${outputLayerSize === 1 ? '' : 's'}`;
         return `Neural network: ${activeFeatures.length} input${activeFeatures.length === 1 ? '' : 's'}, ` +
-            `${hiddenLayers.length} hidden layer${hiddenLayers.length === 1 ? '' : 's'}` +
-            (hiddenLayers.length > 0 ? ` of ${hiddenLayers.join(', ')} neuron${hiddenLayers.length === 1 ? '' : 's'}` : '') +
-            `, 1 output. Activation: ${activation}.`;
-    }, [activeFeatures.length, hiddenLayers, activation]);
+            formatHiddenLayerSummary(hiddenLayers) +
+            `, ${outputLabel}. Hidden activation: ${activation}. Output activation: ${outputActivation}.`;
+    }, [activeFeatures.length, hiddenLayers, activation, outputActivation, outputLayerSize]);
 
     return (
         <div

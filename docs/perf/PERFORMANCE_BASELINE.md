@@ -1894,3 +1894,52 @@ These values remain within the established noisy local benchmark range and
 below roadmap warning thresholds. The slice changes web validation/history UI
 only; it does not add runtime hot-path work, worker cadence changes, large
 array transport, or heavy visualization payloads.
+
+## Wave 7 Multiclass Network Graph Text Alternative
+
+Date: 2026-05-15
+
+Scope: Network Graph accessibility/text-alternative update for existing
+multiclass output shapes. The graph summary and screen-reader description now
+read `outputSize` and `outputActivation` from existing web store state, and the
+canvas topology uses the bounded scalar output-size value when laying out output
+nodes. This slice does not change engine math, worker protocol, frame-buffer
+semantics, URL/config format, public config shape, persistence/run-history
+schema, dependencies, deployment, training behavior, or large-array transport.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-rMnDb0A3.js`: 94.59 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-COb62dAi.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-DsbVeODa.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-DSTS4VdT.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-aIlAEn0e.js`: 384.27 kB, gzip 115.58 kB
+
+Compared with the run-history evidence build, the worker, CSS, engine, Code
+Export, React, Inspection, and Run History chunks stayed unchanged. The main app
+chunk changed from 383.84 kB to 384.27 kB, about 0.11%, below the 10% roadmap
+warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1112.7212 ms total for 100 iterations
+- `predictGridInto`: 1082.1407 ms total for 100 iterations
+- `predictGridWithNeurons`: 693.1119 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 595.2835 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.1769 ms
+- Average `applyGradients` time (SGD): 1.4834 ms
+
+These values remain within the established noisy local benchmark range and
+below roadmap warning thresholds. The slice changes small UI text/topology
+metadata only and adds no runtime hot-path work.
