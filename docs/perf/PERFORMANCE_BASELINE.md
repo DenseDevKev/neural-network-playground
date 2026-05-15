@@ -1199,6 +1199,42 @@ Observed benchmark output:
 
 These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects app-local scalar store setter guards only, and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
 
+## Wave 7 Public Runtime Config Guard
+
+Date: 2026-05-15
+
+Scope: app-local public training hook guard for future Multiclass Classification Mode. The public `useTraining` hook now validates the current playground config with strict shared import validation before creating/using the worker API, initializing public training, updating config, or sending stop commands for a running config sync. Direct worker multiclass tests remain available for bounded private worker coverage, but the public hook refuses hidden multiclass app state. This slice does not change URL/config format, public config shape, persistence/run-history schema, worker protocol, frame-buffer semantics, engine math, dependencies, deployment, or training behavior for valid scalar configs.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed after `a1dfd50`. Relevant production output:
+
+- `dist/assets/training.worker-CB34B7zL.js`: 91.19 kB
+- `dist/assets/index-DZR84vix.css`: 67.02 kB, gzip 11.64 kB
+- `dist/assets/engine-BT-TiDoL.js`: 5.74 kB, gzip 2.07 kB
+- `dist/assets/CodeExportPanel-BM-7YnZG.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/InspectionPanel-zPTCC9od.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-B6R8j-di.js`: 16.71 kB, gzip 5.15 kB
+- `dist/assets/index-BBaTuv22.js`: 369.27 kB, gzip 111.63 kB
+
+Compared with the public store setter guard build, the worker, CSS, lazy Code Export, engine, inspection, and run-history chunks remain effectively unchanged. The main app chunk changed from 369.02 kB to 369.27 kB, about 0.07%, below the 10% roadmap build-size warning threshold. The existing Vite large chunk warning remains.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests.
+
+Observed benchmark output:
+
+- `predictGrid`: 1088.8360 ms total for 100 iterations
+- `predictGridInto`: 1084.8675 ms total for 100 iterations
+- `predictGridWithNeurons`: 669.1058 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 574.0163 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9068 ms
+- Average `applyGradients` time (SGD): 1.5140 ms
+
+These values remain within the established benchmark range and below the roadmap warning thresholds. The slice affects app-local public runtime config validation only, and does not touch engine training throughput, worker cadence, frame-buffer transport, or heavy visualization payload generation.
+
 ## Wave 7 Worker/API Multiclass Data-Path Guard
 
 Date: 2026-05-15
