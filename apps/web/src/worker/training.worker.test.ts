@@ -249,6 +249,23 @@ describe('training worker multiclass target encoding', () => {
         expect(trace.trace.target[trace.sample.label ?? -1]).toBe(1);
     });
 
+    it('does not source hidden three-class samples through public worker dataset generation', () => {
+        workerApi.initialize(
+            multiclassNetwork,
+            multiclassTraining,
+            { ...DEFAULT_DATA, seed: 940, numSamples: 60 },
+            { ...DEFAULT_FEATURES },
+        );
+
+        const labels = [
+            ...workerApi.getTrainPoints(),
+            ...workerApi.getTestPoints(),
+        ].map((point) => point.label);
+
+        expect(new Set(labels)).toEqual(new Set([0, 1]));
+        expect(labels).not.toContain(2);
+    });
+
     it('encodes custom multiclass trace labels and rejects out-of-range classes', () => {
         workerApi.initialize(
             multiclassNetwork,
