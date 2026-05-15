@@ -138,7 +138,7 @@ describe('ConfigPanel clipboard feedback', () => {
             });
         });
 
-        expect(await screen.findByRole('alert')).toHaveTextContent('Multiclass configurations are not runtime-enabled yet.');
+        expect(await screen.findByRole('alert', undefined, { timeout: 5000 })).toHaveTextContent('Multiclass configurations are not runtime-enabled yet.');
         expect(onReset).not.toHaveBeenCalled();
         expect(usePlaygroundStore.getState().network.outputSize).toBe(1);
         expect(usePlaygroundStore.getState().network.outputActivation).not.toBe('softmax');

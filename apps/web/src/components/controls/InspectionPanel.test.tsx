@@ -332,7 +332,7 @@ describe('InspectionPanel demand', () => {
             expect(workerApi.getLossLandscapeProbe).toHaveBeenCalledTimes(1);
         });
         expect(screen.getByRole('region', { name: /loss landscape probe/i })).toBeInTheDocument();
-        expect(screen.getByRole('img', { name: /local 2d loss slice/i })).toBeInTheDocument();
+        expect(await screen.findByRole('img', { name: /local 2d loss slice/i })).toBeInTheDocument();
         expect(screen.getByRole('status', { name: /loss landscape probe status/i })).toHaveTextContent(
             /best loss 0\.4000/i,
         );

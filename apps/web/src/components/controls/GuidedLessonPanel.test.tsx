@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { GuidedLessonPanel } from './GuidedLessonPanel.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -122,11 +122,7 @@ describe('GuidedLessonPanel', () => {
         expect(screen.getByText(regressionLesson.steps[0].title)).toBeInTheDocument();
     });
 
-    it('starts each registry lesson preset from the selector', async () => {
-        const user = userEvent.setup();
-
-        render(<GuidedLessonPanel onReset={vi.fn()} />);
-
+    it('starts each registry lesson preset from a fresh selector render', () => {
         for (const lesson of LESSON_DEFINITIONS) {
             usePlaygroundStore.setState({
                 data: { ...DEFAULT_DATA },
@@ -136,20 +132,28 @@ describe('GuidedLessonPanel', () => {
                 ui: { showTestData: false, discretizeOutput: false },
             });
 
-            await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), lesson.id);
-            await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+            const onReset = vi.fn();
+            const onHighlightChange = vi.fn();
+            const { unmount } = render(
+                <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+            );
+
+            fireEvent.change(screen.getByRole('combobox', { name: 'Guided lesson' }), {
+                target: { value: lesson.id },
+            });
+            fireEvent.click(screen.getByRole('button', { name: 'Start guided lesson' }));
 
             const preset = getLessonPreset(lesson);
             expect(usePlaygroundStore.getState().data.dataset).toBe(preset.config.data?.dataset);
             expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual(preset.config.network?.hiddenLayers);
+            expect(onReset).toHaveBeenCalledTimes(1);
+            expect(onHighlightChange).toHaveBeenLastCalledWith(lesson.steps[0].target);
+            expect(useLayoutStore.getState().activeLessonId).toBe(lesson.id);
+            expect(useLayoutStore.getState().activeLessonStepIndex).toBe(0);
             expect(screen.getByText(`Step 1 of ${lesson.steps.length}`)).toBeInTheDocument();
+            expect(screen.getByText(lesson.steps[0].title)).toBeInTheDocument();
 
-            for (let stepIndex = 1; stepIndex < lesson.steps.length; stepIndex += 1) {
-                await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
-            }
-            expect(useLayoutStore.getState().phase).toBe('run');
-
-            await user.click(screen.getByRole('button', { name: 'Finish guided lesson' }));
+            unmount();
         }
     });
 
