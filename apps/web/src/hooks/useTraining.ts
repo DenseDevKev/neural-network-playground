@@ -126,6 +126,9 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
         framePatch.multiclassConfidenceGrid = null;
         framePatch.multiclassBoundaryLayout = null;
     }
+    if (currentFrame.multiclassConfusionMatrix !== null) {
+        framePatch.multiclassConfusionMatrix = null;
+    }
 
     if (snapshot.activationHistograms) {
         framePatch.activationHistogramBins = snapshot.activationHistograms.bins;

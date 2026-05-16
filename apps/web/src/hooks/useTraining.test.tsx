@@ -12,7 +12,7 @@ import {
 import type { WorkerToMainMessage } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
-import { getFrameBuffer, resetFrameBuffer, updateFrameBuffer } from '../worker/frameBuffer.ts';
+import { getFrameBuffer, getFrameVersions, resetFrameBuffer, updateFrameBuffer } from '../worker/frameBuffer.ts';
 
 const bridge = vi.hoisted(() => {
     const workerApi = {
@@ -394,6 +394,67 @@ describe('useTraining', () => {
         expect(getFrameBuffer().multiclassConfidenceGrid).toBeNull();
         expect(getFrameBuffer().multiclassBoundaryLayout).toBeNull();
         expect(getFrameBuffer().multiclassBoundaryVersion).toBe(initialMulticlassVersion + 1);
+    });
+
+    it('clears stale worker-authored multiclass confusion data when stepping through a direct snapshot', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        updateFrameBuffer({
+            multiclassConfusionMatrix: {
+                classCount: 3,
+                classLabels: [0, 1, 2],
+                counts: [2, 1, 0, 0, 3, 1, 1, 0, 4],
+            },
+        });
+        const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
+
+        await act(async () => {
+            await result.current.step();
+        });
+
+        expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+        expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(
+            initialMulticlassConfusionVersion + 1,
+        );
+        expect('multiclassConfusionMatrixVersion' in getFrameVersions()).toBe(false);
+    });
+
+    it('does not churn multiclass confusion state when direct sync has no stale worker-authored data', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
+
+        await act(async () => {
+            await result.current.step();
+        });
+
+        expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+        expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(initialMulticlassConfusionVersion);
+        expect('multiclassConfusionMatrixVersion' in useTrainingStore.getState()).toBe(false);
+    });
+
+    it('clears stale worker-authored multiclass confusion data when resetting through a direct snapshot', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        updateFrameBuffer({
+            multiclassConfusionMatrix: {
+                classCount: 3,
+                classLabels: [0, 1, 2],
+                counts: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            },
+        });
+        const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
+
+        await act(async () => {
+            await result.current.reset();
+        });
+
+        expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+        expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(
+            initialMulticlassConfusionVersion + 1,
+        );
     });
 
     it('retains the last activation histogram frame data across cadence-skipped snapshots', async () => {
