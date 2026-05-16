@@ -338,6 +338,83 @@ describe('RunHistoryPanel', () => {
         );
     });
 
+    it('renders architecture comparison rows for selected saved runs', async () => {
+        const user = userEvent.setup();
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'baseline',
+                title: 'Baseline',
+                updatedAt: '2026-04-26T00:00:00.000Z',
+                config: {
+                    ...makeRecord().config,
+                    data: { ...DEFAULT_DATA, dataset: 'circle', numSamples: 300, noise: 0.05 },
+                    network: {
+                        ...DEFAULT_NETWORK,
+                        inputSize: 2,
+                        hiddenLayers: [4],
+                        activation: 'tanh',
+                        outputActivation: 'sigmoid',
+                    },
+                    training: {
+                        ...DEFAULT_TRAINING,
+                        optimizer: 'sgd',
+                        learningRate: 0.03,
+                        batchSize: 10,
+                        lossType: 'crossEntropy',
+                        regularization: 'none',
+                        regularizationRate: 0,
+                    },
+                    features: { ...DEFAULT_FEATURES },
+                },
+            }));
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'tuned',
+                title: 'Tuned model',
+                updatedAt: '2026-04-26T00:01:00.000Z',
+                config: {
+                    ...makeRecord().config,
+                    data: { ...DEFAULT_DATA, dataset: 'xor', numSamples: 500, noise: 0.1 },
+                    network: {
+                        ...DEFAULT_NETWORK,
+                        inputSize: 4,
+                        hiddenLayers: [8, 4],
+                        activation: 'relu',
+                        outputActivation: 'sigmoid',
+                    },
+                    training: {
+                        ...DEFAULT_TRAINING,
+                        optimizer: 'adam',
+                        learningRate: 0.01,
+                        batchSize: 16,
+                        lossType: 'crossEntropy',
+                        regularization: 'l2',
+                        regularizationRate: 0.003,
+                    },
+                    features: { ...DEFAULT_FEATURES, xSquared: true, xy: true },
+                },
+            }));
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+
+        const architecture = screen.getByRole('group', { name: 'Architecture comparison' });
+        expect(architecture).toHaveTextContent('Hidden layers A [8, 4] / B [4]');
+        expect(architecture).toHaveTextContent('Total hidden units A 12 / B 4 (+8)');
+        expect(architecture).toHaveTextContent('Activation A relu / B tanh');
+        expect(architecture).toHaveTextContent('Output/loss A sigmoid + crossEntropy / B sigmoid + crossEntropy');
+        expect(architecture).toHaveTextContent('Optimizer/lr A adam @ 0.01 / B sgd @ 0.03');
+        expect(architecture).toHaveTextContent('Batch size A 16 / B 10 (+6)');
+        expect(architecture).toHaveTextContent('Regularization A l2 0.003 / B none 0');
+        expect(architecture).toHaveTextContent('Data A xor, 500 samples, noise 0.1 / B circle, 300 samples, noise 0.05');
+        expect(architecture).toHaveTextContent('Features A x, y, xSquared, xy / B x, y');
+
+        await user.selectOptions(screen.getByLabelText('Model A run'), 'baseline');
+
+        expect(screen.getByRole('group', { name: 'Architecture comparison' })).toHaveTextContent(
+            'Total hidden units A 4 / B 4 (same)',
+        );
+    });
+
     it('starts and steps the live scalar arena with accessible summaries', async () => {
         const user = userEvent.setup();
         const onInitializeArena = vi.fn();

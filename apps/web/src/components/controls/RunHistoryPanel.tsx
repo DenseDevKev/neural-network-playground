@@ -83,6 +83,80 @@ function formatFeatureList(record: ExperimentRunRecordV1): string {
     return enabled.length ? enabled.join(', ') : 'none';
 }
 
+function formatConfigNumber(value: number): string {
+    return Number.isFinite(value) ? String(value) : 'n/a';
+}
+
+function formatHiddenLayers(record: ExperimentRunRecordV1): string {
+    return `[${record.config.network.hiddenLayers.join(', ')}]`;
+}
+
+function totalHiddenUnits(record: ExperimentRunRecordV1): number {
+    return record.config.network.hiddenLayers.reduce((sum, units) => sum + units, 0);
+}
+
+function formatUnitDelta(a: number, b: number): string {
+    return a === b ? 'same' : formatSignedInteger(a - b);
+}
+
+function createArchitectureRows(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1) {
+    const aUnits = totalHiddenUnits(a);
+    const bUnits = totalHiddenUnits(b);
+    return [
+        {
+            label: 'Hidden layers',
+            value: `A ${formatHiddenLayers(a)} / B ${formatHiddenLayers(b)}`,
+        },
+        {
+            label: 'Total hidden units',
+            value: `A ${aUnits.toLocaleString()} / B ${bUnits.toLocaleString()} (${formatUnitDelta(aUnits, bUnits)})`,
+        },
+        {
+            label: 'Activation',
+            value: `A ${a.config.network.activation} / B ${b.config.network.activation}`,
+        },
+        {
+            label: 'Output/loss',
+            value: [
+                `A ${a.config.network.outputActivation} + ${a.config.training.lossType}`,
+                `B ${b.config.network.outputActivation} + ${b.config.training.lossType}`,
+            ].join(' / '),
+        },
+        {
+            label: 'Optimizer/lr',
+            value: [
+                `A ${a.config.training.optimizer} @ ${formatConfigNumber(a.config.training.learningRate)}`,
+                `B ${b.config.training.optimizer} @ ${formatConfigNumber(b.config.training.learningRate)}`,
+            ].join(' / '),
+        },
+        {
+            label: 'Batch size',
+            value: [
+                `A ${a.config.training.batchSize.toLocaleString()}`,
+                `B ${b.config.training.batchSize.toLocaleString()} (${formatUnitDelta(a.config.training.batchSize, b.config.training.batchSize)})`,
+            ].join(' / '),
+        },
+        {
+            label: 'Regularization',
+            value: [
+                `A ${a.config.training.regularization} ${formatConfigNumber(a.config.training.regularizationRate)}`,
+                `B ${b.config.training.regularization} ${formatConfigNumber(b.config.training.regularizationRate)}`,
+            ].join(' / '),
+        },
+        {
+            label: 'Data',
+            value: [
+                `A ${a.config.data.dataset}, ${a.config.data.numSamples.toLocaleString()} samples, noise ${formatConfigNumber(a.config.data.noise)}`,
+                `B ${b.config.data.dataset}, ${b.config.data.numSamples.toLocaleString()} samples, noise ${formatConfigNumber(b.config.data.noise)}`,
+            ].join(' / '),
+        },
+        {
+            label: 'Features',
+            value: `A ${formatFeatureList(a)} / B ${formatFeatureList(b)}`,
+        },
+    ] as const;
+}
+
 function createLossThumbnailLabel(record: ExperimentRunRecordV1, labelPrefix?: string): string {
     const first = record.history[0];
     const last = record.history.at(-1);
@@ -197,6 +271,28 @@ function ArenaModelPane({
     );
 }
 
+function ArchitectureComparison({
+    modelA,
+    modelB,
+}: {
+    modelA: ExperimentRunRecordV1;
+    modelB: ExperimentRunRecordV1;
+}) {
+    return (
+        <div className="run-arena__architecture" role="group" aria-label="Architecture comparison">
+            <div className="inspection__layer-name">Architecture comparison</div>
+            <div className="run-arena__architecture-rows">
+                {createArchitectureRows(modelA, modelB).map((row) => (
+                    <div key={row.label} className="run-arena__architecture-row">
+                        <span className="inspection__stat-label">{row.label} </span>
+                        <span className="inspection__stat-value">{row.value}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function SideBySideModelArena({
     records,
     onInitializeArena,
@@ -292,6 +388,7 @@ function SideBySideModelArena({
                 <span>{formatArenaGapComparison(modelA, modelB)}</span>
                 <span>{formatArenaStepComparison(modelA, modelB)}</span>
             </div>
+            <ArchitectureComparison modelA={modelA} modelB={modelB} />
         </section>
     );
 }

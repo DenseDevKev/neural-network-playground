@@ -2810,10 +2810,41 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     color: var(--text-primary);
 }
 
+.run-arena__architecture {
+    margin-top: var(--space-sm);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.run-arena__architecture-rows {
+    display: grid;
+    gap: 5px;
+    margin-top: var(--space-xs);
+}
+
+.run-arena__architecture-row {
+    display: grid;
+    grid-template-columns: minmax(86px, 0.42fr) minmax(0, 1fr);
+    gap: var(--space-xs);
+    align-items: baseline;
+    min-width: 0;
+}
+
+.run-arena__architecture-row .inspection__stat-value {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
 @media (max-width: 560px) {
     .run-arena__selectors,
     .run-arena__models {
         grid-template-columns: 1fr;
+    }
+
+    .run-arena__architecture-row {
+        grid-template-columns: 1fr;
+        gap: 2px;
     }
 }
 
