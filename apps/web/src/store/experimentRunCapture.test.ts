@@ -58,6 +58,12 @@ const multiclassSnapshot: NetworkSnapshot = {
     testMetrics: { loss: 0.3, accuracy: 0.78 },
 };
 
+const workerAuthoredMulticlassConfusion = {
+    classCount: 3,
+    classLabels: [0, 1, 2],
+    counts: [2, 0, 1, 0, 3, 0, 1, 0, 4],
+} as const;
+
 describe('experiment run capture', () => {
     it('converts history typed arrays to serializable history points', () => {
         const points = historyArraysToPoints({
@@ -113,6 +119,30 @@ describe('experiment run capture', () => {
         expect(record?.config.network.outputActivation).toBe('softmax');
         expect(record?.config.training.lossType).toBe('categoricalCrossEntropy');
         expect(record?.network?.weights[0]).toHaveLength(3);
+    });
+
+    it('does not persist worker-authored multiclass confusion metrics from snapshots or frame buffer', () => {
+        resetFrameBuffer();
+        updateFrameBuffer({ multiclassConfusionMatrix: workerAuthoredMulticlassConfusion });
+
+        const record = captureExperimentRun({
+            config: approvedMulticlassConfig,
+            snapshot: {
+                ...multiclassSnapshot,
+                testMetrics: {
+                    ...multiclassSnapshot.testMetrics,
+                    multiclassConfusionMatrix: workerAuthoredMulticlassConfusion,
+                },
+            },
+            history: [],
+            now: () => new Date('2026-04-26T00:00:00.000Z'),
+            id: () => 'run-multiclass-confusion',
+        });
+
+        expect(record?.summary.testMetrics.multiclassConfusionMatrix).toBeUndefined();
+        expect(JSON.stringify(record)).not.toContain('multiclassConfusionMatrix');
+
+        resetFrameBuffer();
     });
 
     it.each([

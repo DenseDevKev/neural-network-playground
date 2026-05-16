@@ -76,6 +76,12 @@ function makePartialMulticlassRecord(id: string): ExperimentRunRecordV1 {
     };
 }
 
+const workerAuthoredMulticlassConfusion = {
+    classCount: 3,
+    classLabels: [0, 1, 2],
+    counts: [2, 0, 1, 0, 3, 0, 1, 0, 4],
+} as const;
+
 describe('experimentMemoryStore', () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -133,6 +139,26 @@ describe('experimentMemoryStore', () => {
         expect(store.getState().records.map((record) => record.id)).toEqual(['2']);
         expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toContain('categoricalCrossEntropy');
         expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('"id":"3"');
+    });
+
+    it('does not persist worker-authored multiclass confusion metrics to localStorage', () => {
+        const store = createExperimentMemoryStore();
+        const record = makeApprovedMulticlassRecord('2', '2026-04-26T00:00:02.000Z');
+
+        store.getState().saveRecord({
+            ...record,
+            summary: {
+                ...record.summary,
+                testMetrics: {
+                    ...record.summary.testMetrics,
+                    multiclassConfusionMatrix: workerAuthoredMulticlassConfusion,
+                },
+            },
+        });
+
+        expect(store.getState().records[0].summary.testMetrics.multiclassConfusionMatrix).toBeUndefined();
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('multiclassConfusionMatrix');
+        expect(JSON.parse(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '{}').schemaVersion).toBe(1);
     });
 
     it('keeps the previous state when localStorage writes fail', () => {

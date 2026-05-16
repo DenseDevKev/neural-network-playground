@@ -2,9 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RunHistoryPanel } from './RunHistoryPanel.tsx';
-import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
+import {
+    EXPERIMENT_MEMORY_STORAGE_KEY,
+    useExperimentMemoryStore,
+} from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import {
+    resetFrameBuffer,
+    updateFrameBuffer,
+} from '../../worker/frameBuffer.ts';
 import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
 import {
     type ArenaModelSummary,
@@ -78,6 +85,12 @@ function makeApprovedMulticlassRecord(overrides: Partial<ExperimentRunRecordV1> 
     });
 }
 
+const workerAuthoredMulticlassConfusion = {
+    classCount: 3,
+    classLabels: [0, 1, 2],
+    counts: [2, 0, 1, 0, 3, 0, 1, 0, 4],
+} as const;
+
 function makeArenaSummaries(): ArenaModelSummary[] {
     return [
         {
@@ -126,6 +139,7 @@ describe('RunHistoryPanel', () => {
             arenaSummaries: null,
             arenaSummariesVersion: 0,
         });
+        resetFrameBuffer();
     });
 
     it('renders an empty state when no runs are saved', () => {
@@ -183,6 +197,40 @@ describe('RunHistoryPanel', () => {
         expect(screen.getByText(/three-class-clusters at step 7/i)).toBeInTheDocument();
         expect(useExperimentMemoryStore.getState().records[0].config.network.outputSize).toBe(3);
         expect(useExperimentMemoryStore.getState().records[0].config.training.lossType).toBe('categoricalCrossEntropy');
+    });
+
+    it('does not save worker-authored multiclass confusion data with a current run', async () => {
+        const multiclassConfig = makeApprovedMulticlassConfig();
+        usePlaygroundStore.setState(multiclassConfig);
+        updateFrameBuffer({ multiclassConfusionMatrix: workerAuthoredMulticlassConfusion });
+        useTrainingStore.setState({
+            snapshot: {
+                step: 7,
+                epoch: 1,
+                trainLoss: 0.36,
+                testLoss: 0.44,
+                trainMetrics: { loss: 0.36, accuracy: 0.76 },
+                testMetrics: {
+                    loss: 0.44,
+                    accuracy: 0.7,
+                    multiclassConfusionMatrix: workerAuthoredMulticlassConfusion,
+                },
+                weights: [[[0.1, 0.2], [0.3, -0.2], [-0.1, 0.4]]],
+                biases: [[0.01, -0.02, 0.03]],
+                outputGrid: [],
+                gridSize: 50,
+                historyPoint: { step: 7, trainLoss: 0.36, testLoss: 0.44 },
+            } as any,
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+
+        const saved = useExperimentMemoryStore.getState().records[0];
+        expect(saved.schemaVersion).toBe(1);
+        expect(saved.summary.testMetrics.multiclassConfusionMatrix).toBeUndefined();
+        expect(JSON.stringify(saved)).not.toContain('multiclassConfusionMatrix');
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('multiclassConfusionMatrix');
     });
 
     it('restores a saved run config and calls reset', async () => {

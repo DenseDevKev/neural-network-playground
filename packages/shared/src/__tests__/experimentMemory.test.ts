@@ -92,6 +92,12 @@ function sparseNumberArray(length: number): number[] {
     return new Array(length) as number[];
 }
 
+const workerAuthoredMulticlassConfusion = {
+    classCount: 3,
+    classLabels: [0, 1, 2],
+    counts: [2, 0, 1, 0, 3, 0, 1, 0, 4],
+} as const;
+
 describe('experiment memory schema', () => {
     it('accepts a valid v1 run record', () => {
         const result = validateExperimentRunRecord(makeRecord());
@@ -142,6 +148,26 @@ describe('experiment memory schema', () => {
         expect(result.record?.config.network.outputActivation).toBe('softmax');
         expect(result.record?.config.training.lossType).toBe('categoricalCrossEntropy');
         expect(result.record?.network).toBeNull();
+    });
+
+    it('strips worker-authored multiclass confusion metrics from opt-in run records', () => {
+        const result = validateExperimentRunRecord(makeApprovedMulticlassRecord({
+            summary: {
+                ...makeRecord().summary,
+                testMetrics: {
+                    loss: 0.5,
+                    accuracy: 0.75,
+                    multiclassConfusionMatrix: workerAuthoredMulticlassConfusion,
+                },
+            },
+        }), {
+            allowMulticlass: true,
+        });
+
+        expect(result.error).toBeNull();
+        expect(result.record?.schemaVersion).toBe(1);
+        expect(result.record?.summary.testMetrics.multiclassConfusionMatrix).toBeUndefined();
+        expect(JSON.stringify(result.record)).not.toContain('multiclassConfusionMatrix');
     });
 
     it('accepts matching multiclass serialized network payloads only with explicit persistence opt-in', () => {
