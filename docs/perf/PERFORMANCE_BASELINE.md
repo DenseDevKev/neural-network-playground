@@ -2307,3 +2307,54 @@ The timing values remain within the established local baseline range. The
 slice adds small frame-buffer metadata and bridge patch rules only; it does not
 alter worker training updates, worker emission cadence, decision-boundary
 prediction helpers, UI rendering, URL/config behavior, or persistence.
+
+## Wave 7 Direct Snapshot Multiclass Confusion Lifecycle Clear
+
+Date: 2026-05-15
+
+Scope: hook-level lifecycle cleanup for stale worker-authored
+`multiclassConfusionMatrix` frame-buffer data during direct Comlink snapshot
+sync. The slice clears an existing buffered multiclass confusion matrix when a
+direct snapshot sync occurs and leaves the slot alone when it is already empty.
+It does not copy direct `NetworkSnapshot.testMetrics.multiclassConfusionMatrix`
+into the frame buffer, widen `FrameVersions`/Zustand state, change UI,
+worker/protocol/bridge/frame-buffer shape, URL/config serialization,
+persistence/run-history schema, public config shape, dependencies, deployment,
+arbitrary class counts, raw probability-grid transport, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DpiAN4PK.js`: 95.23 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-S1gh81yD.js`: 7.69 kB, gzip 3.08 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-CO9uqKkf.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-vCxBK0gx.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-DGCQ80YX.js`: 387.50 kB, gzip 116.32 kB
+
+Compared with the frame-buffer/bridge plumbing build, the worker, CSS, engine,
+Code Export, React, Inspection, Run History, and main app chunks stayed
+effectively unchanged. The main app chunk changed from 387.43 kB to 387.50 kB,
+about 0.02%, below the 10% roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1074.1405 ms total for 100 iterations
+- `predictGridInto`: 1063.2777 ms total for 100 iterations
+- `predictGridWithNeurons`: 669.6976 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 574.2154 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9619 ms
+- Average `applyGradients` time (SGD): 1.4567 ms
+
+The timing values remain within the established local baseline range. The
+slice adds a conditional frame-buffer clear during direct snapshot sync only;
+it does not alter worker training updates, worker emission cadence,
+decision-boundary prediction helpers, UI rendering, URL/config behavior, or
+persistence.
