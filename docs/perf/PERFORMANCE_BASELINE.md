@@ -2449,3 +2449,51 @@ build:
 The timing values remain within the established local baseline range. The
 slice is test-only and does not alter runtime cadence, worker computation,
 rendering, persistence schema, or serialization behavior.
+
+## Wave 7 Advanced Architecture Comparison
+
+Date: 2026-05-15
+
+Scope: UI-only saved-run architecture comparison in the lazy Run History
+panel. The slice derives text rows from existing `ExperimentRunRecordV1`
+config data and does not change worker protocol, frame-buffer semantics,
+engine math, URL/config serialization, persistence/run-history schema, public
+config shape, dependencies, deployment, runtime cadence, large-array transport,
+or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DpiAN4PK.js`: 95.23 kB
+- `dist/assets/index-Dh1BEDYK.css`: 68.14 kB, gzip 11.84 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-BlCDj2Gk.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-D4IAf_Gp.js`: 13.42 kB, gzip 3.49 kB
+- `dist/assets/RunHistoryPanel-wN_j7Cmu.js`: 20.81 kB, gzip 6.10 kB
+- `dist/assets/index-D8yLuCyi.js`: 388.10 kB, gzip 116.59 kB
+
+Compared with the previous Wave 7 persistence-guard build, the worker stayed
+unchanged. The lazy Run History chunk grew from 18.58 kB to 20.81 kB
+uncompressed because this slice adds architecture comparison row generation and
+rendering; gzip size grew from 5.66 kB to 6.10 kB. Total production asset size
+remained well below the 10% roadmap warning threshold, and the added code is in
+the lazy History panel rather than the training or visualization hot path.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1086.5934 ms total for 100 iterations
+- `predictGridInto`: 1076.9483 ms total for 100 iterations
+- `predictGridWithNeurons`: 677.4313 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 582.3963 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 3.9274 ms
+- Average `applyGradients` time (SGD): 1.5487 ms
+
+The timing values remain within the established local baseline range. The
+slice performs render-time string derivation from saved config objects and does
+not add worker computation, frame-buffer writes, or training-loop work.
