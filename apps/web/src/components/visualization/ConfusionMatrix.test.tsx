@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import { DEFAULT_NETWORK } from '@nn-playground/shared';
 import { ConfusionMatrix } from './ConfusionMatrix';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
+  getFrameBuffer,
   getFrameVersions,
   resetFrameBuffer,
   updateFrameBuffer,
@@ -15,6 +16,27 @@ function setProblemType(problemType: 'classification' | 'regression') {
     data: {
       ...state.data,
       problemType,
+    },
+  }));
+}
+
+function setApprovedMulticlassConfig() {
+  usePlaygroundStore.setState((state) => ({
+    data: {
+      ...state.data,
+      dataset: 'three-class-clusters',
+      problemType: 'classification',
+    },
+    network: {
+      ...state.network,
+      hiddenLayers: [],
+      inputSize: 2,
+      outputSize: 3,
+      outputActivation: 'softmax',
+    },
+    training: {
+      ...state.training,
+      lossType: 'categoricalCrossEntropy',
     },
   }));
 }
@@ -145,6 +167,129 @@ describe('ConfusionMatrix', () => {
     expect(screen.getByText(/3 of 4 test samples land on the diagonal/i)).toBeInTheDocument();
     expect(screen.getByText(/derived from current frame-buffer parameters/i)).toBeInTheDocument();
     expect(screen.queryByLabelText('TP cell')).not.toBeInTheDocument();
+  });
+
+  it('renders a worker-authored 3-class matrix for the approved tuple while training is running', () => {
+    setApprovedMulticlassConfig();
+    updateFrameBuffer({
+      multiclassConfusionMatrix: {
+        classCount: 3,
+        classLabels: [0, 1, 2],
+        counts: [4, 1, 0, 0, 3, 2, 1, 0, 5],
+      },
+    });
+    useTrainingStore.setState({
+      frameVersion: getFrameBuffer().version,
+      status: 'running',
+      testPoints: [
+        { x: 0, y: 0, label: 0 },
+        { x: 1, y: 0, label: 1 },
+        { x: 0, y: 1, label: 2 },
+      ],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Multiclass Confusion Readout (Test Set)')).toBeInTheDocument();
+    expect(screen.getByLabelText(/2 test samples .* actual Class 1 predicted Class 2/i)).toHaveTextContent('2');
+    expect(screen.getByLabelText('Actual Class 2 total 6')).toHaveTextContent('6');
+    expect(screen.getByLabelText('Predicted Class 2 total 7')).toHaveTextContent('7');
+    expect(screen.getByLabelText('Total test samples 16')).toHaveTextContent('16');
+    expect(screen.getByText('75.0%')).toBeInTheDocument();
+    expect(screen.getByText(/latest worker-authored test evaluation/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pause training to inspect/i)).not.toBeInTheDocument();
+  });
+
+  it('prefers worker-authored multiclass data over a contradictory derived fallback', () => {
+    setApprovedMulticlassConfig();
+    updateFrameBuffer({
+      weights: new Float32Array([
+        2, 0,
+        0, 2,
+        -2, -2,
+      ]),
+      biases: new Float32Array([0, 0, 1]),
+      weightLayout: { layerSizes: [2, 3] },
+      multiclassConfusionMatrix: {
+        classCount: 3,
+        classLabels: [0, 1, 2],
+        counts: [1, 0, 0, 1, 0, 0, 0, 0, 1],
+      },
+    });
+    useTrainingStore.setState({
+      frameVersion: getFrameBuffer().version,
+      paramsVersion: getFrameBuffer().paramsVersion,
+      status: 'paused',
+      testPoints: [
+        { x: 1, y: 0, label: 0 },
+        { x: 0, y: 1, label: 1 },
+        { x: -1, y: -1, label: 2 },
+      ],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByLabelText(/1 test sample .* actual Class 1 predicted Class 0/i)).toHaveTextContent('1');
+    expect(screen.getByLabelText(/0 test samples .* actual Class 1 predicted Class 1/i)).toHaveTextContent('0');
+    expect(screen.getByText('66.7%')).toBeInTheDocument();
+    expect(screen.getByText(/latest worker-authored test evaluation/i)).toBeInTheDocument();
+    expect(screen.queryByText(/derived from current frame-buffer parameters/i)).not.toBeInTheDocument();
+  });
+
+  it('updates the worker-authored matrix from the broad frame version without a dedicated store field', () => {
+    setApprovedMulticlassConfig();
+    useTrainingStore.setState({
+      frameVersion: getFrameBuffer().version,
+      status: 'running',
+      testPoints: [{ x: 0, y: 0, label: 0 }],
+    });
+
+    render(<ConfusionMatrix />);
+    expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
+
+    act(() => {
+      updateFrameBuffer({
+        multiclassConfusionMatrix: {
+          classCount: 3,
+          classLabels: [0, 1, 2],
+          counts: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+        },
+      });
+      useTrainingStore.setState({ frameVersion: getFrameBuffer().version });
+    });
+
+    expect(screen.getByText('Multiclass Confusion Readout (Test Set)')).toBeInTheDocument();
+    expect(screen.getByText('100.0%')).toBeInTheDocument();
+    expect('multiclassConfusionMatrixVersion' in useTrainingStore.getState()).toBe(false);
+  });
+
+  it.each([
+    ['wrong dataset', { data: { dataset: 'circle' as const } }, {}],
+    ['wrong loss', {}, { training: { lossType: 'crossEntropy' as const } }],
+  ])('ignores worker-authored multiclass data for an unapproved tuple: %s', (_label, dataPatch, trainingPatch) => {
+    setApprovedMulticlassConfig();
+    usePlaygroundStore.setState((state) => ({
+      data: { ...state.data, ...dataPatch.data },
+      training: { ...state.training, ...trainingPatch.training },
+    }));
+    updateFrameBuffer({
+      multiclassConfusionMatrix: {
+        classCount: 3,
+        classLabels: [0, 1, 2],
+        counts: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      },
+    });
+    useTrainingStore.setState({
+      frameVersion: getFrameBuffer().version,
+      status: 'running',
+      testPoints: [{ x: 0, y: 0, label: 0 }],
+    });
+
+    render(<ConfusionMatrix />);
+
+    expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
+    expect(screen.queryByText(/latest worker-authored test evaluation/i)).not.toBeInTheDocument();
   });
 
   it('derives a 3-class readout through hidden-layer activations without importing the engine network', () => {

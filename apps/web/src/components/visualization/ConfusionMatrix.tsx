@@ -4,7 +4,12 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
 import { getActiveFeatures, transformPoint } from '@nn-playground/engine';
-import type { DataPoint, FeatureFlags, NetworkConfig } from '@nn-playground/engine';
+import type {
+    DataPoint,
+    FeatureFlags,
+    MulticlassConfusionMatrixData,
+    NetworkConfig,
+} from '@nn-playground/engine';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 
 const MULTICLASS_LABELS = [0, 1, 2] as const;
@@ -34,6 +39,25 @@ function formatRatio(numerator: number, denominator: number): string {
 
 function formatSampleCount(value: number): string {
     return `${value} test sample${value === 1 ? '' : 's'}`;
+}
+
+function readMulticlassConfusionMatrixData(
+    data: MulticlassConfusionMatrixData,
+): MulticlassConfusionReadout {
+    const { counts } = data;
+    const matrix = [
+        [counts[0], counts[1], counts[2]],
+        [counts[3], counts[4], counts[5]],
+        [counts[6], counts[7], counts[8]],
+    ];
+    const rowTotals = matrix.map((row) => row.reduce((sum, value) => sum + value, 0));
+    const columnTotals = MULTICLASS_LABELS.map((predicted) => (
+        matrix.reduce((sum, row) => sum + row[predicted], 0)
+    ));
+    const total = rowTotals.reduce((sum, value) => sum + value, 0);
+    const correct = counts[0] + counts[4] + counts[8];
+
+    return { matrix, rowTotals, columnTotals, total, correct };
 }
 
 function hasNonBinaryLabels(points: DataPoint[]): boolean {
@@ -258,10 +282,13 @@ export function deriveMulticlassConfusionReadout(
 
 export const ConfusionMatrix = memo(function ConfusionMatrix() {
     const problemType = usePlaygroundStore((s) => s.data.problemType);
+    const dataset = usePlaygroundStore((s) => s.data.dataset);
     const network = usePlaygroundStore((s) => s.network);
     const features = usePlaygroundStore((s) => s.features);
+    const lossType = usePlaygroundStore((s) => s.training.lossType);
     const trainPoints = useTrainingStore((s) => s.trainPoints);
     const testPoints = useTrainingStore((s) => s.testPoints);
+    const frameVersion = useTrainingStore((s) => s.frameVersion);
     const paramsVersion = useTrainingStore((s) => s.paramsVersion);
     const cm = useTrainingStore((s) => s.snapshot?.testMetrics.confusionMatrix);
     const status = useTrainingStore((s) => s.status);
@@ -277,15 +304,28 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
         problemType === 'classification' &&
         network.outputSize === 3 &&
         network.outputActivation === 'softmax';
+    const canReadWorkerMulticlassReadout =
+        isThreeClassSoftmax &&
+        dataset === 'three-class-clusters' &&
+        lossType === 'categoricalCrossEntropy' &&
+        !isConfigPending;
+    const workerMulticlassReadout = useMemo(() => {
+        void frameVersion;
+        if (!canReadWorkerMulticlassReadout) return null;
+        const matrix = getFrameBuffer().multiclassConfusionMatrix;
+        return matrix ? readMulticlassConfusionMatrixData(matrix) : null;
+    }, [canReadWorkerMulticlassReadout, frameVersion]);
     const canDeriveMulticlassReadout =
         isThreeClassSoftmax &&
         status !== 'running' &&
-        !isConfigPending;
-    const multiclassReadout = useMemo(() => {
+        !isConfigPending &&
+        !workerMulticlassReadout;
+    const derivedMulticlassReadout = useMemo(() => {
         void paramsVersion;
         if (!canDeriveMulticlassReadout) return null;
         return deriveMulticlassConfusionReadout(network, features, testPoints);
     }, [canDeriveMulticlassReadout, features, network, paramsVersion, testPoints]);
+    const multiclassReadout = workerMulticlassReadout ?? derivedMulticlassReadout;
 
     if (problemType !== 'classification') return null;
     if (testPoints.length === 0) {
@@ -303,10 +343,10 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
 
     if (isThreeClassSoftmax) {
         if (!multiclassReadout) {
-            const unavailableDescription = status === 'running'
-                ? 'Pause training to inspect the derived multiclass readout without recomputing it every training frame.'
-                : isConfigPending
-                    ? 'The current configuration is still syncing; wait for the worker to finish applying the active settings.'
+            const unavailableDescription = isConfigPending
+                ? 'The current configuration is still syncing; wait for the worker to finish applying the active settings.'
+                : status === 'running'
+                    ? 'Pause training to inspect the derived multiclass readout without recomputing it every training frame.'
                     : 'Current network parameters are still loading or do not match the active 3-class configuration.';
 
             return (
@@ -421,7 +461,9 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
                         </div>
                     </div>
                     <p className="cm-note">
-                        Derived from current frame-buffer parameters and test points; not a worker-persisted metric.
+                        {workerMulticlassReadout
+                            ? 'Latest worker-authored test evaluation from the training worker; stored outside React state.'
+                            : 'Derived from current frame-buffer parameters and test points; not a worker-persisted metric.'}
                     </p>
                 </div>
             </div>
