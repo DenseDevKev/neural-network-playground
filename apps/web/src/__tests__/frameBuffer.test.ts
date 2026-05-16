@@ -19,6 +19,7 @@ describe('frameBuffer', () => {
     describe('State mutations', () => {
         it('should expose numeric versions after reset', () => {
             const versions = getFrameVersions();
+            const buffer = getFrameBuffer();
             expect(typeof versions.frameVersion).toBe('number');
             expect(typeof versions.outputGridVersion).toBe('number');
             expect(typeof versions.neuronGridsVersion).toBe('number');
@@ -28,6 +29,7 @@ describe('frameBuffer', () => {
             expect(typeof versions.activationHistogramsVersion).toBe('number');
             expect(typeof versions.multiclassBoundaryVersion).toBe('number');
             expect(typeof versions.arenaSummariesVersion).toBe('number');
+            expect(typeof buffer.multiclassConfusionMatrixVersion).toBe('number');
         });
 
         it('updateFrameBuffer({}) should not bump any version', () => {
@@ -162,6 +164,51 @@ describe('frameBuffer', () => {
             expect(getFrameVersions()).toEqual(initialVersions);
         });
 
+        it('multiclass confusion matrix patch should bump only its local counter and broad frame version', () => {
+            const initialFrameVersion = getFrameBuffer().version;
+            const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
+            const multiclassConfusionMatrix = {
+                classCount: 3 as const,
+                classLabels: [0, 1, 2] as const,
+                counts: [3, 1, 0, 0, 4, 1, 1, 0, 5] as const,
+            };
+
+            const newVersion = updateFrameBuffer({ multiclassConfusionMatrix });
+
+            expect(newVersion).toBe(initialFrameVersion + 1);
+            expect(getFrameBuffer().version).toBe(initialFrameVersion + 1);
+            expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(
+                initialMulticlassConfusionVersion + 1,
+            );
+            expect(getFrameBuffer().multiclassConfusionMatrix).toBe(multiclassConfusionMatrix);
+        });
+
+        it('clearing multiclass confusion should bump only when the slot was populated', () => {
+            const initialFrameVersion = getFrameBuffer().version;
+            const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
+
+            const noOpVersion = updateFrameBuffer({ multiclassConfusionMatrix: null });
+            expect(noOpVersion).toBe(initialFrameVersion);
+            expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(initialMulticlassConfusionVersion);
+
+            const multiclassConfusionMatrix = {
+                classCount: 3 as const,
+                classLabels: [0, 1, 2] as const,
+                counts: [1, 0, 0, 0, 1, 0, 0, 0, 1] as const,
+            };
+            updateFrameBuffer({ multiclassConfusionMatrix });
+            const populatedFrameVersion = getFrameBuffer().version;
+            const populatedMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
+
+            const clearVersion = updateFrameBuffer({ multiclassConfusionMatrix: null });
+
+            expect(clearVersion).toBe(populatedFrameVersion + 1);
+            expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+            expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(
+                populatedMulticlassConfusionVersion + 1,
+            );
+        });
+
         it('arena summary patch should bump only arena and broad frame versions', () => {
             const initialVersions = getFrameVersions();
             const arenaSummaries = [
@@ -228,6 +275,7 @@ describe('frameBuffer', () => {
 
         it('resetFrameBuffer should bump all versions', () => {
             const initialVersions = getFrameVersions();
+            const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
 
             resetFrameBuffer();
 
@@ -242,6 +290,10 @@ describe('frameBuffer', () => {
                 multiclassBoundaryVersion: initialVersions.multiclassBoundaryVersion + 1,
                 arenaSummariesVersion: initialVersions.arenaSummariesVersion + 1,
             });
+            expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+            expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(
+                initialMulticlassConfusionVersion + 1,
+            );
         });
     });
 

@@ -524,6 +524,135 @@ describe('workerBridge streamed snapshots', () => {
         expect(afterFresh.confusionMatrixVersion).toBe(initialConfusionVersion + 1);
     });
 
+    it('stores fresh multiclass confusion matrices, clears binary confusion, and respects stale omissions', () => {
+        const listener = getRegisteredStreamListener();
+        const binaryConfusionMatrix = {
+            tp: 8,
+            tn: 7,
+            fp: 2,
+            fn: 1,
+        };
+        const multiclassConfusionMatrix = {
+            classCount: 3 as const,
+            classLabels: [0, 1, 2] as const,
+            counts: [3, 1, 0, 0, 4, 1, 1, 0, 5] as const,
+        };
+
+        startRenderLoop();
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(1, { confusionMatrix: binaryConfusionMatrix }), false),
+        } as MessageEvent);
+        runNextAnimationFrame();
+        expect(getFrameBuffer().confusionMatrix).toBe(binaryConfusionMatrix);
+
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(2, {
+                confusionMatrix: undefined,
+                multiclassConfusionMatrix,
+                multiclassConfusionMatrixVersion: 1,
+            }), false),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const afterMulticlass = getFrameBuffer();
+        const initialMulticlassConfusionVersion = afterMulticlass.multiclassConfusionMatrixVersion;
+        expect(afterMulticlass.confusionMatrix).toBeNull();
+        expect(afterMulticlass.multiclassConfusionMatrix).toBe(multiclassConfusionMatrix);
+        expect(initialMulticlassConfusionVersion).toBeGreaterThan(0);
+
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(3, {
+                multiclassConfusionMatrix: undefined,
+                multiclassConfusionMatrixVersion: undefined,
+            }), true),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const afterStale = getFrameBuffer();
+        expect(afterStale.multiclassConfusionMatrix).toBe(multiclassConfusionMatrix);
+        expect(afterStale.multiclassConfusionMatrixVersion).toBe(initialMulticlassConfusionVersion);
+
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(4, {
+                confusionMatrix: undefined,
+                multiclassConfusionMatrix: undefined,
+                multiclassConfusionMatrixVersion: undefined,
+            }), false),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const afterFreshOmission = getFrameBuffer();
+        expect(afterFreshOmission.multiclassConfusionMatrix).toBeNull();
+        expect(afterFreshOmission.multiclassConfusionMatrixVersion).toBe(
+            initialMulticlassConfusionVersion + 1,
+        );
+    });
+
+    it('fresh binary confusion snapshots clear cached multiclass confusion matrices', () => {
+        const listener = getRegisteredStreamListener();
+        const multiclassConfusionMatrix = {
+            classCount: 3 as const,
+            classLabels: [0, 1, 2] as const,
+            counts: [3, 1, 0, 0, 4, 1, 1, 0, 5] as const,
+        };
+        const binaryConfusionMatrix = {
+            tp: 6,
+            tn: 5,
+            fp: 1,
+            fn: 2,
+        };
+
+        startRenderLoop();
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(1, {
+                multiclassConfusionMatrix,
+                multiclassConfusionMatrixVersion: 1,
+            }), false),
+        } as MessageEvent);
+        runNextAnimationFrame();
+        const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
+        expect(getFrameBuffer().multiclassConfusionMatrix).toBe(multiclassConfusionMatrix);
+
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(2, { confusionMatrix: binaryConfusionMatrix }), false),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.confusionMatrix).toBe(binaryConfusionMatrix);
+        expect(frame.multiclassConfusionMatrix).toBeNull();
+        expect(frame.multiclassConfusionMatrixVersion).toBe(initialMulticlassConfusionVersion + 1);
+    });
+
+    it('rejects binary-plus-multiclass confusion snapshots without mutating the frame buffer', () => {
+        const listener = getRegisteredStreamListener();
+        const multiclassConfusionMatrix = {
+            classCount: 3 as const,
+            classLabels: [0, 1, 2] as const,
+            counts: [3, 1, 0, 0, 4, 1, 1, 0, 5] as const,
+        };
+        const initialFrame = getFrameBuffer();
+
+        startRenderLoop();
+        listener({
+            data: withTestMetricsStale(makeSnapshotMessage(1, {
+                confusionMatrix: {
+                    tp: 1,
+                    tn: 1,
+                    fp: 0,
+                    fn: 0,
+                },
+                multiclassConfusionMatrix,
+                multiclassConfusionMatrixVersion: 1,
+            }), false),
+        } as MessageEvent);
+
+        expect(receivedMessages.at(-1)?.msg.type).toBe('error');
+        expect(getFrameBuffer().version).toBe(initialFrame.version);
+        expect(getFrameBuffer().confusionMatrix).toBeNull();
+        expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+    });
+
     it('closes the stream port on termination and drops later stream commands', () => {
         postStreamCommand({ type: 'stopTraining' });
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'stopTraining' });

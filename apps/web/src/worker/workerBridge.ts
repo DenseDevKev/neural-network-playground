@@ -277,8 +277,15 @@ function buildSnapshotFramePatch(
     }
     if (msg.confusionMatrix !== undefined) {
         patch.confusionMatrix = msg.confusionMatrix;
+        patch.multiclassConfusionMatrix = null;
     } else if (msg.scalars.testMetricsStale === false) {
         patch.confusionMatrix = null;
+    }
+    if (msg.multiclassConfusionMatrix !== undefined) {
+        patch.multiclassConfusionMatrix = msg.multiclassConfusionMatrix;
+        patch.confusionMatrix = null;
+    } else if (msg.scalars.testMetricsStale === false) {
+        patch.multiclassConfusionMatrix = null;
     }
     return patch;
 }

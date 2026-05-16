@@ -4,7 +4,11 @@
 // structured-clone overhead. Components subscribe to a version counter
 // in useTrainingStore as a render trigger, then read from here imperatively.
 
-import type { LayerStats, ConfusionMatrixData } from '@nn-playground/engine';
+import type {
+    LayerStats,
+    ConfusionMatrixData,
+    MulticlassConfusionMatrixData,
+} from '@nn-playground/engine';
 import type {
     ActivationHistogramLayout,
     ArenaModelSummary,
@@ -51,6 +55,7 @@ export interface FrameBuffer {
 
     // Confusion matrix
     confusionMatrix: ConfusionMatrixData | null;
+    multiclassConfusionMatrix: MulticlassConfusionMatrixData | null;
 
     // Scalar-only live arena summaries. Heavy per-model arrays stay out of React state.
     arenaSummaries: ArenaModelSummary[] | null;
@@ -64,6 +69,7 @@ export interface FrameBuffer {
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
     multiclassBoundaryVersion: number;
+    multiclassConfusionMatrixVersion: number;
     arenaSummariesVersion: number;
 }
 
@@ -82,6 +88,7 @@ let _buffer: FrameBuffer = {
     multiclassConfidenceGrid: null,
     multiclassBoundaryLayout: null,
     confusionMatrix: null,
+    multiclassConfusionMatrix: null,
     arenaSummaries: null,
     version: 0,
     outputGridVersion: 0,
@@ -91,6 +98,7 @@ let _buffer: FrameBuffer = {
     confusionMatrixVersion: 0,
     activationHistogramsVersion: 0,
     multiclassBoundaryVersion: 0,
+    multiclassConfusionMatrixVersion: 0,
     arenaSummariesVersion: 0,
 };
 
@@ -129,6 +137,7 @@ type FrameBufferPatch = Partial<Omit<
     | 'confusionMatrixVersion'
     | 'activationHistogramsVersion'
     | 'multiclassBoundaryVersion'
+    | 'multiclassConfusionMatrixVersion'
     | 'arenaSummariesVersion'
 >>;
 
@@ -145,6 +154,9 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         hasOwn(patch, 'weights') || hasOwn(patch, 'biases') || hasOwn(patch, 'weightLayout');
     const layerStatsChanged = hasOwn(patch, 'layerStats');
     const confusionMatrixChanged = hasOwn(patch, 'confusionMatrix');
+    const multiclassConfusionMatrixChanged =
+        hasOwn(patch, 'multiclassConfusionMatrix') &&
+        patch.multiclassConfusionMatrix !== _buffer.multiclassConfusionMatrix;
     const activationHistogramsChanged =
         hasOwn(patch, 'activationHistogramBins') ||
         hasOwn(patch, 'activationHistogramLayout');
@@ -168,6 +180,7 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         paramsChanged ||
         layerStatsChanged ||
         confusionMatrixChanged ||
+        multiclassConfusionMatrixChanged ||
         activationHistogramsChanged ||
         multiclassBoundaryChanged ||
         arenaSummariesChanged;
@@ -181,6 +194,8 @@ export function updateFrameBuffer(patch: FrameBufferPatch): number {
         paramsVersion: _buffer.paramsVersion + (paramsChanged ? 1 : 0),
         layerStatsVersion: _buffer.layerStatsVersion + (layerStatsChanged ? 1 : 0),
         confusionMatrixVersion: _buffer.confusionMatrixVersion + (confusionMatrixChanged ? 1 : 0),
+        multiclassConfusionMatrixVersion:
+            _buffer.multiclassConfusionMatrixVersion + (multiclassConfusionMatrixChanged ? 1 : 0),
         activationHistogramsVersion:
             _buffer.activationHistogramsVersion + (activationHistogramsChanged ? 1 : 0),
         multiclassBoundaryVersion:
@@ -207,6 +222,7 @@ export function resetFrameBuffer(): void {
         multiclassConfidenceGrid: null,
         multiclassBoundaryLayout: null,
         confusionMatrix: null,
+        multiclassConfusionMatrix: null,
         arenaSummaries: null,
         version: _buffer.version + 1,
         outputGridVersion: _buffer.outputGridVersion + 1,
@@ -214,6 +230,7 @@ export function resetFrameBuffer(): void {
         paramsVersion: _buffer.paramsVersion + 1,
         layerStatsVersion: _buffer.layerStatsVersion + 1,
         confusionMatrixVersion: _buffer.confusionMatrixVersion + 1,
+        multiclassConfusionMatrixVersion: _buffer.multiclassConfusionMatrixVersion + 1,
         activationHistogramsVersion: _buffer.activationHistogramsVersion + 1,
         multiclassBoundaryVersion: _buffer.multiclassBoundaryVersion + 1,
         arenaSummariesVersion: _buffer.arenaSummariesVersion + 1,
