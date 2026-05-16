@@ -2405,3 +2405,47 @@ effectively unchanged. The main app chunk changed from 387.50 kB to
 The timing values remain within the established local baseline range. The
 slice changes UI selection and readout conversion only; it does not add worker
 work or alter runtime cadence.
+
+## Wave 7 Worker-Authored Multiclass Confusion Persistence Guard
+
+Date: 2026-05-15
+
+Scope: Test-only persistence non-leakage guards for worker-authored
+`multiclassConfusionMatrix` data. The slice proves shared experiment-memory
+validation, run capture, localStorage persistence, and the visible Run History
+save path strip worker-authored 3x3 metrics while keeping experiment-memory
+schema version 1. It does not change worker protocol, frame-buffer semantics,
+Zustand state, URL/config serialization, persistence/run-history schema,
+public config shape, dependencies, deployment, arbitrary class counts, raw
+probability-grid transport, training behavior, or UI behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output stayed unchanged from the Confusion UI preference
+build:
+
+- `dist/assets/training.worker-DpiAN4PK.js`: 95.23 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-cwA0WBAN.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-DfArupH_.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-iAcNqbM8.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-BbJDPOs7.js`: 388.10 kB, gzip 116.58 kB
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1165.5842 ms total for 100 iterations
+- `predictGridInto`: 1170.0446 ms total for 100 iterations
+- `predictGridWithNeurons`: 756.6948 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 664.3220 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.3463 ms
+- Average `applyGradients` time (SGD): 1.4820 ms
+
+The timing values remain within the established local baseline range. The
+slice is test-only and does not alter runtime cadence, worker computation,
+rendering, persistence schema, or serialization behavior.
