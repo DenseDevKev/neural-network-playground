@@ -2358,3 +2358,50 @@ slice adds a conditional frame-buffer clear during direct snapshot sync only;
 it does not alter worker training updates, worker emission cadence,
 decision-boundary prediction helpers, UI rendering, URL/config behavior, or
 persistence.
+
+## Wave 7 Worker-Authored Multiclass Confusion UI
+
+Date: 2026-05-15
+
+Scope: Confusion Matrix UI preference for bounded worker-authored
+`multiclassConfusionMatrix` data. The slice reads the existing frame-buffer
+slot behind the approved three-class tuple guard and the broad `frameVersion`
+subscription. It does not change worker protocol, frame-buffer semantics,
+Zustand state, URL/config serialization, persistence/run-history schema,
+public config shape, dependencies, deployment, arbitrary class counts, raw
+probability-grid transport, or training behavior.
+
+Commands:
+
+- `pnpm build`
+- `pnpm test:perf`
+
+`pnpm build` passed on 2026-05-15 with the existing Vite chunk-size warning.
+Relevant production output:
+
+- `dist/assets/training.worker-DpiAN4PK.js`: 95.23 kB
+- `dist/assets/index-Q85g2pVY.css`: 67.62 kB, gzip 11.76 kB
+- `dist/assets/engine-DIxxLc7J.js`: 6.15 kB, gzip 2.21 kB
+- `dist/assets/CodeExportPanel-cwA0WBAN.js`: 7.69 kB, gzip 3.07 kB
+- `dist/assets/react-j2mp3VYR.js`: 11.79 kB, gzip 4.21 kB
+- `dist/assets/InspectionPanel-DfArupH_.js`: 13.42 kB, gzip 3.50 kB
+- `dist/assets/RunHistoryPanel-iAcNqbM8.js`: 18.58 kB, gzip 5.66 kB
+- `dist/assets/index-BbJDPOs7.js`: 388.10 kB, gzip 116.58 kB
+
+Compared with the direct snapshot lifecycle-clear build, the worker, CSS,
+engine, Code Export, React, Inspection, and Run History chunks stayed
+effectively unchanged. The main app chunk changed from 387.50 kB to
+388.10 kB, about 0.15%, below the 10% roadmap warning threshold.
+
+`pnpm test:perf` passed with 2 benchmark files and 4 benchmark tests:
+
+- `predictGrid`: 1160.2855 ms total for 100 iterations
+- `predictGridInto`: 1226.7375 ms total for 100 iterations
+- `predictGridWithNeurons`: 785.9544 ms total for 50 iterations
+- `predictGridWithNeuronsInto`: 640.9765 ms total for 50 iterations
+- Average `applyGradients` time (Adam, L2, Clip): 4.1326 ms
+- Average `applyGradients` time (SGD): 1.8071 ms
+
+The timing values remain within the established local baseline range. The
+slice changes UI selection and readout conversion only; it does not add worker
+work or alter runtime cadence.
