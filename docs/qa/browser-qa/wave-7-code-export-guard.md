@@ -6,63 +6,69 @@
 
 ## Commit
 
-`f869ea2`
+- Code: `f869ea2`
+- Mode B follow-up evidence: this record
 
 ## Environment
 
 - OS: macOS
-- Browser: In-app browser requested, but Browser plugin tools were unavailable in this session
-- Viewport: Pending human verification
-- Local URL: `http://127.0.0.1:5177/`
+- Browser: Codex in-app Browser
+- Viewport: desktop `1280x720`, compact `390x800`
+- Local URL: `http://127.0.0.1:5177/#d=three-class-clusters&pt=classification&r=0.5&n=0.05&ns=300&s=42&hl=6%2C6&os=3&a=tanh&oa=softmax&wi=xavier&ws=42&lr=0.03&bs=10&l=categoricalCrossEntropy&o=sgd&m=0.9&rg=none&rr=0&f=110000000`
 
 ## QA Mode
 
-Mode C: Human-Verified-Only QA
+Mode B
 
 ## Scenario
 
-Verify the visible Code Export panel still works for the currently public scalar app flows after the hidden multiclass code-export guard.
+Verify the visible Code Export panel works for the now-public approved three-class softmax tuple after the code-export guard and later public multiclass rollout.
 
 ## Steps
 
-1. Open `http://127.0.0.1:5177/`.
-2. Open the Code panel.
-3. Confirm the Pseudocode tab renders non-empty code.
-4. Switch to NumPy and confirm code changes and remains readable.
-5. Switch to TF.js and confirm code changes and remains readable.
-6. Copy the current code and confirm the button gives feedback.
-7. Check the browser console for errors.
-8. Repeat the Code panel check at a compact viewport.
+1. Started the Vite dev server with `pnpm --filter @nn-playground/web dev --host 127.0.0.1 --port 5177`.
+2. Opened `http://127.0.0.1:5177/` in the Codex in-app Browser.
+3. Applied the `Three-Class Softmax Lab` preset.
+4. Opened the Code panel.
+5. Confirmed the Pseudocode tab renders a 2 -> 6 -> 6 -> 3 architecture, output `Softmax`, and `Categorical Cross-Entropy`.
+6. Switched to NumPy and confirmed the code renders `def softmax`, `np.exp`, and `softmax(W3 @ h + b3)`.
+7. Switched to TF.js and confirmed `tf.sequential`, `units: 3`, `softmax`, and `categoricalCrossentropy`.
+8. Clicked `Copy Code` and confirmed copy feedback remained available.
+9. Checked browser console errors.
+10. Repeated the Code panel check at compact `390x800` viewport.
+11. Captured desktop and compact screenshots and reset the viewport override.
 
 ## Expected Results
 
-- Code Export remains visible and usable for current scalar workflows.
+- Code Export remains visible and usable for the approved public multiclass workflow.
 - Pseudocode, NumPy, and TF.js tabs all render non-empty output.
-- No visible multiclass controls are exposed.
+- Multiclass output copy is truthful for the approved tuple.
 - No console errors appear.
 - Compact viewport has no Code panel text overlap beyond expected code scrolling.
 
 ## Actual Results
 
-Browser QA status: pending human verification.
-
-Automated/component evidence:
-
-- `pnpm --filter @nn-playground/web test -- src/components/controls/CodeExportPanel.test.tsx` passed with 51 files and 382 tests.
-- `pnpm test` passed with web 51 files and 382 tests.
+- Code Export opened from the public `Three-Class Softmax Lab` preset.
+- Pseudocode, NumPy, and TF.js tabs rendered non-empty code for the 3-output softmax network.
+- TF.js output included `tf.sequential`, `units: 3`, `softmax`, and `categoricalCrossentropy`.
+- NumPy output included `def softmax`, `np.exp`, and `softmax(W3 @ h + b3)`.
+- Copy Code activation completed without console errors.
+- Compact `390x800` viewport retained the Code panel and TF.js output without obvious text overlap; long code remains scrollable as expected.
+- Browser console error checks returned `[]`.
 
 ## Console Errors
 
-Pending human verification.
+None observed in Browser console checks.
 
 ## Screenshots / Recordings
 
-Pending human verification.
+- `docs/qa/browser-qa/wave-7-code-export-guard-desktop.png`
+- `docs/qa/browser-qa/wave-7-code-export-guard-compact.png`
 
 ## Accessibility Notes
 
-No new interactive controls were added. The existing native tab buttons and copy button remain covered by component tests.
+No new interactive controls were added. The existing native tab buttons and copy button remain covered by component tests and were reachable in Browser QA.
 
 ## Result
 
-Pending Human Verification
+Pass
