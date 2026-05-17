@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { axe } from 'jest-axe';
+import type { ReactNode } from 'react';
 import App from './App';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { useLayoutStore } from './store/useLayoutStore.ts';
@@ -25,7 +26,17 @@ vi.mock('./components/layout/RegionShell.tsx', () => ({
     DockShell:  () => <section aria-label="Dock workspace">Workspace</section>,
     FocusShell: () => <section aria-label="Focus workspace">Workspace</section>,
     GridShell:  () => <section aria-label="Grid workspace">Workspace</section>,
-    SplitShell: () => <section aria-label="Split workspace">Workspace</section>,
+    SplitShell: ({ buildLeft, buildCenter, buildRight }: {
+        buildLeft?: ReactNode;
+        buildCenter?: ReactNode;
+        buildRight?: ReactNode;
+    }) => (
+        <section aria-label="Split workspace">
+            {buildLeft}
+            {buildCenter}
+            {buildRight}
+        </section>
+    ),
 }));
 
 vi.mock('./components/layout/MainArea.tsx', () => ({
@@ -204,5 +215,23 @@ describe('App accessibility shell', () => {
             useLayoutStore.getState().setLayout('split');
         });
         expect(useLayoutStore.getState().layout).toBe('split');
+    });
+
+    it('passes target hooks to split layout configuration panels', () => {
+        useLayoutStore.setState({ layout: 'split', phase: 'build' });
+
+        const { container } = render(<App />);
+        const targets = Array.from(container.querySelectorAll('.forge-panel[data-forge-panel-targets]'))
+            .map((panel) => panel.getAttribute('data-forge-panel-targets'));
+
+        expect(targets).toEqual(expect.arrayContaining([
+            'presets',
+            'data',
+            'topology',
+            'network',
+            'features',
+            'hyperparams',
+            'config',
+        ]));
     });
 });

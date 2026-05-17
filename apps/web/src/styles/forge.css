@@ -438,6 +438,7 @@
 .forge-split [data-forge-panel-targets~="presets"] .forge-panel__body,
 .forge-split [data-forge-panel-targets~="data"] .forge-panel__body,
 .forge-split [data-forge-panel-targets~="features"] .forge-panel__body,
+.forge-split [data-forge-panel-targets~="network"] .forge-panel__body,
 .forge-split [data-forge-panel-targets~="hyperparams"] .forge-panel__body,
 .forge-split [data-forge-panel-targets~="config"] .forge-panel__body {
     display: grid;
@@ -450,6 +451,7 @@
 .forge-split [data-forge-panel-targets~="presets"] .control-row,
 .forge-split [data-forge-panel-targets~="data"] .control-row,
 .forge-split [data-forge-panel-targets~="features"] .control-row,
+.forge-split [data-forge-panel-targets~="network"] .control-row,
 .forge-split [data-forge-panel-targets~="hyperparams"] .control-row,
 .forge-split [data-forge-panel-targets~="config"] .control-row {
     margin-bottom: 0;
@@ -461,6 +463,7 @@
 .forge-split [data-forge-panel-targets~="presets"] .chip-group,
 .forge-split [data-forge-panel-targets~="data"] .chip-group,
 .forge-split [data-forge-panel-targets~="features"] .chip-group,
+.forge-split [data-forge-panel-targets~="network"] .chip-group,
 .forge-split [data-forge-panel-targets~="hyperparams"] .chip-group,
 .forge-split [data-forge-panel-targets~="config"] .chip-group {
     gap: 6px;
@@ -472,6 +475,7 @@
 .forge-split [data-forge-panel-targets~="presets"] .control-label,
 .forge-split [data-forge-panel-targets~="data"] .control-label,
 .forge-split [data-forge-panel-targets~="features"] .control-label,
+.forge-split [data-forge-panel-targets~="network"] .control-label,
 .forge-split [data-forge-panel-targets~="hyperparams"] .control-label,
 .forge-split [data-forge-panel-targets~="config"] .control-label {
     color: var(--text-tertiary);
@@ -483,6 +487,7 @@
 .forge-split [data-forge-panel-targets~="presets"] .control-value,
 .forge-split [data-forge-panel-targets~="data"] .control-value,
 .forge-split [data-forge-panel-targets~="features"] .control-value,
+.forge-split [data-forge-panel-targets~="network"] .control-value,
 .forge-split [data-forge-panel-targets~="hyperparams"] .control-value,
 .forge-split [data-forge-panel-targets~="config"] .control-value {
     color: var(--color-accent);

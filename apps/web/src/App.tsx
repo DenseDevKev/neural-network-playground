@@ -383,32 +383,32 @@ export default function App() {
                         <SplitShell
                             buildLeft={
                                 <>
-                                    <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
-                                    <Panel title="Data" phase="build" className={lessonTargetClass('data')}><DataPanel onReset={stableReset} /></Panel>
+                                    <Panel title="Presets" phase="build" panelTargets="presets"><PresetPanel onReset={stableReset} /></Panel>
+                                    <Panel title="Data" phase="build" className={lessonTargetClass('data')} panelTargets="data"><DataPanel onReset={stableReset} /></Panel>
                                 </>
                             }
                             buildCenter={
                                 <>
-                                    <Panel title="Network Topology" phase="build" fill>
+                                    <Panel title="Network Topology" phase="build" fill panelTargets="topology">
                                         <div style={{ display: 'flex', minHeight: 280, height: '100%' }}>
                                             <CanvasContent />
                                         </div>
                                     </Panel>
-                                    <Panel title="Network" phase="build" className={lessonTargetClass('network')}><NetworkConfigPanel /></Panel>
+                                    <Panel title="Network" phase="build" className={lessonTargetClass('network')} panelTargets="network"><NetworkConfigPanel /></Panel>
                                 </>
                             }
                             buildRight={
                                 <>
-                                    <Panel title="Features" phase="build" className={lessonTargetClass('features')}><FeaturesPanel /></Panel>
-                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
-                                    <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
+                                    <Panel title="Features" phase="build" className={lessonTargetClass('features')} panelTargets="features"><FeaturesPanel /></Panel>
+                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')} panelTargets="hyperparams"><HyperparamPanel /></Panel>
+                                    <Panel title="Config" phase="both" panelTargets="config"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
                                     {historyPanel}
                                 </>
                             }
                             runLeft={
                                 <>
-                                    <Panel title="Network Topology" phase="build" fill>
+                                    <Panel title="Network Topology" phase="build" fill panelTargets="topology">
                                         <div style={{ display: 'flex', minHeight: 240, height: '100%' }}>
                                             <CanvasContent />
                                         </div>
@@ -425,8 +425,8 @@ export default function App() {
                             runRight={
                                 <>
                                     {confusionPanel}
-                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
-                                    <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
+                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')} panelTargets="hyperparams"><HyperparamPanel /></Panel>
+                                    <Panel title="Config" phase="both" panelTargets="config"><ConfigPanel onReset={stableReset} /></Panel>
                                     {codePanel}
                                     {historyPanel}
                                 </>
