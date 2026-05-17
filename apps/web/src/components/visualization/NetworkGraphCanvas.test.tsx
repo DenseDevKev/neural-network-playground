@@ -253,8 +253,8 @@ describe('NetworkGraphCanvas', () => {
     it('attaches graph viewport controls and mode toggle to one toolbar surface', () => {
         const { container } = render(<NetworkGraphCanvas />);
 
-        const toolbar = container.querySelector('.network-graph-toolbar');
-        expect(toolbar).not.toBeNull();
+        const toolbar = screen.getByRole('toolbar', { name: 'Network graph toolbar' });
+        expect(toolbar).toHaveClass('network-graph-toolbar');
         expect(toolbar?.querySelector('.network-graph-controls')).not.toBeNull();
         expect(toolbar?.querySelector('.network-graph-mode-toggle')).not.toBeNull();
 
