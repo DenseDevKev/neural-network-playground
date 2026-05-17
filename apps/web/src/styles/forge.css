@@ -168,6 +168,12 @@
 .forge-topbar .btn--play {
     box-shadow: 0 0 18px rgba(188, 135, 254, 0.28);
 }
+.forge-topbar .btn--play:focus-visible {
+    box-shadow:
+        0 0 0 2px var(--bg-base),
+        0 0 0 4px var(--border-focus),
+        0 0 18px rgba(188, 135, 254, 0.28);
+}
 @keyframes forge-flash {
     0%, 100% { transform: scale(1); text-shadow: 0 0 0 transparent; }
     50%       { transform: scale(1.05); text-shadow: 0 0 8px currentColor; }
@@ -422,7 +428,11 @@
 .forge-dock__left .forge-tabs__content,
 .forge-focus__left .forge-panel__body,
 .forge-grid__config .forge-panel__body,
-.forge-split__col:first-child .forge-panel__body {
+.forge-split [data-forge-panel-targets~="presets"] .forge-panel__body,
+.forge-split [data-forge-panel-targets~="data"] .forge-panel__body,
+.forge-split [data-forge-panel-targets~="features"] .forge-panel__body,
+.forge-split [data-forge-panel-targets~="hyperparams"] .forge-panel__body,
+.forge-split [data-forge-panel-targets~="config"] .forge-panel__body {
     display: grid;
     gap: var(--forge-control-gap);
 }
@@ -430,28 +440,44 @@
 .forge-dock__left .control-row,
 .forge-focus__left .control-row,
 .forge-grid__config .control-row,
-.forge-split__col:first-child .control-row {
+.forge-split [data-forge-panel-targets~="presets"] .control-row,
+.forge-split [data-forge-panel-targets~="data"] .control-row,
+.forge-split [data-forge-panel-targets~="features"] .control-row,
+.forge-split [data-forge-panel-targets~="hyperparams"] .control-row,
+.forge-split [data-forge-panel-targets~="config"] .control-row {
     margin-bottom: 0;
 }
 
 .forge-dock__left .chip-group,
 .forge-focus__left .chip-group,
 .forge-grid__config .chip-group,
-.forge-split__col:first-child .chip-group {
+.forge-split [data-forge-panel-targets~="presets"] .chip-group,
+.forge-split [data-forge-panel-targets~="data"] .chip-group,
+.forge-split [data-forge-panel-targets~="features"] .chip-group,
+.forge-split [data-forge-panel-targets~="hyperparams"] .chip-group,
+.forge-split [data-forge-panel-targets~="config"] .chip-group {
     gap: 6px;
 }
 
 .forge-dock__left .control-label,
 .forge-focus__left .control-label,
 .forge-grid__config .control-label,
-.forge-split__col:first-child .control-label {
+.forge-split [data-forge-panel-targets~="presets"] .control-label,
+.forge-split [data-forge-panel-targets~="data"] .control-label,
+.forge-split [data-forge-panel-targets~="features"] .control-label,
+.forge-split [data-forge-panel-targets~="hyperparams"] .control-label,
+.forge-split [data-forge-panel-targets~="config"] .control-label {
     color: var(--text-tertiary);
 }
 
 .forge-dock__left .control-value,
 .forge-focus__left .control-value,
 .forge-grid__config .control-value,
-.forge-split__col:first-child .control-value {
+.forge-split [data-forge-panel-targets~="presets"] .control-value,
+.forge-split [data-forge-panel-targets~="data"] .control-value,
+.forge-split [data-forge-panel-targets~="features"] .control-value,
+.forge-split [data-forge-panel-targets~="hyperparams"] .control-value,
+.forge-split [data-forge-panel-targets~="config"] .control-value {
     color: color-mix(in srgb, var(--color-accent) 78%, white);
 }
 
