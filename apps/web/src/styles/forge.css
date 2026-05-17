@@ -160,8 +160,14 @@
     font-variant-numeric: tabular-nums;
     transition: color 200ms;
 }
-.forge-metric__value--primary { color: color-mix(in srgb, var(--color-primary) 82%, white); }
-.forge-metric__value--accent  { color: color-mix(in srgb, var(--color-accent) 82%, white); }
+.forge-metric__value--primary {
+    color: var(--color-primary);
+    color: color-mix(in srgb, var(--color-primary) 82%, white);
+}
+.forge-metric__value--accent  {
+    color: var(--color-accent);
+    color: color-mix(in srgb, var(--color-accent) 82%, white);
+}
 .forge-metric__value--updated {
     animation: forge-flash 180ms var(--ease-out);
 }
@@ -479,6 +485,7 @@
 .forge-split [data-forge-panel-targets~="features"] .control-value,
 .forge-split [data-forge-panel-targets~="hyperparams"] .control-value,
 .forge-split [data-forge-panel-targets~="config"] .control-value {
+    color: var(--color-accent);
     color: color-mix(in srgb, var(--color-accent) 78%, white);
 }
 
