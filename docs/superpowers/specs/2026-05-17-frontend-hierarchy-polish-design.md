@@ -155,8 +155,19 @@ Run focused technical and rendered validation:
 - `pnpm build`
 - Relevant component/style tests for touched files.
 - Browser QA on desktop and mobile.
+- Capture before/after screenshots using the same dataset, network config, training state, and viewport sizes.
 - Verify page identity, nonblank render, no framework overlay, console health, screenshot evidence, and at least one training/control interaction.
 - Check hover, focus, disabled states, and readout legibility after visual contrast reductions.
+
+## Implementation Order
+
+1. Tokens and surface hierarchy.
+2. Top bar and action hierarchy.
+3. Left configuration panel rhythm.
+4. Network Topology controls.
+5. Right output tabs and states.
+6. Training controls and Guided Lesson.
+7. Responsive QA and final visual pass.
 
 ## Success Criteria
 
