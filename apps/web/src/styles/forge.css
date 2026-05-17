@@ -34,11 +34,9 @@
     align-items: center;
     gap: var(--space-sm);
     padding: 0 var(--space-md);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.012)),
-        rgba(12, 13, 15, 0.96);
-    border-bottom: 1px solid rgba(129, 236, 255, 0.13);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+    background: rgba(12, 13, 15, 0.97);
+    border-bottom: 1px solid var(--forge-border-muted);
+    box-shadow: var(--forge-shadow-muted);
     flex-shrink: 0;
     z-index: 100;
     position: relative;
@@ -140,13 +138,11 @@
     flex-direction: column;
     gap: 1px;
     padding: 5px 10px 4px;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.008)),
-        rgba(9, 10, 12, 0.72);
-    border: 1px solid rgba(255, 255, 255, 0.075);
+    background: rgba(255, 255, 255, 0.025);
+    border: 1px solid rgba(255, 255, 255, 0.055);
     border-radius: var(--radius-sm);
     min-width: 72px;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    box-shadow: none;
 }
 .forge-metric__label {
     font-family: var(--font-mono);
@@ -159,19 +155,22 @@
 .forge-metric__value {
     font-family: var(--font-mono);
     font-size: var(--text-base);
-    font-weight: 600;
-    color: var(--text-primary);
+    font-weight: 650;
+    color: var(--text-secondary);
     font-variant-numeric: tabular-nums;
     transition: color 200ms;
 }
-.forge-metric__value--primary { color: var(--color-primary); }
-.forge-metric__value--accent  { color: var(--color-accent); }
+.forge-metric__value--primary { color: color-mix(in srgb, var(--color-primary) 82%, white); }
+.forge-metric__value--accent  { color: color-mix(in srgb, var(--color-accent) 82%, white); }
 .forge-metric__value--updated {
-    animation: forge-flash 200ms var(--ease-out);
+    animation: forge-flash 180ms var(--ease-out);
+}
+.forge-topbar .btn--play {
+    box-shadow: 0 0 18px rgba(188, 135, 254, 0.28);
 }
 @keyframes forge-flash {
     0%, 100% { transform: scale(1); text-shadow: 0 0 0 transparent; }
-    50%       { transform: scale(1.12); text-shadow: 0 0 12px currentColor; }
+    50%       { transform: scale(1.05); text-shadow: 0 0 8px currentColor; }
 }
 
 /* ─── Status Bar ────────────────────────────────────────────────── */
@@ -418,6 +417,42 @@
 }
 .forge-tabs__content {
     padding: 12px;
+}
+
+.forge-dock__left .forge-tabs__content,
+.forge-focus__left .forge-panel__body,
+.forge-grid__config .forge-panel__body,
+.forge-split__col:first-child .forge-panel__body {
+    display: grid;
+    gap: var(--forge-control-gap);
+}
+
+.forge-dock__left .control-row,
+.forge-focus__left .control-row,
+.forge-grid__config .control-row,
+.forge-split__col:first-child .control-row {
+    margin-bottom: 0;
+}
+
+.forge-dock__left .chip-group,
+.forge-focus__left .chip-group,
+.forge-grid__config .chip-group,
+.forge-split__col:first-child .chip-group {
+    gap: 6px;
+}
+
+.forge-dock__left .control-label,
+.forge-focus__left .control-label,
+.forge-grid__config .control-label,
+.forge-split__col:first-child .control-label {
+    color: var(--text-tertiary);
+}
+
+.forge-dock__left .control-value,
+.forge-focus__left .control-value,
+.forge-grid__config .control-value,
+.forge-split__col:first-child .control-value {
+    color: color-mix(in srgb, var(--color-accent) 78%, white);
 }
 
 .training-explanation-actions {
