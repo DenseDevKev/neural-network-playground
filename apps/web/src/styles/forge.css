@@ -2,6 +2,20 @@
    Extends index.css tokens. Never resets or overrides base tokens.
    All new classes use the .forge- prefix to avoid collisions.          */
 
+/* ─── Hierarchy polish tokens ─────────────────────────────────────
+   Scoped through forge surfaces. These complement index.css tokens
+   without replacing base design-system values. */
+.forge-shell {
+    --forge-surface-muted: rgba(16, 18, 22, 0.72);
+    --forge-surface-panel: rgba(19, 21, 26, 0.88);
+    --forge-surface-active: rgba(129, 236, 255, 0.075);
+    --forge-border-muted: rgba(255, 255, 255, 0.055);
+    --forge-border-active: rgba(129, 236, 255, 0.28);
+    --forge-shadow-muted: 0 8px 22px rgba(0, 0, 0, 0.18);
+    --forge-shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.035) inset;
+    --forge-control-gap: 8px;
+}
+
 /* ─── Shell ─────────────────────────────────────────────────────── */
 .forge-shell {
     display: grid;
@@ -9,9 +23,7 @@
     height: 100vh;
     overflow: hidden;
     background:
-        radial-gradient(circle at 18% 0%, rgba(129, 236, 255, 0.075), transparent 30%),
-        radial-gradient(circle at 90% 8%, rgba(234, 179, 8, 0.05), transparent 24%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 38%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.014), transparent 34%),
         var(--bg-base);
     color: var(--text-primary);
 }
@@ -283,9 +295,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 28%),
-        var(--bg-surface);
+    background: var(--forge-surface-muted);
     overflow: hidden;
 }
 .forge-dock__left  { border-right: 1px solid var(--border-subtle); }
@@ -297,8 +307,8 @@
     min-height: 0;
     min-width: 0;
     background:
-        linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px) 0 0 / 26px 26px,
-        linear-gradient(90deg, rgba(255,255,255,0.014) 1px, transparent 1px) 0 0 / 26px 26px,
+        linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px) 0 0 / 28px 28px,
         var(--bg-base);
     padding: var(--space-sm);
     display: flex;
@@ -310,16 +320,14 @@
 .forge-dock__bottom {
     grid-column: 2 / span 3;
     grid-row: 2;
-    background:
-        linear-gradient(180deg, rgba(129, 236, 255, 0.065), rgba(255, 255, 255, 0.014)),
-        rgba(13, 14, 17, 0.98);
-    border-top: 1px solid rgba(129, 236, 255, 0.14);
+    background: rgba(13, 14, 17, 0.96);
+    border-top: 1px solid var(--forge-border-muted);
     padding: 8px var(--space-md);
     display: flex;
     align-items: center;
     gap: var(--space-sm);
     flex-shrink: 0;
-    box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.22);
+    box-shadow: var(--forge-shadow-muted);
 }
 
 .forge-dock--compact .forge-dock__left {
@@ -653,11 +661,12 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
+    background: var(--forge-surface-panel);
+    border: 1px solid var(--forge-border-muted);
     border-radius: var(--radius-md);
     overflow: hidden;
     flex-shrink: 0;
+    box-shadow: var(--forge-shadow-panel);
 }
 .forge-panel--fill { flex: 1; min-height: 0; }
 .forge-panel--dim {
@@ -673,9 +682,9 @@
     align-items: center;
     gap: 8px;
     padding: 0 var(--space-md);
-    height: 36px;
-    background: linear-gradient(180deg, var(--bg-hover), var(--bg-elevated));
-    border-bottom: 1px solid var(--border-subtle);
+    height: 34px;
+    background: rgba(255, 255, 255, 0.018);
+    border-bottom: 1px solid var(--forge-border-muted);
     user-select: none;
     flex-shrink: 0;
 }
@@ -690,7 +699,7 @@
 .forge-panel__title {
     font-size: 11px;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-secondary);
     flex: 1;
@@ -709,16 +718,15 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     flex-shrink: 0;
+    color: var(--text-tertiary);
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.06);
 }
 .forge-panel__phase-tag--build {
     color: var(--color-primary);
-    background: var(--color-primary-glow);
-    border: 1px solid rgba(129, 236, 255, 0.2);
 }
 .forge-panel__phase-tag--run {
     color: var(--color-positive);
-    background: rgba(249, 115, 22, 0.1);
-    border: 1px solid rgba(249, 115, 22, 0.2);
 }
 .forge-panel__body {
     flex: 1;
