@@ -1018,20 +1018,40 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 .guided-lesson {
     position: relative;
     min-width: 0;
-    border: 1px solid rgba(234, 179, 8, 0.28);
+    border: 1px solid rgba(255, 255, 255, 0.09);
     border-radius: var(--radius-md);
     background:
-        linear-gradient(135deg, rgba(234, 179, 8, 0.11), transparent 44%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.01)),
+        linear-gradient(135deg, rgba(234, 179, 8, 0.045), transparent 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.032), rgba(255, 255, 255, 0.01)),
         rgba(12, 12, 13, 0.94);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
     overflow: hidden;
+    color: var(--text-secondary);
     transition: border-color var(--duration-fast) var(--ease-out),
-        box-shadow var(--duration-fast) var(--ease-out);
+        box-shadow var(--duration-fast) var(--ease-out),
+        background var(--duration-fast) var(--ease-out);
 }
 
 .guided-lesson--open {
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 0 0 1px rgba(234, 179, 8, 0.05);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.guided-lesson:not(.guided-lesson--active) {
+    background:
+        linear-gradient(135deg, rgba(234, 179, 8, 0.035), transparent 40%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.028), rgba(255, 255, 255, 0.008)),
+        rgba(12, 12, 13, 0.91);
+    border-color: rgba(255, 255, 255, 0.085);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.guided-lesson--active {
+    border-color: rgba(234, 179, 8, 0.3);
+    background:
+        linear-gradient(135deg, rgba(234, 179, 8, 0.1), transparent 45%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+        rgba(12, 12, 13, 0.95);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045), 0 0 0 1px rgba(234, 179, 8, 0.045);
 }
 
 .guided-lesson--collapsed {
@@ -1053,11 +1073,15 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 
 .guided-lesson__eyebrow {
     margin-bottom: 2px;
-    color: var(--color-warning);
+    color: rgba(234, 179, 8, 0.74);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+.guided-lesson--active .guided-lesson__eyebrow {
+    color: var(--color-warning);
 }
 
 .guided-lesson__title {
@@ -1085,6 +1109,11 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     font-weight: 700;
 }
 
+.guided-lesson--active .guided-lesson__step-chip {
+    border-color: rgba(234, 179, 8, 0.38);
+    background: rgba(234, 179, 8, 0.11);
+}
+
 .guided-lesson__toggle {
     width: 28px;
     height: 28px;
@@ -1105,6 +1134,11 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     border-color: rgba(234, 179, 8, 0.34);
     color: var(--color-warning);
     background: rgba(234, 179, 8, 0.08);
+}
+
+.guided-lesson__toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--border-focus);
 }
 
 .guided-lesson__content {
@@ -1168,6 +1202,18 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 .guided-lesson__start {
     width: 100%;
     margin-top: 10px;
+}
+
+.guided-lesson:not(.guided-lesson--active) .guided-lesson__start {
+    border: 1px solid rgba(0, 229, 195, 0.28);
+    background: rgba(0, 229, 195, 0.11);
+    color: var(--color-accent);
+}
+
+.guided-lesson:not(.guided-lesson--active) .guided-lesson__start:hover {
+    border-color: rgba(0, 229, 195, 0.42);
+    background: rgba(0, 229, 195, 0.16);
+    box-shadow: none;
 }
 
 .lesson-target {

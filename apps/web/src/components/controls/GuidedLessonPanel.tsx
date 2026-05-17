@@ -44,6 +44,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     );
     const lessonPreset = useMemo(() => getLessonPreset(selectedLesson), [selectedLesson]);
     const activeStep = activeStepIndex === null ? null : selectedLesson.steps[activeStepIndex];
+    const lessonStateClass = activeStep ? 'guided-lesson--active' : '';
 
     const focusStep = useCallback(
         (step: LessonStep) => {
@@ -100,7 +101,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
 
     return (
         <aside
-            className={`guided-lesson ${isDrawerOpen ? 'guided-lesson--open' : 'guided-lesson--collapsed'}`}
+            className={`guided-lesson ${lessonStateClass} ${isDrawerOpen ? 'guided-lesson--open' : 'guided-lesson--collapsed'}`}
             aria-label="Guided lesson mode"
         >
             <div className="guided-lesson__header">
