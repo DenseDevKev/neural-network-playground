@@ -2008,20 +2008,30 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     height: 100%;
 }
 
-.network-graph-controls {
+.network-graph-toolbar {
     position: absolute;
     top: var(--space-sm);
     right: var(--space-sm);
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: calc(100% - var(--space-lg));
+    padding: 4px;
+    border: 1px solid rgba(129, 236, 255, 0.16);
+    border-radius: var(--radius-sm);
+    background: rgba(15, 18, 28, 0.76);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.network-graph-toolbar .network-graph-controls {
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    padding: 3px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-sm);
-    background: rgba(28, 32, 48, 0.78);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    z-index: 20;
+    padding: 0;
 }
 
 .network-graph-summary {
@@ -2081,19 +2091,12 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     color: var(--text-tertiary);
 }
 
-.network-graph-mode-toggle {
-    position: absolute;
-    right: var(--space-sm);
-    top: 48px;
-    z-index: 20;
+.network-graph-toolbar .network-graph-mode-toggle {
     display: inline-flex;
+    align-items: center;
     gap: 2px;
-    padding: 3px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-sm);
-    background: rgba(28, 32, 48, 0.78);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    padding: 0 0 0 4px;
+    border-left: 1px solid rgba(129, 236, 255, 0.14);
 }
 
 .network-graph-mode-toggle__button {
@@ -2113,6 +2116,13 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 .network-graph-mode-toggle__button--active {
     background: var(--bg-hover);
     color: var(--text-primary);
+}
+
+.network-graph-controls button:focus-visible,
+.network-graph-mode-toggle__button:focus-visible,
+.network-graph-legend__filter:focus-visible {
+    outline: 2px solid rgba(129, 236, 255, 0.75);
+    outline-offset: 2px;
 }
 
 .network-graph-layer-controls {
@@ -2263,12 +2273,13 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     bottom: var(--space-sm);
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
     max-width: calc(100% - var(--space-lg));
-    padding: 5px 7px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 4px 6px;
+    border: 1px solid rgba(129, 236, 255, 0.12);
     border-radius: var(--radius-sm);
-    background: rgba(28, 32, 48, 0.78);
+    background: rgba(15, 18, 28, 0.68);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     color: var(--text-secondary);

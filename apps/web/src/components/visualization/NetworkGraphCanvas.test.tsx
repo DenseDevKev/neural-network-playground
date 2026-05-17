@@ -250,16 +250,26 @@ describe('NetworkGraphCanvas', () => {
         expect(container.querySelector('.network-tooltip')).toBeNull();
     });
 
-    it('renders graph viewport controls and updates the zoom label', () => {
+    it('attaches graph viewport controls and mode toggle to one toolbar surface', () => {
         const { container } = render(<NetworkGraphCanvas />);
+
+        const toolbar = container.querySelector('.network-graph-toolbar');
+        expect(toolbar).not.toBeNull();
+        expect(toolbar?.querySelector('.network-graph-controls')).not.toBeNull();
+        expect(toolbar?.querySelector('.network-graph-mode-toggle')).not.toBeNull();
 
         const zoomLabel = container.querySelector('.network-graph-controls__zoom');
         expect(zoomLabel?.textContent).toBe('100%');
 
-        fireEvent.click(container.querySelector('button[aria-label="Zoom in graph"]')!);
+        fireEvent.click(screen.getByRole('button', { name: 'Zoom in graph' }));
 
         expect(zoomLabel?.textContent).toBe('125%');
-        expect(container.querySelector('button[aria-label="Fit graph to view"]')).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Fit graph to view' })).toBeInTheDocument();
+
+        const activations = screen.getByRole('button', { name: 'Activations' });
+        fireEvent.click(activations);
+
+        expect(activations).toHaveAttribute('aria-pressed', 'true');
     });
 
     it('renders an edge legend and can filter to strong weights', () => {

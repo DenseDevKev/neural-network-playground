@@ -934,46 +934,48 @@ export function NetworkGraphCanvas() {
                 </div>
             )}
 
-            <div className="network-graph-controls" aria-label="Graph view controls">
-                <button
-                    type="button"
-                    aria-label="Zoom out graph"
-                    title="Zoom out"
-                    onClick={() => zoomGraph(-1)}
-                >
-                    -
-                </button>
-                <span className="network-graph-controls__zoom">{zoomLabel(viewport.zoom)}</span>
-                <button
-                    type="button"
-                    aria-label="Zoom in graph"
-                    title="Zoom in"
-                    onClick={() => zoomGraph(1)}
-                >
-                    +
-                </button>
-                <button
-                    type="button"
-                    aria-label="Fit graph to view"
-                    title="Fit graph"
-                    onClick={fitGraphToView}
-                >
-                    Fit
-                </button>
-            </div>
-
-            <div className="network-graph-mode-toggle" role="group" aria-label="Topology view mode">
-                {(['weights', 'activations'] as const).map((mode) => (
+            <div className="network-graph-toolbar" role="toolbar" aria-label="Network graph toolbar">
+                <div className="network-graph-controls" aria-label="Graph view controls">
                     <button
-                        key={mode}
                         type="button"
-                        className={viewMode === mode ? 'network-graph-mode-toggle__button network-graph-mode-toggle__button--active' : 'network-graph-mode-toggle__button'}
-                        aria-pressed={viewMode === mode}
-                        onClick={() => setViewMode(mode)}
+                        aria-label="Zoom out graph"
+                        title="Zoom out"
+                        onClick={() => zoomGraph(-1)}
                     >
-                        {mode === 'weights' ? 'Weights' : 'Activations'}
+                        -
                     </button>
-                ))}
+                    <span className="network-graph-controls__zoom">{zoomLabel(viewport.zoom)}</span>
+                    <button
+                        type="button"
+                        aria-label="Zoom in graph"
+                        title="Zoom in"
+                        onClick={() => zoomGraph(1)}
+                    >
+                        +
+                    </button>
+                    <button
+                        type="button"
+                        aria-label="Fit graph to view"
+                        title="Fit graph"
+                        onClick={fitGraphToView}
+                    >
+                        Fit
+                    </button>
+                </div>
+
+                <div className="network-graph-mode-toggle" role="group" aria-label="Topology view mode">
+                    {(['weights', 'activations'] as const).map((mode) => (
+                        <button
+                            key={mode}
+                            type="button"
+                            className={viewMode === mode ? 'network-graph-mode-toggle__button network-graph-mode-toggle__button--active' : 'network-graph-mode-toggle__button'}
+                            aria-pressed={viewMode === mode}
+                            onClick={() => setViewMode(mode)}
+                        >
+                            {mode === 'weights' ? 'Weights' : 'Activations'}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             <div className="network-graph-legend" aria-label="Edge weight legend">
