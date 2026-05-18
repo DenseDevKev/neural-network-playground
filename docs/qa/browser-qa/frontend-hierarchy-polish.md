@@ -69,3 +69,64 @@ Result: passed. Vite emitted the existing chunk-size warning for the main bundle
 
 - `forgeResponsive.test.ts` now verifies hierarchy tokens, topology toolbar selectors, guided-lesson active/inactive selectors, and compact dock behavior.
 - The browser screenshot gap should be revisited in a follow-up environment where `Page.captureScreenshot` works, because the implementation plan explicitly calls for before/after bitmap review.
+
+## Second Polish Pass
+
+Date: 2026-05-18
+
+Files touched:
+
+- `apps/web/src/styles/forge.css`
+- `apps/web/src/styles/index.css`
+- `docs/qa/browser-qa/frontend-hierarchy-polish.md`
+
+What changed:
+
+- Reduced duplicated active navigation by making the left rail a quieter context indicator while preserving the local tab state as the clearer section cue.
+- Reworked the split run-phase banner into neutral workflow status: lower contrast, no glow, no warning-like orange frame.
+- Quieted panel headers by lowering grip, title, phase-tag, border, and header-surface intensity.
+- Improved topology anchoring in dock, focus, grid, and split contexts with a calmer panel emphasis, hidden nested body overflow, softer graph toolbar, quieter summary badges, and lower-contrast legend/filter chrome.
+- Reduced left configuration “button soup” by lowering inactive chip/feature-chip contrast and making active choices clear without heavy filled pills.
+- Quieted right output chrome by softening output tabs, chart tabs, loading/empty states, and Confusion Matrix framing.
+- Refined lower controls into a coherent secondary strip by grouping Step/Reset, speed, and timeline controls with subtle shared surfaces while keeping Start/Pause/Resume as the only dominant action.
+
+Second-pass browser QA:
+
+- In-app Browser was attempted first, including visibility recovery, but remained blocked with `No active Codex browser pane available`.
+- Chrome extension fallback loaded the target URL successfully at `1500x971`.
+- Screenshot capture was still blocked: Chrome fallback returned `Page.captureScreenshot returned no data`. No screenshot artifacts were committed.
+- Mobile viewport override was unavailable through the fallback browser. Mobile coverage remains the automated compact/responsive CSS guard plus build/test validation.
+- DOM/browser identity confirmed: title `Neural Network Playground 2.0`, target XOR hash URL, `NN·FORGE`, `Configuration panels`, `Network Topology`, and `Guided lesson` present.
+- Local console filter for `127.0.0.1:5173` returned no warnings or errors. Chrome-extension React perf warnings were ignored as non-app-local noise.
+- Interaction proof passed: Start training -> Pause training -> Resume training -> Pause back to a stable paused state.
+- Grid topology review: topology panel measured `738x395`, body overflow was `hidden`, and toolbar/summary/legend surfaces used subdued borders/backgrounds.
+- Split topology review: topology panel measured `823x373`, body overflow was `hidden`, and graph toolbar stayed attached to the graph surface.
+- Run banner review: `Run phase — observe training` measured `189x30`, used neutral border/background, and had no box shadow.
+- Left control review: active chip retained clear cyan state while inactive chips fell back to subtle border/background treatment.
+- Focus/readout review: `:focus-visible` rules were present, top metric/readout text remained visible, and the secondary training strip controls were grouped under low-contrast shared surfaces.
+
+Second-pass verification commands:
+
+```bash
+pnpm --filter @nn-playground/web exec vitest run src/styles/forgeResponsive.test.ts src/components/layout/Header.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/NetworkConfigPanel.test.tsx src/components/controls/TrainingControls.test.tsx src/components/controls/GuidedLessonPanel.test.tsx src/components/visualization/NetworkGraphCanvas.test.tsx src/components/layout/UIFlows.integration.test.tsx src/App.test.tsx --pool=forks --reporter=dot --passWithNoTests
+```
+
+Result: 9 files passed, 83 tests passed.
+
+```bash
+pnpm lint
+```
+
+Result: passed.
+
+```bash
+pnpm test
+```
+
+Result: 70 files passed, 925 tests passed.
+
+```bash
+pnpm build
+```
+
+Result: passed. Vite emitted the existing chunk-size warning for the main bundle.
