@@ -5,7 +5,6 @@ import { Header } from './Header';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
-import type { LayoutVariant } from '../../store/useLayoutStore.ts';
 
 function createTrainingMock(): Pick<TrainingHook, 'play' | 'pause'> {
     return {
@@ -15,19 +14,19 @@ function createTrainingMock(): Pick<TrainingHook, 'play' | 'pause'> {
 }
 
 function renderHeader({
-    effectiveLayout = 'dock',
-    isCompact = false,
     training = createTrainingMock(),
+    openSurface = null,
+    onToggleSurface = vi.fn(),
 }: {
-    effectiveLayout?: LayoutVariant;
-    isCompact?: boolean;
     training?: Pick<TrainingHook, 'play' | 'pause'>;
+    openSurface?: 'presets' | 'lessons' | 'history' | 'more' | null;
+    onToggleSurface?: (surface: 'presets' | 'lessons' | 'history' | 'more') => void;
 } = {}) {
     return render(
         <Header
             training={training}
-            effectiveLayout={effectiveLayout}
-            isCompact={isCompact}
+            openSurface={openSurface}
+            onToggleSurface={onToggleSurface}
         />,
     );
 }
@@ -54,6 +53,9 @@ describe('Header', () => {
             pauseReason: null,
         });
         useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
@@ -81,7 +83,7 @@ describe('Header', () => {
         expect(screen.getByText('91.0%')).toBeInTheDocument();
     });
 
-    it('uses the mobile play button to start and pause training', async () => {
+    it('uses the primary header play button to start and pause training', async () => {
         const user = userEvent.setup();
         const training = createTrainingMock();
 
@@ -96,8 +98,8 @@ describe('Header', () => {
         rerender(
             <Header
                 training={training}
-                effectiveLayout="dock"
-                isCompact={false}
+                openSurface={null}
+                onToggleSurface={vi.fn()}
             />,
         );
 
@@ -105,7 +107,7 @@ describe('Header', () => {
         expect(training.pause).toHaveBeenCalledTimes(1);
     });
 
-    it('disables the mobile start control while config sync is pending', async () => {
+    it('disables the primary start control while config sync is pending', async () => {
         const user = userEvent.setup();
         const training = createTrainingMock();
         useTrainingStore.setState({ pendingConfigSource: 'preset', presetConfigLoading: true });
@@ -120,60 +122,45 @@ describe('Header', () => {
         expect(training.play).not.toHaveBeenCalled();
     });
 
-    it('renders the layout picker with dock, focus, grid, and split options', () => {
+    it('renders only Build and Run as global workspace views', () => {
         renderHeader();
 
-        const picker = screen.getByRole('group', { name: 'Layout variant' });
-        expect(picker).toBeInTheDocument();
+        const switcher = screen.getByRole('group', { name: 'Workspace view' });
+        expect(switcher).toBeInTheDocument();
 
-        expect(screen.getByRole('button', { name: 'dock' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'focus' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'grid' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'split' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /build/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /run/i })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'dock' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'focus' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'grid' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'split' })).not.toBeInTheDocument();
     });
 
-    it('updates the layout store when a layout option is clicked on desktop', async () => {
+    it('updates the workspace view when Build or Run is clicked', async () => {
         const user = userEvent.setup();
         renderHeader();
 
-        await user.click(screen.getByRole('button', { name: 'focus' }));
-        expect(useLayoutStore.getState().layout).toBe('focus');
+        await user.click(screen.getByRole('button', { name: /run/i }));
+        expect(useLayoutStore.getState().view).toBe('run');
 
-        await user.click(screen.getByRole('button', { name: 'grid' }));
-        expect(useLayoutStore.getState().layout).toBe('grid');
-
-        await user.click(screen.getByRole('button', { name: 'split' }));
-        expect(useLayoutStore.getState().layout).toBe('split');
+        await user.click(screen.getByRole('button', { name: /build/i }));
+        expect(useLayoutStore.getState().view).toBe('build');
     });
 
-    it('renders phase controls only for the split layout', () => {
-        const { rerender } = renderHeader({ effectiveLayout: 'dock' });
+    it('opens instrument menu surfaces through the top bar', async () => {
+        const user = userEvent.setup();
+        const onToggleSurface = vi.fn();
+        renderHeader({ onToggleSurface, openSurface: 'history' });
 
-        expect(screen.queryByRole('group', { name: 'Workspace phase' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'History' })).toHaveAttribute('aria-pressed', 'true');
 
-        rerender(
-            <Header
-                training={createTrainingMock()}
-                effectiveLayout="split"
-                isCompact={false}
-            />,
-        );
+        await user.click(screen.getByRole('button', { name: 'Presets' }));
+        await user.click(screen.getByRole('button', { name: 'Lessons' }));
+        await user.click(screen.getByRole('button', { name: 'More' }));
 
-        const phaseGroup = screen.getByRole('group', { name: 'Workspace phase' });
-        expect(phaseGroup).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Build' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument();
-    });
-
-    it('keeps the layout picker visible in compact mode and disables grid/split', () => {
-        renderHeader({ effectiveLayout: 'dock', isCompact: true });
-
-        expect(screen.getByRole('group', { name: 'Layout variant' })).toBeInTheDocument();
-        expect(screen.queryByRole('group', { name: 'Workspace phase' })).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'dock' })).toBeEnabled();
-        expect(screen.getByRole('button', { name: 'focus' })).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'grid' })).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'split' })).toBeDisabled();
+        expect(onToggleSurface).toHaveBeenNthCalledWith(1, 'presets');
+        expect(onToggleSurface).toHaveBeenNthCalledWith(2, 'lessons');
+        expect(onToggleSurface).toHaveBeenNthCalledWith(3, 'more');
     });
 
     it('shows the NN·FORGE brand name', () => {

@@ -2,7 +2,7 @@ import { memo, type ReactNode, useMemo } from 'react';
 import type { AppConfig } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
-import { useLayoutStore, type RightTabId } from '../../store/useLayoutStore.ts';
+import { useLayoutStore, type EvidenceViewId } from '../../store/useLayoutStore.ts';
 import { getRecipeDrift } from '../../store/recipeIdentity.ts';
 
 type EvidenceViewName = 'Boundary' | 'Loss' | 'Confusion' | 'Inspection' | 'Code' | 'History';
@@ -60,7 +60,7 @@ const EVIDENCE_META: Record<EvidenceViewName, EvidenceMeta> = {
     },
 };
 
-const RIGHT_TAB_LABELS: Record<RightTabId, EvidenceViewName> = {
+const EVIDENCE_VIEW_LABELS: Record<EvidenceViewId, EvidenceViewName> = {
     boundary: 'Boundary',
     loss: 'Loss',
     confusion: 'Confusion',
@@ -196,9 +196,9 @@ export const EvidenceFrame = memo(function EvidenceFrame({
 
 export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
     const { drift, status, snapshot, pendingConfigSource, testMetricsStale, workerError, configError } = useExperimentContext();
-    const layout = useLayoutStore((s) => s.layout);
-    const activeTabRight = useLayoutStore((s) => s.activeTabRight);
-    const activeEvidence = RIGHT_TAB_LABELS[activeTabRight];
+    const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);
+    const visibleEvidenceView = activeEvidenceView === 'history' ? 'boundary' : activeEvidenceView;
+    const activeEvidence = EVIDENCE_VIEW_LABELS[visibleEvidenceView];
 
     let stateLabel = 'Draft';
     let copy = `Topology is a draft blueprint; run or step to produce ${activeEvidence} evidence.`;
@@ -229,7 +229,6 @@ export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
             <div className="forge-cockpit-strip__copy">
                 <span>{stateLabel}</span>
                 <strong>{copy}</strong>
-                {layout === 'focus' && <small>focus pair</small>}
             </div>
             {snapshot && (
                 <div className="forge-cockpit-strip__metrics" aria-label="Cockpit metrics">

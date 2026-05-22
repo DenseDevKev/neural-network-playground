@@ -10,6 +10,7 @@ import { PresetCard } from './PresetCard.tsx';
 
 interface PresetPanelProps {
     onReset: () => void;
+    onApplied?: () => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -37,7 +38,7 @@ function partialConfigMatches(expected: unknown, actual: unknown): boolean {
     return Object.entries(expected).every(([key, value]) => valueMatches(value, actual[key]));
 }
 
-export const PresetPanel = memo(function PresetPanel({ onReset }: PresetPanelProps) {
+export const PresetPanel = memo(function PresetPanel({ onReset, onApplied }: PresetPanelProps) {
     const applyPreset = usePlaygroundStore((s) => s.applyPreset);
     const data = usePlaygroundStore((s) => s.data);
     const network = usePlaygroundStore((s) => s.network);
@@ -61,8 +62,9 @@ export const PresetPanel = memo(function PresetPanel({ onReset }: PresetPanelPro
             useTrainingStore.getState().beginConfigChange('preset');
             applyPreset(preset);
             onReset();
+            onApplied?.();
         },
-        [applyPreset, onReset],
+        [applyPreset, onApplied, onReset],
     );
     const retryPresetChange = () => useTrainingStore.getState().retryConfigSync();
 

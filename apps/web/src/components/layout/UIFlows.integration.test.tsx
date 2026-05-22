@@ -87,7 +87,7 @@ describe('UI integration flows', () => {
 
         const { container, rerender } = render(
             <>
-                <Header training={trainingMock} effectiveLayout="dock" isCompact={false} />
+                <Header training={trainingMock} openSurface={null} onToggleSurface={vi.fn()} />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );
@@ -110,7 +110,7 @@ describe('UI integration flows', () => {
 
         rerender(
             <>
-                <Header training={trainingMock} effectiveLayout="dock" isCompact={false} />
+                <Header training={trainingMock} openSurface={null} onToggleSurface={vi.fn()} />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );

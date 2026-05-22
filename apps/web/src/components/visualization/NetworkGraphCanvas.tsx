@@ -28,8 +28,6 @@ import type { ActivationType, DatasetType, LayerStats } from '@nn-playground/eng
 import {
     GRID_SIZE,
     MAX_HIDDEN_LAYERS,
-    MAX_NEURONS_PER_LAYER,
-    MIN_NEURONS_PER_LAYER,
     writeNormalizedHeatmap,
 } from '@nn-playground/shared';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
@@ -313,6 +311,7 @@ export function NetworkGraphCanvas() {
 
     const outputLayerSize = Number.isFinite(outputSize) ? Math.max(1, Math.floor(outputSize)) : 1;
     const layers = useMemo(() => [inputSize, ...hiddenLayers, outputLayerSize], [inputSize, hiddenLayers, outputLayerSize]);
+    const layersKey = layers.join(',');
     const maxNodes = Math.max(...layers);
 
     const containerRef = useRef<HTMLDivElement>(null);
@@ -492,6 +491,7 @@ export function NetworkGraphCanvas() {
     const layerStatsHint = useMemo(() => getLayerStatsHint(layerStats), [layerStats]);
 
     const fitGraphToView = useCallback(() => {
+        if (containerSize.width <= 0 || containerSize.height <= 0) return;
         const fitZoom = clampZoom(Math.min(
             containerSize.width / canvasWidth,
             containerSize.height / canvasHeight,
@@ -503,6 +503,10 @@ export function NetworkGraphCanvas() {
             panY: (containerSize.height - canvasHeight * fitZoom) / 2,
         });
     }, [containerSize.width, containerSize.height, canvasWidth, canvasHeight]);
+
+    useEffect(() => {
+        fitGraphToView();
+    }, [fitGraphToView, layersKey, activeFeatures.length]);
 
     const zoomGraph = useCallback((direction: 1 | -1) => {
         setViewport((current) => {
@@ -736,30 +740,6 @@ export function NetworkGraphCanvas() {
         setTooltip(null);
     }, []);
 
-    const beginNetworkChange = useCallback(() => {
-        useTrainingStore.getState().beginConfigChange('network');
-    }, []);
-
-    const changeLayerNeuronCount = useCallback((layerIndex: number, delta: 1 | -1) => {
-        const current = hiddenLayers[layerIndex] ?? 0;
-        const next = Math.max(MIN_NEURONS_PER_LAYER, Math.min(MAX_NEURONS_PER_LAYER, current + delta));
-        if (next === current) return;
-        beginNetworkChange();
-        usePlaygroundStore.getState().setNeuronsInLayer(layerIndex, next);
-    }, [beginNetworkChange, hiddenLayers]);
-
-    const addHiddenLayer = useCallback(() => {
-        if (hiddenLayers.length >= MAX_HIDDEN_LAYERS) return;
-        beginNetworkChange();
-        usePlaygroundStore.getState().addLayer();
-    }, [beginNetworkChange, hiddenLayers.length]);
-
-    const removeHiddenLayer = useCallback(() => {
-        if (hiddenLayers.length === 0) return;
-        beginNetworkChange();
-        usePlaygroundStore.getState().removeLayer();
-    }, [beginNetworkChange, hiddenLayers.length]);
-
     // ── Render ──────────────────────────────────────────────────────────────
     const heatmapTiles: { key: string; x: number; y: number; entry: NeuronGridEntry }[] = [];
     if (neuronGrids) {
@@ -779,23 +759,6 @@ export function NetworkGraphCanvas() {
             }
         }
     }
-
-    const hiddenLayerControls = hiddenLayers.map((count, layerIndex) => {
-        const layerIdx = layerIndex + 1;
-        const layer = nodePositions[layerIdx] ?? [];
-        const x = layer[0]?.x ?? 0;
-        const ys = layer.map((node) => node.y);
-        const top = Math.min(...ys);
-        const bottom = Math.max(...ys);
-        return {
-            key: `layer-controls-${layerIndex}`,
-            layerIndex,
-            count,
-            x: x * viewport.zoom + viewport.panX,
-            top: top * viewport.zoom + viewport.panY,
-            bottom: bottom * viewport.zoom + viewport.panY,
-        };
-    });
 
     const ghostLayerX = (() => {
         if (hiddenLayers.length >= MAX_HIDDEN_LAYERS) return null;
@@ -873,64 +836,6 @@ export function NetworkGraphCanvas() {
                     aria-hidden="true"
                 >
                     <span>Add hidden layer here</span>
-                </div>
-            )}
-
-            {hiddenLayerControls.map((control) => (
-                <div
-                    key={control.key}
-                    className="network-graph-layer-controls"
-                    style={{ left: control.x, top: control.top }}
-                    aria-label={`Hidden layer ${control.layerIndex + 1} shortcuts`}
-                >
-                    <button
-                        type="button"
-                        className="network-graph-layer-controls__pill"
-                        onClick={() => changeLayerNeuronCount(control.layerIndex, 1)}
-                        disabled={control.count >= MAX_NEURONS_PER_LAYER}
-                        aria-label={`Add neuron to hidden layer ${control.layerIndex + 1}`}
-                    >
-                        + neuron
-                    </button>
-                    <button
-                        type="button"
-                        className="network-graph-layer-controls__pill"
-                        onClick={() => changeLayerNeuronCount(control.layerIndex, -1)}
-                        disabled={control.count <= MIN_NEURONS_PER_LAYER}
-                        aria-label={`Remove neuron from hidden layer ${control.layerIndex + 1}`}
-                    >
-                        - neuron
-                    </button>
-                    {control.layerIndex === hiddenLayers.length - 1 && (
-                        <button
-                            type="button"
-                            className="network-graph-layer-controls__pill network-graph-layer-controls__pill--remove"
-                            onClick={removeHiddenLayer}
-                            aria-label="Remove last hidden layer"
-                        >
-                            remove
-                        </button>
-                    )}
-                </div>
-            ))}
-
-            {ghostLayerX != null && (
-                <div
-                    className="network-graph-ghost-layer"
-                    style={{
-                        left: ghostLayerX,
-                        top: ghostLayerTop,
-                        height: ghostLayerHeight,
-                    }}
-                >
-                    <button
-                        type="button"
-                        className="network-graph-ghost-layer__button"
-                        onClick={addHiddenLayer}
-                        aria-label="Add hidden layer from topology"
-                    >
-                        + layer
-                    </button>
                 </div>
             )}
 

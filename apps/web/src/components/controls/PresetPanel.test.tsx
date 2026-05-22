@@ -50,8 +50,9 @@ describe('PresetPanel', () => {
     it('applies a preset, resets training, and highlights the selected card', async () => {
         const user = userEvent.setup();
         const onReset = vi.fn();
+        const onApplied = vi.fn();
 
-        render(<PresetPanel onReset={onReset} />);
+        render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
 
         const button = screen.getByRole('button', { name: 'Apply preset: XOR Needs Hidden Layers' });
         await user.click(button);
@@ -59,6 +60,7 @@ describe('PresetPanel', () => {
         expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
         expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual([4, 4]);
         expect(onReset).toHaveBeenCalledTimes(1);
+        expect(onApplied).toHaveBeenCalledTimes(1);
         expect(button).toHaveClass('preset-card--selected');
         expect(button).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByRole('status')).toHaveTextContent('Applying preset...');

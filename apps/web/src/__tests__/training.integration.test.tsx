@@ -83,7 +83,7 @@ vi.mock('../worker/workerBridge.ts', () => ({
     getCurrentRunId: vi.fn().mockReturnValue(1),
 }));
 
-// Stub layout sub-components so tests stay focused on training logic.
+// Stub visual sub-components so tests stay focused on training logic.
 vi.mock('../components/layout/Header.tsx', () => ({
     Header: ({ training }: { training: { play: () => void; pause: () => void } }) => (
         <header>
@@ -91,11 +91,6 @@ vi.mock('../components/layout/Header.tsx', () => ({
             <button onClick={() => training.pause()}>Pause</button>
         </header>
     ),
-}));
-vi.mock('../components/layout/RegionShell.tsx', () => ({
-    DockShell:  () => <section aria-label="Dock workspace">Workspace</section>,
-    GridShell:  () => <section aria-label="Grid workspace">Workspace</section>,
-    SplitShell: () => <section aria-label="Split workspace">Workspace</section>,
 }));
 vi.mock('../components/layout/MainArea.tsx', () => ({
     MainArea:        () => <main id="main-content" tabIndex={-1}>Main</main>,
@@ -154,7 +149,15 @@ describe('Training integration', () => {
 
         resetFrameBuffer();
 
-        useLayoutStore.setState({ layout: 'dock', phase: 'build', activeTabLeft: 'data', activeTabRight: 'boundary' });
+        useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'boundary',
+        });
 
         usePlaygroundStore.setState({
             data: { ...DEFAULT_DATA },
@@ -297,7 +300,15 @@ describe('Dataset switching scenario', () => {
         fakeStopRenderLoop = vi.fn();
         fakeNewRunTo = vi.fn();
 
-        useLayoutStore.setState({ layout: 'dock', phase: 'build', activeTabLeft: 'data', activeTabRight: 'boundary' });
+        useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'boundary',
+        });
 
         fakeWorkerApi.initialize.mockResolvedValue({ snapshot: fakeSnapshot, runId: 1 });
         fakeWorkerApi.updateConfig.mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 });

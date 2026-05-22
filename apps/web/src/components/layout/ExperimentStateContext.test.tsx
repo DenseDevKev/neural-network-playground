@@ -46,7 +46,15 @@ describe('ExperimentStateContext', () => {
             workerError: null,
             configError: null,
         });
-        useLayoutStore.setState({ layout: 'dock', activeTabRight: 'boundary' });
+        useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'boundary',
+        });
     });
 
     it('labels topology as a draft blueprint before a snapshot exists', () => {
@@ -124,7 +132,12 @@ describe('ExperimentStateContext', () => {
     });
 
     it('summarizes the live diagnostic cockpit around the selected evidence view', () => {
-        useLayoutStore.setState({ layout: 'focus', activeTabRight: 'loss' });
+        useLayoutStore.setState({
+            view: 'run',
+            activeEvidenceView: 'loss',
+            phase: 'run',
+            activeTabRight: 'loss',
+        });
         useTrainingStore.setState({
             status: 'running',
             snapshot: {
@@ -142,7 +155,7 @@ describe('ExperimentStateContext', () => {
         expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
             'Topology and Loss are reading live run step 128.',
         );
-        expect(screen.getByText('focus pair')).toBeInTheDocument();
+        expect(screen.queryByText('focus pair')).not.toBeInTheDocument();
         expect(screen.getByText('train 0.2200')).toBeInTheDocument();
         expect(screen.getByText('test 0.3100')).toBeInTheDocument();
     });

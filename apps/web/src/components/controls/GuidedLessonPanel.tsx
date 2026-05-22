@@ -34,8 +34,8 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(getInitialDrawerOpen);
     const applyPreset = usePlaygroundStore((s) => s.applyPreset);
-    const setActiveTabLeft = useLayoutStore((s) => s.setActiveTabLeft);
-    const setPhase = useLayoutStore((s) => s.setPhase);
+    const setActiveRecipeSection = useLayoutStore((s) => s.setActiveRecipeSection);
+    const setView = useLayoutStore((s) => s.setView);
     const setActiveLessonStep = useLayoutStore((s) => s.setActiveLessonStep);
     const clearActiveLessonStep = useLayoutStore((s) => s.clearActiveLessonStep);
     const selectedLesson = useMemo(
@@ -48,11 +48,11 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
 
     const focusStep = useCallback(
         (step: LessonStep) => {
-            if (step.tab) setActiveTabLeft(step.tab);
-            if (step.phase) setPhase(step.phase);
+            if (step.tab) setActiveRecipeSection(step.tab);
+            if (step.phase) setView(step.phase);
             onHighlightChange?.(step.target);
         },
-        [onHighlightChange, setActiveTabLeft, setPhase],
+        [onHighlightChange, setActiveRecipeSection, setView],
     );
 
     useEffect(() => {

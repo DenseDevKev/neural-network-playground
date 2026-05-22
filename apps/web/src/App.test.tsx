@@ -22,19 +22,37 @@ vi.mock('./components/layout/Header.tsx', () => ({
     Header: () => <header>Header</header>,
 }));
 
-vi.mock('./components/layout/RegionShell.tsx', () => ({
-    DockShell:  () => <section aria-label="Dock workspace">Workspace</section>,
-    FocusShell: () => <section aria-label="Focus workspace">Workspace</section>,
-    GridShell:  () => <section aria-label="Grid workspace">Workspace</section>,
-    SplitShell: ({ buildLeft, buildCenter, buildRight }: {
-        buildLeft?: ReactNode;
-        buildCenter?: ReactNode;
-        buildRight?: ReactNode;
+vi.mock('./components/layout/BuildRunShell.tsx', () => ({
+    BuildRunShell: ({
+        view,
+        recipeContent,
+        runContent,
+        dataContent,
+        networkContent,
+        featuresContent,
+        hyperparamContent,
+        topologyContent,
+        transportContent,
+    }: {
+        view: string;
+        recipeContent?: ReactNode;
+        runContent?: ReactNode;
+        dataContent?: ReactNode;
+        networkContent?: ReactNode;
+        featuresContent?: ReactNode;
+        hyperparamContent?: ReactNode;
+        topologyContent?: ReactNode;
+        transportContent?: ReactNode;
     }) => (
-        <section aria-label="Split workspace">
-            {buildLeft}
-            {buildCenter}
-            {buildRight}
+        <section aria-label={`${view} workspace`} data-testid="build-run-shell">
+            <div data-forge-panel-targets="experiment">{recipeContent}</div>
+            <div data-forge-panel-targets="run">{runContent}</div>
+            <div data-forge-panel-targets="data">{dataContent}</div>
+            <div data-forge-panel-targets="network">{networkContent}</div>
+            <div data-forge-panel-targets="features">{featuresContent}</div>
+            <div data-forge-panel-targets="hyperparams">{hyperparamContent}</div>
+            <div data-forge-panel-targets="topology">{topologyContent}</div>
+            <div data-forge-panel-targets="transport">{transportContent}</div>
         </section>
     ),
 }));
@@ -81,6 +99,9 @@ describe('App accessibility shell', () => {
         });
 
         useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
@@ -109,8 +130,8 @@ describe('App accessibility shell', () => {
 
         render(<App />);
 
-        expect(screen.getByText('Worker connection lost')).toBeInTheDocument();
-        expect(screen.getByText('Worker channel closed unexpectedly. Refresh the page to restart the playground.')).toBeInTheDocument();
+        expect(screen.getAllByText('Worker connection lost').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Worker channel closed unexpectedly. Refresh the page to restart the playground.').length).toBeGreaterThan(0);
         expect(screen.getByRole('button', { name: 'Refresh page' })).toBeInTheDocument();
     });
 
@@ -198,40 +219,34 @@ describe('App accessibility shell', () => {
         expect(screen.getByRole('status', { name: 'Status bar' })).toBeInTheDocument();
     });
 
-    it('switches layout variants through the store', () => {
+    it('switches Build and Run views through the store', () => {
         render(<App />);
 
         act(() => {
-            useLayoutStore.getState().setLayout('grid');
+            useLayoutStore.getState().setView('run');
         });
-        expect(useLayoutStore.getState().layout).toBe('grid');
+        expect(useLayoutStore.getState().view).toBe('run');
 
         act(() => {
-            useLayoutStore.getState().setLayout('focus');
+            useLayoutStore.getState().setView('build');
         });
-        expect(useLayoutStore.getState().layout).toBe('focus');
-
-        act(() => {
-            useLayoutStore.getState().setLayout('split');
-        });
-        expect(useLayoutStore.getState().layout).toBe('split');
+        expect(useLayoutStore.getState().view).toBe('build');
     });
 
-    it('passes target hooks to split layout configuration panels', () => {
-        useLayoutStore.setState({ layout: 'split', phase: 'build' });
+    it('passes target hooks to Build/Run workspace panels', () => {
+        useLayoutStore.setState({ view: 'build', phase: 'build' });
 
         const { container } = render(<App />);
-        const targets = Array.from(container.querySelectorAll('.forge-panel[data-forge-panel-targets]'))
+        const targets = Array.from(container.querySelectorAll('[data-forge-panel-targets]'))
             .map((panel) => panel.getAttribute('data-forge-panel-targets'));
 
         expect(targets).toEqual(expect.arrayContaining([
-            'presets',
             'data',
             'topology',
             'network',
             'features',
             'hyperparams',
-            'config',
+            'transport',
         ]));
     });
 });

@@ -1,6 +1,6 @@
 // ── Layout Store ──
-// Manages UI layout state: which variant is active, phase, and tab selections.
-// Persisted to localStorage so the user's layout choice survives reloads.
+// Manages pure UI state for the Build / Run instrument shell.
+// Persisted to localStorage so the user's workspace view survives reloads.
 // Deliberately separated from usePlaygroundStore (config) and
 // useTrainingStore (runtime) — layout is a pure UI concern.
 
@@ -10,14 +10,22 @@ import { createStore } from 'zustand/vanilla';
 
 export const LAYOUT_STORAGE_KEY = 'nn-playground-layout';
 
+export type WorkspaceView = 'build' | 'run';
 export type LayoutVariant = 'dock' | 'focus' | 'grid' | 'split';
 export type PhaseMode = 'build' | 'run';
 
-export type LeftTabId = 'presets' | 'data' | 'features' | 'network' | 'hyperparams' | 'config';
-export type RightTabId = 'boundary' | 'loss' | 'confusion' | 'inspection' | 'code' | 'history';
+export type RecipeSectionId = 'presets' | 'data' | 'features' | 'network' | 'hyperparams' | 'config';
+export type EvidenceViewId = 'boundary' | 'loss' | 'confusion' | 'inspection' | 'code' | 'history';
+export type LeftTabId = RecipeSectionId;
+export type RightTabId = EvidenceViewId;
 export type CodeExportTab = 'pseudocode' | 'numpy' | 'tfjs';
 
 const DEFAULT_LAYOUT_STATE = {
+    view: 'build' as WorkspaceView,
+    activeRecipeSection: 'data' as RecipeSectionId,
+    activeEvidenceView: 'boundary' as EvidenceViewId,
+
+    // Deprecated compatibility fields for older helper modules and tests.
     layout: 'dock' as LayoutVariant,
     phase: 'build' as PhaseMode,
     activeTabLeft: 'data' as LeftTabId,
@@ -27,13 +35,20 @@ const DEFAULT_LAYOUT_STATE = {
     activeLessonStepIndex: null as number | null,
 };
 
-const VALID_LAYOUTS: readonly LayoutVariant[] = ['dock', 'focus', 'grid', 'split'];
 const VALID_PHASES: readonly PhaseMode[] = ['build', 'run'];
-const VALID_LEFT_TABS: readonly LeftTabId[] = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'];
-const VALID_RIGHT_TABS: readonly RightTabId[] = ['boundary', 'loss', 'confusion', 'inspection', 'code', 'history'];
+const VALID_RECIPE_SECTIONS: readonly RecipeSectionId[] = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'];
+const VALID_EVIDENCE_VIEWS: readonly EvidenceViewId[] = ['boundary', 'loss', 'confusion', 'inspection', 'code', 'history'];
+const VALID_LEFT_TABS = VALID_RECIPE_SECTIONS;
+const VALID_RIGHT_TABS = VALID_EVIDENCE_VIEWS;
 const VALID_CODE_EXPORT_TABS: readonly CodeExportTab[] = ['pseudocode', 'numpy', 'tfjs'];
 
 export interface LayoutStore {
+    view: WorkspaceView;
+    activeRecipeSection: RecipeSectionId;
+    activeEvidenceView: EvidenceViewId;
+
+    // Deprecated compatibility fields. User-facing UI should prefer view,
+    // activeRecipeSection, and activeEvidenceView.
     layout: LayoutVariant;
     phase: PhaseMode;
     activeTabLeft: LeftTabId;
@@ -41,6 +56,10 @@ export interface LayoutStore {
     codeExportTab: CodeExportTab;
     activeLessonId: string | null;
     activeLessonStepIndex: number | null;
+
+    setView: (view: WorkspaceView) => void;
+    setActiveRecipeSection: (section: RecipeSectionId) => void;
+    setActiveEvidenceView: (view: EvidenceViewId) => void;
 
     setLayout: (layout: LayoutVariant) => void;
     setPhase: (phase: PhaseMode) => void;
@@ -62,16 +81,30 @@ function isOneOf<T extends string>(value: unknown, options: readonly T[]): value
 function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STATE {
     const state = isRecord(value) && isRecord(value.state) ? value.state : value;
     if (!isRecord(state)) return { ...DEFAULT_LAYOUT_STATE };
+    const view = isOneOf(state.view, VALID_PHASES)
+        ? state.view
+        : isOneOf(state.phase, VALID_PHASES)
+            ? state.phase
+            : DEFAULT_LAYOUT_STATE.view;
+    const activeRecipeSection = isOneOf(state.activeRecipeSection, VALID_RECIPE_SECTIONS)
+        ? state.activeRecipeSection
+        : isOneOf(state.activeTabLeft, VALID_LEFT_TABS)
+            ? state.activeTabLeft
+            : DEFAULT_LAYOUT_STATE.activeRecipeSection;
+    const activeEvidenceView = isOneOf(state.activeEvidenceView, VALID_EVIDENCE_VIEWS)
+        ? state.activeEvidenceView
+        : isOneOf(state.activeTabRight, VALID_RIGHT_TABS)
+            ? state.activeTabRight
+            : DEFAULT_LAYOUT_STATE.activeEvidenceView;
 
     return {
-        layout: isOneOf(state.layout, VALID_LAYOUTS) ? state.layout : DEFAULT_LAYOUT_STATE.layout,
-        phase: isOneOf(state.phase, VALID_PHASES) ? state.phase : DEFAULT_LAYOUT_STATE.phase,
-        activeTabLeft: isOneOf(state.activeTabLeft, VALID_LEFT_TABS)
-            ? state.activeTabLeft
-            : DEFAULT_LAYOUT_STATE.activeTabLeft,
-        activeTabRight: isOneOf(state.activeTabRight, VALID_RIGHT_TABS)
-            ? state.activeTabRight
-            : DEFAULT_LAYOUT_STATE.activeTabRight,
+        view,
+        activeRecipeSection,
+        activeEvidenceView,
+        layout: DEFAULT_LAYOUT_STATE.layout,
+        phase: view,
+        activeTabLeft: activeRecipeSection,
+        activeTabRight: activeEvidenceView,
         codeExportTab: isOneOf(state.codeExportTab, VALID_CODE_EXPORT_TABS)
             ? state.codeExportTab
             : DEFAULT_LAYOUT_STATE.codeExportTab,
@@ -86,10 +119,26 @@ export function createLayoutStore() {
             (set) => ({
                 ...DEFAULT_LAYOUT_STATE,
 
+                setView: (view) => set({ view, phase: view }),
+                setActiveRecipeSection: (activeRecipeSection) => set({
+                    activeRecipeSection,
+                    activeTabLeft: activeRecipeSection,
+                }),
+                setActiveEvidenceView: (activeEvidenceView) => set({
+                    activeEvidenceView,
+                    activeTabRight: activeEvidenceView,
+                }),
+
                 setLayout: (layout) => set({ layout }),
-                setPhase: (phase) => set({ phase }),
-                setActiveTabLeft: (activeTabLeft) => set({ activeTabLeft }),
-                setActiveTabRight: (activeTabRight) => set({ activeTabRight }),
+                setPhase: (phase) => set({ view: phase, phase }),
+                setActiveTabLeft: (activeTabLeft) => set({
+                    activeRecipeSection: activeTabLeft,
+                    activeTabLeft,
+                }),
+                setActiveTabRight: (activeTabRight) => set({
+                    activeEvidenceView: activeTabRight,
+                    activeTabRight,
+                }),
                 setCodeExportTab: (codeExportTab) => set({ codeExportTab }),
                 setActiveLessonStep: (activeLessonId, activeLessonStepIndex) => set({
                     activeLessonId,
@@ -103,10 +152,9 @@ export function createLayoutStore() {
             {
                 name: LAYOUT_STORAGE_KEY,
                 partialize: (state) => ({
-                    layout: state.layout,
-                    phase: state.phase,
-                    activeTabLeft: state.activeTabLeft,
-                    activeTabRight: state.activeTabRight,
+                    view: state.view,
+                    activeRecipeSection: state.activeRecipeSection,
+                    activeEvidenceView: state.activeEvidenceView,
                     codeExportTab: state.codeExportTab,
                 }),
                 merge: (persistedState, currentState) => ({

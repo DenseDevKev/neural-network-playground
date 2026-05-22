@@ -32,6 +32,9 @@ describe('TrainingExplanationPanel', () => {
             testMetricsStale: false,
         });
         useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
@@ -93,6 +96,8 @@ describe('TrainingExplanationPanel', () => {
 
         await user.click(screen.getByRole('button', { name: 'Tune learning rate & clipping' }));
 
+        expect(useLayoutStore.getState().view).toBe('build');
+        expect(useLayoutStore.getState().activeRecipeSection).toBe('hyperparams');
         expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
         await waitFor(() => {
             expect(document.activeElement).toBe(document.getElementById('forge-left-tab-hyperparams'));
@@ -118,6 +123,8 @@ describe('TrainingExplanationPanel', () => {
         action.focus();
         await user.keyboard('{Enter}');
 
+        expect(useLayoutStore.getState().view).toBe('run');
+        expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
         expect(useLayoutStore.getState().activeTabRight).toBe('loss');
         await waitFor(() => {
             expect(document.activeElement).toBe(document.getElementById('forge-right-tab-loss'));

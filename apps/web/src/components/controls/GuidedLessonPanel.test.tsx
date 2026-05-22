@@ -44,6 +44,9 @@ describe('GuidedLessonPanel', () => {
             ui: { showTestData: false, discretizeOutput: false },
         });
         useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
@@ -70,25 +73,32 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState().activeLessonStepIndex).toBe(0);
         expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
         expect(screen.getByText('XOR Needs Hidden Layers')).toBeInTheDocument();
+        expect(useLayoutStore.getState().activeRecipeSection).toBe('data');
         expect(useLayoutStore.getState().activeTabLeft).toBe('data');
+        expect(useLayoutStore.getState().view).toBe('build');
         expect(useLayoutStore.getState().phase).toBe('build');
 
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
         expect(onHighlightChange).toHaveBeenLastCalledWith('network');
         expect(useLayoutStore.getState().activeLessonStepIndex).toBe(1);
         expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
+        expect(useLayoutStore.getState().activeRecipeSection).toBe('network');
         expect(useLayoutStore.getState().activeTabLeft).toBe('network');
+        expect(useLayoutStore.getState().view).toBe('build');
         expect(useLayoutStore.getState().phase).toBe('build');
 
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
         expect(onHighlightChange).toHaveBeenLastCalledWith('hyperparams');
         expect(screen.getByText('Step 3 of 4')).toBeInTheDocument();
+        expect(useLayoutStore.getState().activeRecipeSection).toBe('hyperparams');
         expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
+        expect(useLayoutStore.getState().view).toBe('build');
         expect(useLayoutStore.getState().phase).toBe('build');
 
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
         expect(onHighlightChange).toHaveBeenLastCalledWith('transport');
         expect(screen.getByText('Step 4 of 4')).toBeInTheDocument();
+        expect(useLayoutStore.getState().view).toBe('run');
         expect(useLayoutStore.getState().phase).toBe('run');
 
         await user.click(screen.getByRole('button', { name: 'Finish guided lesson' }));
@@ -223,7 +233,7 @@ describe('GuidedLessonPanel', () => {
         }
     });
 
-    it('collapses and expands the docked lesson drawer without losing selected lesson state', async () => {
+    it('collapses and expands the lesson menu without losing selected lesson state', async () => {
         const user = userEvent.setup();
 
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);

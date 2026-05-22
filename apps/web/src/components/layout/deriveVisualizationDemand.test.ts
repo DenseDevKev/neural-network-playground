@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_DEMAND, type VisualizationDemand } from '@nn-playground/shared';
-import type { LayoutVariant, PhaseMode } from '../../store/useLayoutStore.ts';
+import type { EvidenceViewId, WorkspaceView } from '../../store/useLayoutStore.ts';
 import { deriveVisualizationDemand } from './deriveVisualizationDemand.ts';
 
 function demand(overrides: Partial<VisualizationDemand>): VisualizationDemand {
@@ -13,16 +13,26 @@ function demand(overrides: Partial<VisualizationDemand>): VisualizationDemand {
 describe('deriveVisualizationDemand', () => {
     it.each<{
         name: string;
-        layout: LayoutVariant;
-        phase: PhaseMode;
-        activeTabRight: string;
+        view: WorkspaceView;
+        activeEvidenceView: EvidenceViewId;
+        historyDrawerOpen?: boolean;
         expected: VisualizationDemand;
     }>([
         {
-            name: 'dock boundary tab',
-            layout: 'dock',
-            phase: 'build',
-            activeTabRight: 'boundary',
+            name: 'Build view asks only for topology graph data',
+            view: 'build',
+            activeEvidenceView: 'boundary',
+            expected: demand({
+                needDecisionBoundary: false,
+                needNeuronGrids: true,
+                needLayerStats: false,
+                needConfusionMatrix: false,
+            }),
+        },
+        {
+            name: 'Run boundary evidence requests decision boundary',
+            view: 'run',
+            activeEvidenceView: 'boundary',
             expected: demand({
                 needDecisionBoundary: true,
                 needNeuronGrids: true,
@@ -31,10 +41,9 @@ describe('deriveVisualizationDemand', () => {
             }),
         },
         {
-            name: 'dock loss tab',
-            layout: 'dock',
-            phase: 'build',
-            activeTabRight: 'loss',
+            name: 'Run loss evidence keeps graph demand without boundary expansion',
+            view: 'run',
+            activeEvidenceView: 'loss',
             expected: demand({
                 needDecisionBoundary: false,
                 needNeuronGrids: true,
@@ -43,10 +52,9 @@ describe('deriveVisualizationDemand', () => {
             }),
         },
         {
-            name: 'dock confusion tab',
-            layout: 'dock',
-            phase: 'build',
-            activeTabRight: 'confusion',
+            name: 'Run confusion evidence requests confusion matrix',
+            view: 'run',
+            activeEvidenceView: 'confusion',
             expected: demand({
                 needDecisionBoundary: false,
                 needNeuronGrids: true,
@@ -55,10 +63,9 @@ describe('deriveVisualizationDemand', () => {
             }),
         },
         {
-            name: 'dock inspection tab',
-            layout: 'dock',
-            phase: 'build',
-            activeTabRight: 'inspection',
+            name: 'Run inspection evidence requests layer diagnostics',
+            view: 'run',
+            activeEvidenceView: 'inspection',
             expected: demand({
                 needDecisionBoundary: false,
                 needNeuronGrids: true,
@@ -68,36 +75,9 @@ describe('deriveVisualizationDemand', () => {
             }),
         },
         {
-            name: 'focus layout',
-            layout: 'focus',
-            phase: 'build',
-            activeTabRight: 'loss',
-            expected: demand({
-                needDecisionBoundary: true,
-                needNeuronGrids: true,
-                needLayerStats: true,
-                needActivationHistograms: true,
-                needConfusionMatrix: true,
-            }),
-        },
-        {
-            name: 'grid layout',
-            layout: 'grid',
-            phase: 'build',
-            activeTabRight: 'loss',
-            expected: demand({
-                needDecisionBoundary: true,
-                needNeuronGrids: true,
-                needLayerStats: true,
-                needActivationHistograms: true,
-                needConfusionMatrix: true,
-            }),
-        },
-        {
-            name: 'split build phase',
-            layout: 'split',
-            phase: 'build',
-            activeTabRight: 'boundary',
+            name: 'Run code evidence does not expand visualization demand',
+            view: 'run',
+            activeEvidenceView: 'code',
             expected: demand({
                 needDecisionBoundary: false,
                 needNeuronGrids: true,
@@ -106,24 +86,32 @@ describe('deriveVisualizationDemand', () => {
             }),
         },
         {
-            name: 'split run phase',
-            layout: 'split',
-            phase: 'run',
-            activeTabRight: 'loss',
+            name: 'History drawer does not expand worker demand by itself',
+            view: 'run',
+            activeEvidenceView: 'loss',
+            historyDrawerOpen: true,
             expected: demand({
-                needDecisionBoundary: true,
+                needDecisionBoundary: false,
                 needNeuronGrids: true,
-                needLayerStats: true,
-                needActivationHistograms: true,
-                needConfusionMatrix: true,
+                needLayerStats: false,
+                needActivationHistograms: false,
+                needConfusionMatrix: false,
             }),
         },
-    ])('$name', ({ layout, phase, activeTabRight, expected }) => {
+    ])('$name', ({ view, activeEvidenceView, historyDrawerOpen, expected }) => {
         expect(deriveVisualizationDemand({
-            layout,
-            phase,
-            activeTabRight,
+            view,
+            activeEvidenceView,
+            historyDrawerOpen,
             graphRenderer: 'canvas',
         })).toEqual(expected);
+    });
+
+    it('requests neuron grids for both graph renderers because topology can use activation tiles', () => {
+        expect(deriveVisualizationDemand({
+            view: 'build',
+            activeEvidenceView: 'boundary',
+            graphRenderer: 'svg',
+        }).needNeuronGrids).toBe(true);
     });
 });
