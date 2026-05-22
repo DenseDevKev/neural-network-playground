@@ -282,6 +282,7 @@ export function useTraining(): TrainingHook {
         const testPts = await api.getTestPoints();
         ts.setTrainPoints(trainPts);
         ts.setTestPoints(testPts);
+        ts.markTrainedRecipe(config, 'initialize');
 
         // Record the initial config snapshot to prevent duplicate sync
         const latestState = usePlaygroundStore.getState();
@@ -429,6 +430,7 @@ export function useTraining(): TrainingHook {
                 if (!isCurrentConfigSync(seq)) return;
                 ts.setTrainPoints(trainPts);
                 ts.setTestPoints(testPts);
+                ts.markTrainedRecipe(config, 'config-sync');
 
                 usePlaygroundStore.getState().syncToUrl();
                 ts.finishConfigChange();
@@ -569,6 +571,7 @@ export function useTraining(): TrainingHook {
             if (!isCurrentConfigSync(seq)) return;
             ts.setTrainPoints(trainPts);
             ts.setTestPoints(testPts);
+            ts.markTrainedRecipe(getValidatedPublicRuntimeConfig(), 'reset');
             finishConfigSyncIfCurrent(seq);
         } catch (error) {
             if (!isCurrentConfigSync(seq)) return;
@@ -595,6 +598,7 @@ export function useTraining(): TrainingHook {
             const ts = useTrainingStore.getState();
             applyFreshSnapshotToStore(ts, result.snapshot);
             ts.setCheckpointTimeline(result.timeline as CheckpointTimeline);
+            ts.markTrainedRecipe(getValidatedPublicRuntimeConfig(), 'restore');
             ts.setPauseReason('manual');
             ts.setStatus('paused');
         } catch (error) {

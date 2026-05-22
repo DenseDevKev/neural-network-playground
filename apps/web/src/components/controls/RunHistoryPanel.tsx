@@ -76,6 +76,24 @@ function formatArenaGapComparison(a: ExperimentRunRecordV1, b: ExperimentRunReco
     return `Model A ${direction} generalization gap by ${Math.abs(diff).toFixed(4)}.`;
 }
 
+function formatNextAdjustment(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
+    const testLossDiff = a.summary.testLoss - b.summary.testLoss;
+    const gapDiff = generalizationGap(a) - generalizationGap(b);
+    if (!Number.isFinite(testLossDiff) || !Number.isFinite(gapDiff)) {
+        return 'Next adjustment: compare architecture and metric differences before changing the recipe.';
+    }
+    if (testLossDiff < -0.00005 && gapDiff <= 0.00005) {
+        return 'Next adjustment: keep the tuned recipe direction; it improved test loss without widening the gap.';
+    }
+    if (testLossDiff < -0.00005) {
+        return 'Next adjustment: keep the stronger test loss, then reduce any wider gap with regularization or simpler layers.';
+    }
+    if (testLossDiff > 0.00005) {
+        return 'Next adjustment: restore or compare against the better saved run before tuning further.';
+    }
+    return 'Next adjustment: compare architecture differences because the metrics are effectively tied.';
+}
+
 function formatFeatureList(record: ExperimentRunRecordV1): string {
     const enabled = Object.entries(record.config.features)
         .filter(([, value]) => value)
@@ -387,6 +405,7 @@ function SideBySideModelArena({
                 <span>{formatArenaLossComparison(modelA, modelB)}</span>
                 <span>{formatArenaGapComparison(modelA, modelB)}</span>
                 <span>{formatArenaStepComparison(modelA, modelB)}</span>
+                <span>{formatNextAdjustment(modelA, modelB)}</span>
             </div>
             <ArchitectureComparison modelA={modelA} modelB={modelB} />
         </section>
@@ -492,6 +511,9 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({
 
     return (
         <div className="run-history-panel">
+            <div className="inspection__empty" role="note" style={{ marginBottom: 8 }}>
+                History is the saved-run record surface.
+            </div>
             <Tooltip content="Save the current config, final metrics, bounded loss history, and current parameters when available." block>
                 <button
                     type="button"
@@ -524,6 +546,10 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({
                             return (
                                 <article key={record.id} className="inspection__layer" aria-label={getRecordLabel(record)}>
                                     <div className="inspection__layer-name">{record.title ?? 'Saved run'}</div>
+                                    <div className="inspection__empty" role="note" style={{ marginTop: 6 }}>
+                                        <strong>Saved run reference</strong>
+                                        <span>Restore config to make this saved run the current recipe.</span>
+                                    </div>
                                     <div className="inspection__stat-row">
                                         <span className="inspection__stat-label">step</span>
                                         <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
@@ -557,6 +583,9 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({
                                                 <span className="inspection__stat-value">
                                                     Steps {formatSignedInteger(record.summary.step - baseline.summary.step)}
                                                 </span>
+                                            </div>
+                                            <div className="inspection__stat-value" style={{ marginTop: 6 }}>
+                                                {formatNextAdjustment(record, baseline)}
                                             </div>
                                         </div>
                                     )}

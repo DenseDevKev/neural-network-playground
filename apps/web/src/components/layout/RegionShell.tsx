@@ -93,6 +93,7 @@ interface DockProps {
     rightTabContent: Record<RightTabId, ReactNode>;
     canvasContent: ReactNode;
     transportContent: ReactNode;
+    leftContextContent?: ReactNode;
     compact?: boolean;
 }
 
@@ -108,6 +109,7 @@ export const DockShell = memo(function DockShell({
     rightTabContent,
     canvasContent,
     transportContent,
+    leftContextContent,
     compact = false,
 }: DockProps) {
     const activeTabLeft = useLayoutStore((s) => s.activeTabLeft);
@@ -147,6 +149,11 @@ export const DockShell = memo(function DockShell({
 
             {/* Left panel */}
             <div className="forge-dock__left">
+                {leftContextContent && (
+                    <div className="forge-left-context">
+                        {leftContextContent}
+                    </div>
+                )}
                 <TabStrip
                     tabs={LEFT_TABS}
                     active={activeTabLeft}
@@ -206,10 +213,12 @@ export const FocusShell = memo(function FocusShell({
     rightTabContent,
     canvasContent,
     transportContent,
+    leftContextContent,
 }: DockProps) {
     return (
         <div className="forge-focus">
             <div className="forge-focus__left forge-panel-stack" aria-label="Configuration panels">
+                {leftContextContent}
                 {LEFT_TABS.map((tab) => (
                     <section
                         className="forge-panel"

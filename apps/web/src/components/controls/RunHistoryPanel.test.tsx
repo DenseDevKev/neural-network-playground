@@ -145,6 +145,7 @@ describe('RunHistoryPanel', () => {
     it('renders an empty state when no runs are saved', () => {
         render(<RunHistoryPanel onRestore={vi.fn()} />);
 
+        expect(screen.getByText('History is the saved-run record surface.')).toBeInTheDocument();
         expect(screen.getByText('No saved runs')).toBeInTheDocument();
     });
 
@@ -277,10 +278,13 @@ describe('RunHistoryPanel', () => {
 
         expect(screen.getByRole('group', { name: 'Comparison for Tuned model against Baseline' })).toBeInTheDocument();
         expect(screen.getByText('Compared with Baseline')).toBeInTheDocument();
+        expect(screen.getAllByText('Saved run reference')).toHaveLength(2);
+        expect(screen.getAllByText('Restore config to make this saved run the current recipe.')).toHaveLength(2);
         expect(screen.getByText('Train loss -0.1500')).toBeInTheDocument();
         expect(screen.getByText('Test loss -0.1800')).toBeInTheDocument();
         expect(screen.getByText('Gap -0.0300')).toBeInTheDocument();
         expect(screen.getByText('Steps +80')).toBeInTheDocument();
+        expect(screen.getAllByText('Next adjustment: keep the tuned recipe direction; it improved test loss without widening the gap.')).toHaveLength(2);
     });
 
     it('renders a side-by-side arena from two saved runs with accessible model regions', async () => {

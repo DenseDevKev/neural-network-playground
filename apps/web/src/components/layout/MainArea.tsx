@@ -18,6 +18,7 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { Panel } from '../common/Panel.tsx';
 import { ErrorBoundary } from '../common/ErrorBoundary.tsx';
 import { LoadingState } from '../common/LoadingState.tsx';
+import { EvidenceContextLine, TopologyStateBadge } from './ExperimentStateContext.tsx';
 
 interface MainAreaProps { training: TrainingHook }
 
@@ -63,6 +64,7 @@ export const CanvasContent = memo(function CanvasContent() {
             className="network-graph-wrapper"
             style={{ flex: 1, borderRadius: 'var(--radius-md)', overflow: 'hidden' }}
         >
+            <TopologyStateBadge />
             <NetworkGraph />
         </div>
     );
@@ -79,6 +81,7 @@ export const BoundaryContent = memo(function BoundaryContent() {
     return (
         <ErrorBoundary title="Decision boundary unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
             <>
+                <EvidenceContextLine view="Boundary" />
                 <DecisionBoundary
                     trainPoints={trainPoints}
                     testPoints={testPoints}
@@ -122,6 +125,7 @@ export const LossContent = memo(function LossContent() {
     return (
         <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
             <>
+                <EvidenceContextLine view="Loss" />
                 <LossChart />
                 <TrainingExplanationPanel />
             </>
@@ -132,24 +136,33 @@ export const LossContent = memo(function LossContent() {
 export const ConfusionContent = memo(function ConfusionContent() {
     return (
         <ErrorBoundary title="Confusion matrix unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-            <ConfusionMatrix />
+            <>
+                <EvidenceContextLine view="Confusion" />
+                <ConfusionMatrix />
+            </>
         </ErrorBoundary>
     );
 });
 
 export const InspectContent = memo(function InspectContent() {
     return (
-        <Suspense fallback={<Fallback msg="Loading inspection…" />}>
-            <InspectionPanel />
-        </Suspense>
+        <>
+            <EvidenceContextLine view="Inspection" />
+            <Suspense fallback={<Fallback msg="Loading inspection…" />}>
+                <InspectionPanel />
+            </Suspense>
+        </>
     );
 });
 
 export const CodeContent = memo(function CodeContent() {
     return (
-        <Suspense fallback={<Fallback msg="Loading code export…" />}>
-            <CodeExportPanel />
-        </Suspense>
+        <>
+            <EvidenceContextLine view="Code" />
+            <Suspense fallback={<Fallback msg="Loading code export…" />}>
+                <CodeExportPanel />
+            </Suspense>
+        </>
     );
 });
 
@@ -165,13 +178,16 @@ export const HistoryContent = memo(function HistoryContent({
     onStepArena,
 }: HistoryContentProps) {
     return (
-        <Suspense fallback={<Fallback msg="Loading run history…" />}>
-            <RunHistoryPanel
-                onRestore={onRestore}
-                onInitializeArena={onInitializeArena}
-                onStepArena={onStepArena}
-            />
-        </Suspense>
+        <>
+            <EvidenceContextLine view="History" />
+            <Suspense fallback={<Fallback msg="Loading run history…" />}>
+                <RunHistoryPanel
+                    onRestore={onRestore}
+                    onInitializeArena={onInitializeArena}
+                    onStepArena={onStepArena}
+                />
+            </Suspense>
+        </>
     );
 });
 
@@ -189,11 +205,13 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
             <main id="main-content" className="center-area" role="main" tabIndex={-1}>
                 <TrainingControls training={training} />
                 <div className="network-graph-wrapper">
+                    <TopologyStateBadge />
                     <NetworkGraph />
                 </div>
             </main>
             <aside className="right-panel" aria-label="Output">
                 <ErrorBoundary title="Decision boundary unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
+                    <EvidenceContextLine view="Boundary" />
                     <DecisionBoundary
                         trainPoints={trainPoints}
                         testPoints={testPoints}
@@ -218,23 +236,28 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                     {overlayCopy.description}
                 </p>
                 <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
+                    <EvidenceContextLine view="Loss" />
                     <LossChart />
                     <TrainingExplanationPanel />
                 </ErrorBoundary>
                 <ErrorBoundary title="Confusion matrix unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
+                    <EvidenceContextLine view="Confusion" />
                     <ConfusionMatrix />
                 </ErrorBoundary>
                 <Panel title="Inspection" phase="run">
+                    <EvidenceContextLine view="Inspection" />
                     <Suspense fallback={<Fallback msg="Loading inspection…" />}>
                         <InspectionPanel />
                     </Suspense>
                 </Panel>
                 <Panel title="Code Export" phase="both">
+                    <EvidenceContextLine view="Code" />
                     <Suspense fallback={<Fallback msg="Loading code export…" />}>
                         <CodeExportPanel />
                     </Suspense>
                 </Panel>
                 <Panel title="Run History" phase="both">
+                    <EvidenceContextLine view="History" />
                     <Suspense fallback={<Fallback msg="Loading run history…" />}>
                         <RunHistoryPanel
                             onRestore={training.reset}

@@ -177,6 +177,9 @@ function resetStores(): void {
     useTrainingStore.setState({
         status: 'idle',
         snapshot: null,
+        trainedRecipeConfig: null,
+        trainedRecipeRecordedAt: null,
+        trainedRecipeSource: null,
         frameVersion: 0,
         outputGridVersion: 0,
         neuronGridsVersion: 0,
@@ -281,6 +284,8 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().trainPoints).toEqual([{ x: 0, y: 1, label: 1 }]);
         expect(useTrainingStore.getState().testPoints).toEqual([{ x: 1, y: 0, label: 0 }]);
         expect(useTrainingStore.getState().paramsVersion).toBeGreaterThan(0);
+        expect(useTrainingStore.getState().trainedRecipeConfig?.data.dataset).toBe(DEFAULT_DATA.dataset);
+        expect(useTrainingStore.getState().trainedRecipeSource).toBe('initialize');
     });
 
     it('does not initialize public training with hidden multiclass configs', async () => {
@@ -786,6 +791,8 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
         expect(useTrainingStore.getState().dataConfigLoading).toBe(false);
         expect(useTrainingStore.getState().configError).toBeNull();
+        expect(useTrainingStore.getState().trainedRecipeConfig?.data.numSamples).toBe(DEFAULT_DATA.numSamples + 1);
+        expect(useTrainingStore.getState().trainedRecipeSource).toBe('config-sync');
 
         unmount();
     });
@@ -894,6 +901,8 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().configErrorSource).toBe('network');
         expect(useTrainingStore.getState().networkConfigLoading).toBe(false);
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+        expect(useTrainingStore.getState().trainedRecipeConfig?.network.hiddenLayers).toEqual(DEFAULT_NETWORK.hiddenLayers);
+        expect(useTrainingStore.getState().trainedRecipeSource).toBe('initialize');
 
         bridge.workerApi.updateConfig.mockResolvedValueOnce({ snapshot: makeSnapshot(5), runId: 105 });
         act(() => {
@@ -903,6 +912,8 @@ describe('useTraining', () => {
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(5));
         expect(useTrainingStore.getState().configError).toBeNull();
         expect(bridge.newRunTo).toHaveBeenCalledWith(105);
+        expect(useTrainingStore.getState().trainedRecipeConfig?.network.hiddenLayers).toEqual([5, 3]);
+        expect(useTrainingStore.getState().trainedRecipeSource).toBe('config-sync');
 
         unmount();
     });

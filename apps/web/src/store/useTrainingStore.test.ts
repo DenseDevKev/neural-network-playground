@@ -2,6 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { useTrainingStore } from './useTrainingStore.ts';
 import { readHistory } from './historyBuffer.ts';
 import type { NetworkSnapshot } from '@nn-playground/engine';
+import {
+    DEFAULT_DATA,
+    DEFAULT_FEATURES,
+    DEFAULT_NETWORK,
+    DEFAULT_TRAINING,
+    type AppConfig,
+} from '@nn-playground/shared';
 
 function makeSnapshot(step: number): NetworkSnapshot {
     return {
@@ -19,11 +26,29 @@ function makeSnapshot(step: number): NetworkSnapshot {
     };
 }
 
+function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+    return {
+        data: overrides.data ?? { ...DEFAULT_DATA },
+        features: overrides.features ?? { ...DEFAULT_FEATURES },
+        network: overrides.network ?? {
+            ...DEFAULT_NETWORK,
+            inputSize: 2,
+            hiddenLayers: [...DEFAULT_NETWORK.hiddenLayers],
+            seed: DEFAULT_DATA.seed,
+        },
+        training: overrides.training ?? { ...DEFAULT_TRAINING },
+        ui: overrides.ui ?? { showTestData: false, discretizeOutput: false },
+    };
+}
+
 describe('useTrainingStore streamed snapshots', () => {
     beforeEach(() => {
         useTrainingStore.getState().resetHistory();
         useTrainingStore.setState({
             snapshot: null,
+            trainedRecipeConfig: null,
+            trainedRecipeRecordedAt: null,
+            trainedRecipeSource: null,
             frameVersion: 0,
             testMetricsStale: false,
             workerError: 'previous error',
@@ -103,5 +128,31 @@ describe('useTrainingStore streamed snapshots', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBe('preset');
         expect(useTrainingStore.getState().presetConfigLoading).toBe(true);
         expect(useTrainingStore.getState().configError).toBeNull();
+    });
+
+    it('records the config that produced the trained snapshot', () => {
+        const config = makeConfig({
+            data: { ...DEFAULT_DATA, dataset: 'xor' },
+            training: { ...DEFAULT_TRAINING, learningRate: 0.1 },
+        });
+
+        useTrainingStore.getState().markTrainedRecipe(config, 'config-sync');
+
+        const state = useTrainingStore.getState();
+        expect(state.trainedRecipeConfig?.data.dataset).toBe('xor');
+        expect(state.trainedRecipeConfig?.training.learningRate).toBe(0.1);
+        expect(state.trainedRecipeRecordedAt).toEqual(expect.any(Number));
+        expect(state.trainedRecipeSource).toBe('config-sync');
+    });
+
+    it('keeps trained recipe metadata separate from later current recipe mutation', () => {
+        const config = makeConfig();
+
+        useTrainingStore.getState().markTrainedRecipe(config, 'initialize');
+        config.training.learningRate = 0.3;
+        config.network.hiddenLayers.push(12);
+
+        expect(useTrainingStore.getState().trainedRecipeConfig?.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
+        expect(useTrainingStore.getState().trainedRecipeConfig?.network.hiddenLayers).toEqual([4, 4]);
     });
 });
