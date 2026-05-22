@@ -65,6 +65,9 @@ describe('forge compact dock CSS', () => {
         expect(css).toContain('.forge-context-card');
         expect(css).toContain('.forge-state-badge');
         expect(css).toContain('.forge-evidence-context');
+        expect(css).toContain('.forge-evidence-frame');
+        expect(css).toContain('.forge-cockpit-strip');
+        expect(css).toContain('.run-comparison-loop');
     });
 
     it('keeps compact active-run transport reachable on mobile', () => {

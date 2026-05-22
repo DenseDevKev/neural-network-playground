@@ -9,7 +9,13 @@ import {
 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { EvidenceContextLine, TopologyStateBadge } from './ExperimentStateContext.tsx';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import {
+    DiagnosticCockpitStrip,
+    EvidenceContextLine,
+    EvidenceFrame,
+    TopologyStateBadge,
+} from './ExperimentStateContext.tsx';
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     return {
@@ -37,7 +43,10 @@ describe('ExperimentStateContext', () => {
             trainedRecipeSource: null,
             pendingConfigSource: null,
             testMetricsStale: false,
+            workerError: null,
+            configError: null,
         });
+        useLayoutStore.setState({ layout: 'dock', activeTabRight: 'boundary' });
     });
 
     it('labels topology as a draft blueprint before a snapshot exists', () => {
@@ -98,5 +107,63 @@ describe('ExperimentStateContext', () => {
         expect(screen.getByText('Inspection evidence is unavailable until the worker reconnects.')).toBeInTheDocument();
         expect(screen.getByText('Unavailable')).toBeInTheDocument();
         expect(screen.getByText('Shows layer activations, gradients, and probes.')).toBeInTheDocument();
+    });
+
+    it('wraps evidence views in a shared frame without forcing their internal layout', () => {
+        render(
+            <EvidenceFrame view="Boundary">
+                <div>Boundary plot content</div>
+            </EvidenceFrame>,
+        );
+
+        expect(screen.getByRole('region', { name: 'Boundary evidence view' })).toBeInTheDocument();
+        expect(screen.getByText('Boundary')).toBeInTheDocument();
+        expect(screen.getByText('Plot-based')).toBeInTheDocument();
+        expect(screen.getByText('Shows decision regions and sample outcomes.')).toBeInTheDocument();
+        expect(screen.getByText('Boundary plot content')).toBeInTheDocument();
+    });
+
+    it('summarizes the live diagnostic cockpit around the selected evidence view', () => {
+        useLayoutStore.setState({ layout: 'focus', activeTabRight: 'loss' });
+        useTrainingStore.setState({
+            status: 'running',
+            snapshot: {
+                step: 128,
+                epoch: 4,
+                trainLoss: 0.22,
+                testLoss: 0.31,
+                trainMetrics: { loss: 0.22, accuracy: 0.9 },
+                testMetrics: { loss: 0.31, accuracy: 0.8 },
+            } as any,
+        });
+
+        render(<DiagnosticCockpitStrip />);
+
+        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+            'Topology and Loss are reading live run step 128.',
+        );
+        expect(screen.getByText('focus pair')).toBeInTheDocument();
+        expect(screen.getByText('train 0.2200')).toBeInTheDocument();
+        expect(screen.getByText('test 0.3100')).toBeInTheDocument();
+    });
+
+    it('labels mixed draft and snapshot state in the diagnostic cockpit', () => {
+        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
+        useTrainingStore.setState({ snapshot: { step: 24, epoch: 1, trainLoss: 0.4, testLoss: 0.5 } as any });
+        usePlaygroundStore.setState({
+            ...makeConfig(),
+            network: {
+                ...DEFAULT_NETWORK,
+                inputSize: 2,
+                hiddenLayers: [8],
+                seed: DEFAULT_DATA.seed,
+            },
+        });
+
+        render(<DiagnosticCockpitStrip />);
+
+        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+            'Topology shows the draft recipe while Boundary evidence belongs to trained snapshot step 24.',
+        );
     });
 });
