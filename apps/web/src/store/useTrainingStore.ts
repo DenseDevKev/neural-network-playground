@@ -9,6 +9,7 @@ import type {
     DataPoint,
 } from '@nn-playground/engine';
 import type { ArenaModelSummary, CheckpointTimeline, PauseReason, TrainingStatus } from '@nn-playground/shared';
+import type { AppConfig } from '@nn-playground/shared';
 import {
     appendHistoryPoint,
     resetHistoryBuffer,
@@ -17,6 +18,11 @@ import { normalizeTrainingSpeed } from '../worker/trainingLoop.ts';
 import type { FrameVersions } from '../worker/frameBuffer.ts';
 
 export type ConfigChangeSource = 'data' | 'network' | 'features' | 'training' | 'preset' | null;
+export type TrainedRecipeSource = 'initialize' | 'config-sync' | 'reset' | 'restore';
+
+function cloneAppConfig(config: AppConfig): AppConfig {
+    return structuredClone(config);
+}
 
 export interface TrainingStore {
     // ── Runtime State ──
@@ -54,6 +60,10 @@ export interface TrainingStore {
     testMetricsStale: boolean;
     /** Lightweight checkpoint timeline metadata only; model payloads stay in the worker. */
     checkpointTimeline: CheckpointTimeline;
+    /** App-local recipe identity for the snapshot/evidence currently shown in the UI. */
+    trainedRecipeConfig: AppConfig | null;
+    trainedRecipeRecordedAt: number | null;
+    trainedRecipeSource: TrainedRecipeSource | null;
 
     // ── Actions ──
     setStatus: (s: TrainingStatus) => void;
@@ -83,6 +93,7 @@ export interface TrainingStore {
     setTestMetricsStale: (stale: boolean) => void;
     setCheckpointTimeline: (timeline: CheckpointTimeline) => void;
     setArenaSummaries: (summaries: ArenaModelSummary[] | null) => void;
+    markTrainedRecipe: (config: AppConfig, source: TrainedRecipeSource) => void;
 }
 
 const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
@@ -123,6 +134,9 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     pauseReason: null,
     testMetricsStale: false,
     checkpointTimeline: EMPTY_CHECKPOINT_TIMELINE,
+    trainedRecipeConfig: null,
+    trainedRecipeRecordedAt: null,
+    trainedRecipeSource: null,
 
     setStatus: (status) => set({ status }),
     setSnapshot: (snapshot) => set({ snapshot }),
@@ -241,4 +255,9 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     setTestMetricsStale: (testMetricsStale) => set({ testMetricsStale }),
     setCheckpointTimeline: (checkpointTimeline) => set({ checkpointTimeline }),
     setArenaSummaries: (arenaSummaries) => set({ arenaSummaries }),
+    markTrainedRecipe: (config, source) => set({
+        trainedRecipeConfig: cloneAppConfig(config),
+        trainedRecipeRecordedAt: Date.now(),
+        trainedRecipeSource: source,
+    }),
 }));

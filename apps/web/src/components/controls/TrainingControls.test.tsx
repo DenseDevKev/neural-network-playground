@@ -49,6 +49,7 @@ describe('TrainingControls', () => {
 
     render(<TrainingControls training={training} />);
 
+    expect(screen.getByRole('region', { name: 'Timeline strip' })).toBeInTheDocument();
     const playButton = screen.getByRole('button', { name: 'Start training' });
     const stepButton = screen.getByRole('button', { name: 'Run one training step' });
     const resetButton = screen.getByRole('button', { name: 'Reset model and data' });
@@ -56,6 +57,32 @@ describe('TrainingControls', () => {
     expect(within(playButton).getByText('Space')).toBeInTheDocument();
     expect(within(stepButton).getAllByText('→')[1]).toBeInTheDocument();
     expect(within(resetButton).getByText('R')).toBeInTheDocument();
+  });
+
+  it('preserves the primary Start, Pause, and Resume action flow', async () => {
+    const user = userEvent.setup();
+    const training = createTrainingMock();
+
+    const { rerender } = render(<TrainingControls training={training} />);
+
+    await user.click(screen.getByRole('button', { name: 'Start training' }));
+    expect(training.play).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      useTrainingStore.setState({ status: 'running' });
+    });
+    rerender(<TrainingControls training={training} />);
+
+    await user.click(screen.getByRole('button', { name: 'Pause training' }));
+    expect(training.pause).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      useTrainingStore.setState({ status: 'paused' });
+    });
+    rerender(<TrainingControls training={training} />);
+
+    await user.click(screen.getByRole('button', { name: 'Resume training' }));
+    expect(training.play).toHaveBeenCalledTimes(2);
   });
 
   it('should highlight the active speed button and update speed on click', async () => {

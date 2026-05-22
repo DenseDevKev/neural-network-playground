@@ -18,6 +18,7 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { Panel } from '../common/Panel.tsx';
 import { ErrorBoundary } from '../common/ErrorBoundary.tsx';
 import { LoadingState } from '../common/LoadingState.tsx';
+import { DiagnosticCockpitStrip, EvidenceFrame, TopologyStateBadge } from './ExperimentStateContext.tsx';
 
 interface MainAreaProps { training: TrainingHook }
 
@@ -56,16 +57,21 @@ function Fallback({ msg }: { msg: string }) {
     return <LoadingState isLoading inline message={msg} />;
 }
 
-// ── Canvas content (network topology) ────────────────────────────────────
-export const CanvasContent = memo(function CanvasContent() {
+export const TopologyStage = memo(function TopologyStage() {
     return (
-        <div
-            className="network-graph-wrapper"
-            style={{ flex: 1, borderRadius: 'var(--radius-md)', overflow: 'hidden' }}
-        >
-            <NetworkGraph />
+        <div className="forge-topology-stage">
+            <div className="network-graph-wrapper">
+                <TopologyStateBadge />
+                <NetworkGraph />
+            </div>
+            <DiagnosticCockpitStrip />
         </div>
     );
+});
+
+// ── Canvas content (network topology) ────────────────────────────────────
+export const CanvasContent = memo(function CanvasContent() {
+    return <TopologyStage />;
 });
 
 // ── Right-panel tab contents ──────────────────────────────────────────────
@@ -78,7 +84,7 @@ export const BoundaryContent = memo(function BoundaryContent() {
     const overlayCopy = getDecisionOverlayCopy(overlayMode, showTestData, discretize);
     return (
         <ErrorBoundary title="Decision boundary unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-            <>
+            <EvidenceFrame view="Boundary">
                 <DecisionBoundary
                     trainPoints={trainPoints}
                     testPoints={testPoints}
@@ -113,7 +119,7 @@ export const BoundaryContent = memo(function BoundaryContent() {
                         {overlayCopy.description}
                     </p>
                 </div>
-            </>
+            </EvidenceFrame>
         </ErrorBoundary>
     );
 });
@@ -121,10 +127,10 @@ export const BoundaryContent = memo(function BoundaryContent() {
 export const LossContent = memo(function LossContent() {
     return (
         <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-            <>
+            <EvidenceFrame view="Loss">
                 <LossChart />
                 <TrainingExplanationPanel />
-            </>
+            </EvidenceFrame>
         </ErrorBoundary>
     );
 });
@@ -132,24 +138,30 @@ export const LossContent = memo(function LossContent() {
 export const ConfusionContent = memo(function ConfusionContent() {
     return (
         <ErrorBoundary title="Confusion matrix unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-            <ConfusionMatrix />
+            <EvidenceFrame view="Confusion">
+                <ConfusionMatrix />
+            </EvidenceFrame>
         </ErrorBoundary>
     );
 });
 
 export const InspectContent = memo(function InspectContent() {
     return (
-        <Suspense fallback={<Fallback msg="Loading inspection…" />}>
-            <InspectionPanel />
-        </Suspense>
+        <EvidenceFrame view="Inspection">
+            <Suspense fallback={<Fallback msg="Loading inspection…" />}>
+                <InspectionPanel />
+            </Suspense>
+        </EvidenceFrame>
     );
 });
 
 export const CodeContent = memo(function CodeContent() {
     return (
-        <Suspense fallback={<Fallback msg="Loading code export…" />}>
-            <CodeExportPanel />
-        </Suspense>
+        <EvidenceFrame view="Code">
+            <Suspense fallback={<Fallback msg="Loading code export…" />}>
+                <CodeExportPanel />
+            </Suspense>
+        </EvidenceFrame>
     );
 });
 
@@ -165,13 +177,15 @@ export const HistoryContent = memo(function HistoryContent({
     onStepArena,
 }: HistoryContentProps) {
     return (
-        <Suspense fallback={<Fallback msg="Loading run history…" />}>
-            <RunHistoryPanel
-                onRestore={onRestore}
-                onInitializeArena={onInitializeArena}
-                onStepArena={onStepArena}
-            />
-        </Suspense>
+        <EvidenceFrame view="History">
+            <Suspense fallback={<Fallback msg="Loading run history…" />}>
+                <RunHistoryPanel
+                    onRestore={onRestore}
+                    onInitializeArena={onInitializeArena}
+                    onStepArena={onStepArena}
+                />
+            </Suspense>
+        </EvidenceFrame>
     );
 });
 
@@ -188,19 +202,19 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
         <>
             <main id="main-content" className="center-area" role="main" tabIndex={-1}>
                 <TrainingControls training={training} />
-                <div className="network-graph-wrapper">
-                    <NetworkGraph />
-                </div>
+                <TopologyStage />
             </main>
             <aside className="right-panel" aria-label="Output">
                 <ErrorBoundary title="Decision boundary unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-                    <DecisionBoundary
-                        trainPoints={trainPoints}
-                        testPoints={testPoints}
-                        showTestData={showTestData}
-                        discretize={discretize}
-                        overlayMode={overlayMode}
-                    />
+                    <EvidenceFrame view="Boundary">
+                        <DecisionBoundary
+                            trainPoints={trainPoints}
+                            testPoints={testPoints}
+                            showTestData={showTestData}
+                            discretize={discretize}
+                            overlayMode={overlayMode}
+                        />
+                    </EvidenceFrame>
                 </ErrorBoundary>
                 <div className="decision-overlay-controls" aria-label="Decision overlay controls">
                     {DECISION_OVERLAY_MODES.map((mode) => (
@@ -218,45 +232,55 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                     {overlayCopy.description}
                 </p>
                 <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-                    <LossChart />
-                    <TrainingExplanationPanel />
+                    <EvidenceFrame view="Loss">
+                        <LossChart />
+                        <TrainingExplanationPanel />
+                    </EvidenceFrame>
                 </ErrorBoundary>
                 <ErrorBoundary title="Confusion matrix unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
-                    <ConfusionMatrix />
+                    <EvidenceFrame view="Confusion">
+                        <ConfusionMatrix />
+                    </EvidenceFrame>
                 </ErrorBoundary>
                 <Panel title="Inspection" phase="run">
-                    <Suspense fallback={<Fallback msg="Loading inspection…" />}>
-                        <InspectionPanel />
-                    </Suspense>
+                    <EvidenceFrame view="Inspection">
+                        <Suspense fallback={<Fallback msg="Loading inspection…" />}>
+                            <InspectionPanel />
+                        </Suspense>
+                    </EvidenceFrame>
                 </Panel>
                 <Panel title="Code Export" phase="both">
-                    <Suspense fallback={<Fallback msg="Loading code export…" />}>
-                        <CodeExportPanel />
-                    </Suspense>
+                    <EvidenceFrame view="Code">
+                        <Suspense fallback={<Fallback msg="Loading code export…" />}>
+                            <CodeExportPanel />
+                        </Suspense>
+                    </EvidenceFrame>
                 </Panel>
                 <Panel title="Run History" phase="both">
-                    <Suspense fallback={<Fallback msg="Loading run history…" />}>
-                        <RunHistoryPanel
-                            onRestore={training.reset}
-                            onInitializeArena={(modelA, modelB) => training.initializeArena(
-                                {
-                                    label: modelA.title ?? modelA.id,
-                                    network: modelA.config.network,
-                                    training: modelA.config.training,
-                                    data: modelA.config.data,
-                                    features: modelA.config.features,
-                                },
-                                {
-                                    label: modelB.title ?? modelB.id,
-                                    network: modelB.config.network,
-                                    training: modelB.config.training,
-                                    data: modelB.config.data,
-                                    features: modelB.config.features,
-                                },
-                            )}
-                            onStepArena={() => training.stepArena(1)}
-                        />
-                    </Suspense>
+                    <EvidenceFrame view="History">
+                        <Suspense fallback={<Fallback msg="Loading run history…" />}>
+                            <RunHistoryPanel
+                                onRestore={training.reset}
+                                onInitializeArena={(modelA, modelB) => training.initializeArena(
+                                    {
+                                        label: modelA.title ?? modelA.id,
+                                        network: modelA.config.network,
+                                        training: modelA.config.training,
+                                        data: modelA.config.data,
+                                        features: modelA.config.features,
+                                    },
+                                    {
+                                        label: modelB.title ?? modelB.id,
+                                        network: modelB.config.network,
+                                        training: modelB.config.training,
+                                        data: modelB.config.data,
+                                        features: modelB.config.features,
+                                    },
+                                )}
+                                onStepArena={() => training.stepArena(1)}
+                            />
+                        </Suspense>
+                    </EvidenceFrame>
                 </Panel>
             </aside>
         </>

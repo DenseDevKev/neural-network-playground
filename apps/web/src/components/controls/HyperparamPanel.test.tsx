@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HyperparamPanel } from './HyperparamPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
     DEFAULT_DATA,
     DEFAULT_FEATURES,
@@ -18,6 +19,16 @@ describe('HyperparamPanel accessibility', () => {
             features: { ...DEFAULT_FEATURES },
             training: { ...DEFAULT_TRAINING },
             ui: { showTestData: false, discretizeOutput: false },
+        });
+        useTrainingStore.setState({
+            pendingConfigSource: null,
+            dataConfigLoading: false,
+            networkConfigLoading: false,
+            featuresConfigLoading: false,
+            trainingConfigLoading: false,
+            presetConfigLoading: false,
+            configError: null,
+            configErrorSource: null,
         });
     });
 
@@ -97,5 +108,20 @@ describe('HyperparamPanel accessibility', () => {
         await user.selectOptions(screen.getByRole('combobox', { name: 'LR schedule' }), 'step');
 
         expect(screen.getByText('Starts at 0.03; multiplies by 0.5 every 100 updates.')).toBeInTheDocument();
+    });
+
+    it('marks training and network config changes before mutating hyperparameters', async () => {
+        const user = userEvent.setup();
+
+        render(<HyperparamPanel />);
+
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Learning rate' }), '0.1');
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
+        expect(useTrainingStore.getState().trainingConfigLoading).toBe(true);
+
+        useTrainingStore.getState().finishConfigChange();
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Weight initialization' }), 'he');
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('network');
+        expect(useTrainingStore.getState().networkConfigLoading).toBe(true);
     });
 });

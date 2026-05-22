@@ -32,4 +32,49 @@ describe('forge compact dock CSS', () => {
         expect(css).toContain('grid-template-columns: minmax(0, 1fr) minmax(290px, 360px)');
         expect(css).toContain('grid-template-columns: minmax(0, 1fr)');
     });
+
+    it('defines local hierarchy polish tokens without overriding base tokens', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('--forge-surface-muted');
+        expect(css).toContain('--forge-surface-active');
+        expect(css).toContain('--forge-border-muted');
+        expect(css).toContain('--forge-shadow-muted');
+        expect(css).toContain('--forge-control-gap');
+    });
+
+    it('keeps topology controls attached to a single graph toolbar surface', () => {
+        const css = readFileSync(resolve(__dirname, 'index.css'), 'utf8');
+
+        expect(css).toContain('.network-graph-toolbar');
+        expect(css).toContain('.network-graph-toolbar .network-graph-controls');
+        expect(css).toContain('.network-graph-toolbar .network-graph-mode-toggle');
+    });
+
+    it('keeps guided lesson visually secondary until active lesson state', () => {
+        const css = readFileSync(resolve(__dirname, 'index.css'), 'utf8');
+
+        expect(css).toContain('.guided-lesson--active');
+        expect(css).toContain('.guided-lesson:not(.guided-lesson--active)');
+    });
+
+    it('defines lab notebook context cards and evidence ownership chrome', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-experiment-context');
+        expect(css).toContain('.forge-context-card');
+        expect(css).toContain('.forge-state-badge');
+        expect(css).toContain('.forge-evidence-context');
+        expect(css).toContain('.forge-evidence-frame');
+        expect(css).toContain('.forge-cockpit-strip');
+        expect(css).toContain('.run-comparison-loop');
+    });
+
+    it('keeps compact active-run transport reachable on mobile', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-dock--compact .forge-dock__bottom');
+        expect(css).toContain('position: sticky');
+        expect(css).toContain('bottom: 0');
+    });
 });

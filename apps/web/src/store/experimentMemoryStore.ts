@@ -12,6 +12,7 @@ const EXPERIMENT_MEMORY_OPTIONS = { allowMulticlass: true } as const;
 interface ExperimentMemoryStore {
     records: ExperimentRunRecordV1[];
     saveRecord: (record: ExperimentRunRecordV1) => void;
+    renameRecord: (id: string, title: string, now?: () => Date) => void;
     removeRecord: (id: string) => void;
     clearRecords: () => void;
 }
@@ -44,6 +45,19 @@ export function createExperimentMemoryStore() {
         records: loadRecords(),
         saveRecord: (record) => set((state) => {
             const next = [record, ...state.records.filter((existing) => existing.id !== record.id)];
+            return { records: persistRecords(next, state.records) };
+        }),
+        renameRecord: (id, title, now = () => new Date()) => set((state) => {
+            const trimmedTitle = title.trim();
+            const next = state.records.map((record) => (
+                record.id === id
+                    ? {
+                        ...record,
+                        title: trimmedTitle || undefined,
+                        updatedAt: now().toISOString(),
+                    }
+                    : record
+            ));
             return { records: persistRecords(next, state.records) };
         }),
         removeRecord: (id) => set((state) => ({

@@ -98,6 +98,22 @@ describe('GuidedLessonPanel', () => {
         expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeInTheDocument();
     });
 
+    it('marks the lesson panel active only after a lesson starts', async () => {
+        const user = userEvent.setup();
+
+        const { container } = render(
+            <GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />,
+        );
+
+        const panel = container.querySelector('.guided-lesson');
+        expect(panel).toHaveClass('guided-lesson');
+        expect(panel).not.toHaveClass('guided-lesson--active');
+
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+
+        expect(panel).toHaveClass('guided-lesson--active');
+    });
+
     it('lists registry lessons and starts the selected lesson preset', async () => {
         const user = userEvent.setup();
         const onReset = vi.fn();
