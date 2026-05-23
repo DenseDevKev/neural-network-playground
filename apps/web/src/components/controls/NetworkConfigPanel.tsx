@@ -1,5 +1,5 @@
 // ── Network Configuration Panel ──
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { ACTIVATION_LABELS } from '@nn-playground/engine';
@@ -9,6 +9,81 @@ import { LoadingState } from '../common/LoadingState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
 
 const ACTIVATIONS: ActivationType[] = ['relu', 'tanh', 'sigmoid', 'linear', 'leakyRelu', 'elu', 'swish', 'softplus'];
+const MIN_NEURONS_PER_LAYER = 1;
+const MAX_NEURONS_PER_LAYER_UI = 16;
+
+function clampNeuronCount(value: number): number {
+    if (!Number.isFinite(value)) return MIN_NEURONS_PER_LAYER;
+    return Math.max(MIN_NEURONS_PER_LAYER, Math.min(MAX_NEURONS_PER_LAYER_UI, Math.trunc(value)));
+}
+
+function NeuronCountControl({
+    layer,
+    value,
+    onChange,
+}: {
+    layer: number;
+    value: number;
+    onChange: (nextValue: number) => void;
+}) {
+    const [draft, setDraft] = useState(String(value));
+
+    useEffect(() => {
+        setDraft(String(value));
+    }, [value]);
+
+    const commit = (nextValue: number) => {
+        const clamped = clampNeuronCount(nextValue);
+        setDraft(String(clamped));
+        if (clamped !== value) onChange(clamped);
+    };
+
+    return (
+        <div className="neuron-stepper" role="group" aria-label={`Layer ${layer} neuron count`}>
+            <button
+                type="button"
+                className="forge-stepper__btn neuron-stepper__btn"
+                onClick={() => commit(value - 1)}
+                disabled={value <= MIN_NEURONS_PER_LAYER}
+                aria-label={`Decrease neurons in layer ${layer}`}
+            >
+                −
+            </button>
+            <input
+                className="neuron-stepper__input"
+                type="number"
+                min={MIN_NEURONS_PER_LAYER}
+                max={MAX_NEURONS_PER_LAYER_UI}
+                step={1}
+                inputMode="numeric"
+                value={draft}
+                onChange={(event) => {
+                    const nextDraft = event.target.value;
+                    setDraft(nextDraft);
+                    if (nextDraft.trim() === '') return;
+                    commit(Number(nextDraft));
+                }}
+                onBlur={() => {
+                    if (draft.trim() === '') {
+                        setDraft(String(value));
+                        return;
+                    }
+                    commit(Number(draft));
+                }}
+                aria-label={`Neuron count for layer ${layer}`}
+            />
+            <button
+                type="button"
+                className="forge-stepper__btn neuron-stepper__btn"
+                onClick={() => commit(value + 1)}
+                disabled={value >= MAX_NEURONS_PER_LAYER_UI}
+                aria-label={`Increase neurons in layer ${layer}`}
+            >
+                +
+            </button>
+        </div>
+    );
+}
 
 export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
     const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
@@ -20,6 +95,12 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
 
     const beginNetworkChange = () => useTrainingStore.getState().beginConfigChange('network');
     const retryNetworkChange = () => useTrainingStore.getState().retryConfigSync();
+    const setLayerNeuronCount = (idx: number, count: number) => {
+        const nextCount = clampNeuronCount(count);
+        if (hiddenLayers[idx] === nextCount) return;
+        beginNetworkChange();
+        store.getState().setNeuronsInLayer(idx, nextCount);
+    };
 
     return (
         <div>
@@ -78,20 +159,12 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
             {hiddenLayers.map((count, idx) => (
                 <div key={idx} className="neuron-row">
                     <span className="control-label" style={{ minWidth: 60 }}>Layer {idx + 1}</span>
-                    <input
-                        type="range"
-                        min="1"
-                        max="16"
-                        value={count}
-                        onChange={(e) => {
-                            beginNetworkChange();
-                            store.getState().setNeuronsInLayer(idx, Number(e.target.value));
-                        }}
-                        aria-label={`Neurons in layer ${idx + 1}`}
-                        style={{ flex: 1 }}
-                    />
                     <Tooltip content={`Cause: layer ${idx + 1} has ${count} neurons to detect intermediate patterns. Effect: more neurons can model finer bends, but too many can overfit noisy samples.`}>
-                        <span className="neuron-badge">{count}</span>
+                        <NeuronCountControl
+                            layer={idx + 1}
+                            value={count}
+                            onChange={(nextCount) => setLayerNeuronCount(idx, nextCount)}
+                        />
                     </Tooltip>
                 </div>
             ))}

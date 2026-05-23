@@ -65,6 +65,28 @@ describe('NetworkConfigPanel loading feedback', () => {
         expect(screen.getByRole('combobox', { name: 'Activation' })).toBeInTheDocument();
     });
 
+    it('uses typed steppers instead of sliders for neuron counts', async () => {
+        const user = userEvent.setup();
+
+        render(<NetworkConfigPanel />);
+
+        expect(screen.queryByRole('slider', { name: 'Neurons in layer 1' })).not.toBeInTheDocument();
+
+        const input = screen.getByRole('spinbutton', { name: 'Neuron count for layer 1' });
+        expect(input).toHaveValue(4);
+
+        await user.click(screen.getByRole('button', { name: 'Increase neurons in layer 1' }));
+        expect(usePlaygroundStore.getState().network.hiddenLayers[0]).toBe(5);
+
+        await user.clear(input);
+        await user.type(input, '12');
+        expect(usePlaygroundStore.getState().network.hiddenLayers[0]).toBe(12);
+
+        await user.clear(input);
+        await user.type(input, '99');
+        expect(usePlaygroundStore.getState().network.hiddenLayers[0]).toBe(16);
+    });
+
     it('does not expose softmax as a hidden-layer activation', async () => {
         const user = userEvent.setup();
 

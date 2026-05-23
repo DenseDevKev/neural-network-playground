@@ -306,6 +306,7 @@ export default function App() {
                 <ErrorBoundary title="Workspace unavailable" description="Layout shell failed." actionLabel="Reload" onRetry={stableReset}>
                     <BuildRunShell
                         view={view}
+                        status={status}
                         activeEvidenceView={activeEvidenceView}
                         onSelectEvidence={setActiveEvidenceView}
                         openSurface={openSurface}

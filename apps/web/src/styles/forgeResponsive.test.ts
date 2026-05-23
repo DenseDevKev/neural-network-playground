@@ -39,6 +39,16 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).toContain('bottom: 0');
     });
 
+    it('defines compact mobile graph and neuron stepper controls', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.neuron-stepper');
+        expect(css).toContain('.neuron-stepper__input');
+        expect(css).toContain('.forge-buildrun__transport[data-status="running"]');
+        expect(css).toContain('.forge-buildrun__topology-stage .network-graph-toolbar');
+        expect(css).toContain('height: 300px');
+    });
+
     it('styles app scrollbars with dark chrome', () => {
         const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
 

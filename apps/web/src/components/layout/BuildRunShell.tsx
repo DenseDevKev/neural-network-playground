@@ -1,5 +1,6 @@
 import { memo, type ReactNode } from 'react';
 import type { EvidenceViewId, WorkspaceView } from '../../store/useLayoutStore.ts';
+import type { TrainingStatus } from '@nn-playground/shared';
 
 type SurfaceId = 'presets' | 'lessons' | 'history' | 'more';
 
@@ -20,6 +21,7 @@ const SURFACE_LABELS: Record<SurfaceId, string> = {
 
 interface BuildRunShellProps {
     view: WorkspaceView;
+    status: TrainingStatus;
     activeEvidenceView: EvidenceViewId;
     onSelectEvidence: (view: EvidenceViewId) => void;
     openSurface: SurfaceId | null;
@@ -113,6 +115,7 @@ function DrawerSurface({
 
 export const BuildRunShell = memo(function BuildRunShell({
     view,
+    status,
     activeEvidenceView,
     onSelectEvidence,
     openSurface,
@@ -221,7 +224,7 @@ export const BuildRunShell = memo(function BuildRunShell({
                 </div>
             )}
 
-            <div className="forge-buildrun__transport">
+            <div className="forge-buildrun__transport" data-status={status}>
                 {transportContent}
             </div>
 
