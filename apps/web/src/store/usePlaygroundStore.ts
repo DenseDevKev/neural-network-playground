@@ -1,461 +1,535 @@
-// ── Zustand store — stable configuration state ──
-// This store holds ONLY configuration that changes on user interaction.
-// Volatile runtime state (snapshot, history, status) lives in useTrainingStore.
-import { create } from 'zustand';
-import type {
-    NetworkConfig,
-    TrainingConfig,
-    DataConfig,
-    FeatureFlags,
-    DatasetType,
-    ActivationType,
-    LossType,
-    OptimizerType,
-    RegularizationType,
-    WeightInitType,
-    LRSchedule,
-    DataSplit,
+import { create, type StoreApi, type UseBoundStore } from 'zustand';
+import {
+    generateDatasetV2,
+    type ActivationType,
+    type DataSplit,
+    type DatasetType,
+    type FeatureFlags,
+    type LRSchedule,
+    type LossType,
+    type NetworkConfig,
+    type OptimizerType,
+    type RegularizationType,
+    type TrainingConfig,
+    type WeightInitType,
 } from '@nn-playground/engine';
 import {
-    countActiveFeatures,
-    generateDataset,
-    getDefaultProblemType,
-    isLossCompatible,
-    sanitizeLRSchedule,
-} from '@nn-playground/engine';
-import type { UIConfig, AppConfig, VisualizationDemand } from '@nn-playground/shared';
-import type { Preset } from '@nn-playground/shared';
-import {
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-    DEFAULT_DATA,
     DEFAULT_DEMAND,
-    MAX_HIDDEN_LAYERS,
-    MAX_NEURONS_PER_LAYER,
-    encodeUrlState,
-    decodeUrlState,
-    normalizeAppConfig,
+    DEFAULT_EXPERIMENT_DOCUMENT,
+    decodeExperimentUrl,
+    encodeExperimentUrl,
+    prepareExperimentDocument,
+    resolveRecipe,
+    validateExperimentDocument,
+    type AppConfig,
+    type ExperimentDocumentV2,
+    type ExperimentSchemaIssue,
+    type PreparedExperimentDocumentV2,
+    type RecipeCatalogEntry,
+    type SchemaResult,
+    type UIConfig,
+    type ValidatedExperimentDocumentV2,
+    type ValidatedStandardExperimentRecipeV2,
+    type VisualizationDemand,
 } from '@nn-playground/shared';
+import {
+    reshuffleDataSeed,
+    setBatchSize as editBatchSize,
+    setGradientClipping,
+    setHiddenActivation,
+    setHiddenLayers as editHiddenLayers,
+    setHiddenLayerWidth,
+    setInitialization,
+    setLearningRate as editLearningRate,
+    setNoise as editNoise,
+    setOptimizer as editOptimizer,
+    setPenalty,
+    setRegressionDataLoss,
+    setSampleCount,
+    setSchedule,
+    setTrainFraction,
+    switchDataset,
+    toggleFeature as editFeature,
+    type RecipeEditResult,
+    type RecipeEditIssue,
+} from './recipeEdits.ts';
+import { projectPreparedExperiment } from './legacyProjection.ts';
 
-/**
- * UI-only renderer feature flags. These do not affect the engine, only how
- * the React UI draws certain visualizations. Each flag controls a runtime
- * pick between an optimized implementation and a known-good fallback so a
- * regression in either renderer can be flipped off without a redeploy.
- */
 export interface FeaturesUI {
-    /** Use the canvas-based NetworkGraph renderer (AS-5). When false, the
-     *  legacy SVG implementation renders. */
     canvasNetworkGraph: boolean;
-    /** Use the WebGPU decision-boundary grid predictor (AS-4). When false,
-     *  the worker uses the CPU `Network.predictGridInto` path. Capability
-     *  detection still gates this — flipping it on does not bypass the
-     *  device check. */
     webgpuGrid: boolean;
 }
+
+export interface PreparationState {
+    status: 'ready' | 'preparing' | 'error';
+    requestId: number;
+    issues: readonly ExperimentSchemaIssue[];
+}
+
+export interface IncompatibleSource {
+    kind: 'url';
+    raw: string;
+}
+
+export type StoreRecipeEditResult =
+    | SchemaResult<PreparedExperimentDocumentV2>
+    | { ok: false; issue: RecipeEditIssue };
+
+type PrepareExperiment = (
+    value: unknown,
+) => Promise<SchemaResult<PreparedExperimentDocumentV2>>;
+
+export interface PlaygroundStoreInitialization {
+    prepare?: PrepareExperiment;
+    initialPrepared: PreparedExperimentDocumentV2 | null;
+    initialIssues: readonly ExperimentSchemaIssue[];
+    incompatibleSource: IncompatibleSource | null;
+    fallbackPrepared?: PreparedExperimentDocumentV2;
+}
+
+export interface PlaygroundStore {
+    prepared: PreparedExperimentDocumentV2 | null;
+    preparation: PreparationState;
+    incompatibleSource: IncompatibleSource | null;
+
+    // Temporary one-way compatibility projection. These fields are published
+    // in the same transaction as `prepared` and are never canonical inputs.
+    network: NetworkConfig;
+    training: TrainingConfig;
+    data: AppConfig['data'];
+    features: FeatureFlags;
+    ui: UIConfig;
+
+    featuresUI: FeaturesUI;
+    demand: VisualizationDemand;
+    dataset: DataSplit | null;
+
+    replaceDocument(value: unknown): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
+    editRecipe(
+        edit: (recipe: ValidatedStandardExperimentRecipeV2) => RecipeEditResult,
+    ): Promise<StoreRecipeEditResult>;
+    editView(
+        edit: (
+            view: ValidatedExperimentDocumentV2['view'],
+        ) => ExperimentDocumentV2['view'],
+    ): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
+    applyRecipe(entry: RecipeCatalogEntry): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
+    syncToUrl(): SchemaResult<string>;
+    loadFromUrl(): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
+
+    // Transitional control aliases. They only delegate to typed V2 edits.
+    setDataset(type: DatasetType): void;
+    setNoise(noise: number): void;
+    setTrainTestRatio(ratio: number): void;
+    setNumSamples(count: number): void;
+    reshuffleDataSeed(): void;
+    toggleFeature(feature: keyof FeatureFlags): void;
+    setHiddenLayers(layers: number[]): void;
+    addLayer(): void;
+    removeLayer(): void;
+    setNeuronsInLayer(layerIndex: number, count: number): void;
+    setActivation(activation: ActivationType): void;
+    setLearningRate(learningRate: number): void;
+    setBatchSize(batchSize: number): void;
+    setLossType(lossType: LossType): void;
+    setOptimizer(optimizer: OptimizerType): void;
+    setMomentum(momentum: number): void;
+    setGradientClip(maximumNorm: number | null): void;
+    setAdamBetas(beta1: number, beta2: number): void;
+    setHuberDelta(delta: number): void;
+    setLRSchedule(schedule: LRSchedule | undefined): void;
+    setWeightInit(initialization: WeightInitType): void;
+    /** @deprecated Output activation is derived from task and cannot be edited. */
+    setOutputActivation(activation: ActivationType): void;
+    setRegularization(regularization: RegularizationType): void;
+    setRegularizationRate(coefficient: number): void;
+    setShowTestData(show: boolean): void;
+    setDiscretize(discretize: boolean): void;
+    setDemand(demand: VisualizationDemand): void;
+    regenerateData(): void;
+    /** @deprecated Task 6C callers migrate to applyRecipe. */
+    applyPreset(entry: RecipeCatalogEntry): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
+    getConfig(): AppConfig;
+}
+
+export type PlaygroundStoreApi = UseBoundStore<StoreApi<PlaygroundStore>>;
 
 const DEFAULT_FEATURES_UI: FeaturesUI = {
     canvasNetworkGraph: true,
     webgpuGrid: true,
 };
 
-const APPROVED_MULTICLASS_DATASET: DatasetType = 'three-class-clusters';
-const PUBLIC_SCALAR_LOSSES = new Set<LossType>(['mse', 'crossEntropy', 'huber']);
+const NO_ACTIVE_DOCUMENT: readonly ExperimentSchemaIssue[] = Object.freeze([{
+    code: 'invalid-field',
+    path: '$',
+    message: 'No compatible version-2 experiment is active',
+}]);
 
-function isApprovedMulticlassDataset(dataset: DatasetType): boolean {
-    return dataset === APPROVED_MULTICLASS_DATASET;
+function unavailableResult<T>(
+    issues: readonly ExperimentSchemaIssue[],
+): SchemaResult<T> {
+    return { ok: false, issues: issues.length > 0 ? issues : NO_ACTIVE_DOCUMENT };
 }
 
-function isPublicScalarLoss(lossType: LossType): boolean {
-    return PUBLIC_SCALAR_LOSSES.has(lossType);
+function exactCatalogEntry(entry: RecipeCatalogEntry): RecipeCatalogEntry | undefined {
+    const resolved = resolveRecipe({ id: entry.id, revision: entry.revision });
+    if (resolved !== entry) return undefined;
+    if (resolved.recipe !== resolved.prepared.document.recipe) return undefined;
+    return resolved;
 }
 
-function isPublicScalarActivation(activation: ActivationType): boolean {
-    return activation !== 'softmax';
-}
-
-function getPublicLossType(lossType: LossType): LossType {
-    return isPublicScalarLoss(lossType) ? lossType : DEFAULT_TRAINING.lossType;
-}
-
-function getPublicHiddenActivation(activation: ActivationType): ActivationType {
-    return isPublicScalarActivation(activation) ? activation : DEFAULT_NETWORK.activation;
-}
-
-function getPublicOutputActivation(
-    lossType: LossType,
-    outputActivation: ActivationType,
-): ActivationType {
-    const requestedActivation = isPublicScalarActivation(outputActivation)
-        ? outputActivation
-        : DEFAULT_NETWORK.outputActivation;
-    return getCompatibleOutputActivation(lossType, requestedActivation);
-}
-
-export interface PlaygroundStore {
-    // ── Config ──
-    network: NetworkConfig;
-    training: TrainingConfig;
-    data: DataConfig;
-    features: FeatureFlags;
-    ui: UIConfig;
-    featuresUI: FeaturesUI;
-
-    // ── Visualization Demand ──
-    demand: VisualizationDemand;
-
-    // ── Transient ──
-    dataset: DataSplit | null;
-
-    // ── Actions ──
-    setDataset: (type: DatasetType) => void;
-    setNoise: (noise: number) => void;
-    setTrainTestRatio: (ratio: number) => void;
-    setNumSamples: (n: number) => void;
-    reshuffleDataSeed: () => void;
-    toggleFeature: (feature: keyof FeatureFlags) => void;
-    setHiddenLayers: (layers: number[]) => void;
-    addLayer: () => void;
-    removeLayer: () => void;
-    setNeuronsInLayer: (layerIndex: number, count: number) => void;
-    setActivation: (act: ActivationType) => void;
-    setLearningRate: (lr: number) => void;
-    setBatchSize: (bs: number) => void;
-    setLossType: (loss: LossType) => void;
-    setOptimizer: (opt: OptimizerType) => void;
-    setMomentum: (momentum: number) => void;
-    setGradientClip: (clip: number | null) => void;
-    setAdamBetas: (beta1: number, beta2: number) => void;
-    setHuberDelta: (delta: number) => void;
-    setLRSchedule: (schedule: LRSchedule | undefined) => void;
-    setWeightInit: (init: WeightInitType) => void;
-    setOutputActivation: (activation: ActivationType) => void;
-    setRegularization: (reg: RegularizationType) => void;
-    setRegularizationRate: (rate: number) => void;
-    setShowTestData: (show: boolean) => void;
-    setDiscretize: (d: boolean) => void;
-    setDemand: (demand: VisualizationDemand) => void;
-    regenerateData: () => void;
-    applyPreset: (preset: Preset) => void;
-    getConfig: () => AppConfig;
-    syncToUrl: () => void;
-    loadFromUrl: () => void;
-}
-
-function getCompatibleOutputActivation(
-    lossType: LossType,
-    currentOutputActivation: ActivationType,
-): ActivationType {
-    if (isLossCompatible(lossType, currentOutputActivation)) {
-        return currentOutputActivation;
+function scheduleFromLegacy(schedule: LRSchedule | undefined) {
+    if (!schedule || schedule.type === 'constant') return { kind: 'constant' } as const;
+    if (schedule.type === 'step') {
+        return { kind: 'step', interval: schedule.stepSize, gamma: schedule.gamma } as const;
     }
-    return lossType === 'crossEntropy' ? 'sigmoid' : 'linear';
+    return {
+        kind: 'cosine',
+        totalSteps: schedule.totalSteps,
+        minimumRate: schedule.minLr,
+    } as const;
 }
 
-function normalizeLossOutputCompatibility(config: AppConfig): AppConfig {
-    const outputActivation = getCompatibleOutputActivation(
-        config.training.lossType,
-        config.network.outputActivation,
+export async function initializePlaygroundStateFromHash(
+    rawHash: string,
+    prepare: PrepareExperiment = prepareExperimentDocument,
+): Promise<PlaygroundStoreInitialization> {
+    const decoded = decodeExperimentUrl(rawHash);
+    if (!decoded.ok) {
+        return {
+            prepare,
+            initialPrepared: null,
+            initialIssues: decoded.issues,
+            incompatibleSource: { kind: 'url', raw: rawHash },
+        };
+    }
+
+    const prepared = await prepare(decoded.value);
+    if (!prepared.ok) {
+        return {
+            prepare,
+            initialPrepared: null,
+            initialIssues: prepared.issues,
+            incompatibleSource: rawHash === '' ? null : { kind: 'url', raw: rawHash },
+        };
+    }
+    return {
+        prepare,
+        initialPrepared: prepared.value,
+        initialIssues: [],
+        incompatibleSource: null,
+    };
+}
+
+const defaultPreparation = await prepareExperimentDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+if (!defaultPreparation.ok) {
+    const detail = defaultPreparation.issues
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join('; ');
+    throw new Error(`Unable to prepare the default experiment: ${detail}`);
+}
+const DEFAULT_PREPARED = defaultPreparation.value;
+
+export function createPlaygroundStore(
+    initialization: PlaygroundStoreInitialization,
+): PlaygroundStoreApi {
+    const prepare = initialization.prepare ?? prepareExperimentDocument;
+    const fallbackPrepared = initialization.fallbackPrepared ?? DEFAULT_PREPARED;
+    const initialProjection = projectPreparedExperiment(
+        initialization.initialPrepared ?? fallbackPrepared,
     );
-    if (outputActivation === config.network.outputActivation) {
-        return config;
-    }
-    return {
-        ...config,
-        network: {
-            ...config.network,
-            outputActivation,
-        },
-    };
-}
 
-function buildInitialState() {
-    // Try to load from URL hash
-    const hash = window.location.hash.slice(1);
-    if (hash) {
-        try {
-            const config = decodeUrlState(hash, { allowMulticlass: true });
-            return normalizeLossOutputCompatibility(config);
-        } catch {
-            // fall through to defaults
-        }
-    }
+    let nextRequestId = 0;
+    let latestCandidateDocument: ValidatedExperimentDocumentV2 | null =
+        initialization.initialPrepared?.document ?? null;
+    let lastSuccessfulPrepared = initialization.initialPrepared;
 
-    const inputSize = countActiveFeatures(DEFAULT_FEATURES);
-    return {
-        network: { ...DEFAULT_NETWORK, inputSize, seed: DEFAULT_DATA.seed } as NetworkConfig,
-        training: { ...DEFAULT_TRAINING },
-        data: { ...DEFAULT_DATA },
-        features: { ...DEFAULT_FEATURES },
-        ui: { showTestData: false, discretizeOutput: false } as UIConfig,
-    };
-}
-
-export const usePlaygroundStore = create<PlaygroundStore>((set, get) => {
-    const initial = buildInitialState();
-
-    return {
-        // Config
-        network: initial.network,
-        training: initial.training,
-        data: initial.data,
-        features: initial.features,
-        ui: initial.ui,
-        // UI-only renderer toggles. Persisted only in memory — not encoded
-        // into the URL hash, since they describe browser capability not
-        // shared playground state.
-        featuresUI: { ...DEFAULT_FEATURES_UI },
-
-        // Visualization demand
-        demand: { ...DEFAULT_DEMAND },
-
-        // Transient
-        dataset: null,
-
-        // Actions
-        setDataset: (dataset) => {
-            const problemType = getDefaultProblemType(dataset);
-            const outputSize = isApprovedMulticlassDataset(dataset) ? 3 : 1;
-            const outputActivation = isApprovedMulticlassDataset(dataset)
-                ? 'softmax'
-                : problemType === 'regression'
-                    ? 'linear'
-                    : 'sigmoid';
-            const lossType = isApprovedMulticlassDataset(dataset)
-                ? 'categoricalCrossEntropy'
-                : problemType === 'regression'
-                    ? 'mse'
-                    : 'crossEntropy';
-            set((s) => ({
-                data: { ...s.data, dataset, problemType },
-                network: { ...s.network, outputSize, outputActivation: outputActivation as ActivationType },
-                training: { ...s.training, lossType: lossType as LossType },
-            }));
-        },
-
-        setNoise: (noise) => set((s) => ({ data: { ...s.data, noise } })),
-        setTrainTestRatio: (trainTestRatio) => set((s) => ({ data: { ...s.data, trainTestRatio } })),
-        setNumSamples: (numSamples) => set((s) => ({ data: { ...s.data, numSamples } })),
-        reshuffleDataSeed: () => set((s) => ({ data: { ...s.data, seed: s.data.seed + 1 } })),
-
-        toggleFeature: (feature) => {
-            set((s) => {
-                const newFeatures = { ...s.features, [feature]: !s.features[feature] };
-                const inputSize = countActiveFeatures(newFeatures);
-                if (inputSize === 0) return s; // Prevent zero-feature state
-                return {
-                    features: newFeatures,
-                    network: { ...s.network, inputSize },
-                };
-            });
-        },
-
-        setHiddenLayers: (layers) => set((s) => ({
-            network: { ...s.network, hiddenLayers: [...layers] },
-        })),
-
-        addLayer: () => set((s) => {
-            if (s.network.hiddenLayers.length >= MAX_HIDDEN_LAYERS) return s;
-            return {
-                network: {
-                    ...s.network,
-                    hiddenLayers: [...s.network.hiddenLayers, 4],
-                },
-            };
-        }),
-
-        removeLayer: () => set((s) => {
-            if (s.network.hiddenLayers.length === 0) return s;
-            return {
-                network: {
-                    ...s.network,
-                    hiddenLayers: s.network.hiddenLayers.slice(0, -1),
-                },
-            };
-        }),
-
-        setNeuronsInLayer: (idx, count) => set((s) => {
-            const clamped = Math.max(1, Math.min(MAX_NEURONS_PER_LAYER, count));
-            const layers = [...s.network.hiddenLayers];
-            layers[idx] = clamped;
-            return { network: { ...s.network, hiddenLayers: layers } };
-        }),
-
-        setActivation: (activation) => set((s) => ({
-            network: {
-                ...s.network,
-                activation: isPublicScalarActivation(activation)
-                    ? activation
-                    : getPublicHiddenActivation(s.network.activation),
-            },
-        })),
-
-        setLearningRate: (learningRate) => set((s) => ({
-            training: {
-                ...s.training,
-                learningRate,
-                lrSchedule: sanitizeLRSchedule(s.training.lrSchedule, { baseLearningRate: learningRate }),
-            },
-        })),
-
-        setBatchSize: (batchSize) => set((s) => ({
-            training: { ...s.training, batchSize },
-        })),
-
-        setLossType: (lossType) => set((s) => {
-            const publicLossType = isPublicScalarLoss(lossType)
-                ? lossType
-                : getPublicLossType(s.training.lossType);
-            return {
-                training: { ...s.training, lossType: publicLossType },
-                network: {
-                    ...s.network,
-                    outputSize: 1,
-                    outputActivation: getPublicOutputActivation(publicLossType, s.network.outputActivation),
-                },
-            };
-        }),
-
-        setOptimizer: (optimizer) => set((s) => ({
-            training: { ...s.training, optimizer },
-        })),
-
-        setMomentum: (momentum) => set((s) => ({
-            training: { ...s.training, momentum },
-        })),
-
-        setGradientClip: (gradientClip) => set((s) => ({
-            training: { ...s.training, gradientClip },
-        })),
-
-        setAdamBetas: (adamBeta1, adamBeta2) => set((s) => ({
-            training: { ...s.training, adamBeta1, adamBeta2 },
-        })),
-
-        setHuberDelta: (huberDelta) => set((s) => ({
-            training: { ...s.training, huberDelta },
-        })),
-
-        setLRSchedule: (lrSchedule) => set((s) => {
-            const safeSchedule = sanitizeLRSchedule(lrSchedule, {
-                baseLearningRate: s.training.learningRate,
-            });
-            return {
-                training: safeSchedule
-                    ? { ...s.training, lrSchedule: safeSchedule }
-                    : { ...s.training, lrSchedule: undefined },
-            };
-        }),
-
-        setWeightInit: (weightInit) => set((s) => ({
-            network: { ...s.network, weightInit },
-        })),
-
-        setOutputActivation: (outputActivation) => set((s) => {
-            const publicLossType = getPublicLossType(s.training.lossType);
-            const currentOutputActivation = getPublicOutputActivation(publicLossType, s.network.outputActivation);
-            if (!isPublicScalarActivation(outputActivation) || !isLossCompatible(publicLossType, outputActivation)) {
-                return {
-                    training: { ...s.training, lossType: publicLossType },
-                    network: {
-                        ...s.network,
-                        outputSize: 1,
-                        outputActivation: currentOutputActivation,
-                    },
-                };
+    return create<PlaygroundStore>((set, get) => {
+        const replace = async (
+            value: unknown,
+            failureSource: IncompatibleSource | null = null,
+        ): Promise<SchemaResult<PreparedExperimentDocumentV2>> => {
+            const requestId = ++nextRequestId;
+            const candidateValidation = validateExperimentDocument(value);
+            if (candidateValidation.ok) {
+                latestCandidateDocument = candidateValidation.value;
             }
-            return {
-                training: { ...s.training, lossType: publicLossType },
-                network: { ...s.network, outputSize: 1, outputActivation },
-            };
-        }),
 
-        setRegularization: (regularization) => set((s) => ({
-            training: { ...s.training, regularization },
-        })),
-
-        setRegularizationRate: (regularizationRate) => set((s) => ({
-            training: { ...s.training, regularizationRate },
-        })),
-
-        setShowTestData: (showTestData) => set((s) => ({
-            ui: { ...s.ui, showTestData },
-        })),
-
-        setDiscretize: (discretizeOutput) => set((s) => ({
-            ui: { ...s.ui, discretizeOutput },
-        })),
-
-        setDemand: (demand) => set({ demand }),
-
-        regenerateData: () => {
-            const s = get();
-            const ds = generateDataset(
-                s.data.dataset,
-                s.data.numSamples,
-                s.data.noise,
-                s.data.trainTestRatio,
-                s.data.seed,
-            );
-            set({ dataset: ds });
-        },
-
-        getConfig: () => {
-            const s = get();
-            return {
-                network: s.network,
-                training: s.training,
-                data: s.data,
-                features: s.features,
-                ui: s.ui,
-            };
-        },
-
-        syncToUrl: () => {
-            const config = get().getConfig();
-            const normalized = normalizeAppConfig(config, { mode: 'lenient', allowMulticlass: true });
-            const hash = encodeUrlState(normalized.config ?? decodeUrlState(''), { allowMulticlass: true });
-            window.history.replaceState(null, '', '#' + hash);
-        },
-
-        loadFromUrl: () => {
-            const hash = window.location.hash.slice(1);
-            if (!hash) return;
-            try {
-                const config = decodeUrlState(hash, { allowMulticlass: true });
-                const normalized = normalizeLossOutputCompatibility(config);
-                set({
-                    network: normalized.network,
-                    training: normalized.training,
-                    data: normalized.data,
-                    features: normalized.features,
-                    ui: normalized.ui,
-                });
-            } catch {
-                // ignore invalid hashes
-            }
-        },
-
-        applyPreset: (preset: Preset) => {
-            const c = preset.config;
-            const current = get().getConfig();
-            const result = normalizeAppConfig({
-                data: c.data ? { ...current.data, ...c.data } : current.data,
-                network: c.network ? { ...current.network, ...c.network } : current.network,
-                features: c.features ? { ...current.features, ...c.features } : current.features,
-                training: c.training ? { ...current.training, ...c.training } : current.training,
-                ui: c.ui ? { ...current.ui, ...c.ui } : current.ui,
-            }, { mode: 'lenient', allowMulticlass: true });
-            const normalized = normalizeLossOutputCompatibility(result.config ?? current);
             set({
-                network: normalized.network,
-                training: normalized.training,
-                data: normalized.data,
-                features: normalized.features,
-                ui: normalized.ui,
+                preparation: { status: 'preparing', requestId, issues: [] },
             });
-            get().syncToUrl();
-        },
-    };
+            const result = await prepare(
+                candidateValidation.ok ? candidateValidation.value : value,
+            );
+            if (requestId !== nextRequestId) return result;
+
+            if (!result.ok) {
+                latestCandidateDocument = lastSuccessfulPrepared?.document ?? null;
+                set((state) => ({
+                    preparation: { status: 'error', requestId, issues: result.issues },
+                    incompatibleSource: failureSource ?? state.incompatibleSource,
+                }));
+                return result;
+            }
+
+            const projection = projectPreparedExperiment(result.value);
+            lastSuccessfulPrepared = result.value;
+            latestCandidateDocument = result.value.document;
+            set({
+                prepared: result.value,
+                network: projection.network,
+                training: projection.training,
+                data: projection.data,
+                features: projection.features,
+                ui: projection.ui,
+                preparation: { status: 'ready', requestId, issues: [] },
+                incompatibleSource: null,
+            });
+            return result;
+        };
+
+        const editRecipe = async (
+            edit: (recipe: ValidatedStandardExperimentRecipeV2) => RecipeEditResult,
+        ): Promise<StoreRecipeEditResult> => {
+            const base = latestCandidateDocument;
+            if (!base) return unavailableResult(get().preparation.issues);
+            const edited = edit(base.recipe);
+            if (!edited.ok) return edited;
+            return replace({ ...base, recipe: edited.recipe });
+        };
+
+        const editView = async (
+            edit: (
+                view: ValidatedExperimentDocumentV2['view'],
+            ) => ExperimentDocumentV2['view'],
+        ): Promise<SchemaResult<PreparedExperimentDocumentV2>> => {
+            const base = latestCandidateDocument;
+            if (!base) return unavailableResult(get().preparation.issues);
+            return replace({ ...base, view: edit(base.view) });
+        };
+
+        const applyRecipe = async (
+            entry: RecipeCatalogEntry,
+        ): Promise<SchemaResult<PreparedExperimentDocumentV2>> => {
+            const base = latestCandidateDocument;
+            if (!base) return unavailableResult(get().preparation.issues);
+            const resolved = exactCatalogEntry(entry);
+            if (!resolved) {
+                return {
+                    ok: false,
+                    issues: [{
+                        code: 'invalid-field',
+                        path: 'recipe',
+                        message: 'Recipe catalog entry is not the resolved built-in identity pair',
+                    }],
+                };
+            }
+            return replace({
+                kind: 'nn-playground-experiment',
+                schemaVersion: 2,
+                recipe: resolved.recipe,
+                view: base.view,
+            });
+        };
+
+        const fireEdit = (
+            edit: (recipe: ValidatedStandardExperimentRecipeV2) => RecipeEditResult,
+        ): void => {
+            void editRecipe(edit);
+        };
+
+        return {
+            prepared: initialization.initialPrepared,
+            preparation: initialization.initialPrepared
+                ? { status: 'ready', requestId: 0, issues: [] }
+                : { status: 'error', requestId: 0, issues: initialization.initialIssues },
+            incompatibleSource: initialization.incompatibleSource,
+            network: initialProjection.network,
+            training: initialProjection.training,
+            data: initialProjection.data,
+            features: initialProjection.features,
+            ui: initialProjection.ui,
+            featuresUI: { ...DEFAULT_FEATURES_UI },
+            demand: { ...DEFAULT_DEMAND },
+            dataset: null,
+
+            replaceDocument: (value) => replace(value),
+            editRecipe,
+            editView,
+            applyRecipe,
+            syncToUrl: () => {
+                const prepared = get().prepared;
+                if (!prepared) return unavailableResult(get().preparation.issues);
+                const hash = encodeExperimentUrl(prepared.document);
+                window.history.replaceState(null, '', hash);
+                return { ok: true, value: hash };
+            },
+            loadFromUrl: async () => {
+                const raw = window.location.hash;
+                const decoded = decodeExperimentUrl(raw);
+                if (!decoded.ok) {
+                    const requestId = ++nextRequestId;
+                    latestCandidateDocument = lastSuccessfulPrepared?.document ?? null;
+                    set({
+                        preparation: { status: 'error', requestId, issues: decoded.issues },
+                        incompatibleSource: { kind: 'url', raw },
+                    });
+                    return decoded;
+                }
+                return replace(decoded.value, { kind: 'url', raw });
+            },
+
+            setDataset: (dataset) => fireEdit((recipe) => switchDataset(recipe, dataset)),
+            setNoise: (noise) => fireEdit((recipe) => editNoise(recipe, noise)),
+            setTrainTestRatio: (ratio) => fireEdit((recipe) => setTrainFraction(recipe, ratio)),
+            setNumSamples: (count) => fireEdit((recipe) => setSampleCount(recipe, count)),
+            reshuffleDataSeed: () => fireEdit(reshuffleDataSeed),
+            toggleFeature: (feature) => fireEdit((recipe) => editFeature(recipe, feature)),
+            setHiddenLayers: (layers) => fireEdit((recipe) => editHiddenLayers(recipe, layers)),
+            addLayer: () => fireEdit((recipe) => editHiddenLayers(
+                recipe,
+                [...recipe.model.hiddenLayers, 4],
+            )),
+            removeLayer: () => fireEdit((recipe) => editHiddenLayers(
+                recipe,
+                recipe.model.hiddenLayers.slice(0, -1),
+            )),
+            setNeuronsInLayer: (layerIndex, count) => fireEdit(
+                (recipe) => setHiddenLayerWidth(recipe, layerIndex, count),
+            ),
+            setActivation: (activation) => {
+                if (activation === 'softmax') return;
+                fireEdit((recipe) => setHiddenActivation(recipe, activation));
+            },
+            setLearningRate: (learningRate) => fireEdit(
+                (recipe) => editLearningRate(recipe, learningRate),
+            ),
+            setBatchSize: (batchSize) => fireEdit((recipe) => editBatchSize(recipe, batchSize)),
+            setLossType: (lossType) => fireEdit((recipe) => {
+                if (recipe.task.kind !== 'regression') return { ok: true, recipe };
+                if (lossType === 'mse') {
+                    return setRegressionDataLoss(recipe, { kind: 'mean-squared-error' });
+                }
+                if (lossType === 'huber') {
+                    const delta = recipe.objective.dataLoss.kind === 'huber'
+                        ? recipe.objective.dataLoss.delta
+                        : 1;
+                    return setRegressionDataLoss(recipe, { kind: 'huber', delta });
+                }
+                return { ok: true, recipe };
+            }),
+            setOptimizer: (optimizer) => fireEdit((recipe) => {
+                if (optimizer === 'sgd') return editOptimizer(recipe, { kind: 'sgd' });
+                if (optimizer === 'sgdMomentum') {
+                    const momentum = recipe.training.optimizer.kind === 'sgd-momentum'
+                        ? recipe.training.optimizer.momentum
+                        : 0.9;
+                    return editOptimizer(recipe, { kind: 'sgd-momentum', momentum });
+                }
+                const current = recipe.training.optimizer;
+                return editOptimizer(recipe, {
+                    kind: 'adam',
+                    beta1: current.kind === 'adam' ? current.beta1 : 0.9,
+                    beta2: current.kind === 'adam' ? current.beta2 : 0.999,
+                    epsilon: current.kind === 'adam' ? current.epsilon : 1e-8,
+                });
+            }),
+            setMomentum: (momentum) => fireEdit((recipe) => {
+                if (recipe.training.optimizer.kind !== 'sgd-momentum') {
+                    return { ok: true, recipe };
+                }
+                return editOptimizer(recipe, { kind: 'sgd-momentum', momentum });
+            }),
+            setGradientClip: (maximumNorm) => fireEdit((recipe) => setGradientClipping(
+                recipe,
+                maximumNorm === null
+                    ? { kind: 'none' }
+                    : {
+                        kind: 'global-norm',
+                        maximumNorm,
+                        scope: 'total-objective-gradient',
+                    },
+            )),
+            setAdamBetas: (beta1, beta2) => fireEdit((recipe) => {
+                if (recipe.training.optimizer.kind !== 'adam') return { ok: true, recipe };
+                return editOptimizer(recipe, {
+                    ...recipe.training.optimizer,
+                    beta1,
+                    beta2,
+                });
+            }),
+            setHuberDelta: (delta) => fireEdit((recipe) => {
+                if (recipe.task.kind !== 'regression'
+                    || recipe.objective.dataLoss.kind !== 'huber') {
+                    return { ok: true, recipe };
+                }
+                return setRegressionDataLoss(recipe, { kind: 'huber', delta });
+            }),
+            setLRSchedule: (schedule) => fireEdit(
+                (recipe) => setSchedule(recipe, scheduleFromLegacy(schedule)),
+            ),
+            setWeightInit: (initialization) => fireEdit(
+                (recipe) => setInitialization(recipe, initialization),
+            ),
+            setOutputActivation: () => undefined,
+            setRegularization: (regularization) => fireEdit((recipe) => {
+                if (regularization === 'none') return setPenalty(recipe, { kind: 'none' });
+                const current = recipe.objective.penalty;
+                const coefficient = current.kind === 'none' ? 0.001 : current.coefficient;
+                return setPenalty(recipe, {
+                    kind: regularization,
+                    coefficient,
+                    applyTo: 'weights',
+                });
+            }),
+            setRegularizationRate: (coefficient) => fireEdit((recipe) => {
+                const current = recipe.objective.penalty;
+                if (current.kind === 'none') return { ok: true, recipe };
+                return setPenalty(recipe, { ...current, coefficient });
+            }),
+            setShowTestData: (showTestData) => {
+                void editView((view) => ({ ...view, showTestData }));
+            },
+            setDiscretize: (discretizeOutput) => {
+                void editView((view) => ({ ...view, discretizeOutput }));
+            },
+            setDemand: (demand) => set({ demand }),
+            regenerateData: () => {
+                const prepared = get().prepared;
+                if (!prepared) return;
+                const recipe = prepared.document.recipe;
+                const dataset = generateDatasetV2({
+                    dataset: recipe.task.dataset,
+                    sampleCount: recipe.data.sampleCount,
+                    trainFraction: recipe.data.trainFraction,
+                    noise: recipe.data.noise,
+                    seed: recipe.data.seed,
+                });
+                set({ dataset });
+            },
+            applyPreset: (entry) => applyRecipe(entry),
+            getConfig: () => {
+                const state = get();
+                if (!state.prepared) {
+                    throw new Error('No compatible version-2 experiment is active.');
+                }
+                return {
+                    network: state.network,
+                    training: state.training,
+                    data: state.data,
+                    features: state.features,
+                    ui: state.ui,
+                };
+            },
+        };
+    });
+}
+
+const productionInitialization = await initializePlaygroundStateFromHash(
+    typeof window === 'undefined' ? '' : window.location.hash,
+);
+
+export const usePlaygroundStore = createPlaygroundStore({
+    ...productionInitialization,
+    fallbackPrepared: DEFAULT_PREPARED,
 });

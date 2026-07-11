@@ -8,7 +8,13 @@ import type {
     HistoryPoint,
     DataPoint,
 } from '@nn-playground/engine';
-import type { ArenaModelSummary, CheckpointTimeline, PauseReason, TrainingStatus } from '@nn-playground/shared';
+import type {
+    ArenaModelSummary,
+    CheckpointTimeline,
+    PauseReason,
+    RecipeFingerprint,
+    TrainingStatus,
+} from '@nn-playground/shared';
 import type { AppConfig } from '@nn-playground/shared';
 import {
     appendHistoryPoint,
@@ -62,6 +68,7 @@ export interface TrainingStore {
     checkpointTimeline: CheckpointTimeline;
     /** App-local recipe identity for the snapshot/evidence currently shown in the UI. */
     trainedRecipeConfig: AppConfig | null;
+    trainedRecipeFingerprint: RecipeFingerprint | null;
     trainedRecipeRecordedAt: number | null;
     trainedRecipeSource: TrainedRecipeSource | null;
 
@@ -93,7 +100,11 @@ export interface TrainingStore {
     setTestMetricsStale: (stale: boolean) => void;
     setCheckpointTimeline: (timeline: CheckpointTimeline) => void;
     setArenaSummaries: (summaries: ArenaModelSummary[] | null) => void;
-    markTrainedRecipe: (config: AppConfig, source: TrainedRecipeSource) => void;
+    markTrainedRecipe: (
+        config: AppConfig,
+        source: TrainedRecipeSource,
+        recipeFingerprint?: RecipeFingerprint | null,
+    ) => void;
 }
 
 const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
@@ -135,6 +146,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     testMetricsStale: false,
     checkpointTimeline: EMPTY_CHECKPOINT_TIMELINE,
     trainedRecipeConfig: null,
+    trainedRecipeFingerprint: null,
     trainedRecipeRecordedAt: null,
     trainedRecipeSource: null,
 
@@ -255,8 +267,9 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     setTestMetricsStale: (testMetricsStale) => set({ testMetricsStale }),
     setCheckpointTimeline: (checkpointTimeline) => set({ checkpointTimeline }),
     setArenaSummaries: (arenaSummaries) => set({ arenaSummaries }),
-    markTrainedRecipe: (config, source) => set({
+    markTrainedRecipe: (config, source, recipeFingerprint = null) => set({
         trainedRecipeConfig: cloneAppConfig(config),
+        trainedRecipeFingerprint: recipeFingerprint,
         trainedRecipeRecordedAt: Date.now(),
         trainedRecipeSource: source,
     }),

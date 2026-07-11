@@ -4,9 +4,14 @@ import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
+    PREPARED_PRESETS,
     type AppConfig,
 } from '@nn-playground/shared';
-import { getRecipeDrift, summarizeRecipe } from './recipeIdentity.ts';
+import {
+    getRecipeDrift,
+    isSameCanonicalRecipe,
+    summarizeRecipe,
+} from './recipeIdentity.ts';
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     return {
@@ -23,6 +28,40 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 }
 
 describe('recipe identity drift', () => {
+    it('uses canonical recipe keys for current/catalog equality', () => {
+        const first = PREPARED_PRESETS[0].prepared;
+        const equivalent = {
+            ...first,
+            identities: { ...first.identities },
+        };
+
+        expect(isSameCanonicalRecipe(first, equivalent)).toBe(true);
+        expect(isSameCanonicalRecipe(first, PREPARED_PRESETS[1].prepared)).toBe(false);
+        expect(isSameCanonicalRecipe(null, first)).toBe(false);
+    });
+
+    it('uses exact fingerprints for trained/current drift instead of fragment equality', () => {
+        const sameFragments = makeConfig();
+        const trained = PREPARED_PRESETS[0].prepared.identities.recipeFingerprint;
+        const current = PREPARED_PRESETS[1].prepared.identities.recipeFingerprint;
+
+        const drift = getRecipeDrift(sameFragments, sameFragments, 3, {
+            trainedRecipeFingerprint: trained,
+            currentRecipeFingerprint: current,
+        });
+
+        expect(drift.hasDrift).toBe(true);
+        expect(drift.headline).toBe('Current recipe differs from trained snapshot.');
+
+        const differentFragments = makeConfig({
+            training: { ...DEFAULT_TRAINING, learningRate: 0.2 },
+        });
+        expect(getRecipeDrift(sameFragments, differentFragments, 3, {
+            trainedRecipeFingerprint: trained,
+            currentRecipeFingerprint: trained,
+        }).hasDrift).toBe(false);
+    });
+
     it('reports no drift for identical experiment recipes', () => {
         const current = makeConfig();
         const drift = getRecipeDrift(current, makeConfig());

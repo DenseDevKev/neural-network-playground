@@ -17,12 +17,24 @@ function useCurrentRecipeConfig(): AppConfig {
 export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
     const currentConfig = useCurrentRecipeConfig();
     const trainedRecipeConfig = useTrainingStore((s) => s.trainedRecipeConfig);
+    const trainedRecipeFingerprint = useTrainingStore((s) => s.trainedRecipeFingerprint);
+    const currentRecipeFingerprint = usePlaygroundStore(
+        (s) => s.prepared?.identities.recipeFingerprint ?? null,
+    );
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const testMetricsStale = useTrainingStore((s) => s.testMetricsStale);
     const summary = useMemo(() => summarizeRecipe(currentConfig), [currentConfig]);
     const drift = useMemo(
-        () => getRecipeDrift(trainedRecipeConfig, currentConfig),
-        [trainedRecipeConfig, currentConfig],
+        () => getRecipeDrift(
+            trainedRecipeConfig,
+            currentConfig,
+            3,
+            trainedRecipeFingerprint === null ? undefined : {
+                trainedRecipeFingerprint,
+                currentRecipeFingerprint,
+            },
+        ),
+        [trainedRecipeConfig, currentConfig, trainedRecipeFingerprint, currentRecipeFingerprint],
     );
     const showsStaleEvidence = !drift.hasDrift && testMetricsStale;
     const pillLabel = pendingConfigSource

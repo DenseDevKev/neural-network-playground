@@ -1,297 +1,418 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { usePlaygroundStore } from './usePlaygroundStore.ts';
+import { describe, expect, it, vi } from 'vitest';
+import { generateDatasetV2 } from '@nn-playground/engine';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-    PRESETS,
-    decodeUrlState,
+    DEFAULT_EXPERIMENT_DOCUMENT,
+    PREPARED_PRESETS,
+    encodeExperimentUrl,
+    prepareExperimentDocument,
+    type ExperimentDocumentV2,
+    type PreparedExperimentDocumentV2,
+    type SchemaResult,
 } from '@nn-playground/shared';
-import type { DatasetType } from '@nn-playground/engine';
-import type { Preset } from '@nn-playground/shared';
+import { setLearningRate, setNoise } from './recipeEdits.ts';
+import {
+    createPlaygroundStore,
+    initializePlaygroundStateFromHash,
+} from './usePlaygroundStore.ts';
 
-const PUBLIC_DATASETS: readonly DatasetType[] = [
-    'circle',
-    'xor',
-    'gauss',
-    'spiral',
-    'moons',
-    'checkerboard',
-    'rings',
-    'heart',
-    'reg-plane',
-    'reg-gauss',
-];
+type Prepare = (
+    value: unknown,
+) => Promise<SchemaResult<PreparedExperimentDocumentV2>>;
 
-function expectScalarRuntimeConfig() {
-    const { network, training } = usePlaygroundStore.getState();
-    expect(network.outputSize).toBe(1);
-    expect(network.outputActivation).not.toBe('softmax');
-    expect(training.lossType).not.toBe('categoricalCrossEntropy');
+function preset(id: string) {
+    const entry = PREPARED_PRESETS.find((candidate) => candidate.id === id);
+    if (!entry) throw new Error(`Missing preset ${id}`);
+    return entry;
 }
 
-function expectApprovedMulticlassRuntimeConfig() {
-    const { data, network, training } = usePlaygroundStore.getState();
-    expect(data.dataset).toBe('three-class-clusters');
-    expect(data.problemType).toBe('classification');
-    expect(network.outputSize).toBe(3);
-    expect(network.outputActivation).toBe('softmax');
-    expect(training.lossType).toBe('categoricalCrossEntropy');
+function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((next) => {
+        resolve = next;
+    });
+    return { promise, resolve };
 }
 
-function seedHiddenMulticlassState() {
-    usePlaygroundStore.setState((state) => ({
-        network: {
-            ...state.network,
-            outputSize: 3,
-            outputActivation: 'softmax',
+function controlledPreparation() {
+    const calls: Array<{
+        value: unknown;
+        gate: ReturnType<typeof deferred<void>>;
+        result: Promise<SchemaResult<PreparedExperimentDocumentV2>>;
+    }> = [];
+    const prepare: Prepare = (value) => {
+        const gate = deferred<void>();
+        const result = prepareExperimentDocument(value);
+        calls.push({ value, gate, result });
+        return gate.promise.then(() => result);
+    };
+    return {
+        calls,
+        prepare,
+        resolve(index: number) {
+            calls[index].gate.resolve();
         },
-        training: {
-            ...state.training,
-            lossType: 'categoricalCrossEntropy',
-        },
-    }));
+    };
 }
 
-describe('usePlaygroundStore compatibility guards', () => {
-    beforeEach(() => {
-        usePlaygroundStore.setState({
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
-            training: { ...DEFAULT_TRAINING },
-            data: { ...DEFAULT_DATA },
-            features: { ...DEFAULT_FEATURES },
-            ui: { showTestData: false, discretizeOutput: false },
+function createReadyStore(
+    initialPrepared = preset('xor-hidden').prepared,
+    prepare: Prepare = prepareExperimentDocument,
+) {
+    return createPlaygroundStore({
+        prepare,
+        initialPrepared,
+        initialIssues: [],
+        incompatibleSource: null,
+    });
+}
+
+function withNoise(
+    prepared: PreparedExperimentDocumentV2,
+    noise: number,
+): ExperimentDocumentV2 {
+    return {
+        ...prepared.document,
+        recipe: {
+            ...prepared.document.recipe,
+            data: { ...prepared.document.recipe.data, noise },
+        },
+    };
+}
+
+describe('atomic prepared-document store', () => {
+    it('publishes a successful prepared document and every projection in one ready-state set', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const targetDocument = withNoise(initial, 7);
+        const controlled = controlledPreparation();
+        const store = createReadyStore(initial, controlled.prepare);
+        const snapshots: ReturnType<typeof store.getState>[] = [];
+        store.subscribe((state) => snapshots.push(state));
+
+        const pending = store.getState().replaceDocument(targetDocument);
+        expect(store.getState().preparation).toMatchObject({ status: 'preparing', requestId: 1 });
+        expect(store.getState().prepared).toBe(initial);
+
+        controlled.resolve(0);
+        const result = await pending;
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        const readySnapshots = snapshots.filter((state) => state.preparation.status === 'ready');
+        expect(readySnapshots).toHaveLength(1);
+        const published = readySnapshots[0];
+        expect(published.prepared).toBe(result.value);
+        expect(published.data.noise).toBe(7);
+        expect(published.network).toEqual(result.value.compiled.network);
+        expect(published.ui).toEqual(result.value.document.view);
+        expect(published.incompatibleSource).toBeNull();
+    });
+
+    it('retains the exact last-successful prepared and projection references after latest failure', async () => {
+        const store = createReadyStore();
+        const before = store.getState();
+
+        const result = await store.getState().replaceDocument({
+            ...before.prepared!.document,
+            recipe: {
+                ...before.prepared!.document.recipe,
+                data: { ...before.prepared!.document.recipe.data, sampleCount: 1 },
+            },
         });
-        window.location.hash = '';
+
+        expect(result.ok).toBe(false);
+        const after = store.getState();
+        expect(after.prepared).toBe(before.prepared);
+        expect(after.network).toBe(before.network);
+        expect(after.training).toBe(before.training);
+        expect(after.data).toBe(before.data);
+        expect(after.features).toBe(before.features);
+        expect(after.ui).toBe(before.ui);
+        expect(after.preparation.status).toBe('error');
+        expect(after.preparation.issues.length).toBeGreaterThan(0);
     });
 
-    it('keeps loss/output activation compatible when loss changes', () => {
-        usePlaygroundStore.getState().setLossType('mse');
-        expect(usePlaygroundStore.getState().training.lossType).toBe('mse');
-        expect(usePlaygroundStore.getState().network.outputActivation).toBe('linear');
+    it('ignores a stale success after a newer success', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const controlled = controlledPreparation();
+        const store = createReadyStore(initial, controlled.prepare);
 
-        usePlaygroundStore.getState().setLossType('crossEntropy');
-        expect(usePlaygroundStore.getState().training.lossType).toBe('crossEntropy');
-        expect(usePlaygroundStore.getState().network.outputActivation).toBe('sigmoid');
+        const older = store.getState().replaceDocument(withNoise(initial, 3));
+        const newer = store.getState().replaceDocument(withNoise(initial, 8));
+        controlled.resolve(1);
+        const newerResult = await newer;
+        controlled.resolve(0);
+        const olderResult = await older;
+
+        expect(newerResult.ok).toBe(true);
+        expect(olderResult.ok).toBe(true);
+        expect(store.getState().prepared?.document.recipe.data.noise).toBe(8);
+        expect(store.getState().preparation).toMatchObject({ status: 'ready', requestId: 2 });
     });
 
-    it('rejects hidden multiclass loss values through public loss actions', () => {
-        usePlaygroundStore.getState().setLossType('huber');
+    it('does not publish an older success after the latest request fails', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const controlled = controlledPreparation();
+        const store = createReadyStore(initial, controlled.prepare);
+        const olderSuccess = store.getState().replaceDocument(withNoise(initial, 6));
+        const latestFailure = store.getState().replaceDocument({
+            ...initial.document,
+            recipe: {
+                ...initial.document.recipe,
+                data: { ...initial.document.recipe.data, sampleCount: 1 },
+            },
+        });
 
-        usePlaygroundStore.getState().setLossType('categoricalCrossEntropy' as any);
+        controlled.resolve(1);
+        expect((await latestFailure).ok).toBe(false);
+        expect(store.getState().prepared).toBe(initial);
+        controlled.resolve(0);
+        expect((await olderSuccess).ok).toBe(true);
+        expect(store.getState().prepared).toBe(initial);
+        expect(store.getState().preparation).toMatchObject({ status: 'error', requestId: 2 });
 
-        expectScalarRuntimeConfig();
-        expect(usePlaygroundStore.getState().training.lossType).toBe('huber');
-        expect(usePlaygroundStore.getState().network.outputActivation).toBe('linear');
+        const nextEdit = store.getState().editRecipe((recipe) => setLearningRate(recipe, 0.15));
+        controlled.resolve(2);
+        expect((await nextEdit).ok).toBe(true);
+        expect(store.getState().prepared?.document.recipe.data.noise)
+            .toBe(initial.document.recipe.data.noise);
     });
 
-    it('rejects vector softmax through public hidden-layer activation actions', () => {
-        usePlaygroundStore.getState().setActivation('relu');
-
-        usePlaygroundStore.getState().setActivation('softmax' as any);
-
-        expect(usePlaygroundStore.getState().network.activation).toBe('relu');
-    });
-
-    it('rejects vector softmax through public output activation actions', () => {
-        usePlaygroundStore.getState().setLossType('mse');
-        usePlaygroundStore.getState().setOutputActivation('tanh');
-
-        usePlaygroundStore.getState().setOutputActivation('softmax' as any);
-
-        expectScalarRuntimeConfig();
-        expect(usePlaygroundStore.getState().training.lossType).toBe('mse');
-        expect(usePlaygroundStore.getState().network.outputActivation).toBe('tanh');
-    });
-
-    it('keeps public dataset actions on single-output scalar contracts', () => {
-        for (const dataset of PUBLIC_DATASETS) {
-            seedHiddenMulticlassState();
-            usePlaygroundStore.getState().setDataset(dataset);
-            expectScalarRuntimeConfig();
-        }
-    });
-
-    it('applies the approved multiclass tuple when selecting the three-class dataset', () => {
-        usePlaygroundStore.getState().setDataset('three-class-clusters');
-
-        expectApprovedMulticlassRuntimeConfig();
-    });
-
-    it('keeps built-in presets on single-output scalar contracts', () => {
-        for (const preset of PRESETS) {
-            if (preset.id === 'three-class-clusters') continue;
-            seedHiddenMulticlassState();
-            usePlaygroundStore.getState().applyPreset(preset);
-            expectScalarRuntimeConfig();
-        }
-    });
-
-    it('exposes exactly one built-in approved multiclass preset', () => {
-        const multiclassPresets = PRESETS.filter((preset) => preset.config.data?.dataset === 'three-class-clusters');
-
-        expect(multiclassPresets.map((preset) => preset.id)).toEqual(['three-class-clusters']);
-
-        usePlaygroundStore.getState().applyPreset(multiclassPresets[0]);
-
-        expectApprovedMulticlassRuntimeConfig();
-        expect(window.location.hash).toContain('d=three-class-clusters');
-        expect(window.location.hash).toContain('os=3');
-        expect(window.location.hash).toContain('oa=softmax');
-        expect(window.location.hash).toContain('l=categoricalCrossEntropy');
-    });
-
-    it('clamps future single-output preset contracts before syncing them to the URL', () => {
-        const malformedPreset: Preset = {
-            id: 'future-preset',
-            title: 'Future Preset',
-            description: 'Synthetic guard fixture',
-            learningGoal: 'Keep public presets scalar until multiclass UI is ready.',
-            difficulty: 'advanced',
-            config: {
-                data: { ...DEFAULT_DATA, dataset: 'xor', problemType: 'classification' },
-                network: {
-                    ...DEFAULT_NETWORK,
-                    inputSize: 2,
-                    outputSize: 3,
-                    outputActivation: 'sigmoid',
-                    seed: DEFAULT_DATA.seed,
-                },
-                features: { ...DEFAULT_FEATURES },
-                training: { ...DEFAULT_TRAINING, lossType: 'crossEntropy' },
+    it('ignores stale failures before and after a newer success without changing the candidate base', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const controlled = controlledPreparation();
+        const store = createReadyStore(initial, controlled.prepare);
+        const invalid = {
+            ...initial.document,
+            recipe: {
+                ...initial.document.recipe,
+                data: { ...initial.document.recipe.data, sampleCount: 1 },
             },
         };
 
-        usePlaygroundStore.getState().applyPreset(malformedPreset);
+        const staleFailure = store.getState().replaceDocument(invalid);
+        const newerSuccess = store.getState().replaceDocument(withNoise(initial, 11));
+        controlled.resolve(0);
+        expect((await staleFailure).ok).toBe(false);
+        expect(store.getState().preparation.requestId).toBe(2);
+        expect(store.getState().preparation.status).toBe('preparing');
+        controlled.resolve(1);
+        expect((await newerSuccess).ok).toBe(true);
 
-        expectScalarRuntimeConfig();
-        expect(window.location.hash).not.toContain('os=3');
+        const edit = store.getState().editRecipe((recipe) => setLearningRate(recipe, 0.2));
+        controlled.resolve(2);
+        expect((await edit).ok).toBe(true);
+        expect(store.getState().prepared?.document.recipe.data.noise).toBe(11);
+        expect(store.getState().prepared?.document.recipe.training.learningRate).toBe(0.2);
     });
 
-    it('applies approved multiclass preset configs as a complete tuple', () => {
-        const multiclassPreset: Preset = {
-            id: 'three-class-smoke',
-            title: 'Three Class Smoke',
-            description: 'Synthetic approved multiclass fixture',
-            learningGoal: 'Keep public multiclass configs all-or-nothing.',
-            difficulty: 'advanced',
-            config: {
-                data: { ...DEFAULT_DATA, dataset: 'three-class-clusters' as DatasetType, problemType: 'classification' },
-                network: {
-                    ...DEFAULT_NETWORK,
-                    inputSize: 2,
-                    outputSize: 3,
-                    outputActivation: 'softmax',
-                    seed: DEFAULT_DATA.seed,
-                },
-                features: { ...DEFAULT_FEATURES },
-                training: { ...DEFAULT_TRAINING, lossType: 'categoricalCrossEntropy' },
+    it('preserves two rapid orthogonal edit intents even when the first preparation resolves last', async () => {
+        const controlled = controlledPreparation();
+        const store = createReadyStore(preset('xor-hidden').prepared, controlled.prepare);
+
+        const first = store.getState().editRecipe((recipe) => setNoise(recipe, 4));
+        const second = store.getState().editRecipe((recipe) => setLearningRate(recipe, 0.12));
+        expect(controlled.calls).toHaveLength(2);
+        controlled.resolve(1);
+        expect((await second).ok).toBe(true);
+        controlled.resolve(0);
+        expect((await first).ok).toBe(true);
+
+        const recipe = store.getState().prepared!.document.recipe;
+        expect(recipe.data.noise).toBe(4);
+        expect(recipe.training.learningRate).toBe(0.12);
+    });
+
+    it('resets the candidate base to the last success after a latest failure', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const store = createReadyStore(initial);
+        await store.getState().replaceDocument({
+            ...initial.document,
+            recipe: {
+                ...initial.document.recipe,
+                data: { ...initial.document.recipe.data, sampleCount: 1 },
             },
+        });
+
+        const edited = await store.getState().editRecipe((recipe) => setNoise(recipe, 9));
+        expect(edited.ok).toBe(true);
+        expect(store.getState().prepared?.document.recipe.data.sampleCount)
+            .toBe(initial.document.recipe.data.sampleCount);
+        expect(store.getState().prepared?.document.recipe.data.noise).toBe(9);
+    });
+
+    it('rejects an edit-level issue without incrementing the request ID or preparing', async () => {
+        const prepare = vi.fn<Prepare>(prepareExperimentDocument);
+        const store = createReadyStore(preset('xor-hidden').prepared, prepare);
+        const before = store.getState().preparation.requestId;
+
+        const result = await store.getState().editRecipe(() => ({
+            ok: false,
+            issue: { kind: 'empty-feature-set' },
+        }));
+
+        expect(result).toEqual({ ok: false, issue: { kind: 'empty-feature-set' } });
+        expect(store.getState().preparation.requestId).toBe(before);
+        expect(prepare).not.toHaveBeenCalled();
+    });
+
+    it('preserves view state across exact whole-recipe catalog replacement', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const store = createReadyStore(initial);
+        await store.getState().editView(() => ({ showTestData: true, discretizeOutput: true }));
+
+        const result = await store.getState().applyRecipe(preset('regression-plane'));
+        expect(result.ok).toBe(true);
+        const current = store.getState().prepared!;
+        expect(current.document.recipe).toEqual(preset('regression-plane').recipe);
+        expect(current.document.view).toEqual({ showTestData: true, discretizeOutput: true });
+        expect(current.identities.canonicalRecipeKey)
+            .toBe(preset('regression-plane').prepared.identities.canonicalRecipeKey);
+        expect(current.identities.recipeFingerprint)
+            .toBe(preset('regression-plane').prepared.identities.recipeFingerprint);
+    });
+
+    it('rejects a fabricated catalog entry whose recipe/prepared pair does not match', async () => {
+        const store = createReadyStore();
+        const target = preset('regression-plane');
+        const forged = {
+            ...target,
+            recipe: preset('xor-hidden').recipe,
         };
+        const prepare = vi.spyOn(store.getState(), 'replaceDocument');
 
-        usePlaygroundStore.getState().applyPreset(multiclassPreset);
+        const result = await store.getState().applyRecipe(forged);
 
-        expectApprovedMulticlassRuntimeConfig();
-        expect(window.location.hash).toContain('d=three-class-clusters');
-        expect(window.location.hash).toContain('os=3');
+        expect(result.ok).toBe(false);
+        expect(store.getState().prepared?.identities.recipeFingerprint)
+            .toBe(preset('xor-hidden').prepared.identities.recipeFingerprint);
+        expect(prepare).not.toHaveBeenCalled();
     });
 
-    it('does not publish hidden multiclass contracts when syncing the URL', () => {
-        seedHiddenMulticlassState();
+    it('rejects a structural catalog copy even when it reuses the exact recipe/prepared pair', async () => {
+        const store = createReadyStore();
+        const target = preset('regression-plane');
+        const copiedEntry = { ...target };
+        const before = store.getState().prepared;
 
-        usePlaygroundStore.getState().syncToUrl();
+        const result = await store.getState().applyRecipe(copiedEntry);
 
-        expect(window.location.hash).not.toContain('categoricalCrossEntropy');
-        expect(window.location.hash).not.toContain('softmax');
-        const decoded = decodeUrlState(window.location.hash.slice(1));
-        expect(decoded.network.outputSize).toBe(1);
-        expect(decoded.network.outputActivation).not.toBe('softmax');
-        expect(decoded.training.lossType).not.toBe('categoricalCrossEntropy');
-    });
-
-    it('round-trips approved multiclass state through URL sync and load', () => {
-        usePlaygroundStore.getState().setDataset('three-class-clusters');
-
-        usePlaygroundStore.getState().syncToUrl();
-
-        const hash = window.location.hash.slice(1);
-        expect(hash).toContain('d=three-class-clusters');
-        expect(hash).toContain('os=3');
-        expect(hash).toContain('oa=softmax');
-        expect(hash).toContain('l=categoricalCrossEntropy');
-        expect(decodeUrlState(hash, { allowMulticlass: true }).network.outputSize).toBe(3);
-
-        usePlaygroundStore.setState({
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
-            training: { ...DEFAULT_TRAINING },
-            data: { ...DEFAULT_DATA },
-            features: { ...DEFAULT_FEATURES },
-            ui: { showTestData: false, discretizeOutput: false },
+        expect(result).toMatchObject({
+            ok: false,
+            issues: [{ path: 'recipe' }],
         });
-
-        usePlaygroundStore.getState().loadFromUrl();
-
-        expectApprovedMulticlassRuntimeConfig();
+        expect(store.getState().prepared).toBe(before);
     });
 
-    it('updates advanced hyperparameters without disturbing unrelated config', () => {
-        const store = usePlaygroundStore.getState();
+    it('ends all 49 awaited catalog transitions at the exact destination identity', async () => {
+        const store = createReadyStore(PREPARED_PRESETS[0].prepared);
 
-        store.setMomentum(0.65);
-        store.setGradientClip(0.5);
-        store.setAdamBetas(0.8, 0.98);
-        store.setHuberDelta(0.75);
-        store.setLRSchedule({ type: 'step', stepSize: 20, gamma: 0.5 });
-        store.setWeightInit('he');
-        store.setLossType('mse');
-        store.setOutputActivation('linear');
+        for (const source of PREPARED_PRESETS) {
+            for (const target of PREPARED_PRESETS) {
+                expect((await store.getState().applyRecipe(source)).ok).toBe(true);
+                expect((await store.getState().applyRecipe(target)).ok).toBe(true);
+                expect(
+                    store.getState().prepared?.identities.canonicalRecipeKey,
+                    `${source.id} -> ${target.id}`,
+                ).toBe(target.prepared.identities.canonicalRecipeKey);
+                expect(store.getState().prepared?.identities.recipeFingerprint)
+                    .toBe(target.prepared.identities.recipeFingerprint);
+            }
+        }
+    });
+});
 
-        expect(usePlaygroundStore.getState().training).toMatchObject({
-            momentum: 0.65,
-            gradientClip: 0.5,
-            adamBeta1: 0.8,
-            adamBeta2: 0.98,
-            huberDelta: 0.75,
-            lrSchedule: { type: 'step', stepSize: 20, gamma: 0.5 },
-        });
-        expect(usePlaygroundStore.getState().network.weightInit).toBe('he');
-        expect(usePlaygroundStore.getState().network.outputActivation).toBe('linear');
-        expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual(DEFAULT_NETWORK.hiddenLayers);
+describe('strict initialization and URL state', () => {
+    it('prepares the V2 default only for an exactly empty hash', async () => {
+        const initial = await initializePlaygroundStateFromHash('');
+
+        expect(initial.initialPrepared?.document).toEqual(DEFAULT_EXPERIMENT_DOCUMENT);
+        expect(initial.incompatibleSource).toBeNull();
+        expect(initial.initialIssues).toEqual([]);
     });
 
-    it('sanitizes learning-rate schedules before they enter store state', () => {
-        const store = usePlaygroundStore.getState();
+    it('prepares an exact strict V2 URL', async () => {
+        const target = preset('three-class-clusters').prepared;
+        const initial = await initializePlaygroundStateFromHash(
+            encodeExperimentUrl(target.document),
+        );
 
-        store.setLRSchedule({ type: 'step', stepSize: 0, gamma: 2 } as any);
-        expect(usePlaygroundStore.getState().training.lrSchedule).toEqual({
-            type: 'step',
-            stepSize: 1,
-            gamma: 0.5,
-        });
-
-        store.setLRSchedule({ type: 'cosine', totalSteps: 0, minLr: 0.1 } as any);
-        expect(usePlaygroundStore.getState().training.lrSchedule).toEqual({
-            type: 'cosine',
-            totalSteps: 1,
-            minLr: DEFAULT_TRAINING.learningRate,
-        });
-
-        store.setLRSchedule({ type: 'constant' } as any);
-        expect(usePlaygroundStore.getState().training.lrSchedule).toBeUndefined();
+        expect(initial.initialPrepared?.identities.recipeFingerprint)
+            .toBe(target.identities.recipeFingerprint);
+        expect(initial.incompatibleSource).toBeNull();
     });
 
-    it('reshuffles data by changing only the existing data seed', () => {
-        const before = usePlaygroundStore.getState();
+    it.each([
+        '#d=xor&n=0.2',
+        '#v=3&r=AAAA',
+        '#v=2&r=not+base64',
+        '#',
+    ])('preserves incompatible nonempty input %s without publishing a fallback', async (raw) => {
+        const initial = await initializePlaygroundStateFromHash(raw);
+        const store = createPlaygroundStore(initial);
 
-        before.reshuffleDataSeed();
+        expect(initial.initialPrepared).toBeNull();
+        expect(store.getState().prepared).toBeNull();
+        expect(store.getState().incompatibleSource).toEqual({ kind: 'url', raw });
+        expect(store.getState().preparation.status).toBe('error');
+        expect(store.getState().preparation.issues.length).toBeGreaterThan(0);
+        expect((await store.getState().applyRecipe(preset('xor-hidden'))).ok).toBe(false);
+    });
 
-        const after = usePlaygroundStore.getState();
-        expect(after.data.seed).toBe(before.data.seed + 1);
-        expect(after.data.dataset).toBe(before.data.dataset);
-        expect(after.data.noise).toBe(before.data.noise);
-        expect(after.data.numSamples).toBe(before.data.numSamples);
-        expect(after.data.trainTestRatio).toBe(before.data.trainTestRatio);
-        expect(after.network.seed).toBe(before.network.seed);
+    it('syncs the current prepared document even when location.hash is stale', async () => {
+        const store = createReadyStore();
+        await store.getState().applyRecipe(preset('regression-plane'));
+        window.history.replaceState(null, '', '#stale');
+
+        const result = store.getState().syncToUrl();
+
+        expect(result).toEqual({
+            ok: true,
+            value: encodeExperimentUrl(store.getState().prepared!.document),
+        });
+        expect(window.location.hash).toBe(result.ok ? result.value : '');
+    });
+
+    it('persists strict load failure while retaining the last successful experiment', async () => {
+        const store = createReadyStore();
+        const before = store.getState().prepared;
+        window.history.replaceState(null, '', '#v=3&r=AAAA');
+
+        const result = await store.getState().loadFromUrl();
+
+        expect(result.ok).toBe(false);
+        expect(store.getState().prepared).toBe(before);
+        expect(store.getState().incompatibleSource).toEqual({
+            kind: 'url',
+            raw: '#v=3&r=AAAA',
+        });
+        expect(store.getState().preparation.status).toBe('error');
+    });
+
+    it('refuses URL serialization when no compatible experiment is active', async () => {
+        const initial = await initializePlaygroundStateFromHash('#legacy');
+        const store = createPlaygroundStore(initial);
+        window.history.replaceState(null, '', '#legacy');
+
+        const result = store.getState().syncToUrl();
+
+        expect(result.ok).toBe(false);
+        expect(window.location.hash).toBe('#legacy');
+    });
+});
+
+describe('V2 dataset regeneration', () => {
+    it('uses the prepared dataset contract and every exact generation setting', async () => {
+        const store = createReadyStore(preset('three-class-clusters').prepared);
+        const recipe = store.getState().prepared!.document.recipe;
+
+        store.getState().regenerateData();
+
+        expect(store.getState().dataset).toEqual(generateDatasetV2({
+            dataset: recipe.task.dataset,
+            sampleCount: recipe.data.sampleCount,
+            trainFraction: recipe.data.trainFraction,
+            noise: recipe.data.noise,
+            seed: recipe.data.seed,
+        }));
     });
 });

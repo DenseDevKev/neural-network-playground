@@ -1,4 +1,8 @@
-import type { AppConfig } from '@nn-playground/shared';
+import type {
+    AppConfig,
+    PreparedExperimentDocumentV2,
+    RecipeFingerprint,
+} from '@nn-playground/shared';
 import type { FeatureFlags } from '@nn-playground/engine';
 
 export type RecipeDriftGroup = 'data' | 'features' | 'network' | 'training';
@@ -30,6 +34,11 @@ export interface RecipeSummary {
     lossAndBatch: string;
     features: string;
     featureCount: string;
+}
+
+export interface RecipeIdentityComparison {
+    trainedRecipeFingerprint: RecipeFingerprint | null;
+    currentRecipeFingerprint: RecipeFingerprint | null;
 }
 
 const GROUP_LABELS: Record<RecipeDriftGroup, string> = {
@@ -130,6 +139,16 @@ function addItem(
     });
 }
 
+/** Local recipe selection is exact canonical recipe equality, never fragments. */
+export function isSameCanonicalRecipe(
+    left: PreparedExperimentDocumentV2 | null,
+    right: PreparedExperimentDocumentV2 | null,
+): boolean {
+    return left !== null
+        && right !== null
+        && left.identities.canonicalRecipeKey === right.identities.canonicalRecipeKey;
+}
+
 export function summarizeRecipe(config: AppConfig): RecipeSummary {
     const hidden = formatValue(config.network.hiddenLayers);
     const datasetName = DATASET_LABELS[config.data.dataset] ?? config.data.dataset;
@@ -150,8 +169,9 @@ export function getRecipeDrift(
     trainedConfig: AppConfig | null,
     currentConfig: AppConfig,
     visibleLimit = 3,
+    identity?: RecipeIdentityComparison,
 ): RecipeDriftState {
-    if (!trainedConfig) {
+    if (!trainedConfig || (identity && identity.trainedRecipeFingerprint === null)) {
         return {
             hasTrainedRecipe: false,
             hasDrift: false,
@@ -204,20 +224,25 @@ export function getRecipeDrift(
     addItem(items, 'training', 'huberDelta', 'Huber delta', trainedConfig.training.huberDelta, currentConfig.training.huberDelta);
     addItem(items, 'training', 'lrSchedule', 'LR schedule', trainedConfig.training.lrSchedule, currentConfig.training.lrSchedule);
 
-    const groupLabels = [...new Set(items.map((item) => item.groupLabel))];
+    const hasDrift = identity
+        ? identity.currentRecipeFingerprint === null
+            || identity.trainedRecipeFingerprint !== identity.currentRecipeFingerprint
+        : items.length > 0;
+    const visibleIdentityItems = hasDrift ? items : [];
+    const groupLabels = [...new Set(visibleIdentityItems.map((item) => item.groupLabel))];
 
     return {
         hasTrainedRecipe: true,
-        hasDrift: items.length > 0,
-        headline: items.length > 0
+        hasDrift,
+        headline: hasDrift
             ? 'Current recipe differs from trained snapshot.'
             : 'Current recipe matches the trained snapshot.',
-        resolution: items.length > 0
+        resolution: hasDrift
             ? 'Run or reset training to produce evidence for the current recipe.'
             : 'Evidence is aligned with the current recipe.',
-        items,
-        visibleItems: items.slice(0, visibleLimit),
-        remainingCount: Math.max(0, items.length - visibleLimit),
+        items: visibleIdentityItems,
+        visibleItems: visibleIdentityItems.slice(0, visibleLimit),
+        remainingCount: Math.max(0, visibleIdentityItems.length - visibleLimit),
         groupLabels,
     };
 }

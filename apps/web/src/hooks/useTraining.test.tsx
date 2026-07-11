@@ -56,6 +56,8 @@ vi.mock('../worker/workerBridge.ts', () => ({
 
 import { useTraining } from './useTraining.ts';
 
+const INITIAL_PREPARED = usePlaygroundStore.getState().prepared;
+
 function makeSnapshot(step: number): NetworkSnapshot {
     return {
         step,
@@ -159,6 +161,9 @@ function resetStores(): void {
     resetFrameBuffer();
 
     usePlaygroundStore.setState({
+        prepared: INITIAL_PREPARED,
+        preparation: { status: 'ready', requestId: 0, issues: [] },
+        incompatibleSource: null,
         data: { ...DEFAULT_DATA },
         network: {
             ...DEFAULT_NETWORK,
@@ -178,6 +183,7 @@ function resetStores(): void {
         status: 'idle',
         snapshot: null,
         trainedRecipeConfig: null,
+        trainedRecipeFingerprint: null,
         trainedRecipeRecordedAt: null,
         trainedRecipeSource: null,
         frameVersion: 0,
@@ -285,7 +291,33 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().testPoints).toEqual([{ x: 1, y: 0, label: 0 }]);
         expect(useTrainingStore.getState().paramsVersion).toBeGreaterThan(0);
         expect(useTrainingStore.getState().trainedRecipeConfig?.data.dataset).toBe(DEFAULT_DATA.dataset);
+        expect(useTrainingStore.getState().trainedRecipeFingerprint)
+            .toBe(INITIAL_PREPARED?.identities.recipeFingerprint);
         expect(useTrainingStore.getState().trainedRecipeSource).toBe('initialize');
+    });
+
+    it('does not initialize training when strict URL initialization has no prepared document', async () => {
+        usePlaygroundStore.setState({
+            prepared: null,
+            preparation: {
+                status: 'error',
+                requestId: 0,
+                issues: [{
+                    code: 'legacy-state',
+                    path: '$',
+                    message: 'legacy URL',
+                }],
+            },
+            incompatibleSource: { kind: 'url', raw: '#d=xor' },
+        });
+
+        renderHook(() => useTraining());
+
+        await waitFor(() => expect(useTrainingStore.getState().workerError)
+            .toMatch(/shared experiment URL is incompatible with version 2/i));
+        expect(bridge.workerApi.initialize).not.toHaveBeenCalled();
+        expect(useTrainingStore.getState().status).toBe('paused');
+        expect(useTrainingStore.getState().pauseReason).toBe('error');
     });
 
     it('does not initialize public training with hidden multiclass configs', async () => {

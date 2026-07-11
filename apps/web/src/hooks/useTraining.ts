@@ -64,13 +64,22 @@ function getErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
 }
 
-function getValidatedPublicRuntimeConfig() {
-    const config = usePlaygroundStore.getState().getConfig();
+function getValidatedPublicRuntimeRecipe() {
+    const playground = usePlaygroundStore.getState();
+    if (!playground.prepared) {
+        throw new Error(
+            'Training is unavailable because the shared experiment URL is incompatible with version 2.',
+        );
+    }
+    const config = playground.getConfig();
     const result = validateImportedConfig(config, { allowMulticlass: true });
     if (!result.config) {
         throw new Error(result.error ?? 'Invalid playground configuration.');
     }
-    return result.config;
+    return {
+        config: result.config,
+        recipeFingerprint: playground.prepared.identities.recipeFingerprint,
+    };
 }
 
 function getTotalNeuronCount(layerSizes: number[]): number {
@@ -272,7 +281,7 @@ export function useTraining(): TrainingHook {
     }, []);
 
     const initializeWorker = useCallback(async () => {
-        const config = getValidatedPublicRuntimeConfig();
+        const { config, recipeFingerprint } = getValidatedPublicRuntimeRecipe();
         const api = getWorkerApi();
         const ts = useTrainingStore.getState();
         const result = await api.initialize(
@@ -291,7 +300,7 @@ export function useTraining(): TrainingHook {
         const testPts = await api.getTestPoints();
         ts.setTrainPoints(trainPts);
         ts.setTestPoints(testPts);
-        ts.markTrainedRecipe(config, 'initialize');
+        ts.markTrainedRecipe(config, 'initialize', recipeFingerprint);
 
         // Record the initial config snapshot to prevent duplicate sync
         const latestState = usePlaygroundStore.getState();
@@ -395,9 +404,9 @@ export function useTraining(): TrainingHook {
         const seq = beginConfigSync();
 
         const sync = async () => {
-            let config;
+            let activeRecipe;
             try {
-                config = getValidatedPublicRuntimeConfig();
+                activeRecipe = getValidatedPublicRuntimeRecipe();
             } catch (error) {
                 if (!isCurrentConfigSync(seq)) return;
                 prevConfigRef.current = previousConfigSnapshot;
@@ -405,6 +414,7 @@ export function useTraining(): TrainingHook {
                 finishConfigSyncIfCurrent(seq);
                 return;
             }
+            const { config, recipeFingerprint } = activeRecipe;
 
             // Stop streaming before config change
             if (isPlayingRef.current) {
@@ -439,7 +449,7 @@ export function useTraining(): TrainingHook {
                 if (!isCurrentConfigSync(seq)) return;
                 ts.setTrainPoints(trainPts);
                 ts.setTestPoints(testPts);
-                ts.markTrainedRecipe(config, 'config-sync');
+                ts.markTrainedRecipe(config, 'config-sync', recipeFingerprint);
 
                 usePlaygroundStore.getState().syncToUrl();
                 ts.finishConfigChange();
@@ -581,7 +591,8 @@ export function useTraining(): TrainingHook {
             if (!isCurrentConfigSync(seq)) return;
             ts.setTrainPoints(trainPts);
             ts.setTestPoints(testPts);
-            ts.markTrainedRecipe(getValidatedPublicRuntimeConfig(), 'reset');
+            const activeRecipe = getValidatedPublicRuntimeRecipe();
+            ts.markTrainedRecipe(activeRecipe.config, 'reset', activeRecipe.recipeFingerprint);
             finishConfigSyncIfCurrent(seq);
         } catch (error) {
             if (!isCurrentConfigSync(seq)) return;
@@ -608,7 +619,8 @@ export function useTraining(): TrainingHook {
             const ts = useTrainingStore.getState();
             applyFreshSnapshotToStore(ts, result.snapshot);
             ts.setCheckpointTimeline(result.timeline as CheckpointTimeline);
-            ts.markTrainedRecipe(getValidatedPublicRuntimeConfig(), 'restore');
+            const activeRecipe = getValidatedPublicRuntimeRecipe();
+            ts.markTrainedRecipe(activeRecipe.config, 'restore', activeRecipe.recipeFingerprint);
             ts.setPauseReason('manual');
             ts.setStatus('paused');
         } catch (error) {
