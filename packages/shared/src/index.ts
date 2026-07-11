@@ -29,7 +29,17 @@ export {
     validateExperimentRunRecord,
 } from './experimentMemory.js';
 export {
+    ENGINE_CONTRACT_VERSION,
     EXPERIMENT_SCHEMA_VERSION,
+    FEATURE_REGISTRY_VERSION,
+    OBJECTIVE_IMPLEMENTATION_VERSION,
+    RECIPE_FINGERPRINT_VERSION,
+    SPLIT_ALGORITHM_VERSION,
+    canonicalRecipeKey,
+    fingerprintDataset,
+    fingerprintObjective,
+    fingerprintRecipe,
+    prepareExperimentDocument,
     validateExperimentDocument,
 } from './experimentSchema.js';
 export {
@@ -74,6 +84,10 @@ export type {
     SchemaResult,
     ValidatedStandardExperimentRecipeV2,
     ValidatedExperimentDocumentV2,
+    PreparedExperimentDocumentV2,
+    RecipeFingerprint,
+    DatasetKey,
+    ObjectiveKey,
 } from './types.js';
 export type {
     ExperimentMemoryValidationOptions,

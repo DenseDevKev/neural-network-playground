@@ -1,6 +1,7 @@
 // ── Shared types for the application layer ──
 import type {
     BinaryDatasetId,
+    CompiledExperimentConfig,
     DataConfig,
     FeatureFlags,
     FeatureId,
@@ -111,6 +112,21 @@ export type ValidatedExperimentDocumentV2 = Omit<ExperimentDocumentV2, 'recipe'>
     recipe: ValidatedStandardExperimentRecipeV2;
     readonly [validatedDocumentBrand]: true;
 };
+
+export type RecipeFingerprint = string & { readonly __brand: 'RecipeFingerprint' };
+export type DatasetKey = string & { readonly __brand: 'DatasetKey' };
+export type ObjectiveKey = string & { readonly __brand: 'ObjectiveKey' };
+
+export interface PreparedExperimentDocumentV2 {
+    document: ValidatedExperimentDocumentV2;
+    compiled: CompiledExperimentConfig;
+    identities: {
+        canonicalRecipeKey: string;
+        recipeFingerprint: RecipeFingerprint;
+        datasetKey: DatasetKey;
+        objectiveKey: ObjectiveKey;
+    };
+}
 
 export interface UIConfig {
     showTestData: boolean;

@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import {
     DATASET_IDS,
     compileExperimentRecipe,
@@ -8,15 +9,25 @@ import {
     type TaskKind,
     type WeightInitType,
 } from '@nn-playground/engine';
+import { canonicalizeJson } from './canonicalJson.js';
 import type {
+    DatasetKey,
     ExperimentSchemaIssue,
     ExperimentSchemaIssueCode,
+    ObjectiveKey,
+    PreparedExperimentDocumentV2,
+    RecipeFingerprint,
     SchemaResult,
     ValidatedExperimentDocumentV2,
     ValidatedStandardExperimentRecipeV2,
 } from './types.js';
 
 export const EXPERIMENT_SCHEMA_VERSION = 2 as const;
+export const RECIPE_FINGERPRINT_VERSION = 1 as const;
+export const ENGINE_CONTRACT_VERSION = 1 as const;
+export const FEATURE_REGISTRY_VERSION = 1 as const;
+export const OBJECTIVE_IMPLEMENTATION_VERSION = 1 as const;
+export const SPLIT_ALGORITHM_VERSION = 1 as const;
 
 const MAX_SCHEMA_ISSUES = 100;
 const MAX_UINT32 = 4_294_967_295;
@@ -823,4 +834,156 @@ export function compileValidatedExperiment(
     recipe: ValidatedStandardExperimentRecipeV2,
 ): CompiledExperimentConfig {
     return compileExperimentRecipe(recipe);
+}
+
+export function canonicalRecipeKey(
+    recipe: ValidatedStandardExperimentRecipeV2,
+): string {
+    return canonicalizeJson(recipe);
+}
+
+function recipeFingerprintPayload(recipe: ValidatedStandardExperimentRecipeV2): unknown {
+    return {
+        fingerprintVersion: RECIPE_FINGERPRINT_VERSION,
+        experimentSchemaVersion: EXPERIMENT_SCHEMA_VERSION,
+        engineContractVersion: ENGINE_CONTRACT_VERSION,
+        featureRegistryVersion: FEATURE_REGISTRY_VERSION,
+        objectiveImplementationVersion: OBJECTIVE_IMPLEMENTATION_VERSION,
+        datasetGeneratorVersion: getDatasetContract(recipe.task.dataset).generatorVersion,
+        recipe,
+    };
+}
+
+function datasetFingerprintPayload(recipe: ValidatedStandardExperimentRecipeV2): unknown {
+    return {
+        datasetId: recipe.task.dataset,
+        generatorVersion: getDatasetContract(recipe.task.dataset).generatorVersion,
+        sampleCount: recipe.data.sampleCount,
+        trainFraction: recipe.data.trainFraction,
+        noise: recipe.data.noise,
+        dataSeed: recipe.data.seed,
+        splitAlgorithmVersion: SPLIT_ALGORITHM_VERSION,
+    };
+}
+
+function objectiveFingerprintPayload(compiled: CompiledExperimentConfig): unknown {
+    return {
+        taskKind: compiled.task.kind,
+        output: {
+            size: compiled.task.outputSize,
+            activation: compiled.task.outputActivation,
+            targetEncoding: compiled.task.target,
+        },
+        objective: compiled.objective.spec,
+        objectiveImplementationVersion: OBJECTIVE_IMPLEMENTATION_VERSION,
+    };
+}
+
+const BASE64URL_ALPHABET =
+    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+function encodeBase64Url(bytes: Uint8Array): string {
+    let encoded = '';
+    for (let offset = 0; offset < bytes.length; offset += 3) {
+        const remaining = bytes.length - offset;
+        const first = bytes[offset];
+        const second = remaining > 1 ? bytes[offset + 1] : 0;
+        const third = remaining > 2 ? bytes[offset + 2] : 0;
+        const chunk = (first << 16) | (second << 8) | third;
+        encoded += BASE64URL_ALPHABET[(chunk >>> 18) & 0x3f];
+        encoded += BASE64URL_ALPHABET[(chunk >>> 12) & 0x3f];
+        if (remaining > 1) encoded += BASE64URL_ALPHABET[(chunk >>> 6) & 0x3f];
+        if (remaining > 2) encoded += BASE64URL_ALPHABET[chunk & 0x3f];
+    }
+    return encoded;
+}
+
+async function digestCanonicalPayload(prefix: string, payload: unknown): Promise<string> {
+    const canonicalPayload = canonicalizeJson(payload);
+    const bytes = new TextEncoder().encode(canonicalPayload);
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+    return `${prefix}${encodeBase64Url(new Uint8Array(digest))}`;
+}
+
+export async function fingerprintRecipe(
+    recipe: ValidatedStandardExperimentRecipeV2,
+): Promise<RecipeFingerprint> {
+    return await digestCanonicalPayload(
+        'r2.1.',
+        recipeFingerprintPayload(recipe),
+    ) as RecipeFingerprint;
+}
+
+export async function fingerprintDataset(
+    recipe: ValidatedStandardExperimentRecipeV2,
+): Promise<DatasetKey> {
+    return await digestCanonicalPayload(
+        'd2.1.',
+        datasetFingerprintPayload(recipe),
+    ) as DatasetKey;
+}
+
+async function fingerprintCompiledObjective(
+    compiled: CompiledExperimentConfig,
+): Promise<ObjectiveKey> {
+    return await digestCanonicalPayload(
+        'o2.1.',
+        objectiveFingerprintPayload(compiled),
+    ) as ObjectiveKey;
+}
+
+export async function fingerprintObjective(
+    recipe: ValidatedStandardExperimentRecipeV2,
+): Promise<ObjectiveKey> {
+    return fingerprintCompiledObjective(compileValidatedExperiment(recipe));
+}
+
+function preparationFailure(error: unknown): SchemaResult<PreparedExperimentDocumentV2> {
+    const detail = error instanceof Error ? error.message : 'unknown identity failure';
+    return {
+        ok: false,
+        issues: [{
+            code: 'invalid-field',
+            path: '$',
+            message: `experiment preparation failed: ${detail}`,
+        }],
+    };
+}
+
+export async function prepareExperimentDocument(
+    value: unknown,
+): Promise<SchemaResult<PreparedExperimentDocumentV2>> {
+    const validation = validateExperimentDocument(value);
+    if (!validation.ok) return validation;
+
+    try {
+        const document = validation.value;
+        const canonicalKey = canonicalRecipeKey(document.recipe);
+        const compiled = compileValidatedExperiment(document.recipe);
+
+        const recipeFingerprintPromise = fingerprintRecipe(document.recipe);
+        const datasetKeyPromise = fingerprintDataset(document.recipe);
+        const objectiveKeyPromise = fingerprintCompiledObjective(compiled);
+        const [recipeFingerprint, datasetKey, objectiveKey] = await Promise.all([
+            recipeFingerprintPromise,
+            datasetKeyPromise,
+            objectiveKeyPromise,
+        ]);
+
+        return {
+            ok: true,
+            value: {
+                document,
+                compiled,
+                identities: {
+                    canonicalRecipeKey: canonicalKey,
+                    recipeFingerprint,
+                    datasetKey,
+                    objectiveKey,
+                },
+            },
+        };
+    } catch (error) {
+        return preparationFailure(error);
+    }
 }
