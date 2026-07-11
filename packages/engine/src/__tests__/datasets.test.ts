@@ -7,7 +7,11 @@ import {
     getDefaultProblemType,
     THREE_CLASS_CLUSTER_DATASET_CONTRACT,
 } from '../datasets.js';
-import { DATASET_IDS, getDatasetContract } from '../datasetContracts.js';
+import {
+    DATASET_IDS,
+    getDatasetContract,
+    REGRESSION_DATASET_IDS,
+} from '../datasetContracts.js';
 import * as Engine from '../index.js';
 import type { DataPoint, DatasetContract, DatasetType } from '../types.js';
 
@@ -209,6 +213,26 @@ describe('generateDatasetV2', () => {
 
         expect(JSON.stringify(generateDatasetV2(request))).toBe(JSON.stringify(generateDatasetV2(request)));
     });
+
+    it.each(REGRESSION_DATASET_IDS)(
+        '%s keeps ordered coordinates stable when only target noise changes',
+        (dataset) => {
+            const request = { dataset, sampleCount: 1_000, seed: 42, trainFraction: 0.5 } as const;
+            const clean = generateDatasetV2({ ...request, noise: 0 });
+            const noisy = generateDatasetV2({ ...request, noise: 100 });
+            const orderedCoordinates = (split: typeof clean) => ({
+                train: split.train.map(({ x, y }) => [x, y]),
+                test: split.test.map(({ x, y }) => [x, y]),
+            });
+            const orderedTargets = (split: typeof clean) => ({
+                train: split.train.map(({ label }) => label),
+                test: split.test.map(({ label }) => label),
+            });
+
+            expect(orderedCoordinates(noisy)).toEqual(orderedCoordinates(clean));
+            expect(orderedTargets(noisy)).not.toEqual(orderedTargets(clean));
+        },
+    );
 
     it('rejects invalid settings with a structured failure', () => {
         const requests = [

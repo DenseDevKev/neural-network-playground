@@ -234,8 +234,12 @@ function generateValidatedDataset(request: NormalizedDatasetGenerationRequest): 
         case 'three-class-clusters':
             points = genThreeClassClusters(request.sampleCount, request.noise, rng, contract);
             break;
-        case 'reg-plane': points = genRegPlane(request.sampleCount, request.noise, rng, contract); break;
-        case 'reg-gauss': points = genRegGauss(request.sampleCount, request.noise, rng, contract); break;
+        case 'reg-plane':
+            points = genRegPlane(request.sampleCount, request.noise, rng, rng.fork(), contract);
+            break;
+        case 'reg-gauss':
+            points = genRegGauss(request.sampleCount, request.noise, rng, rng.fork(), contract);
+            break;
     }
 
     rng.shuffle(points);
@@ -532,35 +536,47 @@ function genHeart(
 
 // ── Regression datasets ──
 
-function genRegPlane(n: number, noise: number, rng: PRNG, contract: DatasetContract): DataPoint[] {
+function genRegPlane(
+    n: number,
+    noise: number,
+    coordinateRng: PRNG,
+    targetNoiseRng: PRNG,
+    contract: DatasetContract,
+): DataPoint[] {
     const points: DataPoint[] = [];
     for (let i = 0; i < n; i++) {
         points.push(generateBoundedPoint('reg-plane', contract, noise, () => {
-            const x = rng.range(-1, 1);
-            const y = rng.range(-1, 1);
+            const x = coordinateRng.range(-1, 1);
+            const y = coordinateRng.range(-1, 1);
             return {
                 x,
                 y,
-                label: x + y + rng.gaussian(0, noise * 0.02),
+                label: x + y + targetNoiseRng.gaussian(0, noise * 0.02),
             };
         }));
     }
     return points;
 }
 
-function genRegGauss(n: number, noise: number, rng: PRNG, contract: DatasetContract): DataPoint[] {
+function genRegGauss(
+    n: number,
+    noise: number,
+    coordinateRng: PRNG,
+    targetNoiseRng: PRNG,
+    contract: DatasetContract,
+): DataPoint[] {
     const points: DataPoint[] = [];
     for (let i = 0; i < n; i++) {
         points.push(generateBoundedPoint('reg-gauss', contract, noise, () => {
-            const x = rng.range(-1, 1);
-            const y = rng.range(-1, 1);
+            const x = coordinateRng.range(-1, 1);
+            const y = coordinateRng.range(-1, 1);
             const v =
                 Math.exp(-((x - 0.3) ** 2 + (y - 0.3) ** 2) / 0.2)
                 + Math.exp(-((x + 0.3) ** 2 + (y + 0.3) ** 2) / 0.2);
             return {
                 x,
                 y,
-                label: v + rng.gaussian(0, noise * 0.02),
+                label: v + targetNoiseRng.gaussian(0, noise * 0.02),
             };
         }));
     }
