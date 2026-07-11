@@ -1,30 +1,19 @@
-import { memo, useCallback, useMemo, useState } from 'react';
-import type { ArenaModelSummary, ExperimentRunRecordV1 } from '@nn-playground/shared';
+import { memo, useState } from 'react';
+import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
 import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
-import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { readHistory } from '../../store/historyBuffer.ts';
-import {
-    captureExperimentRun,
-    createSerializedNetworkFromFrameBuffer,
-    historyArraysToPoints,
-} from '../../store/experimentRunCapture.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
 
 interface RunHistoryPanelProps {
-    onRestore: () => void;
+    /** @deprecated Legacy V1 records are read-only and never invoke this callback. */
+    onRestore?: () => void;
+    /** @deprecated Legacy V1 records cannot initialize a live V2 arena. */
     onInitializeArena?: (modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => void | Promise<void>;
+    /** @deprecated Legacy V1 records cannot step a live V2 arena. */
     onStepArena?: () => void | Promise<void>;
 }
 
 function formatMetric(value: number): string {
     return Number.isFinite(value) ? value.toFixed(4) : 'n/a';
-}
-
-function formatSignedMetric(value: number): string {
-    if (!Number.isFinite(value)) return 'n/a';
-    const prefix = value > 0 ? '+' : '';
-    return `${prefix}${value.toFixed(4)}`;
 }
 
 function formatSignedInteger(value: number): string {
@@ -33,65 +22,12 @@ function formatSignedInteger(value: number): string {
     return `${prefix}${value.toLocaleString()}`;
 }
 
-function formatPercent(value: number | undefined): string {
-    return value === undefined || !Number.isFinite(value) ? 'n/a' : `${(value * 100).toFixed(1)}%`;
-}
-
 function getRecordLabel(record: ExperimentRunRecordV1): string {
     return record.title ?? record.id;
 }
 
-function isScalarLiveArenaRecord(record: ExperimentRunRecordV1): boolean {
-    return (
-        record.config.network.outputSize === 1 &&
-        record.config.network.outputActivation !== 'softmax' &&
-        record.config.training.lossType !== 'categoricalCrossEntropy' &&
-        record.config.data.dataset !== 'three-class-clusters'
-    );
-}
-
 function generalizationGap(record: ExperimentRunRecordV1): number {
     return record.summary.testLoss - record.summary.trainLoss;
-}
-
-function formatArenaLossComparison(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
-    const diff = a.summary.testLoss - b.summary.testLoss;
-    if (!Number.isFinite(diff)) return 'Test loss comparison unavailable.';
-    if (Math.abs(diff) < 0.00005) return 'Both models have the same test loss.';
-    const direction = diff < 0 ? 'lower' : 'higher';
-    return `Model A ${direction} test loss by ${Math.abs(diff).toFixed(4)}.`;
-}
-
-function formatArenaStepComparison(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
-    const diff = a.summary.step - b.summary.step;
-    if (diff === 0) return 'Both models trained for the same number of steps.';
-    return `Model A trained ${Math.abs(diff).toLocaleString()} ${diff > 0 ? 'more' : 'fewer'} steps.`;
-}
-
-function formatArenaGapComparison(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
-    const diff = generalizationGap(a) - generalizationGap(b);
-    if (!Number.isFinite(diff)) return 'Generalization gap comparison unavailable.';
-    if (Math.abs(diff) < 0.00005) return 'Both models have the same generalization gap.';
-    const direction = diff < 0 ? 'smaller' : 'larger';
-    return `Model A ${direction} generalization gap by ${Math.abs(diff).toFixed(4)}.`;
-}
-
-function formatNextAdjustment(a: ExperimentRunRecordV1, b: ExperimentRunRecordV1): string {
-    const testLossDiff = a.summary.testLoss - b.summary.testLoss;
-    const gapDiff = generalizationGap(a) - generalizationGap(b);
-    if (!Number.isFinite(testLossDiff) || !Number.isFinite(gapDiff)) {
-        return 'Next adjustment: compare architecture and metric differences before changing the recipe.';
-    }
-    if (testLossDiff < -0.00005 && gapDiff <= 0.00005) {
-        return 'Next adjustment: keep the tuned recipe direction; it improved test loss without widening the gap.';
-    }
-    if (testLossDiff < -0.00005) {
-        return 'Next adjustment: keep the stronger test loss, then reduce any wider gap with regularization or simpler layers.';
-    }
-    if (testLossDiff > 0.00005) {
-        return 'Next adjustment: restore or compare against the better saved run before tuning further.';
-    }
-    return 'Next adjustment: compare architecture differences because the metrics are effectively tied.';
 }
 
 function formatFeatureList(record: ExperimentRunRecordV1): string {
@@ -175,138 +111,6 @@ function createArchitectureRows(a: ExperimentRunRecordV1, b: ExperimentRunRecord
     ] as const;
 }
 
-function formatWhatChanged(primary: ExperimentRunRecordV1, secondary: ExperimentRunRecordV1): string {
-    const changes: string[] = [];
-    if (formatHiddenLayers(primary) !== formatHiddenLayers(secondary)) {
-        changes.push(`hidden layers ${formatHiddenLayers(primary)} vs ${formatHiddenLayers(secondary)}`);
-    }
-    if (primary.config.training.learningRate !== secondary.config.training.learningRate) {
-        changes.push(`learning rate ${formatConfigNumber(primary.config.training.learningRate)} vs ${formatConfigNumber(secondary.config.training.learningRate)}`);
-    }
-    if (primary.config.training.optimizer !== secondary.config.training.optimizer) {
-        changes.push(`optimizer ${primary.config.training.optimizer} vs ${secondary.config.training.optimizer}`);
-    }
-    if (primary.config.data.dataset !== secondary.config.data.dataset) {
-        changes.push(`dataset ${primary.config.data.dataset} vs ${secondary.config.data.dataset}`);
-    }
-    return changes.length > 0 ? changes.join('; ') : 'Architecture and training recipe match.';
-}
-
-function formatTestLossPerformance(
-    primaryLabel: string,
-    primary: ExperimentRunRecordV1,
-    secondaryLabel: string,
-    secondary: ExperimentRunRecordV1,
-): string {
-    const diff = primary.summary.testLoss - secondary.summary.testLoss;
-    if (!Number.isFinite(diff)) return 'Test loss comparison unavailable.';
-    if (Math.abs(diff) < 0.00005) return `${primaryLabel} and ${secondaryLabel} have the same test loss.`;
-    return `${primaryLabel} has ${diff < 0 ? 'lower' : 'higher'} test loss by ${Math.abs(diff).toFixed(4)}.`;
-}
-
-function getBestSavedRecord(records: ExperimentRunRecordV1[]): ExperimentRunRecordV1 | null {
-    return records.reduce<ExperimentRunRecordV1 | null>((best, record) => {
-        if (!Number.isFinite(record.summary.testLoss)) return best;
-        if (!best || record.summary.testLoss < best.summary.testLoss) return record;
-        return best;
-    }, null);
-}
-
-function ComparisonCard({
-    title,
-    primary,
-    primaryLabel,
-    secondary,
-    secondaryLabel,
-}: {
-    title: string;
-    primary: ExperimentRunRecordV1;
-    primaryLabel: string;
-    secondary: ExperimentRunRecordV1;
-    secondaryLabel: string;
-}) {
-    return (
-        <article className="run-comparison-card" aria-label={title}>
-            <div className="run-comparison-card__head">
-                <strong>{title}</strong>
-                <span>{`${primaryLabel} -> ${secondaryLabel}`}</span>
-            </div>
-            <dl className="run-comparison-card__questions">
-                <div>
-                    <dt>What changed?</dt>
-                    <dd>{formatWhatChanged(primary, secondary)}</dd>
-                </div>
-                <div>
-                    <dt>Which performed better?</dt>
-                    <dd>{formatTestLossPerformance(primaryLabel, primary, secondaryLabel, secondary)}</dd>
-                </div>
-                <div>
-                    <dt>What should I try next?</dt>
-                    <dd>{formatNextAdjustment(primary, secondary)}</dd>
-                </div>
-            </dl>
-        </article>
-    );
-}
-
-function ComparisonLoop({
-    currentRecord,
-    records,
-    onRestoreRecord,
-}: {
-    currentRecord: ExperimentRunRecordV1 | null;
-    records: ExperimentRunRecordV1[];
-    onRestoreRecord: (record: ExperimentRunRecordV1) => void;
-}) {
-    const previous = records[0] ?? null;
-    const best = getBestSavedRecord(records);
-
-    return (
-        <section className="run-comparison-loop" aria-label="Comparison loop">
-            <div className="run-comparison-loop__head">
-                <span>Comparison workflow</span>
-                <strong>Current run/snapshot vs saved runs</strong>
-            </div>
-            {!currentRecord || records.length === 0 ? (
-                <div className="inspection__empty">
-                    Save at least one trained run to compare current, previous, and best snapshots.
-                </div>
-            ) : (
-                <div className="run-comparison-loop__grid">
-                    {previous && (
-                        <ComparisonCard
-                            title="Current vs previous"
-                            primary={currentRecord}
-                            primaryLabel="Current run"
-                            secondary={previous}
-                            secondaryLabel="previous saved"
-                        />
-                    )}
-                    {best && (
-                        <ComparisonCard
-                            title="Best saved vs current"
-                            primary={best}
-                            primaryLabel="Best saved"
-                            secondary={currentRecord}
-                            secondaryLabel="current"
-                        />
-                    )}
-                </div>
-            )}
-            {best && (
-                <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => onRestoreRecord(best)}
-                    aria-label={`Restore best saved run ${getRecordLabel(best)}`}
-                >
-                    Restore best saved run
-                </button>
-            )}
-        </section>
-    );
-}
-
 function createLossThumbnailLabel(record: ExperimentRunRecordV1, labelPrefix?: string): string {
     const first = record.history[0];
     const last = record.history.at(-1);
@@ -376,27 +180,6 @@ function RunHistoryThumbnail({
     );
 }
 
-function LiveArenaSummary({ summary }: { summary: ArenaModelSummary }) {
-    const label = summary.side === 'A' ? 'Model A' : 'Model B';
-    return (
-        <section
-            className="run-arena__model"
-            aria-label={`${label} live arena summary for ${summary.label}`}
-        >
-            <div className="run-arena__model-title">
-                <span>{label} live: {summary.label}</span>
-                <strong>{summary.status}</strong>
-            </div>
-            <div className="run-arena__metrics">
-                <span>step {summary.step.toLocaleString()}</span>
-                <span>train {formatMetric(summary.trainLoss)}</span>
-                <span>test {formatMetric(summary.testLoss)}</span>
-                <span>accuracy {formatPercent(summary.testAccuracy)}</span>
-            </div>
-        </section>
-    );
-}
-
 function ArenaModelPane({
     label,
     record,
@@ -443,35 +226,26 @@ function ArchitectureComparison({
     );
 }
 
-function SideBySideModelArena({
-    records,
-    onInitializeArena,
-    onStepArena,
-}: {
-    records: ExperimentRunRecordV1[];
-    onInitializeArena?: (modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => void | Promise<void>;
-    onStepArena?: () => void | Promise<void>;
-}) {
+function SideBySideModelArena({ records }: { records: ExperimentRunRecordV1[] }) {
     const [modelAId, setModelAId] = useState(records[0]?.id ?? '');
     const [modelBId, setModelBId] = useState(records[1]?.id ?? records[0]?.id ?? '');
-    const arenaSummaries = useTrainingStore((s) => s.arenaSummaries);
     if (records.length < 2) return null;
 
     const modelA = records.find((record) => record.id === modelAId) ?? records[0];
     const modelB = records.find((record) => record.id === modelBId) ?? records[1] ?? records[0];
-    const selectedRecordsAreScalar = isScalarLiveArenaRecord(modelA) && isScalarLiveArenaRecord(modelB);
-    const canStartLiveArena = Boolean(onInitializeArena && selectedRecordsAreScalar);
-    const liveArenaNoteId = 'run-arena-live-scalar-note';
 
     return (
-        <section className="run-arena" aria-label="Side-by-side model arena">
+        <section className="run-arena" aria-label="Legacy saved-run comparison">
             <div className="run-arena__header">
                 <div>
-                    <div className="inspection__layer-name">Side-by-side model arena</div>
+                    <div className="inspection__layer-name">Legacy saved-run comparison</div>
                     <p className="run-arena__summary">
-                        Compare two saved runs using existing metrics and loss thumbnails.
+                        Compare preserved V1 metrics and loss thumbnails as historical references.
                     </p>
                 </div>
+            </div>
+            <div className="inspection__empty" role="note">
+                Legacy V1 configurations cannot be restored or executed in the live V2 arena.
             </div>
             <div className="run-arena__selectors">
                 <label>
@@ -491,53 +265,15 @@ function SideBySideModelArena({
                     </select>
                 </label>
             </div>
-            <div className="run-arena__comparison" role="group" aria-label="Live arena controls">
-                <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => {
-                        if (canStartLiveArena) void onInitializeArena?.(modelA, modelB);
-                    }}
-                    disabled={!canStartLiveArena}
-                    aria-label="Start live arena with selected saved runs"
-                    aria-describedby={selectedRecordsAreScalar ? undefined : liveArenaNoteId}
-                >
-                    Start live arena
-                </button>
-                <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => void onStepArena?.()}
-                    disabled={!onStepArena || !arenaSummaries}
-                    aria-label="Step live arena once"
-                >
-                    Step live arena
-                </button>
-            </div>
-            {!selectedRecordsAreScalar && (
-                <div id={liveArenaNoteId} className="inspection__empty" role="status" style={{ marginTop: 8 }}>
-                    Live arena supports saved scalar runs only; restore this multiclass run to train it.
-                </div>
-            )}
-            {arenaSummaries && (
-                <div className="run-arena__models" role="group" aria-label="Live arena scalar summaries">
-                    {arenaSummaries.map((summary) => (
-                        <LiveArenaSummary key={summary.side} summary={summary} />
-                    ))}
-                    <span className="sr-only">
-                        Live arena accuracy {formatPercent(arenaSummaries[0]?.testAccuracy)} / {formatPercent(arenaSummaries[1]?.testAccuracy)}
-                    </span>
-                </div>
-            )}
             <div className="run-arena__models">
                 <ArenaModelPane label="Model A" record={modelA} />
                 <ArenaModelPane label="Model B" record={modelB} />
             </div>
-            <div className="run-arena__comparison" role="group" aria-label="Arena comparison summary">
-                <span>{formatArenaLossComparison(modelA, modelB)}</span>
-                <span>{formatArenaGapComparison(modelA, modelB)}</span>
-                <span>{formatArenaStepComparison(modelA, modelB)}</span>
-                <span>{formatNextAdjustment(modelA, modelB)}</span>
+            <div className="run-arena__comparison" role="group" aria-label="Legacy comparison summary">
+                <span>
+                    Not directly comparable: V1 records do not contain the V2 identities and
+                    metric provenance required to name a winner or recommend an adjustment.
+                </span>
             </div>
             <ArchitectureComparison modelA={modelA} modelB={modelB} />
         </section>
@@ -548,6 +284,11 @@ function createMarkdownReport(record: ExperimentRunRecordV1): string {
     const gap = generalizationGap(record);
     const lines = [
         `# ${record.title ?? 'Neural Network Playground Run'}`,
+        '',
+        '## Compatibility',
+        '',
+        '- Legacy V1 record: read-only and incompatible with the V2 experiment runtime.',
+        '- This report is a historical reference and cannot be restored or executed as a V2 experiment.',
         '',
         '## Summary',
         '',
@@ -578,7 +319,7 @@ function createMarkdownReport(record: ExperimentRunRecordV1): string {
         `- Samples: ${record.config.data.numSamples}`,
         `- Noise: ${record.config.data.noise}`,
         `- Train/test ratio: ${record.config.data.trainTestRatio}`,
-        `- Saved parameters: ${record.network ? 'yes' : 'no'}`,
+        `- Legacy parameter snapshot present: ${record.network ? 'yes' : 'no'} (not executable in V2)`,
         '',
         '## History',
         '',
@@ -607,140 +348,55 @@ function downloadMarkdown(record: ExperimentRunRecordV1): void {
     URL.revokeObjectURL(url);
 }
 
-export const RunHistoryPanel = memo(function RunHistoryPanel({
-    onRestore,
-    onInitializeArena,
-    onStepArena,
-}: RunHistoryPanelProps) {
+export const RunHistoryPanel = memo(function RunHistoryPanel(_props: RunHistoryPanelProps) {
     const records = useExperimentMemoryStore((s) => s.records);
-    const saveRecord = useExperimentMemoryStore((s) => s.saveRecord);
-    const renameRecord = useExperimentMemoryStore((s) => s.renameRecord);
-    const removeRecord = useExperimentMemoryStore((s) => s.removeRecord);
-    const snapshot = useTrainingStore((s) => s.snapshot);
-    const status = useTrainingStore((s) => s.status);
-    const pauseReason = useTrainingStore((s) => s.pauseReason);
-    const historyVersion = useTrainingStore((s) => s.historyVersion);
-    const data = usePlaygroundStore((s) => s.data);
-    const network = usePlaygroundStore((s) => s.network);
-    const trainingConfig = usePlaygroundStore((s) => s.training);
-    const features = usePlaygroundStore((s) => s.features);
-    const ui = usePlaygroundStore((s) => s.ui);
-    const [draftTitles, setDraftTitles] = useState<Record<string, string>>({});
-    const currentConfig = useMemo(() => ({
-        data,
-        network,
-        training: trainingConfig,
-        features,
-        ui,
-    }), [data, network, trainingConfig, features, ui]);
-    const currentHistory = useMemo(() => {
-        void historyVersion;
-        return historyArraysToPoints(readHistory());
-    }, [historyVersion]);
-    const currentRecord = useMemo(() => captureExperimentRun({
-        config: currentConfig,
-        snapshot,
-        history: currentHistory,
-        status,
-        pauseReason,
-        network: null,
-        now: () => new Date('2026-01-01T00:00:00.000Z'),
-        id: () => 'current-run',
-    }), [currentConfig, currentHistory, pauseReason, snapshot, status]);
-
-    const handleSave = useCallback(() => {
-        const record = captureExperimentRun({
-            config: usePlaygroundStore.getState().getConfig(),
-            snapshot: useTrainingStore.getState().snapshot,
-            history: historyArraysToPoints(readHistory()),
-            status: useTrainingStore.getState().status,
-            pauseReason: useTrainingStore.getState().pauseReason,
-            network: createSerializedNetworkFromFrameBuffer(usePlaygroundStore.getState().network),
-        });
-        if (record) saveRecord(record);
-    }, [saveRecord]);
-
-    const handleRestore = useCallback((record: ExperimentRunRecordV1) => {
-        usePlaygroundStore.getState().applyPreset({
-            id: `history-${record.id}`,
-            title: record.title ?? 'Saved run',
-            description: 'Restored config from local run history.',
-            config: record.config,
-        });
-        onRestore();
-    }, [onRestore]);
-
-    const handleTitleChange = useCallback((id: string, title: string) => {
-        setDraftTitles((drafts) => ({ ...drafts, [id]: title }));
-    }, []);
-
-    const handleTitleApply = useCallback((record: ExperimentRunRecordV1) => {
-        renameRecord(record.id, draftTitles[record.id] ?? getRecordLabel(record));
-    }, [draftTitles, renameRecord]);
 
     return (
         <div className="run-history-panel">
             <div className="inspection__empty" role="note" style={{ marginBottom: 8 }}>
-                History is the saved-run record surface.
+                <span>History is the saved-run record surface.</span>{' '}
+                <span>
+                    Existing V1 records are preserved as read-only references and are incompatible
+                    with the V2 experiment runtime.
+                </span>
             </div>
-            <Tooltip content="Save the current config, final metrics, bounded loss history, and current parameters when available." block>
+            <Tooltip content="V2 run saving is temporarily unavailable until provenance-aware records land. Existing legacy V1 records remain untouched below." block>
                 <button
                     type="button"
                     className="btn btn--ghost btn--sm"
                     style={{ width: '100%' }}
-                    onClick={handleSave}
-                    disabled={!snapshot}
+                    disabled
+                    aria-describedby="run-history-v2-save-unavailable"
                 >
                     Save current run
                 </button>
             </Tooltip>
-            <div className="inspection__empty" role="status" style={{ marginTop: 8 }}>
-                {snapshot
-                    ? `${status} at step ${snapshot.step.toLocaleString()}`
-                    : 'Run or step the model before saving a run.'}
+            <div
+                id="run-history-v2-save-unavailable"
+                className="inspection__empty"
+                role="status"
+                style={{ marginTop: 8 }}
+            >
+                V2 run saving is unavailable until provenance-aware records replace the legacy format.
             </div>
-            <ComparisonLoop
-                currentRecord={currentRecord}
-                records={records}
-                onRestoreRecord={handleRestore}
-            />
 
             {records.length === 0 ? (
                 <div className="inspection__empty" style={{ marginTop: 12 }}>No saved runs</div>
             ) : (
                 <>
-                    <SideBySideModelArena
-                        records={records}
-                        onInitializeArena={onInitializeArena}
-                        onStepArena={onStepArena}
-                    />
+                    <SideBySideModelArena records={records} />
                     <div className="inspection__layers" style={{ marginTop: 12 }}>
                         {records.map((record, index) => {
                             const baseline = records[index + 1];
                             return (
                                 <article key={record.id} className="inspection__layer" aria-label={getRecordLabel(record)}>
                                     <div className="inspection__layer-name">{record.title ?? 'Saved run'}</div>
-                                    <div className="run-record-title-editor">
-                                        <label>
-                                            <span>Title</span>
-                                            <input
-                                                aria-label={`Title for ${getRecordLabel(record)}`}
-                                                value={draftTitles[record.id] ?? getRecordLabel(record)}
-                                                onChange={(event) => handleTitleChange(record.id, event.currentTarget.value)}
-                                            />
-                                        </label>
-                                        <button
-                                            type="button"
-                                            className="btn btn--ghost btn--sm"
-                                            onClick={() => handleTitleApply(record)}
-                                            aria-label={`Update title for ${getRecordLabel(record)}`}
-                                        >
-                                            Update title
-                                        </button>
-                                    </div>
                                     <div className="inspection__empty" role="note" style={{ marginTop: 6 }}>
-                                        <strong>Saved run reference</strong>
-                                        <span>Restore config to make this saved run the current recipe.</span>
+                                        <strong>Legacy V1 record</strong>
+                                        <span>
+                                            Read-only and incompatible with the V2 experiment runtime.
+                                            Export is available; restore and live execution are unavailable.
+                                        </span>
                                     </div>
                                     <div className="inspection__stat-row">
                                         <span className="inspection__stat-label">step</span>
@@ -762,34 +418,13 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({
                                             style={{ marginTop: 8 }}
                                         >
                                             <div className="inspection__stat-label">Compared with {getRecordLabel(baseline)}</div>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                                                <span className="inspection__stat-value">
-                                                    Train loss {formatSignedMetric(record.summary.trainLoss - baseline.summary.trainLoss)}
-                                                </span>
-                                                <span className="inspection__stat-value">
-                                                    Test loss {formatSignedMetric(record.summary.testLoss - baseline.summary.testLoss)}
-                                                </span>
-                                                <span className="inspection__stat-value">
-                                                    Gap {formatSignedMetric(generalizationGap(record) - generalizationGap(baseline))}
-                                                </span>
-                                                <span className="inspection__stat-value">
-                                                    Steps {formatSignedInteger(record.summary.step - baseline.summary.step)}
-                                                </span>
-                                            </div>
                                             <div className="inspection__stat-value" style={{ marginTop: 6 }}>
-                                                {formatNextAdjustment(record, baseline)}
+                                                Not directly comparable: legacy V1 records lack V2 identity and
+                                                metric-provenance evidence.
                                             </div>
                                         </div>
                                     )}
                                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                                        <button
-                                            type="button"
-                                            className="btn btn--ghost btn--sm"
-                                            onClick={() => handleRestore(record)}
-                                            aria-label={`Restore config for ${record.title ?? record.id}`}
-                                        >
-                                            Restore config
-                                        </button>
                                         <button
                                             type="button"
                                             className="btn btn--ghost btn--sm"
@@ -798,14 +433,6 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({
                                         >
                                             Export report
                                         </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn--ghost btn--sm"
-                                            onClick={() => removeRecord(record.id)}
-                                            aria-label={`Delete ${record.title ?? record.id}`}
-                                        >
-                                            Delete
-                                        </button>
                                     </div>
                                 </article>
                             );
@@ -813,7 +440,6 @@ export const RunHistoryPanel = memo(function RunHistoryPanel({
                     </div>
                 </>
             )}
-            {pauseReason && <span className="sr-only">Last pause reason: {pauseReason}</span>}
         </div>
     );
 });

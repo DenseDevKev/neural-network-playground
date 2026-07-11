@@ -6,8 +6,7 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useLayoutStore } from './store/useLayoutStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
-import { useTraining, type LiveArenaModelInput } from './hooks/useTraining.ts';
-import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
+import { useTraining } from './hooks/useTraining.ts';
 import { Header } from './components/layout/Header.tsx';
 import { Panel } from './components/common/Panel.tsx';
 import { BuildRunShell } from './components/layout/BuildRunShell.tsx';
@@ -38,16 +37,6 @@ import { deriveVisualizationDemand } from './components/layout/deriveVisualizati
 
 const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
 type SurfaceId = 'presets' | 'lessons' | 'history' | 'more';
-
-function createLiveArenaModel(record: ExperimentRunRecordV1): LiveArenaModelInput {
-    return {
-        label: record.title ?? record.id,
-        network: record.config.network,
-        training: record.config.training,
-        data: record.config.data,
-        features: record.config.features,
-    };
-}
 
 function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
     if (!(target instanceof Element)) return false;
@@ -105,10 +94,6 @@ export default function App() {
     useEffect(() => { statusRef.current = status; }, [status]);
 
     const stableReset = useCallback(() => trainingRef.current.reset(), []);
-    const stableInitializeArena = useCallback((modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => (
-        trainingRef.current.initializeArena(createLiveArenaModel(modelA), createLiveArenaModel(modelB))
-    ), []);
-    const stableStepArena = useCallback(() => trainingRef.current.stepArena(1), []);
     const handleLessonHighlightChange = useCallback((target: LessonTarget | null) => {
         setLessonHighlight(target);
     }, []);
@@ -207,13 +192,7 @@ export default function App() {
         confusion: <ConfusionContent />,
         inspection: <InspectContent />,
         code: <CodeContent />,
-        history: (
-            <HistoryContent
-                onRestore={stableReset}
-                onInitializeArena={stableInitializeArena}
-                onStepArena={stableStepArena}
-            />
-        ),
+        history: <HistoryContent />,
     };
 
     const transport = (
@@ -230,13 +209,7 @@ export default function App() {
         </div>
     );
 
-    const historyContent = (
-        <HistoryContent
-            onRestore={stableReset}
-            onInitializeArena={stableInitializeArena}
-            onStepArena={stableStepArena}
-        />
-    );
+    const historyContent = <HistoryContent />;
 
     const moreContent = (
         <div className="forge-drawer-stack">

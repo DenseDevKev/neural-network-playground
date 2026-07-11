@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RunHistoryPanel } from './RunHistoryPanel.tsx';
@@ -14,7 +14,6 @@ import {
 } from '../../worker/frameBuffer.ts';
 import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
 import {
-    type ArenaModelSummary,
     DEFAULT_DATA,
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
@@ -91,35 +90,6 @@ const workerAuthoredMulticlassConfusion = {
     counts: [2, 0, 1, 0, 3, 0, 1, 0, 4],
 } as const;
 
-function makeArenaSummaries(): ArenaModelSummary[] {
-    return [
-        {
-            side: 'A',
-            label: 'Tuned model',
-            status: 'paused',
-            pauseReason: 'manual',
-            step: 181,
-            epoch: 3,
-            trainLoss: 0.24,
-            testLoss: 0.4,
-            trainAccuracy: 0.91,
-            testAccuracy: 0.84,
-        },
-        {
-            side: 'B',
-            label: 'Baseline',
-            status: 'paused',
-            pauseReason: 'manual',
-            step: 101,
-            epoch: 2,
-            trainLoss: 0.38,
-            testLoss: 0.58,
-            trainAccuracy: 0.78,
-            testAccuracy: 0.7,
-        },
-    ];
-}
-
 describe('RunHistoryPanel', () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -142,6 +112,10 @@ describe('RunHistoryPanel', () => {
         resetFrameBuffer();
     });
 
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
     it('renders an empty state when no runs are saved', () => {
         render(<RunHistoryPanel onRestore={vi.fn()} />);
 
@@ -149,7 +123,7 @@ describe('RunHistoryPanel', () => {
         expect(screen.getByText('No saved runs')).toBeInTheDocument();
     });
 
-    it('saves the current run when a snapshot exists', async () => {
+    it('does not create a new legacy V1 record from the current V2 runtime', async () => {
         useTrainingStore.setState({
             snapshot: {
                 step: 5,
@@ -165,15 +139,20 @@ describe('RunHistoryPanel', () => {
                 historyPoint: { step: 5, trainLoss: 0.4, testLoss: 0.5 },
             } as any,
         });
+        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
 
         render(<RunHistoryPanel onRestore={vi.fn()} />);
-        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        const saveButton = screen.getByRole('button', { name: 'Save current run' });
+        expect(saveButton).toBeDisabled();
+        await userEvent.click(saveButton);
 
-        expect(screen.getByText(/circle at step 5/i)).toBeInTheDocument();
-        expect(useExperimentMemoryStore.getState().records).toHaveLength(1);
+        expect(screen.getByText(/v2 run saving is unavailable until provenance-aware records/i))
+            .toBeInTheDocument();
+        expect(useExperimentMemoryStore.getState().records).toHaveLength(0);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
     });
 
-    it('saves an approved multiclass current run without silently dropping it', async () => {
+    it('keeps approved multiclass V2 state out of legacy V1 storage', async () => {
         const multiclassConfig = makeApprovedMulticlassConfig();
         usePlaygroundStore.setState(multiclassConfig);
         useTrainingStore.setState({
@@ -191,16 +170,18 @@ describe('RunHistoryPanel', () => {
                 historyPoint: { step: 7, trainLoss: 0.36, testLoss: 0.44 },
             } as any,
         });
+        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
 
         render(<RunHistoryPanel onRestore={vi.fn()} />);
-        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        const saveButton = screen.getByRole('button', { name: 'Save current run' });
+        expect(saveButton).toBeDisabled();
+        await userEvent.click(saveButton);
 
-        expect(screen.getByText(/three-class-clusters at step 7/i)).toBeInTheDocument();
-        expect(useExperimentMemoryStore.getState().records[0].config.network.outputSize).toBe(3);
-        expect(useExperimentMemoryStore.getState().records[0].config.training.lossType).toBe('categoricalCrossEntropy');
+        expect(useExperimentMemoryStore.getState().records).toHaveLength(0);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
     });
 
-    it('does not save worker-authored multiclass confusion data with a current run', async () => {
+    it('does not create legacy bytes from worker-authored multiclass confusion data', async () => {
         const multiclassConfig = makeApprovedMulticlassConfig();
         usePlaygroundStore.setState(multiclassConfig);
         updateFrameBuffer({ multiclassConfusionMatrix: workerAuthoredMulticlassConfusion });
@@ -223,29 +204,53 @@ describe('RunHistoryPanel', () => {
                 historyPoint: { step: 7, trainLoss: 0.36, testLoss: 0.44 },
             } as any,
         });
+        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
 
         render(<RunHistoryPanel onRestore={vi.fn()} />);
-        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        const saveButton = screen.getByRole('button', { name: 'Save current run' });
+        expect(saveButton).toBeDisabled();
+        await userEvent.click(saveButton);
 
-        const saved = useExperimentMemoryStore.getState().records[0];
-        expect(saved.schemaVersion).toBe(1);
-        expect(saved.summary.testMetrics.multiclassConfusionMatrix).toBeUndefined();
-        expect(JSON.stringify(saved)).not.toContain('multiclassConfusionMatrix');
-        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('multiclassConfusionMatrix');
+        expect(useExperimentMemoryStore.getState().records).toHaveLength(0);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
     });
 
-    it('restores a saved run config and calls reset', async () => {
+    it('keeps V1 saved runs read-only without entering the V2 runtime', () => {
         const onRestore = vi.fn();
+        const onInitializeArena = vi.fn();
+        const onStepArena = vi.fn();
+        const store = usePlaygroundStore.getState();
+        const applyPreset = vi.spyOn(store, 'applyPreset');
+        const applyRecipe = vi.spyOn(store, 'applyRecipe');
+        const replaceDocument = vi.spyOn(store, 'replaceDocument');
+        const priorPrepared = store.prepared;
         act(() => {
             useExperimentMemoryStore.getState().saveRecord(makeRecord());
         });
+        const priorBytes = JSON.stringify(useExperimentMemoryStore.getState().records[0]);
 
-        render(<RunHistoryPanel onRestore={onRestore} />);
-        await userEvent.click(screen.getByRole('button', { name: /restore config for saved xor/i }));
+        render(
+            <RunHistoryPanel
+                onRestore={onRestore}
+                onInitializeArena={onInitializeArena}
+                onStepArena={onStepArena}
+            />,
+        );
 
-        expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
-        expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual([4, 4]);
-        expect(onRestore).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('Legacy V1 record')).toBeInTheDocument();
+        expect(screen.getByText(/read-only and incompatible with the v2 experiment runtime/i))
+            .toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /restore/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /live arena/i })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
+        expect(usePlaygroundStore.getState().prepared).toBe(priorPrepared);
+        expect(JSON.stringify(useExperimentMemoryStore.getState().records[0])).toBe(priorBytes);
+        expect(applyPreset).not.toHaveBeenCalled();
+        expect(applyRecipe).not.toHaveBeenCalled();
+        expect(replaceDocument).not.toHaveBeenCalled();
+        expect(onRestore).not.toHaveBeenCalled();
+        expect(onInitializeArena).not.toHaveBeenCalled();
+        expect(onStepArena).not.toHaveBeenCalled();
     });
 
     it('shows existing-data comparison summaries between saved runs', () => {
@@ -278,16 +283,15 @@ describe('RunHistoryPanel', () => {
 
         expect(screen.getByRole('group', { name: 'Comparison for Tuned model against Baseline' })).toBeInTheDocument();
         expect(screen.getByText('Compared with Baseline')).toBeInTheDocument();
-        expect(screen.getAllByText('Saved run reference')).toHaveLength(2);
-        expect(screen.getAllByText('Restore config to make this saved run the current recipe.')).toHaveLength(2);
-        expect(screen.getByText('Train loss -0.1500')).toBeInTheDocument();
-        expect(screen.getByText('Test loss -0.1800')).toBeInTheDocument();
-        expect(screen.getByText('Gap -0.0300')).toBeInTheDocument();
-        expect(screen.getByText('Steps +80')).toBeInTheDocument();
-        expect(screen.getAllByText('Next adjustment: keep the tuned recipe direction; it improved test loss without widening the gap.')).toHaveLength(2);
+        expect(screen.getAllByText('Legacy V1 record')).toHaveLength(2);
+        expect(screen.getAllByText(/read-only and incompatible with the V2 experiment runtime/i)).toHaveLength(2);
+        expect(screen.getByRole('group', { name: 'Comparison for Tuned model against Baseline' }))
+            .toHaveTextContent(/not directly comparable/i);
+        expect(screen.queryByText('Train loss -0.1500')).not.toBeInTheDocument();
+        expect(screen.queryByText(/next adjustment:/i)).not.toBeInTheDocument();
     });
 
-    it('compares the current run against previous and best saved runs', () => {
+    it('does not fabricate a current V2 versus legacy V1 winner', () => {
         useTrainingStore.setState({
             snapshot: {
                 step: 220,
@@ -329,35 +333,31 @@ describe('RunHistoryPanel', () => {
 
         render(<RunHistoryPanel onRestore={vi.fn()} />);
 
-        const comparisonLoop = screen.getByRole('region', { name: 'Comparison loop' });
-        expect(comparisonLoop).toHaveTextContent('Current vs previous');
-        expect(comparisonLoop).toHaveTextContent('Best saved vs current');
-        expect(comparisonLoop).toHaveTextContent('What changed?');
-        expect(comparisonLoop).toHaveTextContent('Which performed better?');
-        expect(comparisonLoop).toHaveTextContent('What should I try next?');
-        expect(comparisonLoop).toHaveTextContent('Best saved has lower test loss by 0.0300.');
-        expect(screen.getByRole('button', { name: 'Restore best saved run Best saved' })).toBeInTheDocument();
+        expect(screen.queryByRole('region', { name: 'Comparison loop' })).not.toBeInTheDocument();
+        expect(screen.queryByText('Best saved vs current')).not.toBeInTheDocument();
+        expect(screen.queryByText(/which performed better/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(/lower test loss/i)).not.toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Legacy saved-run comparison' }))
+            .toHaveTextContent(/not directly comparable/i);
     });
 
-    it('lets users title saved runs without changing the saved-run contract', async () => {
-        const user = userEvent.setup();
+    it('does not rewrite legacy bytes through title editing', () => {
         act(() => {
             useExperimentMemoryStore.getState().saveRecord(makeRecord());
         });
+        const recordBefore = JSON.stringify(useExperimentMemoryStore.getState().records[0]);
+        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
 
         render(<RunHistoryPanel onRestore={vi.fn()} />);
 
-        const titleInput = screen.getByLabelText('Title for Saved XOR');
-        await user.clear(titleInput);
-        await user.type(titleInput, 'XOR tuned reference');
-        await user.click(screen.getByRole('button', { name: 'Update title for Saved XOR' }));
-
-        expect(useExperimentMemoryStore.getState().records[0].title).toBe('XOR tuned reference');
-        expect(screen.getByText('XOR tuned reference')).toBeInTheDocument();
-        expect(JSON.parse(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '{}').schemaVersion).toBe(1);
+        expect(screen.queryByLabelText('Title for Saved XOR')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Update title for Saved XOR' }))
+            .not.toBeInTheDocument();
+        expect(JSON.stringify(useExperimentMemoryStore.getState().records[0])).toBe(recordBefore);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
     });
 
-    it('renders a side-by-side arena from two saved runs with accessible model regions', async () => {
+    it('renders a read-only side-by-side legacy comparison with accessible model regions', async () => {
         const user = userEvent.setup();
         act(() => {
             useExperimentMemoryStore.getState().saveRecord(makeRecord({
@@ -394,22 +394,19 @@ describe('RunHistoryPanel', () => {
 
         render(<RunHistoryPanel onRestore={vi.fn()} />);
 
-        expect(screen.getByRole('region', { name: 'Side-by-side model arena' })).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Legacy saved-run comparison' })).toBeInTheDocument();
         expect(screen.getByRole('region', { name: 'Model A: Tuned model' })).toBeInTheDocument();
         expect(screen.getByRole('region', { name: 'Model B: Baseline' })).toBeInTheDocument();
-        expect(screen.getByRole('group', { name: 'Arena comparison summary' })).toHaveTextContent(
-            'Model A lower test loss by 0.1800',
-        );
-        expect(screen.getByRole('group', { name: 'Arena comparison summary' })).toHaveTextContent(
-            'Model A trained 80 more steps',
-        );
+        expect(screen.getByRole('group', { name: 'Legacy comparison summary' }))
+            .toHaveTextContent(/not directly comparable/i);
+        expect(screen.getByRole('group', { name: 'Legacy comparison summary' }))
+            .not.toHaveTextContent('lower test loss');
 
         await user.selectOptions(screen.getByLabelText('Model A run'), 'baseline');
 
         expect(screen.getByRole('region', { name: 'Model A: Baseline' })).toBeInTheDocument();
-        expect(screen.getByRole('group', { name: 'Arena comparison summary' })).toHaveTextContent(
-            'Both models have the same test loss.',
-        );
+        expect(screen.getByRole('group', { name: 'Legacy comparison summary' }))
+            .toHaveTextContent(/not directly comparable/i);
     });
 
     it('renders architecture comparison rows for selected saved runs', async () => {
@@ -489,8 +486,7 @@ describe('RunHistoryPanel', () => {
         );
     });
 
-    it('starts and steps the live scalar arena with accessible summaries', async () => {
-        const user = userEvent.setup();
+    it('does not expose live execution for scalar legacy records', () => {
         const onInitializeArena = vi.fn();
         const onStepArena = vi.fn();
         act(() => {
@@ -526,34 +522,14 @@ describe('RunHistoryPanel', () => {
             />,
         );
 
-        await user.click(screen.getByRole('button', { name: 'Start live arena with selected saved runs' }));
-
-        expect(onInitializeArena).toHaveBeenCalledWith(
-            expect.objectContaining({ id: 'tuned' }),
-            expect.objectContaining({ id: 'baseline' }),
-        );
-
-        act(() => {
-            useTrainingStore.setState({
-                arenaSummaries: makeArenaSummaries(),
-                arenaSummariesVersion: 1,
-            });
-        });
-
-        const summaries = screen.getByRole('group', { name: 'Live arena scalar summaries' });
-        expect(summaries).toHaveTextContent('Model A live: Tuned model');
-        expect(summaries).toHaveTextContent('test 0.4000');
-        expect(summaries).toHaveTextContent('Model B live: Baseline');
-        expect(summaries).toHaveTextContent('accuracy 84.0% / 70.0%');
-
-        await user.keyboard('[Tab]');
-        await user.click(screen.getByRole('button', { name: 'Step live arena once' }));
-
-        expect(onStepArena).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('region', { name: 'Legacy saved-run comparison' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /live arena/i })).not.toBeInTheDocument();
+        expect(screen.getByText(/cannot be restored or executed in the live V2 arena/i)).toBeInTheDocument();
+        expect(onInitializeArena).not.toHaveBeenCalled();
+        expect(onStepArena).not.toHaveBeenCalled();
     });
 
-    it('keeps the live arena scalar-only when saved multiclass records are visible', async () => {
-        const user = userEvent.setup();
+    it('keeps multiclass V1 records static and read-only', () => {
         const onInitializeArena = vi.fn();
         act(() => {
             useExperimentMemoryStore.getState().saveRecord(makeRecord({
@@ -570,13 +546,9 @@ describe('RunHistoryPanel', () => {
 
         render(<RunHistoryPanel onRestore={vi.fn()} onInitializeArena={onInitializeArena} />);
 
-        const startButton = screen.getByRole('button', { name: 'Start live arena with selected saved runs' });
         expect(screen.getByRole('region', { name: 'Model A: Three class clusters' })).toBeInTheDocument();
-        expect(startButton).toBeDisabled();
-        expect(screen.getByText(/live arena supports saved scalar runs/i)).toBeInTheDocument();
-
-        await user.click(startButton);
-
+        expect(screen.queryByRole('button', { name: /live arena/i })).not.toBeInTheDocument();
+        expect(screen.getByText(/cannot be restored or executed in the live V2 arena/i)).toBeInTheDocument();
         expect(onInitializeArena).not.toHaveBeenCalled();
     });
 
@@ -628,7 +600,9 @@ describe('RunHistoryPanel', () => {
         expect(report).toContain('- Optimizer: sgd');
         expect(report).toContain('- Active features: x, y');
         expect(report).toContain('- Generalization gap: 0.0900');
-        expect(report).toContain('- Saved parameters: no');
+        expect(report).toContain('- Legacy parameter snapshot present: no (not executable in V2)');
+        expect(report).toContain('Legacy V1 record');
+        expect(report).toContain('read-only and incompatible with the V2 experiment runtime');
         expect(click).toHaveBeenCalledTimes(1);
         expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
     });
