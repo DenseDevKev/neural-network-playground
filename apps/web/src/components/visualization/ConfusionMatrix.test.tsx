@@ -156,8 +156,8 @@ describe('ConfusionMatrix', () => {
     render(<ConfusionMatrix />);
 
     expect(screen.getByText('Multiclass Confusion Readout (Test Set)')).toBeInTheDocument();
-    expect(screen.getByText('Pred Class 0')).toBeInTheDocument();
-    expect(screen.getByText('Actual Class 2')).toBeInTheDocument();
+    expect(screen.getAllByText('C0')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('C2')[0]).toBeInTheDocument();
     expect(screen.getByLabelText(/1 test sample .* actual Class 2 predicted Class 0/i)).toHaveTextContent('1');
     expect(screen.getByLabelText(/1 test sample .* actual Class 2 predicted Class 2/i)).toHaveTextContent('1');
     expect(screen.getByLabelText('Actual Class 2 total 2')).toHaveTextContent('2');
@@ -288,7 +288,7 @@ describe('ConfusionMatrix', () => {
     render(<ConfusionMatrix />);
 
     expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
-    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
+    expect(screen.queryByText('C2')).not.toBeInTheDocument();
     expect(screen.queryByText(/latest worker-authored test evaluation/i)).not.toBeInTheDocument();
   });
 
@@ -365,7 +365,7 @@ describe('ConfusionMatrix', () => {
 
     expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
     expect(screen.getByText(/pause training to inspect/i)).toBeInTheDocument();
-    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
+    expect(screen.queryByText('C2')).not.toBeInTheDocument();
   });
 
   it('does not combine frame parameters with a pending config sync', () => {
@@ -401,7 +401,7 @@ describe('ConfusionMatrix', () => {
 
     expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
     expect(screen.getByText(/configuration is still syncing/i)).toBeInTheDocument();
-    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
+    expect(screen.queryByText('C2')).not.toBeInTheDocument();
   });
 
   it('shows a multiclass unavailable state when frame parameters are missing', () => {
@@ -420,7 +420,7 @@ describe('ConfusionMatrix', () => {
 
     expect(screen.getByText('Multiclass readout unavailable')).toBeInTheDocument();
     expect(screen.getByText(/current network parameters are still loading/i)).toBeInTheDocument();
-    expect(screen.queryByText('Pred Class 2')).not.toBeInTheDocument();
+    expect(screen.queryByText('C2')).not.toBeInTheDocument();
   });
 
   it('should not render a stale binary matrix for non-binary test labels', () => {

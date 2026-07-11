@@ -182,6 +182,27 @@ describe('Tooltip', () => {
   });
 
   describe('Hover Delay Timing', () => {
+    it('starts performance timing after the intentional hover delay', () => {
+      const mark = vi.spyOn(performance, 'mark');
+
+      render(
+        <Tooltip content="Test tooltip" delay={500}>
+          <button>Hover me</button>
+        </Tooltip>
+      );
+
+      const button = screen.getByRole('button', { name: 'Hover me' });
+      fireEvent.mouseEnter(button.parentElement!);
+
+      expect(mark).not.toHaveBeenCalled();
+
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+
+      expect(mark).toHaveBeenCalledTimes(2);
+    });
+
     it('should not show tooltip immediately on hover', () => {
       render(
         <Tooltip content="Test tooltip" delay={500}>

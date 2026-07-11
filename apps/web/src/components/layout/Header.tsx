@@ -46,7 +46,7 @@ export const Header = memo(function Header({ training, openSurface, onToggleSurf
     const epoch = snapshot?.epoch ?? 0;
     const trainLoss = (snapshot?.trainLoss ?? 0).toFixed(4);
     const testLoss = (snapshot?.testLoss ?? 0).toFixed(4);
-    const accuracy = snapshot?.trainMetrics?.accuracy;
+    const accuracy = snapshot?.testMetrics?.accuracy;
     const accStr = accuracy != null ? `${(accuracy * 100).toFixed(1)}%` : '—';
 
     const flashEpoch = useFlash(String(epoch));

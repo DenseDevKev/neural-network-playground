@@ -160,6 +160,41 @@ describe('ExperimentStateContext', () => {
         expect(screen.getByText('test 0.3100')).toBeInTheDocument();
     });
 
+    it('does not describe cached test metrics as live while training is running', () => {
+        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
+        useLayoutStore.setState({
+            view: 'run',
+            activeEvidenceView: 'confusion',
+            phase: 'run',
+            activeTabRight: 'confusion',
+        });
+        useTrainingStore.setState({
+            status: 'running',
+            testMetricsStale: true,
+            snapshot: {
+                step: 128,
+                epoch: 4,
+                trainLoss: 0.22,
+                testLoss: 0.31,
+                trainMetrics: { loss: 0.22, accuracy: 0.9 },
+                testMetrics: { loss: 0.31, accuracy: 0.8 },
+            } as any,
+        });
+
+        render(
+            <>
+                <EvidenceContextLine view="Confusion" />
+                <DiagnosticCockpitStrip />
+            </>,
+        );
+
+        expect(screen.getAllByText('Stale')).toHaveLength(2);
+        expect(screen.getByText('Confusion evidence uses cached test metrics from snapshot step 128.')).toBeInTheDocument();
+        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+            'Topology is live; Confusion evidence uses cached metrics from snapshot step 128.',
+        );
+    });
+
     it('labels mixed draft and snapshot state in the diagnostic cockpit', () => {
         useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
         useTrainingStore.setState({ snapshot: { step: 24, epoch: 1, trainLoss: 0.4, testLoss: 0.5 } as any });

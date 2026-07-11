@@ -301,6 +301,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                             <label htmlFor="activation-histogram-layer">Histogram layer</label>
                             <select
                                 id="activation-histogram-layer"
+                                className="select"
                                 value={selectedHistogramIndex}
                                 onChange={(event) => {
                                     const next = Number(event.currentTarget.value);
@@ -314,6 +315,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                                 ))}
                             </select>
                         </div>
+
                         <div
                             className="inspection__histogram"
                             role="img"
@@ -348,6 +350,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                     <label htmlFor="trace-source">Sample</label>
                     <select
                         id="trace-source"
+                        className="select"
                         value={traceSource}
                         onChange={(event) => {
                             setTraceSource(event.currentTarget.value as PredictionTraceSampleSource);
@@ -366,6 +369,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                             <label htmlFor="trace-x">x</label>
                             <input
                                 id="trace-x"
+                                className="input"
                                 type="number"
                                 step="0.1"
                                 value={customX}
@@ -376,6 +380,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                             <label htmlFor="trace-y">y</label>
                             <input
                                 id="trace-y"
+                                className="input"
                                 type="number"
                                 step="0.1"
                                 value={customY}
@@ -388,6 +393,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                         <label htmlFor="trace-index">Index</label>
                         <input
                             id="trace-index"
+                            className="input"
                             type="number"
                             min={0}
                             max={Math.max(0, selectedPoints.length - 1)}
@@ -399,6 +405,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                         />
                     </div>
                 )}
+
                 {!canTrace ? (
                     <div className="inspection__empty">
                         No {traceSource === 'test' ? 'test' : 'training'} samples are available yet.
@@ -433,13 +440,25 @@ export const InspectionPanel = memo(function InspectionPanel() {
                                 ) : null}
                             </div>
                             {traceResult.trace.layers.map((layer) => (
-                                <div key={layer.layerIndex} className="inspection__stat-row">
+                                <div key={layer.layerIndex} className="inspection__stat-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
                                     <span className="inspection__stat-label">Layer {layer.layerIndex + 1}</span>
-                                    <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
+                                    <div style={{
+                                        width: '100%',
+                                        background: 'rgba(0,0,0,0.2)',
+                                        padding: '4px 6px',
+                                        borderRadius: 4,
+                                        fontFamily: 'var(--font-mono)',
+                                        fontSize: 9,
+                                        color: 'var(--text-secondary)',
+                                        overflowX: 'auto',
+                                        whiteSpace: 'nowrap',
+                                        border: '1px solid rgba(255,255,255,0.05)',
+                                    }}>
                                         {layer.activations.map((value) => value.toFixed(3)).join(', ')}
-                                    </span>
+                                    </div>
                                 </div>
                             ))}
+
                         </div>
                     ) : null}
                 </div>

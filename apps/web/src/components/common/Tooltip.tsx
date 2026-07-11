@@ -86,13 +86,13 @@ export function Tooltip({
   }, [placement]);
 
   const show = useCallback(() => {
-    if (import.meta.env.DEV && typeof performance !== 'undefined') {
-      const measurementId = `tooltip-show:${generatedId}:${performance.now()}`;
-      measurementIdRef.current = measurementId;
-      performance.mark(`${measurementId}:start`);
-    }
-
     timeoutRef.current = window.setTimeout(() => {
+      if (import.meta.env.DEV && typeof performance !== 'undefined') {
+        const measurementId = `tooltip-show:${generatedId}:${performance.now()}`;
+        measurementIdRef.current = measurementId;
+        performance.mark(`${measurementId}:start`);
+      }
+
       updateTooltip();
 
       if (import.meta.env.DEV && typeof performance !== 'undefined' && measurementIdRef.current) {

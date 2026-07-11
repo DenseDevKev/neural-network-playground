@@ -546,6 +546,11 @@ describe('training worker multiclass target encoding', () => {
         expect(snapshot.outputGrid).toHaveLength(0);
         expect(snapshot.neuronGrids).toBeUndefined();
         expect(snapshot.testMetrics.confusionMatrix).toBeUndefined();
+        expect(snapshot.multiclassBoundary).toEqual(expect.objectContaining({
+            gridSize: 40,
+        }));
+        expect(snapshot.multiclassBoundary?.classGrid).toHaveLength(40 * 40);
+        expect(snapshot.multiclassBoundary?.confidenceGrid).toHaveLength(40 * 40);
     });
 
     it('streams worker-authored multiclass confusion only for fresh demanded approved tuple snapshots', async () => {
@@ -1013,12 +1018,17 @@ describe('training worker lifecycle and demand cadence', () => {
             { ...DEFAULT_FEATURES },
         );
 
-        expect(workerApi.step(3).step).toBe(3);
+        expect(init.snapshot.testMetricsStale).toBe(false);
+
+        const stepped = workerApi.step(3);
+        expect(stepped.step).toBe(3);
+        expect(stepped.testMetricsStale).toBe(true);
 
         const reset = workerApi.reset();
         expect(reset.runId).toBeGreaterThan(init.runId);
         expect(reset.snapshot.step).toBe(0);
         expect(reset.snapshot.epoch).toBe(0);
+        expect(reset.snapshot.testMetricsStale).toBe(false);
     });
 
     it('honors decision-boundary cadence without recomputing every snapshot', () => {

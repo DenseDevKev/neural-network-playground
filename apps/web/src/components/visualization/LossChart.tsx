@@ -20,7 +20,6 @@ import {
     type HistoryArrays,
 } from '../../store/historyBuffer.ts';
 
-const CHART_W = 400;
 const CHART_H = 140;
 const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
 
@@ -46,10 +45,11 @@ function drawChart(
     hist: HistoryArrays,
     tab: ChartTab,
     yMax: number,
+    w: number,
+    h: number,
     diagnostics?: LossDiagnostics | null,
 ) {
-    const w = CHART_W;
-    const h = CHART_H;
+
 
     // Clear
     ctx.fillStyle = '#1c2030';
@@ -366,6 +366,7 @@ function drawLegend(
 // ── Component ────────────────────────────────────────────────────────────────
 
 export const LossChart = memo(function LossChart() {
+    const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     // Subscribe to the scalar version counter — never to the history array
     // itself — so the LossChart is the only thing that re-renders per frame.
@@ -373,6 +374,31 @@ export const LossChart = memo(function LossChart() {
     const problemType = usePlaygroundStore((s) => s.data.problemType);
     const [tab, setTab] = useState<ChartTab>('loss');
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+    const [chartWidth, setChartWidth] = useState(320);
+
+    // Observe container size changes
+    useEffect(() => {
+        const container = containerRef.current;
+        const ResizeObserverClass = typeof window !== 'undefined' ? window.ResizeObserver : undefined;
+        if (!container || !ResizeObserverClass) return;
+
+        const observer = new ResizeObserverClass((entries) => {
+            for (const entry of entries) {
+                const width = Math.round(entry.contentRect.width);
+                if (width > 0) {
+                    setChartWidth(width);
+                }
+            }
+        });
+
+        observer.observe(container);
+        const initialWidth = container.clientWidth;
+        if (initialWidth > 0) {
+            setChartWidth(initialWidth);
+        }
+
+        return () => observer.disconnect();
+    }, []);
 
     // Cached state that lets the next render reuse the previous paint.
     const lastYMaxRef = useRef(0);
@@ -396,8 +422,8 @@ export const LossChart = memo(function LossChart() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         const dpr = window.devicePixelRatio || 1;
-        if (canvas.width !== CHART_W * dpr || canvas.height !== CHART_H * dpr) {
-            canvas.width = CHART_W * dpr;
+        if (canvas.width !== chartWidth * dpr || canvas.height !== CHART_H * dpr) {
+            canvas.width = chartWidth * dpr;
             canvas.height = CHART_H * dpr;
         }
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -424,15 +450,15 @@ export const LossChart = memo(function LossChart() {
         lastCountRef.current = nextHist.count;
         lastCompactionRef.current = compactionNow;
 
-        drawChart(ctx, nextHist, tab, nextYMax, computeLossDiagnostics(nextHist));
-    }, [historyVersion, tab]);
+        drawChart(ctx, nextHist, tab, nextYMax, chartWidth, CHART_H, computeLossDiagnostics(nextHist));
+    }, [historyVersion, tab, chartWidth]);
 
     const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (hist.count < 2) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
 
-        const plotW = CHART_W - PADDING.left - PADDING.right;
+        const plotW = chartWidth - PADDING.left - PADDING.right;
         const chartX = x - PADDING.left;
 
         const xMax = hist.count - 1;
@@ -448,7 +474,7 @@ export const LossChart = memo(function LossChart() {
 
     let hoverState = null;
     if (hoverIndex !== null && hoverIndex < hist.count) {
-        const plotW = CHART_W - PADDING.left - PADDING.right;
+        const plotW = chartWidth - PADDING.left - PADDING.right;
         const plotH = CHART_H - PADDING.top - PADDING.bottom;
         const xMax = hist.count - 1;
         const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
@@ -489,7 +515,7 @@ export const LossChart = memo(function LossChart() {
 
     if (hist.count === 0) {
         return (
-            <div className="loss-chart">
+            <div className="loss-chart" ref={containerRef}>
                 <EmptyState
                     icon="📉"
                     title="No training history"
@@ -500,7 +526,7 @@ export const LossChart = memo(function LossChart() {
     }
 
     return (
-        <div className="loss-chart">
+        <div className="loss-chart" ref={containerRef}>
             <div className="chart-tabs">
                 <Tooltip content="View train and test loss over time">
                     <button
@@ -523,10 +549,10 @@ export const LossChart = memo(function LossChart() {
                     </Tooltip>
                 )}
             </div>
-            <div style={{ position: 'relative', width: CHART_W, height: CHART_H }}>
+            <div style={{ position: 'relative', width: '100%', height: CHART_H }}>
                 <canvas
                     ref={canvasRef}
-                    style={{ width: CHART_W, height: CHART_H, display: 'block' }}
+                    style={{ width: '100%', height: CHART_H, display: 'block' }}
                     aria-label={tab === 'loss' ? 'Loss over training steps' : 'Accuracy over training steps'}
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
@@ -570,7 +596,7 @@ export const LossChart = memo(function LossChart() {
                             style={{
                                 position: 'absolute',
                                 top: 8,
-                                ...(hoverState.alignRight ? { right: CHART_W - hoverState.x + 8 } : { left: hoverState.x + 8 }),
+                                ...(hoverState.alignRight ? { right: chartWidth - hoverState.x + 8 } : { left: hoverState.x + 8 }),
                                 backgroundColor: '#1c2030',
                                 border: '1px solid rgba(255,255,255,0.1)',
                                 borderRadius: 4,

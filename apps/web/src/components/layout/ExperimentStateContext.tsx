@@ -149,12 +149,12 @@ export const EvidenceContextLine = memo(function EvidenceContextLine({ view }: {
     } else if (drift.hasDrift) {
         stateLabel = 'Drift';
         copy = `${view} evidence belongs to trained snapshot step ${snapshot.step.toLocaleString()}; current recipe has drift.`;
-    } else if (status === 'running') {
-        stateLabel = 'Live';
-        copy = `${view} evidence follows live run step ${snapshot.step.toLocaleString()}.`;
     } else if (testMetricsStale) {
         stateLabel = 'Stale';
         copy = `${view} evidence uses cached test metrics from snapshot step ${snapshot.step.toLocaleString()}.`;
+    } else if (status === 'running') {
+        stateLabel = 'Live';
+        copy = `${view} evidence follows live run step ${snapshot.step.toLocaleString()}.`;
     } else {
         copy = `${view} evidence reflects trained snapshot step ${snapshot.step.toLocaleString()}.`;
     }
@@ -208,15 +208,17 @@ export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
     } else if (pendingConfigSource && snapshot) {
         stateLabel = 'Updating';
         copy = `Topology is syncing ${sourceText(pendingConfigSource)} while ${activeEvidence} evidence still reflects snapshot step ${snapshot.step.toLocaleString()}.`;
-    } else if (status === 'running' && snapshot) {
-        stateLabel = 'Live';
-        copy = `Topology and ${activeEvidence} are reading live run step ${snapshot.step.toLocaleString()}.`;
     } else if (drift.hasDrift && snapshot) {
         stateLabel = 'Mixed';
         copy = `Topology shows the draft recipe while ${activeEvidence} evidence belongs to trained snapshot step ${snapshot.step.toLocaleString()}.`;
     } else if (testMetricsStale && snapshot) {
         stateLabel = 'Stale';
-        copy = `${activeEvidence} evidence uses cached metrics from snapshot step ${snapshot.step.toLocaleString()}.`;
+        copy = status === 'running'
+            ? `Topology is live; ${activeEvidence} evidence uses cached metrics from snapshot step ${snapshot.step.toLocaleString()}.`
+            : `${activeEvidence} evidence uses cached metrics from snapshot step ${snapshot.step.toLocaleString()}.`;
+    } else if (status === 'running' && snapshot) {
+        stateLabel = 'Live';
+        copy = `Topology and ${activeEvidence} are reading live run step ${snapshot.step.toLocaleString()}.`;
     } else if (snapshot) {
         stateLabel = 'Snapshot';
         copy = `Topology and ${activeEvidence} reflect trained snapshot step ${snapshot.step.toLocaleString()}.`;

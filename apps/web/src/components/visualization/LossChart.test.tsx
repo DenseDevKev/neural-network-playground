@@ -34,8 +34,15 @@ function createMockContext() {
 
 describe('LossChart', () => {
     const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    const originalResizeObserver = window.ResizeObserver;
 
     beforeEach(() => {
+        window.ResizeObserver = vi.fn().mockImplementation(() => ({
+            observe: vi.fn(),
+            unobserve: vi.fn(),
+            disconnect: vi.fn(),
+        }));
+
         fillRect.mockClear();
         HTMLCanvasElement.prototype.getContext = vi.fn(
             () => createMockContext() as unknown as CanvasRenderingContext2D,
@@ -110,5 +117,6 @@ describe('LossChart', () => {
 
     afterEach(() => {
         HTMLCanvasElement.prototype.getContext = originalGetContext;
+        window.ResizeObserver = originalResizeObserver;
     });
 });

@@ -1207,6 +1207,24 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         GRID_SIZE,
         { includeParams: !opts.lightweight },
     );
+    // Direct RPC snapshots do not pass through WorkerSnapshotMessage.scalars,
+    // so keep their cadence metadata alongside the metrics themselves.
+    snap.testMetricsStale = state.testMetricsStale;
+    // Streamed snapshots carry this through dedicated transferable fields.
+    // Direct RPC snapshots need the same bounded payload so a paused manual
+    // step can refresh the multiclass Boundary view.
+    if (
+        !opts.lightweight &&
+        state.multiclassBoundaryFresh &&
+        state.multiclassClassGridBuffer &&
+        state.multiclassConfidenceGridBuffer
+    ) {
+        snap.multiclassBoundary = {
+            classGrid: state.multiclassClassGridBuffer,
+            confidenceGrid: state.multiclassConfidenceGridBuffer,
+            gridSize: GRID_SIZE,
+        };
+    }
 
     if (neuronGrids) {
         snap.neuronGrids = neuronGrids;

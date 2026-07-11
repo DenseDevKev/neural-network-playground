@@ -386,10 +386,10 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
                 >
                     <div className="cm-value">{value}</div>
                     <div className="cm-percentage">{cellPercent}</div>
-                    <div className="cm-label">{`C${actual} -> C${predicted}`}</div>
                 </div>
             );
         };
+
 
         return (
             <div className="panel confusion-matrix">
@@ -401,13 +401,14 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
                         <div className="cm-grid cm-grid--multiclass">
                             <div className="cm-header cm-header--empty" />
                             {MULTICLASS_LABELS.map((label) => (
-                                <div className="cm-header" key={`pred-${label}`}>Pred Class {label}</div>
+                                <div className="cm-header" key={`pred-${label}`}>C{label}</div>
                             ))}
                             <div className="cm-header">Total</div>
 
                             {MULTICLASS_LABELS.map((actual) => (
                                 <Fragment key={`actual-${actual}`}>
-                                    <div className="cm-header cm-header--row">Actual Class {actual}</div>
+                                    <div className="cm-header cm-header--row">C{actual}</div>
+
                                     {MULTICLASS_LABELS.map((predicted) => (
                                         <MulticlassCell
                                             actual={actual}
@@ -533,16 +534,17 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
                     <div className="cm-axis-label cm-axis-label--side">Actual</div>
                     <div className="cm-grid">
                         <div className="cm-header cm-header--empty" />
-                        <div className="cm-header">Pred 0</div>
-                        <div className="cm-header">Pred 1</div>
+                        <div className="cm-header">C0</div>
+                        <div className="cm-header">C1</div>
                         <div className="cm-header">Total</div>
 
-                        <div className="cm-header cm-header--row">Actual 0</div>
+                        <div className="cm-header cm-header--row">C0</div>
                         <Cell value={cm.tn} label="TN" isCorrect={true} />
                         <Cell value={cm.fp} label="FP" isCorrect={false} />
                         <div className="cm-total">{actual0Total}</div>
 
-                        <div className="cm-header cm-header--row">Actual 1</div>
+                        <div className="cm-header cm-header--row">C1</div>
+
                         <Cell value={cm.fn} label="FN" isCorrect={false} />
                         <Cell value={cm.tp} label="TP" isCorrect={true} />
                         <div className="cm-total">{actual1Total}</div>

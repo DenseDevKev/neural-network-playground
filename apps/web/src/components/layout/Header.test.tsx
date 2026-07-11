@@ -70,7 +70,10 @@ describe('Header', () => {
                 trainLoss: 0.1234,
                 testLoss: 0.5678,
                 trainMetrics: {
-                    accuracy: 0.91,
+                    accuracy: 0.527,
+                },
+                testMetrics: {
+                    accuracy: 0.493,
                 },
             } as any,
         });
@@ -80,7 +83,8 @@ describe('Header', () => {
         expect(screen.getByText('0012')).toBeInTheDocument();
         expect(screen.getByText('0.1234')).toBeInTheDocument();
         expect(screen.getByText('0.5678')).toBeInTheDocument();
-        expect(screen.getByText('91.0%')).toBeInTheDocument();
+        expect(screen.getByText('49.3%')).toBeInTheDocument();
+        expect(screen.queryByText('52.7%')).not.toBeInTheDocument();
     });
 
     it('uses the primary header play button to start and pause training', async () => {

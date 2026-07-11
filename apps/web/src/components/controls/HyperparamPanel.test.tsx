@@ -42,7 +42,7 @@ describe('HyperparamPanel accessibility', () => {
         expect(screen.getByRole('combobox', { name: 'Regularization' })).toBeInTheDocument();
     });
 
-    it('does not expose multiclass-only loss or output activation controls yet', () => {
+    it('does not expose multiclass-only loss or output activation controls in scalar mode', () => {
         render(<HyperparamPanel />);
 
         const loss = screen.getByRole('combobox', { name: 'Loss' });
@@ -52,6 +52,22 @@ describe('HyperparamPanel accessibility', () => {
         const outputActivation = screen.getByRole('combobox', { name: 'Output activation' });
         expect(outputActivation).not.toHaveTextContent('Softmax');
         expect(within(outputActivation).queryByRole('option', { name: 'Softmax' })).not.toBeInTheDocument();
+    });
+
+    it('shows the locked loss and output activation for the approved multiclass tuple', () => {
+        usePlaygroundStore.getState().setDataset('three-class-clusters');
+
+        render(<HyperparamPanel />);
+
+        const loss = screen.getByRole('combobox', { name: 'Loss' });
+        expect(loss).toHaveValue('categoricalCrossEntropy');
+        expect(within(loss).getByRole('option', { name: 'Categorical Cross-Entropy' })).toBeInTheDocument();
+        expect(loss).toBeDisabled();
+
+        const outputActivation = screen.getByRole('combobox', { name: 'Output activation' });
+        expect(outputActivation).toHaveValue('softmax');
+        expect(within(outputActivation).getByRole('option', { name: 'Softmax' })).toBeInTheDocument();
+        expect(outputActivation).toBeDisabled();
     });
 
     it('keeps public hyperparameter changes on scalar output contracts', async () => {

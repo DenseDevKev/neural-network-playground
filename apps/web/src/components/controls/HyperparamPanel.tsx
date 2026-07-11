@@ -25,7 +25,7 @@ import type {
 } from '@nn-playground/engine';
 import { Tooltip } from '../common/Tooltip.tsx';
 
-const OUTPUT_ACTIVATIONS: ActivationType[] = ['sigmoid', 'linear', 'tanh', 'relu', 'leakyRelu', 'elu', 'swish', 'softplus'];
+const OUTPUT_ACTIVATIONS: ActivationType[] = ['sigmoid', 'linear', 'tanh', 'relu', 'leakyRelu', 'elu', 'swish', 'softplus', 'softmax'];
 const WEIGHT_INITS: Array<{ value: WeightInitType; label: string }> = [
     { value: 'xavier', label: 'Xavier' },
     { value: 'he', label: 'He' },
@@ -80,9 +80,11 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
     const huberDelta = usePlaygroundStore((s) => s.training.huberDelta ?? 1);
     const lrSchedule = usePlaygroundStore((s) => s.training.lrSchedule);
     const weightInit = usePlaygroundStore((s) => s.network.weightInit);
+    const outputSize = usePlaygroundStore((s) => s.network.outputSize);
     const outputActivation = usePlaygroundStore((s) => s.network.outputActivation);
 
     const scheduleType = lrSchedule?.type ?? 'constant';
+    const isMulticlass = outputSize === 3;
     const compatibleOutputActivations = OUTPUT_ACTIVATIONS.filter((act) => isLossCompatible(lossType, act));
     const lrSummary = scheduleSummary(learningRate, lrSchedule);
 
@@ -144,7 +146,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             <span className="control-label">Step interval</span>
                             <Tooltip content="Apply the decay after this many updates">
                                 <input
-                                    className="select"
+                                    className="input"
                                     type="number"
                                     min="1"
                                     step="1"
@@ -189,7 +191,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             <span className="control-label">Cosine steps</span>
                             <Tooltip content="Anneal to the minimum learning rate over this many updates">
                                 <input
-                                    className="select"
+                                    className="input"
                                     type="number"
                                     min="1"
                                     step="1"
@@ -239,14 +241,19 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Loss"
                             value={lossType}
+                            disabled={isMulticlass}
                             onChange={(e) => {
                                 beginTrainingConfigChange();
                                 usePlaygroundStore.getState().setLossType(e.target.value as LossType);
                             }}
                         >
-                            {(Object.keys(LOSS_LABELS) as ScalarLossType[]).map((l) => (
-                                <option key={l} value={l}>{LOSS_LABELS[l]}</option>
-                            ))}
+                            {isMulticlass ? (
+                                <option value="categoricalCrossEntropy">Categorical Cross-Entropy</option>
+                            ) : (
+                                (Object.keys(LOSS_LABELS) as ScalarLossType[]).map((l) => (
+                                    <option key={l} value={l}>{LOSS_LABELS[l]}</option>
+                                ))
+                            )}
                         </select>
                     </Tooltip>
                 </div>
@@ -435,6 +442,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Output activation"
                             value={outputActivation}
+                            disabled={isMulticlass}
                             onChange={(e) => {
                                 beginNetworkConfigChange();
                                 usePlaygroundStore.getState().setOutputActivation(e.target.value as ActivationType);

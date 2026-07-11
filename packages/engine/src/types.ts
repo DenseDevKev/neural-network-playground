@@ -131,6 +131,13 @@ export interface MulticlassConfusionMatrixData {
     counts: MulticlassConfusionMatrixCounts;
 }
 
+/** Bounded 3-class decision-boundary grid for direct worker snapshots. */
+export interface MulticlassBoundaryData {
+    classGrid: Uint8Array;
+    confidenceGrid: Float32Array;
+    gridSize: number;
+}
+
 /** Metrics for a single evaluation pass. */
 export interface Metrics {
     loss: number;
@@ -320,6 +327,8 @@ export interface NetworkSnapshot {
     testLoss: number;
     trainMetrics: Metrics;
     testMetrics: Metrics;
+    /** True when test metrics were reused from a previous full evaluation. */
+    testMetricsStale?: boolean;
 
     /** Flattened prediction grid for decision boundary heatmap. */
     outputGrid: ArrayLike<number>;
@@ -327,6 +336,9 @@ export interface NetworkSnapshot {
 
     /** Per-neuron heatmap grids (optional, on-demand). */
     neuronGrids?: number[][] | Float32Array[] | Float32Array;
+
+    /** Bounded multiclass boundary payload when the worker computed one for this snapshot. */
+    multiclassBoundary?: MulticlassBoundaryData;
 
     /** Per-layer statistics for inspection panel. */
     layerStats?: LayerStats[];

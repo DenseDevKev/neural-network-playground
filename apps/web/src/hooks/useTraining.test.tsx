@@ -439,6 +439,34 @@ describe('useTraining', () => {
         expect('multiclassConfusionMatrixVersion' in useTrainingStore.getState()).toBe(false);
     });
 
+    it('applies a freshly computed multiclass boundary from a direct step snapshot', async () => {
+        const classGrid = new Uint8Array([0, 1, 2, 1]);
+        const confidenceGrid = new Float32Array([0.9, 0.7, 0.8, 0.6]);
+        const directSnapshot: NetworkSnapshot = {
+            ...makeSnapshot(2),
+            multiclassBoundary: {
+                classGrid,
+                confidenceGrid,
+                gridSize: 2,
+            },
+        };
+        bridge.workerApi.step.mockResolvedValue(directSnapshot);
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+
+        await act(async () => {
+            await result.current.step();
+        });
+
+        expect(getFrameBuffer().multiclassClassGrid).toEqual(classGrid);
+        expect(getFrameBuffer().multiclassConfidenceGrid).toEqual(confidenceGrid);
+        expect(getFrameBuffer().multiclassBoundaryLayout).toEqual({
+            gridSize: 2,
+            classCount: 3,
+            classLabels: [0, 1, 2],
+        });
+    });
+
     it('clears stale worker-authored multiclass confusion data when resetting through a direct snapshot', async () => {
         const { result } = renderHook(() => useTraining());
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
@@ -772,6 +800,19 @@ describe('useTraining', () => {
 
         expect(useTrainingStore.getState().status).toBe('idle');
         expect(useTrainingStore.getState().pauseReason).toBeNull();
+    });
+
+    it('clears stale test metrics when reset returns a freshly evaluated snapshot', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        useTrainingStore.getState().setTestMetricsStale(true);
+
+        await act(async () => {
+            await result.current.reset();
+        });
+
+        expect(useTrainingStore.getState().snapshot?.step).toBe(3);
+        expect(useTrainingStore.getState().testMetricsStale).toBe(false);
     });
 
     it('syncs config changes successfully and clears config loading state', async () => {

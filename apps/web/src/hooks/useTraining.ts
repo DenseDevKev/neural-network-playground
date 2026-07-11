@@ -115,7 +115,15 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
         confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
     };
     const currentFrame = getFrameBuffer();
-    if (
+    if (snapshot.multiclassBoundary) {
+        framePatch.multiclassClassGrid = snapshot.multiclassBoundary.classGrid;
+        framePatch.multiclassConfidenceGrid = snapshot.multiclassBoundary.confidenceGrid;
+        framePatch.multiclassBoundaryLayout = {
+            gridSize: snapshot.multiclassBoundary.gridSize,
+            classCount: 3,
+            classLabels: [0, 1, 2],
+        };
+    } else if (
         (
             currentFrame.multiclassClassGrid !== null ||
             currentFrame.multiclassConfidenceGrid !== null ||
@@ -150,6 +158,7 @@ function snapshotForReactState(snapshot: NetworkSnapshot): NetworkSnapshot {
 
 function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot): void {
     ts.setSnapshot(snapshotForReactState(snapshot));
+    ts.setTestMetricsStale(snapshot.testMetricsStale === true);
     ts.resetHistory();
     if (snapshot.historyPoint) ts.addHistoryPoint(snapshot.historyPoint);
     ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
@@ -526,6 +535,7 @@ export function useTraining(): TrainingHook {
             const snap = await api.step(1);
             const ts = useTrainingStore.getState();
             ts.setSnapshot(snapshotForReactState(snap));
+            ts.setTestMetricsStale(snap.testMetricsStale === true);
             ts.setFrameVersions(syncSnapshotToFrameBuffer(snap));
             if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
             await syncCheckpointTimelineToStore();
