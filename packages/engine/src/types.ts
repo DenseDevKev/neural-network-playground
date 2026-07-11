@@ -574,6 +574,40 @@ export interface SerializedNetwork {
     biases: number[][];
 }
 
+/** Version-2 network parameters and optimizer state for in-session restore. */
+export interface NetworkSessionStateV2 {
+    network: {
+        layers: {
+            inputSize: number;
+            outputSize: number;
+            weights: Float64Array;
+            biases: Float64Array;
+        }[];
+    };
+    optimizer:
+        | { kind: 'sgd'; optimizerStep: number }
+        | {
+            kind: 'sgd-momentum';
+            optimizerStep: number;
+            weightVelocity: Float64Array[];
+            biasVelocity: Float64Array[];
+        }
+        | {
+            kind: 'adam';
+            optimizerStep: number;
+            firstWeightMoment: Float64Array[];
+            firstBiasMoment: Float64Array[];
+            secondWeightMoment: Float64Array[];
+            secondBiasMoment: Float64Array[];
+        };
+}
+
+/** Expected architecture and fixed typed-array budget for V2 session validation. */
+export interface ExpectedNetworkSessionShape {
+    layerSizes: readonly number[];
+    maximumBytes: 262_144;
+}
+
 /** Runtime-only checkpoint state for pausable training timelines. */
 export interface NetworkCheckpoint {
     config: NetworkConfig;

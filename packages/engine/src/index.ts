@@ -60,6 +60,7 @@ export {
 export type { FeatureSpec } from './features.js';
 export { initWeights, initBiases } from './initialization.js';
 export { compileExperimentRecipe } from './trainingContract.js';
+export { validateNetworkSessionStateV2 } from './sessionState.js';
 export * from './types.js';
 
 // AS-4 — WebGPU grid predictor (capability-detected fallback to CPU).

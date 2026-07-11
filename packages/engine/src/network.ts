@@ -38,10 +38,12 @@ import type {
     CompiledTrainingContractV2,
     LearningRateScheduleV2,
     OptimizerSpecV2,
+    NetworkSessionStateV2,
     RecentGradientSnapshot,
     LayerStatisticsResult,
     ObjectiveBreakdown,
 } from './types.js';
+import { validateNetworkSessionStateV2 } from './sessionState.js';
 import { categoricalCrossEntropy, categoricalCrossEntropyLogitGradient, getLoss } from './losses.js';
 import {
     applyGradientTransformInto,
@@ -2399,6 +2401,187 @@ export class Network {
 
     getRevision(): number {
         return this.currentRevision;
+    }
+
+    /** Capture detached parameters and optimizer state for an in-session V2 restore. */
+    captureSessionState(expectedOptimizer: OptimizerSpecV2): NetworkSessionStateV2 {
+        let expectedActiveOptimizer: TrainingConfig['optimizer'];
+        switch (expectedOptimizer?.kind) {
+            case 'sgd':
+                expectedActiveOptimizer = 'sgd';
+                break;
+            case 'sgd-momentum':
+                expectedActiveOptimizer = 'sgdMomentum';
+                break;
+            case 'adam':
+                expectedActiveOptimizer = 'adam';
+                break;
+            default:
+                throw new RangeError('expected optimizer kind must be sgd, sgd-momentum, or adam');
+        }
+
+        const hasStoredOptimizerState = (
+            this.activeOptimizer !== null ||
+            this.optimizerStep !== 0 ||
+            this.hasMomentumState ||
+            this.hasAdamState ||
+            this.mWeights.length !== 0 ||
+            this.mBiases.length !== 0 ||
+            this.vWeights.length !== 0 ||
+            this.vBiases.length !== 0
+        );
+        if (hasStoredOptimizerState && this.activeOptimizer !== expectedActiveOptimizer) {
+            throw new RangeError('live optimizer state does not match the expected optimizer kind');
+        }
+
+        const layers = this.weights.map((weights, layerIndex) => ({
+            inputSize: this.layerSizes[layerIndex],
+            outputSize: this.layerSizes[layerIndex + 1],
+            weights,
+            biases: this.biases[layerIndex],
+        }));
+        let optimizer: NetworkSessionStateV2['optimizer'];
+
+        switch (expectedOptimizer.kind) {
+            case 'sgd':
+                if (
+                    this.hasMomentumState ||
+                    this.hasAdamState ||
+                    this.mWeights.length !== 0 ||
+                    this.mBiases.length !== 0 ||
+                    this.vWeights.length !== 0 ||
+                    this.vBiases.length !== 0
+                ) {
+                    throw new RangeError('SGD capture cannot relabel stateful optimizer buffers');
+                }
+                optimizer = { kind: 'sgd', optimizerStep: this.optimizerStep };
+                break;
+            case 'sgd-momentum': {
+                if (this.hasAdamState || this.vWeights.length !== 0 || this.vBiases.length !== 0) {
+                    throw new RangeError('momentum capture cannot relabel Adam optimizer buffers');
+                }
+                if (
+                    (!this.hasMomentumState && (this.mWeights.length !== 0 || this.mBiases.length !== 0)) ||
+                    (this.optimizerStep !== 0 && !this.hasMomentumState)
+                ) {
+                    throw new RangeError('live momentum optimizer state is incomplete');
+                }
+                optimizer = {
+                    kind: 'sgd-momentum',
+                    optimizerStep: this.optimizerStep,
+                    weightVelocity: this.hasMomentumState
+                        ? this.mWeights
+                        : this.weights.map((weights) => new Float64Array(weights.length)),
+                    biasVelocity: this.hasMomentumState
+                        ? this.mBiases
+                        : this.biases.map((biases) => new Float64Array(biases.length)),
+                };
+                break;
+            }
+            case 'adam': {
+                if (
+                    this.hasMomentumState !== this.hasAdamState ||
+                    (!this.hasMomentumState && (this.mWeights.length !== 0 || this.mBiases.length !== 0)) ||
+                    (!this.hasAdamState && (this.vWeights.length !== 0 || this.vBiases.length !== 0)) ||
+                    (this.optimizerStep !== 0 && !this.hasAdamState)
+                ) {
+                    throw new RangeError('live Adam optimizer state is incomplete');
+                }
+                optimizer = {
+                    kind: 'adam',
+                    optimizerStep: this.optimizerStep,
+                    firstWeightMoment: this.hasAdamState
+                        ? this.mWeights
+                        : this.weights.map((weights) => new Float64Array(weights.length)),
+                    firstBiasMoment: this.hasAdamState
+                        ? this.mBiases
+                        : this.biases.map((biases) => new Float64Array(biases.length)),
+                    secondWeightMoment: this.hasAdamState
+                        ? this.vWeights
+                        : this.weights.map((weights) => new Float64Array(weights.length)),
+                    secondBiasMoment: this.hasAdamState
+                        ? this.vBiases
+                        : this.biases.map((biases) => new Float64Array(biases.length)),
+                };
+                break;
+            }
+        }
+
+        return validateNetworkSessionStateV2(
+            { network: { layers }, optimizer },
+            { layerSizes: this.layerSizes, maximumBytes: 262_144 },
+            expectedOptimizer,
+        );
+    }
+
+    /**
+     * Restore detached V2 parameters and optimizer state. The supplied training step is
+     * authoritative; PRNG and future shuffle state are intentionally outside this payload.
+     */
+    restoreSessionState(
+        state: unknown,
+        expectedOptimizer: OptimizerSpecV2,
+        trainingStep: number,
+    ): void {
+        if (!Number.isFinite(trainingStep) || !Number.isInteger(trainingStep) || trainingStep < 0) {
+            throw new RangeError('trainingStep must be a non-negative integer');
+        }
+
+        const validated = validateNetworkSessionStateV2(
+            state,
+            { layerSizes: this.layerSizes, maximumBytes: 262_144 },
+            expectedOptimizer,
+        );
+
+        let nextActiveOptimizer: TrainingConfig['optimizer'];
+        let nextHasMomentumState = false;
+        let nextHasAdamState = false;
+        let nextMWeights: Float64Array[] = [];
+        let nextMBiases: Float64Array[] = [];
+        let nextVWeights: Float64Array[] = [];
+        let nextVBiases: Float64Array[] = [];
+        const nextOptimizerStep = validated.optimizer.optimizerStep;
+
+        switch (validated.optimizer.kind) {
+            case 'sgd':
+                nextActiveOptimizer = 'sgd';
+                break;
+            case 'sgd-momentum':
+                nextActiveOptimizer = 'sgdMomentum';
+                nextHasMomentumState = true;
+                nextMWeights = validated.optimizer.weightVelocity;
+                nextMBiases = validated.optimizer.biasVelocity;
+                break;
+            case 'adam':
+                nextActiveOptimizer = 'adam';
+                nextHasMomentumState = true;
+                nextHasAdamState = true;
+                nextMWeights = validated.optimizer.firstWeightMoment;
+                nextMBiases = validated.optimizer.firstBiasMoment;
+                nextVWeights = validated.optimizer.secondWeightMoment;
+                nextVBiases = validated.optimizer.secondBiasMoment;
+                break;
+        }
+
+        for (let layerIndex = 0; layerIndex < this.weights.length; layerIndex++) {
+            this.weights[layerIndex].set(validated.network.layers[layerIndex].weights);
+            this.biases[layerIndex].set(validated.network.layers[layerIndex].biases);
+            this.weightGrads[layerIndex].fill(0);
+            this.biasGrads[layerIndex].fill(0);
+            this.recentWeightGrads[layerIndex].fill(0);
+            this.recentBiasGrads[layerIndex].fill(0);
+        }
+        this.recentGradientRevision = 0;
+        this.hasMomentumState = nextHasMomentumState;
+        this.hasAdamState = nextHasAdamState;
+        this.mWeights = nextMWeights;
+        this.mBiases = nextMBiases;
+        this.vWeights = nextVWeights;
+        this.vBiases = nextVBiases;
+        this.activeOptimizer = nextActiveOptimizer;
+        this.optimizerStep = nextOptimizerStep;
+        this.currentStep = trainingStep;
+        this.currentRevision++;
     }
 
     createCheckpoint(): NetworkCheckpoint {
