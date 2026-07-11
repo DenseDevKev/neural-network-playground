@@ -78,6 +78,7 @@ import {
     publishSharedSnapshot,
 } from './sharedSnapshot.ts';
 import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
+import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.ts';
 
 describe('workerBridge error paths', () => {
     let receivedMessages: WorkerToMainMessage[];
@@ -176,6 +177,39 @@ describe('workerBridge error paths', () => {
 
         expect(receivedMessages).toHaveLength(1);
         expect(receivedMessages[0].type).toBe('error');
+    });
+
+    it('delivers current V2 evidence immediately and drops stale generations', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await setupStreamChannel();
+        const listener = getRegisteredStreamListener();
+        newRunTo(fixtures.evidence.latestEvaluation!.model.generationId);
+
+        listener({ data: fixtures.evidence } as MessageEvent);
+        expect(receivedMessages).toEqual([fixtures.evidence]);
+
+        newRunTo(fixtures.evidence.latestEvaluation!.model.generationId + 1);
+        listener({ data: fixtures.evidence } as MessageEvent);
+        expect(receivedMessages).toEqual([fixtures.evidence]);
+    });
+
+    it('always surfaces a structured V2 worker error', async () => {
+        await setupStreamChannel();
+        const listener = getRegisteredStreamListener();
+        newRunTo(20);
+        const error = {
+            type: 'worker-error',
+            protocolVersion: 2,
+            requestId: 1,
+            generationId: 1,
+            code: 'runtime-failure',
+            path: '$',
+            message: 'stale structured failure',
+            source: 'runtime',
+        } as const;
+
+        listener({ data: error } as MessageEvent);
+        expect(receivedMessages).toEqual([error]);
     });
 });
 

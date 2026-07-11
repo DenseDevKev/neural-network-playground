@@ -61,20 +61,22 @@ class FirstPreservingBuffer<T> {
         this.recent = Array.from({ length: limit - 1 });
     }
 
-    append(value: T): void {
+    append(value: T): T | undefined {
         if (this.first === undefined) {
             this.first = value;
-            return;
+            return undefined;
         }
         const recentLimit = this.limit - 1;
         if (this.recentCount < recentLimit) {
             const index = (this.recentStart + this.recentCount) % recentLimit;
             this.recent[index] = value;
             this.recentCount++;
-            return;
+            return undefined;
         }
+        const evicted = this.recent[this.recentStart];
         this.recent[this.recentStart] = value;
         this.recentStart = (this.recentStart + 1) % recentLimit;
+        return evicted;
     }
 
     read(): readonly T[] {
@@ -103,7 +105,8 @@ export class RuntimeMetricHistory {
 
     private readonly trends: FirstPreservingBuffer<TrainingTrendPoint>;
     private readonly evaluations: FirstPreservingBuffer<EvaluationPoint>;
-    private readonly evaluationFingerprints = new Map<number, string>();
+    private readonly retainedEvaluationFingerprints = new Map<number, string>();
+    private highestEvaluationId = 0;
     private cachedSnapshot: RuntimeMetricHistorySnapshot | undefined;
 
     constructor(identity: RuntimeMetricHistoryIdentity) {
@@ -147,16 +150,22 @@ export class RuntimeMetricHistory {
     appendEvaluation(evaluation: PairedEvaluation): boolean {
         const parsed = parsePairedEvaluation(evaluation);
         this.assertIdentity(parsed);
-        const fingerprint = canonicalizeJson(parsed);
-        const existing = this.evaluationFingerprints.get(parsed.evaluationId);
-        if (existing !== undefined) {
+        const existing = this.retainedEvaluationFingerprints.get(parsed.evaluationId);
+        if (parsed.evaluationId <= this.highestEvaluationId) {
+            if (existing === undefined) return false;
+            const fingerprint = canonicalizeJson(parsed);
             if (existing === fingerprint) return false;
             throw new TypeError(`conflicting evaluationId ${parsed.evaluationId}`);
         }
 
+        const fingerprint = canonicalizeJson(parsed);
         const point = deepFreeze(parsed) as EvaluationPoint;
-        this.evaluations.append(point);
-        this.evaluationFingerprints.set(point.evaluationId, fingerprint);
+        const evicted = this.evaluations.append(point);
+        if (evicted !== undefined) {
+            this.retainedEvaluationFingerprints.delete(evicted.evaluationId);
+        }
+        this.retainedEvaluationFingerprints.set(point.evaluationId, fingerprint);
+        this.highestEvaluationId = point.evaluationId;
         this.cachedSnapshot = undefined;
         return true;
     }
@@ -173,8 +182,14 @@ export class RuntimeMetricHistory {
     reset(): void {
         this.trends.reset();
         this.evaluations.reset();
-        this.evaluationFingerprints.clear();
+        this.retainedEvaluationFingerprints.clear();
+        this.highestEvaluationId = 0;
         this.cachedSnapshot = undefined;
+    }
+
+    /** Narrow test seam proving replay metadata is bounded by retained slots. */
+    getRetainedEvaluationFingerprintCountForTests(): number {
+        return this.retainedEvaluationFingerprints.size;
     }
 
     private assertIdentity(

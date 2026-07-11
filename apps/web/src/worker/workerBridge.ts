@@ -11,8 +11,12 @@ import type {
     WorkerSharedBuffersMessage,
     MainToWorkerCommand,
     WorkerSnapshotMessage,
+    WorkerEvidenceMessageV2,
 } from '@nn-playground/shared';
-import { isWorkerToMainMessage } from '@nn-playground/shared';
+import {
+    isWorkerToMainMessage,
+    parseWorkerToMainMessageV2,
+} from '@nn-playground/shared';
 import { updateFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
 import {
     attachSharedSnapshotViews,
@@ -152,6 +156,32 @@ function handleWorkerMessage(msg: unknown): void {
         return;
     }
 
+    // Scientific evidence is not visual-frame state: deliver it immediately
+    // so cadence pairs cannot be overwritten by the rAF latest-wins slot.
+    if (msg.type === 'evidence') {
+        const evidence = parseWorkerToMainMessageV2(msg);
+        if (evidence.type !== 'evidence') {
+            emitWorkerError('Received malformed V2 evidence discriminator');
+            return;
+        }
+        const generationId = evidenceGenerationId(evidence);
+        if (generationId !== _currentRunId) return;
+        if (_onSnapshot) _onSnapshot(evidence);
+        return;
+    }
+
+    // Structured errors always surface, even if their originating generation
+    // has already been replaced, matching the legacy error behavior below.
+    if (msg.type === 'worker-error') {
+        const error = parseWorkerToMainMessageV2(msg);
+        if (error.type !== 'worker-error') {
+            emitWorkerError('Received malformed V2 error discriminator');
+            return;
+        }
+        if (_onSnapshot) _onSnapshot(error);
+        return;
+    }
+
     // Error messages always surface — even from stale runs — so async failures
     // after a reset are never silently dropped.
     if (msg.type !== 'error' && msg.runId < _currentRunId) return;
@@ -173,6 +203,14 @@ function handleWorkerMessage(msg: unknown): void {
         // Status/error messages are applied immediately
         if (_onSnapshot) _onSnapshot(msg);
     }
+}
+
+function evidenceGenerationId(message: WorkerEvidenceMessageV2): number {
+    if (message.liveSignal) return message.liveSignal.model.generationId;
+    if (message.latestEvaluation) return message.latestEvaluation.model.generationId;
+    const artifact = message.artifacts && Object.values(message.artifacts)[0];
+    if (!artifact) throw new Error('validated evidence must contain an identity');
+    return artifact.model.generationId;
 }
 
 // ── rAF Render Loop ──

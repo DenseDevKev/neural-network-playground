@@ -86,19 +86,16 @@ describe('RuntimeMetricHistory', () => {
         expect(snapshot.evaluationHistory[0]?.model.step).toBe(50);
     });
 
-    it('allows unseen lower evaluation IDs and rejects conflicting same-ID evidence', () => {
+    it('drops unseen lower IDs and rejects conflicts only while an ID is retained', () => {
         const history = createHistory();
         expect(history.appendEvaluation(evaluationAt(2))).toBe(true);
-        expect(history.appendEvaluation(evaluationAt(1))).toBe(true);
         expect(history.appendEvaluation(evaluationAt(1))).toBe(false);
-        expect(() => history.appendEvaluation(evaluationAt(1, 75))).toThrow(
-            'conflicting evaluationId 1',
+        expect(history.appendEvaluation(evaluationAt(1))).toBe(false);
+        expect(() => history.appendEvaluation(evaluationAt(2, 75))).toThrow(
+            'conflicting evaluationId 2',
         );
 
-        expect(history.read().evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([
-            2,
-            1,
-        ]);
+        expect(history.read().evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([2]);
     });
 
     it('preserves the first and latest points at capacity two after overflow', () => {
@@ -125,9 +122,10 @@ describe('RuntimeMetricHistory', () => {
         const snapshot = history.read();
         expect(snapshot.trendHistory.map(({ model }) => model.step)).toEqual([1, 4, 5]);
         expect(snapshot.evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([1, 4, 5]);
+        expect(history.getRetainedEvaluationFingerprintCountForTests()).toBe(3);
     });
 
-    it('keeps replay and conflict knowledge after an evaluation is evicted', () => {
+    it('drops evicted stale IDs without re-entry and bounds replay metadata', () => {
         const history = createHistory({ evaluationCapacity: 2 });
         history.appendEvaluation(evaluationAt(1));
         history.appendEvaluation(evaluationAt(2));
@@ -138,9 +136,12 @@ describe('RuntimeMetricHistory', () => {
         ]);
 
         expect(history.appendEvaluation(evaluationAt(2))).toBe(false);
-        expect(() => history.appendEvaluation(evaluationAt(2, 125))).toThrow(
-            'conflicting evaluationId 2',
-        );
+        expect(history.appendEvaluation(evaluationAt(2, 125))).toBe(false);
+        expect(history.getRetainedEvaluationFingerprintCountForTests()).toBe(2);
+        expect(history.read().evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([
+            1,
+            3,
+        ]);
     });
 
     it.each([
@@ -192,6 +193,7 @@ describe('RuntimeMetricHistory', () => {
 
         history.reset();
         expect(history.read()).toEqual({ trendHistory: [], evaluationHistory: [] });
+        expect(history.getRetainedEvaluationFingerprintCountForTests()).toBe(0);
         expect(history.appendEvaluation(evaluationAt(1))).toBe(true);
     });
 

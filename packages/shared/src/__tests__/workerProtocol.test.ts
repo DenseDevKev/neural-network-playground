@@ -771,6 +771,7 @@ describe('version 2 worker protocol', () => {
             },
         } as const;
         expect(isWorkerEvidenceMessageV2(message)).toBe(true);
+        expect(isWorkerToMainMessage(message)).toBe(true);
         expect(isWorkerEvidenceMessageV2({
             ...message,
             artifacts: {
@@ -863,6 +864,7 @@ describe('version 2 worker protocol', () => {
             source: 'preparation',
         } as const;
         expect(isWorkerProtocolErrorMessageV2(message)).toBe(true);
+        expect(isWorkerToMainMessage(message)).toBe(true);
         expect(isWorkerProtocolErrorMessageV2({ ...message, source: 'somewhere' })).toBe(false);
         expect(isWorkerProtocolErrorMessageV2({ ...message, detail: 'hidden' })).toBe(false);
         expect(isWorkerProtocolErrorMessageV2({ ...message, message: '' })).toBe(false);

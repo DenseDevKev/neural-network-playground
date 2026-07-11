@@ -10,6 +10,8 @@ import {
     PRNG,
     buildGridInputs,
     generateDataset,
+    generateDatasetV2,
+    getDatasetContract,
     getActiveFeatures,
     transformPoint,
     transformDataset,
@@ -36,6 +38,9 @@ import type {
     BackpropExplanation,
     LossLandscapeProbe,
     LossLandscapeProbeOptions,
+    CompiledExperimentConfig,
+    CompiledTaskContract,
+    MulticlassConfusionMatrixData,
 } from '@nn-playground/engine';
 import {
     GRID_SIZE,
@@ -44,6 +49,9 @@ import {
     normalizeVisualizationDemand,
     structuralEqual,
     normalizeAppConfig,
+    parseWorkerEvidenceMessageV2,
+    parseWorkerProtocolErrorMessageV2,
+    WORKER_PROTOCOL_VERSION,
 } from '@nn-playground/shared';
 import type {
     PauseReason,
@@ -57,6 +65,15 @@ import type {
     ArenaScalarSnapshot,
     ArenaSide,
     ArenaModelSummary,
+    DatasetRevision,
+    EvaluationValues,
+    ForcedEvaluationTriggerV2,
+    LiveTrainingSignal,
+    PairedEvaluation,
+    PreparedExperimentDocumentV2,
+    WorkerEvidenceMessageV2,
+    WorkerProtocolErrorCodeV2,
+    WorkerProtocolErrorSourceV2,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 import {
@@ -80,8 +97,31 @@ import {
     normalizeTrainingSpeed,
     type MiniBatchScratch,
 } from './trainingLoop.ts';
+import { projectPreparedExperiment } from '../store/legacyProjection.ts';
+import { EvaluationRuntime } from './evaluationRuntime.ts';
+import {
+    RuntimeMetricHistory,
+    type RuntimeMetricHistorySnapshot,
+} from './runtimeMetricHistory.ts';
+import {
+    ExperimentRequestGate,
+    ExperimentTransactionError,
+    type ExperimentRequestGateDependencies,
+} from './experimentTransaction.ts';
 
 interface WorkerState {
+    /** Canonical V2 preparation. Null means the worker is on the legacy path. */
+    prepared: PreparedExperimentDocumentV2 | null;
+    /** Exact compiled contract associated with `prepared`. */
+    compiled: CompiledExperimentConfig | null;
+    /** Versioned immutable dataset identity for scientific evidence. */
+    datasetRevision: DatasetRevision | null;
+    /** Owns live EMA and atomic paired evaluation publication. */
+    evaluationRuntime: EvaluationRuntime | null;
+    /** Worker-authoritative V2 metric histories. */
+    metricHistory: RuntimeMetricHistory | null;
+    /** Mutable epoch cell captured by the generation's evaluation callbacks. */
+    v2EpochRef: { value: number } | null;
     network: Network | null;
     networkConfig: NetworkConfig | null;
     trainingConfig: TrainingConfig | null;
@@ -477,6 +517,12 @@ function workerPerfMeasure(name: string, startMark: string): void {
 }
 
 const state: WorkerState = {
+    prepared: null,
+    compiled: null,
+    datasetRevision: null,
+    evaluationRuntime: null,
+    metricHistory: null,
+    v2EpochRef: null,
     network: null,
     networkConfig: null,
     trainingConfig: null,
@@ -610,6 +656,477 @@ function resetCheckpoints(): void {
     state.nextCheckpointId = 1;
     state.checkpointEvictedCount = 0;
     state.restoredCheckpointId = null;
+}
+
+// ── Scientific-trust V2 runtime ────────────────────────────────────────────
+
+export interface WorkerExperimentResultV2 {
+    readonly snapshot: NetworkSnapshot;
+    readonly runId: number;
+    readonly evidence: WorkerEvidenceMessageV2;
+}
+
+interface V2RuntimeBuild {
+    readonly prepared: PreparedExperimentDocumentV2;
+    readonly compiled: CompiledExperimentConfig;
+    readonly projection: ReturnType<typeof projectPreparedExperiment>;
+    readonly network: Network;
+    readonly datasetRevision: DatasetRevision;
+    readonly runtime: EvaluationRuntime;
+    readonly history: RuntimeMetricHistory;
+    readonly epochRef: { value: number };
+    readonly initialEvidence: WorkerEvidenceMessageV2;
+    readonly activeFeatures: FeatureSpec[];
+    readonly trainInputs: number[][];
+    readonly trainTargets: number[][];
+    readonly testInputs: number[][];
+    readonly testTargets: number[][];
+    readonly trainPoints: DataPoint[];
+    readonly testPoints: DataPoint[];
+    readonly gridInputs: number[][];
+    readonly gridInputsFlat: Float32Array;
+    readonly shuffledIndices: number[];
+    readonly shufflePrng: PRNG;
+    readonly batchScratch: MiniBatchScratch;
+    readonly outputGridBuffer: Float32Array;
+    readonly neuronGridsBuffer: Float32Array;
+    readonly multiclassClassGridBuffer: Uint8Array | null;
+    readonly multiclassConfidenceGridBuffer: Float32Array | null;
+    readonly sharedViews: SharedSnapshotViews | null;
+}
+
+let experimentRequestGate = new ExperimentRequestGate();
+let v2MutationSequence = 0;
+let v2AllocationCount = 0;
+export const MAX_MANUAL_V2_STEP_ITERATIONS = 10;
+
+/** Narrow diagnostic seam: forged/stale-boundary tests assert allocation never starts. */
+export function getV2AllocationCountForTests(): number {
+    return v2AllocationCount;
+}
+
+/** Test seam for exercising async preparation/action races. */
+export function setV2PrepareForTests(
+    prepare?: ExperimentRequestGateDependencies['prepare'],
+): void {
+    experimentRequestGate = new ExperimentRequestGate(
+        prepare === undefined ? {} : { prepare },
+    );
+}
+
+function beginV2Mutation(): number {
+    if (v2MutationSequence >= Number.MAX_SAFE_INTEGER) {
+        throw new RangeError('V2 mutation sequence exhausted its safe integer range');
+    }
+    v2MutationSequence++;
+    return v2MutationSequence;
+}
+
+function assertLegacyModelMutationAllowed(apiName: string): void {
+    if (state.prepared !== null) {
+        throw new Error(
+            `Legacy ${apiName} is unavailable while a V2 experiment is active; use the V2 worker API.`,
+        );
+    }
+}
+
+function requireV2Runtime(): {
+    prepared: PreparedExperimentDocumentV2;
+    compiled: CompiledExperimentConfig;
+    network: Network;
+    runtime: EvaluationRuntime;
+    history: RuntimeMetricHistory;
+    epochRef: { value: number };
+} {
+    if (!state.prepared
+        || !state.compiled
+        || !state.network
+        || !state.evaluationRuntime
+        || !state.metricHistory
+        || !state.v2EpochRef) {
+        throw new Error('V2 experiment is not initialized');
+    }
+    return {
+        prepared: state.prepared,
+        compiled: state.compiled,
+        network: state.network,
+        runtime: state.evaluationRuntime,
+        history: state.metricHistory,
+        epochRef: state.v2EpochRef,
+    };
+}
+
+function makeEvidenceV2(
+    liveSignal?: LiveTrainingSignal,
+    latestEvaluation?: PairedEvaluation,
+): WorkerEvidenceMessageV2 {
+    return parseWorkerEvidenceMessageV2({
+        type: 'evidence',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+        ...(liveSignal === undefined ? {} : { liveSignal }),
+        ...(latestEvaluation === undefined ? {} : { latestEvaluation }),
+    });
+}
+
+function postEvidenceV2(evidence: WorkerEvidenceMessageV2): void {
+    try {
+        state.streamPort?.postMessage(evidence);
+    } catch (error) {
+        postRuntimeErrorV2(error, 'runtime');
+    }
+}
+
+function protocolErrorText(error: unknown, fallback: string): string {
+    const text = error instanceof Error && error.message.length > 0
+        ? error.message
+        : fallback;
+    return text.slice(0, 4_096);
+}
+
+function deliverProtocolErrorV2(message: ReturnType<typeof parseWorkerProtocolErrorMessageV2>): void {
+    try {
+        if (state.streamPort) state.streamPort.postMessage(message);
+        else console.error('[worker:v2]', message.message);
+    } catch {
+        // Preserve the original worker failure when the transport itself is
+        // broken; the caller still rejects through Comlink.
+        console.error('[worker:v2]', message.message);
+    }
+}
+
+function postTransactionErrorV2(error: unknown): void {
+    const transaction = error instanceof ExperimentTransactionError ? error : null;
+    const message = parseWorkerProtocolErrorMessageV2({
+        type: 'worker-error',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+        requestId: transaction?.requestId ?? null,
+        // Initialization failures never belong to the still-current model
+        // generation; attaching that ID would misattribute rejected config.
+        generationId: null,
+        code: transaction?.code ?? 'runtime-failure',
+        path: transaction?.path ?? '$',
+        message: protocolErrorText(error, 'Worker experiment transaction failed.'),
+        source: transaction?.code === 'malformed-request'
+            ? 'protocol'
+            : transaction === null
+                ? 'runtime'
+                : 'preparation',
+    });
+    deliverProtocolErrorV2(message);
+}
+
+function postRuntimeErrorV2(
+    error: unknown,
+    source: WorkerProtocolErrorSourceV2,
+    code: WorkerProtocolErrorCodeV2 = 'runtime-failure',
+): void {
+    const message = parseWorkerProtocolErrorMessageV2({
+        type: 'worker-error',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+        requestId: null,
+        generationId: state.prepared && state.runId > 0 ? state.runId : null,
+        code,
+        path: '$',
+        message: protocolErrorText(error, 'Worker V2 runtime failure.'),
+        source,
+    });
+    deliverProtocolErrorV2(message);
+}
+
+function argmax(values: readonly number[]): number {
+    let bestIndex = 0;
+    for (let index = 1; index < values.length; index++) {
+        if (values[index] > values[bestIndex]) bestIndex = index;
+    }
+    return bestIndex;
+}
+
+/** Task metrics only; predictive data loss is supplied by the compiled objective. */
+function withTaskMetricsV2(
+    network: Network,
+    inputs: number[][],
+    targets: number[][],
+    task: CompiledTaskContract,
+    dataLoss: number,
+): EvaluationValues {
+    if (task.kind === 'regression') return { dataLoss };
+
+    if (task.kind === 'binary-classification') {
+        let tp = 0;
+        let tn = 0;
+        let fp = 0;
+        let fn = 0;
+        for (let index = 0; index < inputs.length; index++) {
+            const predicted = network.predict(inputs[index])[0] >= 0.5 ? 1 : 0;
+            const actual = targets[index][0] >= 0.5 ? 1 : 0;
+            if (predicted === 1 && actual === 1) tp++;
+            else if (predicted === 0 && actual === 0) tn++;
+            else if (predicted === 1) fp++;
+            else fn++;
+        }
+        return {
+            dataLoss,
+            accuracy: (tp + tn) / inputs.length,
+            confusionMatrix: { tp, tn, fp, fn },
+        };
+    }
+
+    const counts: [number, number, number, number, number, number, number, number, number] = [
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+    ];
+    let correct = 0;
+    for (let index = 0; index < inputs.length; index++) {
+        const predicted = argmax(network.predict(inputs[index]));
+        const actual = argmax(targets[index]);
+        counts[actual * 3 + predicted]++;
+        if (predicted === actual) correct++;
+    }
+    const confusionMatrix: MulticlassConfusionMatrixData = {
+        classCount: 3,
+        classLabels: [0, 1, 2],
+        counts,
+    };
+    return {
+        dataLoss,
+        accuracy: correct / inputs.length,
+        confusionMatrix,
+    };
+}
+
+function stageV2Runtime(
+    prepared: PreparedExperimentDocumentV2,
+    generationId: number,
+): V2RuntimeBuild {
+    // This counter is intentionally inside the post-validation commit path.
+    v2AllocationCount++;
+    const compiled = prepared.compiled;
+    const split = generateDatasetV2({ ...compiled.data });
+    const projection = projectPreparedExperiment(prepared);
+    const activeFeatures = getActiveFeatures(compiled.features);
+    const trainInputs = transformDataset(split.train, activeFeatures);
+    const trainTargets = encodeTargets(split.train, compiled.task.outputSize);
+    const testInputs = transformDataset(split.test, activeFeatures);
+    const testTargets = encodeTargets(split.test, compiled.task.outputSize);
+    const gridInputs = buildGridInputs(GRID_SIZE, activeFeatures);
+    const network = new Network(compiled.network, compiled.network.seed);
+    const shuffledIndices = Array.from(
+        { length: trainInputs.length },
+        (_, index) => index,
+    );
+    const shufflePrng = new PRNG((compiled.data.seed + 1234) >>> 0);
+    if (shuffledIndices.length > 0) shufflePrng.shuffle(shuffledIndices);
+    const epochRef = { value: 0 };
+    const datasetRevision: DatasetRevision = {
+        generatorVersion: getDatasetContract(compiled.data.dataset).generatorVersion,
+        datasetKey: prepared.identities.datasetKey,
+        trainCount: trainInputs.length,
+        testCount: testInputs.length,
+    };
+
+    let cachedTrainObjective: {
+        generationId: number;
+        revision: number;
+        regularizationPenalty: number;
+    } | null = null;
+    const runtime = new EvaluationRuntime({
+        generationId,
+        dataset: datasetRevision,
+        objectiveKey: prepared.identities.objectiveKey,
+        emaAlpha: state.lossEmaAlpha,
+        getCurrentModel: () => ({
+            generationId,
+            revision: network.getRevision(),
+            step: network.getStep(),
+            epoch: epochRef.value,
+        }),
+        evaluateTrain: (model) => {
+            const objective = network.evaluateObjective(
+                trainInputs,
+                trainTargets,
+                compiled.objective,
+            );
+            cachedTrainObjective = {
+                generationId: model.generationId,
+                revision: model.revision,
+                regularizationPenalty: objective.regularizationPenalty,
+            };
+            return withTaskMetricsV2(
+                network,
+                trainInputs,
+                trainTargets,
+                compiled.task,
+                objective.dataLoss,
+            );
+        },
+        evaluateTest: () => withTaskMetricsV2(
+            network,
+            testInputs,
+            testTargets,
+            compiled.task,
+            network.evaluateDataLoss(testInputs, testTargets, compiled.objective),
+        ),
+        evaluateRegularizationPenalty: (model) => {
+            if (cachedTrainObjective === null
+                || cachedTrainObjective.generationId !== model.generationId
+                || cachedTrainObjective.revision !== model.revision) {
+                throw new Error('train objective penalty is not cached for this model revision');
+            }
+            const penalty = cachedTrainObjective.regularizationPenalty;
+            cachedTrainObjective = null;
+            return penalty;
+        },
+    });
+    const history = new RuntimeMetricHistory({
+        generationId,
+        dataset: datasetRevision,
+        objectiveKey: prepared.identities.objectiveKey,
+    });
+    const initialEvaluation = runtime.forceEvaluation('initial');
+    history.appendEvaluation(initialEvaluation);
+    const initialEvidence = makeEvidenceV2(undefined, initialEvaluation);
+
+    const totalNeurons = network.getTotalNeuronCount();
+    let sharedViews: SharedSnapshotViews | null = null;
+    if (canUseSharedBuffers()) {
+        try {
+            sharedViews = allocSharedSnapshotViews(GRID_SIZE, totalNeurons);
+        } catch (error) {
+            console.warn('[worker] shared-snapshot alloc failed, falling back', error);
+        }
+    }
+
+    return {
+        prepared,
+        compiled,
+        projection,
+        network,
+        datasetRevision,
+        runtime,
+        history,
+        epochRef,
+        initialEvidence,
+        activeFeatures,
+        trainInputs,
+        trainTargets,
+        testInputs,
+        testTargets,
+        trainPoints: split.train,
+        testPoints: split.test,
+        gridInputs,
+        gridInputsFlat: flattenGridInputs(gridInputs),
+        shuffledIndices,
+        shufflePrng,
+        batchScratch: createMiniBatchScratch(compiled.training.batchSize),
+        outputGridBuffer: new Float32Array(GRID_SIZE * GRID_SIZE),
+        neuronGridsBuffer: new Float32Array(totalNeurons * GRID_SIZE * GRID_SIZE),
+        multiclassClassGridBuffer: compiled.task.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE
+            ? new Uint8Array(GRID_SIZE * GRID_SIZE)
+            : null,
+        multiclassConfidenceGridBuffer: compiled.task.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE
+            ? new Float32Array(GRID_SIZE * GRID_SIZE)
+            : null,
+        sharedViews,
+    };
+}
+
+function installStagedV2State(staged: V2RuntimeBuild, generationId: number): void {
+    state.gpuPredictor = null;
+    state.prepared = staged.prepared;
+    state.compiled = staged.compiled;
+    state.datasetRevision = staged.datasetRevision;
+    state.evaluationRuntime = staged.runtime;
+    state.metricHistory = staged.history;
+    state.v2EpochRef = staged.epochRef;
+    state.network = staged.network;
+    state.networkConfig = { ...staged.projection.network };
+    state.trainingConfig = { ...staged.projection.training };
+    state.dataConfig = { ...staged.projection.data };
+    state.features = { ...staged.projection.features };
+    state.activeFeatures = staged.activeFeatures;
+    state.trainInputs = staged.trainInputs;
+    state.trainTargets = staged.trainTargets;
+    state.testInputs = staged.testInputs;
+    state.testTargets = staged.testTargets;
+    state.trainPoints = staged.trainPoints;
+    state.testPoints = staged.testPoints;
+    state.gridInputs = staged.gridInputs;
+    state.gridInputsFlat = staged.gridInputsFlat;
+    state.shuffledIndices = staged.shuffledIndices;
+    state.shufflePrng = staged.shufflePrng;
+    state.batchScratch = staged.batchScratch;
+    state.outputGridBuffer = staged.outputGridBuffer;
+    state.neuronGridsBuffer = staged.neuronGridsBuffer;
+    state.multiclassClassGridBuffer = staged.multiclassClassGridBuffer;
+    state.multiclassConfidenceGridBuffer = staged.multiclassConfidenceGridBuffer;
+    state.sharedViews = staged.sharedViews;
+    state.epoch = 0;
+    state.running = false;
+    state.trainLoopTimer = null;
+    state.runId = generationId;
+    state.snapshotId = 0;
+    state.snapshotsSinceLastTestEval = 0;
+    state.snapshotsSinceLastTrainEval = 0;
+    state.snapshotsSinceLastGrid = 0;
+    state.snapshotsSinceLastActivationHistogram = state.demand.needActivationHistograms
+        ? state.demand.activationHistogramInterval
+        : 0;
+    state.lastTestMetrics = null;
+    state.lastTrainMetrics = null;
+    state.lossEma = null;
+    state.testMetricsStale = false;
+    state.multiclassBoundaryFresh = false;
+    state.gridStale = true;
+    state.gridFreshFromGpu = false;
+    state.stopConditionState = createInitialStopConditionState();
+    state.confusionMatrixVersion++;
+    state.activationHistogramVersion++;
+    resetCheckpoints();
+    resetAck();
+}
+
+function commitV2Runtime(prepared: PreparedExperimentDocumentV2): WorkerExperimentResultV2 {
+    const generationId = state.runId + 1;
+    const staged = stageV2Runtime(prepared, generationId);
+
+    // Build the compatibility snapshot against staged state before making the
+    // generation observable. JavaScript cannot interleave another worker turn
+    // during this synchronous section, and every prior field is restored on
+    // failure, so rejected initialization leaves the active run untouched.
+    const previousState: WorkerState = { ...state };
+    let committedState: WorkerState;
+    let snapshot: NetworkSnapshot;
+    try {
+        installStagedV2State(staged, generationId);
+        snapshot = computeSnapshot();
+        committedState = { ...state };
+    } catch (error) {
+        Object.assign(state, previousState);
+        throw error;
+    }
+
+    Object.assign(state, previousState);
+    stopInternalLoop();
+    if (state.gpuPredictor) {
+        try { state.gpuPredictor.dispose(); } catch { /* best-effort cleanup */ }
+    }
+    Object.assign(state, committedState);
+    try {
+        postSharedBuffersHandshake();
+        postEvidenceV2(staged.initialEvidence);
+    } catch (error) {
+        // The committed generation is still available through this RPC. A
+        // broken stream must not turn a successful atomic commit into a
+        // rejected request with installed state.
+        try { postRuntimeErrorV2(error, 'runtime'); } catch { /* stream unavailable */ }
+    }
+
+    return {
+        snapshot,
+        runId: generationId,
+        evidence: staged.initialEvidence,
+    };
 }
 
 function buildArenaSlot(side: ArenaSide, input: ArenaModelInput): ArenaSlot {
@@ -759,6 +1276,14 @@ self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
 
 function buildDataAndNetwork(): void {
     if (!state.dataConfig || !state.features || !state.networkConfig || !state.trainingConfig) return;
+
+    // Entering through a legacy API intentionally leaves the strict V2 path.
+    state.prepared = null;
+    state.compiled = null;
+    state.datasetRevision = null;
+    state.evaluationRuntime = null;
+    state.metricHistory = null;
+    state.v2EpochRef = null;
 
     state.activeFeatures = getActiveFeatures(state.features);
     const inputSize = countActiveFeatures(state.features);
@@ -1251,7 +1776,9 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         state.snapshotsSinceLastActivationHistogram++;
     }
 
-    captureCheckpointFromSnapshot(snap);
+    // Legacy checkpoint payloads cannot restore strict V2 provenance. Keep
+    // them disabled until the dedicated V2 checkpoint transaction lands.
+    if (!state.prepared) captureCheckpointFromSnapshot(snap);
     workerPerfMeasure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
 }
@@ -1502,6 +2029,7 @@ function trainOneStep(): void {
     );
 
     if (batch.inputs.length > 0) {
+        beginV2Mutation();
         const batchLoss = state.network.trainBatch(batch.inputs, batch.targets, state.trainingConfig);
         // Feed the running EMA of batch loss. This is what the UI line
         // actually follows between full-dataset evaluations.
@@ -1520,6 +2048,79 @@ function trainOneStep(): void {
     if (batchSlot === numBatches - 1) {
         state.epoch++;
     }
+}
+
+function forceAndPublishEvaluationV2(
+    trigger: ForcedEvaluationTriggerV2,
+    publish: boolean = true,
+): PairedEvaluation {
+    const { runtime, history } = requireV2Runtime();
+    beginV2Mutation();
+    const evaluation = runtime.forceEvaluation(trigger);
+    history.appendEvaluation(evaluation);
+    if (publish) postEvidenceV2(makeEvidenceV2(undefined, evaluation));
+    return evaluation;
+}
+
+/**
+ * Advances one strict V2 batch. Every live signal is retained in worker
+ * history, while only cadence pairs are posted immediately. The current live
+ * signal is coalesced later with the produced visual frame.
+ */
+function trainOneStepV2(): {
+    liveSignal: LiveTrainingSignal;
+    cadenceEvaluation?: PairedEvaluation;
+} | undefined {
+    const { compiled, network, runtime, history, epochRef } = requireV2Runtime();
+    const batchSize = compiled.training.batchSize;
+    const sampleCount = state.trainInputs.length;
+    if (sampleCount === 0) return undefined;
+
+    const stepBefore = network.getStep();
+    const batchCount = Math.ceil(sampleCount / batchSize);
+    const batchSlot = stepBefore % batchCount;
+    if (batchSlot === 0 && stepBefore > 0 && state.shufflePrng) {
+        state.shufflePrng.shuffle(state.shuffledIndices);
+    }
+    const start = batchSlot * batchSize;
+    const end = Math.min(start + batchSize, sampleCount);
+    beginV2Mutation();
+    const result = network.trainBatchIndexedV2(
+        state.trainInputs,
+        state.trainTargets,
+        state.shuffledIndices,
+        start,
+        end,
+        compiled.training,
+    );
+
+    if (batchSlot === batchCount - 1) {
+        state.epoch++;
+        epochRef.value = state.epoch;
+    }
+    const liveSignal = runtime.recordBatch({
+        model: {
+            generationId: state.runId,
+            revision: result.revision,
+            step: result.step,
+            epoch: epochRef.value,
+        },
+        batchSize: result.sampleCount,
+        dataLoss: result.objective.dataLoss,
+    });
+    history.appendLiveSignal(liveSignal);
+    state.lossEma = liveSignal.dataLoss;
+    state.gridStale = true;
+
+    const cadenceEvaluation = runtime.takeCadenceEvaluation();
+    if (cadenceEvaluation !== undefined) {
+        history.appendEvaluation(cadenceEvaluation);
+        // Cadence evidence is never coalesced into a latest-wins visual frame.
+        postEvidenceV2(makeEvidenceV2(undefined, cadenceEvaluation));
+    }
+    return cadenceEvaluation === undefined
+        ? { liveSignal }
+        : { liveSignal, cadenceEvaluation };
 }
 
 // ── Internal training loop (worker-driven) ──
@@ -1547,6 +2148,13 @@ async function produceAndPostSnapshot(): Promise<void> {
     // synchronous computeSnapshot below detects the freshly-filled
     // buffers via state.gridFreshFromGpu and skips its CPU branch.
     await runGpuGridIfDue();
+
+    // Live evidence is transport-coalesced to one current signal per visual
+    // frame. Worker history still contains every batch (see trainOneStepV2).
+    const currentLive = state.evaluationRuntime?.latestLiveSignal;
+    if (currentLive !== undefined) {
+        postEvidenceV2(makeEvidenceV2(currentLive));
+    }
 
     const snap = computeSnapshot({ lightweight: true });
     const stopEvaluation = state.running
@@ -1586,7 +2194,8 @@ function trainTick(): void {
             // commands can be processed before more work starts.
             const burst = getTrainingStepsForTick(state.stepsPerFrame);
             for (let i = 0; i < burst && state.running; i++) {
-                trainOneStep();
+                if (state.prepared) trainOneStepV2();
+                else trainOneStep();
             }
 
             workerPerfMeasure('perf:worker:trainStep', 'perf:worker:trainStep:start');
@@ -1602,8 +2211,11 @@ function trainTick(): void {
                 produceAndPostSnapshot().catch((err) => {
                     state.awaitingAck = false;
                     stopInternalLoop();
-                    const msg = err instanceof Error ? err.message : String(err);
-                    postError(`Training snapshot error: ${msg}`);
+                    if (state.prepared) postRuntimeErrorV2(err, 'runtime');
+                    else {
+                        const msg = err instanceof Error ? err.message : String(err);
+                        postError(`Training snapshot error: ${msg}`);
+                    }
                 });
             }
         }
@@ -1613,7 +2225,8 @@ function trainTick(): void {
         }
     } catch (err) {
         stopInternalLoop();
-        postError(`Training error: ${err instanceof Error ? err.message : String(err)}`);
+        if (state.prepared) postRuntimeErrorV2(err, 'training');
+        else postError(`Training error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
@@ -1657,7 +2270,9 @@ function applyDemand(demand: VisualizationDemand): void {
 function handleStreamCommand(cmd: unknown): void {
     try {
         if (!isMainToWorkerCommand(cmd)) {
-            postError('Unknown command: ' + JSON.stringify(cmd));
+            const error = new TypeError('Unknown worker stream command');
+            if (state.prepared) postRuntimeErrorV2(error, 'protocol', 'malformed-request');
+            else postError(error.message + ': ' + JSON.stringify(cmd));
             return;
         }
         switch (cmd.type) {
@@ -1668,9 +2283,13 @@ function handleStreamCommand(cmd: unknown): void {
                 break;
 
             case 'stopTraining':
+            {
+                const wasRunning = state.running;
                 stopInternalLoop();
+                if (state.prepared && wasRunning) forceAndPublishEvaluationV2('pause');
                 postStatus('paused');
                 break;
+            }
 
             case 'updateDemand':
                 applyDemand(normalizeVisualizationDemand(cmd.demand)!);
@@ -1687,7 +2306,8 @@ function handleStreamCommand(cmd: unknown): void {
                 break;
         }
     } catch (err) {
-        postError(`Command handling error: ${err instanceof Error ? err.message : String(err)}`);
+        if (state.prepared) postRuntimeErrorV2(err, 'runtime');
+        else postError(`Command handling error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
@@ -1789,6 +2409,110 @@ function serializeLossLandscapeProbe(probe: LossLandscapeProbe): SerializableLos
 // ── Comlink API ──
 
 export const workerApi = {
+    /** Strict application boundary: validate, re-prepare, verify identities, then commit. */
+    async initializeExperimentV2(request: unknown): Promise<WorkerExperimentResultV2> {
+        try {
+            let actionToken: number | null = null;
+            let acceptedRequestId: number | null = null;
+            const transaction = await experimentRequestGate.run(
+                request,
+                (prepared) => {
+                    if (actionToken === null || actionToken !== v2MutationSequence) {
+                        throw new ExperimentTransactionError(
+                            'stale-request',
+                            '$.requestId',
+                            `Request ${acceptedRequestId ?? 'unknown'} was superseded by a newer V2 action.`,
+                            acceptedRequestId,
+                        );
+                    }
+                    return commitV2Runtime(prepared);
+                },
+                (acceptedRequest) => {
+                    acceptedRequestId = acceptedRequest.requestId;
+                    actionToken = beginV2Mutation();
+                },
+            );
+            return transaction.value;
+        } catch (error) {
+            postTransactionErrorV2(error);
+            throw error;
+        }
+    },
+
+    /** Manual stepping always finishes with a current same-revision pair. */
+    stepExperimentV2(iterations: number = 1): WorkerExperimentResultV2 {
+        try {
+            if (!Number.isSafeInteger(iterations)
+                || iterations < 1
+                || iterations > MAX_MANUAL_V2_STEP_ITERATIONS) {
+                throw new RangeError(
+                    `V2 step iterations must be a safe integer from 1 to ${MAX_MANUAL_V2_STEP_ITERATIONS}`,
+                );
+            }
+            requireV2Runtime();
+            let latestLive: LiveTrainingSignal | undefined;
+            for (let index = 0; index < iterations; index++) {
+                latestLive = trainOneStepV2()?.liveSignal ?? latestLive;
+            }
+            const evaluation = forceAndPublishEvaluationV2('manual-step', false);
+            const evidence = makeEvidenceV2(latestLive, evaluation);
+            // Replace the evaluation-only force message with a richer direct/manual
+            // update for consumers that invoke this RPC without a running frame.
+            postEvidenceV2(evidence);
+            return {
+                snapshot: computeSnapshot(),
+                runId: state.runId,
+                evidence,
+            };
+        } catch (error) {
+            postRuntimeErrorV2(error, 'training');
+            throw error;
+        }
+    },
+
+    /** Rebuild the exact current prepared document as a fresh generation. */
+    resetExperimentV2(): WorkerExperimentResultV2 {
+        try {
+            const { prepared } = requireV2Runtime();
+            beginV2Mutation();
+            return commitV2Runtime(prepared);
+        } catch (error) {
+            postRuntimeErrorV2(error, 'runtime');
+            throw error;
+        }
+    },
+
+    forceEvaluationV2(trigger: ForcedEvaluationTriggerV2): {
+        readonly runId: number;
+        readonly evidence: WorkerEvidenceMessageV2;
+    } {
+        try {
+            const allowed = new Set<ForcedEvaluationTriggerV2>([
+                'manual-step',
+                'pause',
+                'checkpoint',
+                'save',
+                'stop-condition',
+                'restore',
+            ]);
+            if (!allowed.has(trigger)) {
+                throw new TypeError('Unsupported forced V2 evaluation trigger');
+            }
+            const evaluation = forceAndPublishEvaluationV2(trigger);
+            return {
+                runId: state.runId,
+                evidence: makeEvidenceV2(undefined, evaluation),
+            };
+        } catch (error) {
+            postRuntimeErrorV2(error, 'evaluation', 'evaluation-failed');
+            throw error;
+        }
+    },
+
+    getMetricHistoryV2(): RuntimeMetricHistorySnapshot {
+        return requireV2Runtime().history.read();
+    },
+
     initialize(
         networkConfig: NetworkConfig,
         trainingConfig: TrainingConfig,
@@ -1796,6 +2520,7 @@ export const workerApi = {
         features: FeatureFlags,
     ): { snapshot: NetworkSnapshot; runId: number } {
         const config = normalizeWorkerConfig(networkConfig, trainingConfig, dataConfig, features);
+        beginV2Mutation();
         stopInternalLoop();
         state.networkConfig = { ...config.network };
         state.trainingConfig = { ...config.training };
@@ -1813,7 +2538,9 @@ export const workerApi = {
         features: FeatureFlags,
         rebuild: boolean,
     ): { snapshot: NetworkSnapshot; runId: number } {
+        assertLegacyModelMutationAllowed('updateConfig');
         const config = normalizeWorkerConfig(networkConfig, trainingConfig, dataConfig, features);
+        beginV2Mutation();
         const needsRebuild = rebuild ||
             !configsEqual(state.networkConfig, config.network) ||
             !configsEqual(state.dataConfig, config.data) ||
@@ -1834,6 +2561,7 @@ export const workerApi = {
     },
 
     step(iterations: number = 1): NetworkSnapshot {
+        assertLegacyModelMutationAllowed('step');
         for (let i = 0; i < iterations; i++) {
             trainOneStep();
         }
@@ -1878,6 +2606,8 @@ export const workerApi = {
     },
 
     reset(): { snapshot: NetworkSnapshot; runId: number } {
+        assertLegacyModelMutationAllowed('reset');
+        beginV2Mutation();
         stopInternalLoop();
         buildDataAndNetwork();
         return { snapshot: computeSnapshot(), runId: state.runId };
@@ -1888,6 +2618,7 @@ export const workerApi = {
     },
 
     restoreCheckpoint(id: number): { snapshot: NetworkSnapshot; runId: number; timeline: CheckpointTimeline } {
+        assertLegacyModelMutationAllowed('restoreCheckpoint');
         if (!Number.isInteger(id) || id <= 0) {
             throw new RangeError('checkpoint id must be a positive integer');
         }
@@ -1900,6 +2631,7 @@ export const workerApi = {
             throw new RangeError('checkpoint not found');
         }
 
+        beginV2Mutation();
         stopInternalLoop();
         state.network.restoreCheckpoint(entry.checkpoint);
         state.epoch = entry.epoch;

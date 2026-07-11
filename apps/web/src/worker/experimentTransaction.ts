@@ -75,6 +75,7 @@ export class ExperimentRequestGate {
     async run<T>(
         value: unknown,
         commit: (prepared: PreparedExperimentDocumentV2) => T,
+        onReserved?: (request: WorkerExperimentRequestV2) => void,
     ): Promise<ExperimentTransactionResult<T>> {
         const request = parseRequest(value);
         if (request.requestId <= this.latestRequestId) {
@@ -89,6 +90,7 @@ export class ExperimentRequestGate {
         // Reserve the sequence before hashing. A later request immediately
         // makes this one stale, even if the older digest finishes last.
         this.latestRequestId = request.requestId;
+        onReserved?.(request);
         const preparedResult = await this.prepare(request.document);
         if (request.requestId !== this.latestRequestId) {
             throw new ExperimentTransactionError(

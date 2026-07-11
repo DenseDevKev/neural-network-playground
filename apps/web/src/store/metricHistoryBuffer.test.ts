@@ -77,20 +77,17 @@ describe('MetricHistoryBuffer', () => {
         expect(buffer.versions).toEqual({ trendVersion: 1, evaluationVersion: 1 });
     });
 
-    it('allows unseen lower evaluation IDs and rejects conflicting same-ID evidence', () => {
+    it('drops unseen lower IDs and rejects conflicts only while an ID is retained', () => {
         const buffer = new MetricHistoryBuffer();
         expect(buffer.appendEvaluation(evaluationAt(2))).toEqual({ appended: true, version: 1 });
-        expect(buffer.appendEvaluation(evaluationAt(1))).toEqual({ appended: true, version: 2 });
-        expect(buffer.appendEvaluation(evaluationAt(1))).toEqual({ appended: false, version: 2 });
-        expect(() => buffer.appendEvaluation(evaluationAt(1, {
-            model: { ...evaluationAt(1).model, step: 75 },
-        }))).toThrow('conflicting evaluationId 1');
+        expect(buffer.appendEvaluation(evaluationAt(1))).toEqual({ appended: false, version: 1 });
+        expect(buffer.appendEvaluation(evaluationAt(1))).toEqual({ appended: false, version: 1 });
+        expect(() => buffer.appendEvaluation(evaluationAt(2, {
+            model: { ...evaluationAt(2).model, step: 125 },
+        }))).toThrow('conflicting evaluationId 2');
 
-        expect(buffer.read().evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([
-            2,
-            1,
-        ]);
-        expect(buffer.versions.evaluationVersion).toBe(2);
+        expect(buffer.read().evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([2]);
+        expect(buffer.versions.evaluationVersion).toBe(1);
     });
 
     it('bounds each packed series independently while preserving chronological order', () => {
@@ -107,9 +104,10 @@ describe('MetricHistoryBuffer', () => {
         expect(snapshot.evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([2, 3]);
         expect(snapshot.trendVersion).toBe(3);
         expect(snapshot.evaluationVersion).toBe(3);
+        expect(buffer.getRetainedEvaluationFingerprintCountForTests()).toBe(2);
     });
 
-    it('keeps replay and conflict knowledge after an evaluation leaves the packed ring', () => {
+    it('drops evicted stale IDs without re-entry and bounds replay metadata', () => {
         const buffer = new MetricHistoryBuffer({ evaluationCapacity: 2 });
         buffer.appendEvaluation(evaluationAt(1));
         buffer.appendEvaluation(evaluationAt(2));
@@ -120,10 +118,15 @@ describe('MetricHistoryBuffer', () => {
         ]);
 
         expect(buffer.appendEvaluation(evaluationAt(1))).toEqual({ appended: false, version: 3 });
-        expect(() => buffer.appendEvaluation(evaluationAt(1, {
+        expect(buffer.appendEvaluation(evaluationAt(1, {
             model: { ...evaluationAt(1).model, step: 75 },
-        }))).toThrow('conflicting evaluationId 1');
+        }))).toEqual({ appended: false, version: 3 });
         expect(buffer.versions.evaluationVersion).toBe(3);
+        expect(buffer.getRetainedEvaluationFingerprintCountForTests()).toBe(2);
+        expect(buffer.read().evaluationHistory.map(({ evaluationId }) => evaluationId)).toEqual([
+            2,
+            3,
+        ]);
     });
 
     it('reconstructs every provenance field without creating a legacy synthetic HistoryPoint', () => {
@@ -190,6 +193,7 @@ describe('MetricHistoryBuffer', () => {
             trendVersion: 2,
             evaluationVersion: 2,
         });
+        expect(buffer.getRetainedEvaluationFingerprintCountForTests()).toBe(0);
         expect(buffer.appendEvaluation(evaluationAt(1))).toEqual({ appended: true, version: 3 });
     });
 

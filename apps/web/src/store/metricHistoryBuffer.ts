@@ -160,7 +160,8 @@ class PackedEvaluationStorage {
     private readonly trainConfusionJson: Array<string | null>;
     private readonly testConfusionJson: Array<string | null>;
     private readonly materialized: Array<EvaluationPoint | undefined>;
-    private readonly evaluationFingerprints = new Map<number, string>();
+    private readonly retainedEvaluationFingerprints = new Map<number, string>();
+    private highestEvaluationId = 0;
     private start = 0;
     private count = 0;
 
@@ -190,12 +191,17 @@ class PackedEvaluationStorage {
     }
 
     append(point: PairedEvaluation): boolean {
-        const fingerprint = canonicalizeJson(point);
-        const existing = this.evaluationFingerprints.get(point.evaluationId);
-        if (existing !== undefined) {
+        const existing = this.retainedEvaluationFingerprints.get(point.evaluationId);
+        if (point.evaluationId <= this.highestEvaluationId) {
+            if (existing === undefined) return false;
+            const fingerprint = canonicalizeJson(point);
             if (existing === fingerprint) return false;
             throw new TypeError(`conflicting evaluationId ${point.evaluationId}`);
         }
+        const fingerprint = canonicalizeJson(point);
+        const evicted = this.count === this.capacity
+            ? this.materialized[this.start]
+            : undefined;
         const index = this.nextWriteIndex();
         this.evaluationId[index] = point.evaluationId;
         this.trigger[index] = point.trigger;
@@ -217,7 +223,11 @@ class PackedEvaluationStorage {
         this.regularizationPenalty[index] = point.objective.regularizationPenalty;
         this.trainTotalObjective[index] = point.objective.trainTotalObjective;
         this.materialized[index] = deepFreeze(point) as EvaluationPoint;
-        this.evaluationFingerprints.set(point.evaluationId, fingerprint);
+        if (evicted !== undefined) {
+            this.retainedEvaluationFingerprints.delete(evicted.evaluationId);
+        }
+        this.retainedEvaluationFingerprints.set(point.evaluationId, fingerprint);
+        this.highestEvaluationId = point.evaluationId;
         return true;
     }
 
@@ -234,7 +244,8 @@ class PackedEvaluationStorage {
     reset(): void {
         this.start = 0;
         this.count = 0;
-        this.evaluationFingerprints.clear();
+        this.retainedEvaluationFingerprints.clear();
+        this.highestEvaluationId = 0;
         this.datasetKey.fill('');
         this.objectiveKey.fill('');
         this.trainConfusionJson.fill(null);
@@ -271,6 +282,10 @@ class PackedEvaluationStorage {
             : JSON.stringify(values.confusionMatrix);
     }
 
+    getRetainedFingerprintCountForTests(): number {
+        return this.retainedEvaluationFingerprints.size;
+    }
+
 }
 
 /** Bounded, packed client-side mirrors of the two scientific metric series. */
@@ -297,6 +312,11 @@ export class MetricHistoryBuffer {
             trendVersion: this.trendVersion,
             evaluationVersion: this.evaluationVersion,
         });
+    }
+
+    /** Narrow test seam proving replay metadata is bounded by packed slots. */
+    getRetainedEvaluationFingerprintCountForTests(): number {
+        return this.evaluations.getRetainedFingerprintCountForTests();
     }
 
     appendTrend(point: LiveTrainingSignal): number {

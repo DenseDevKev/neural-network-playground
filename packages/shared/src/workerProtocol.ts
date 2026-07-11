@@ -963,7 +963,8 @@ export type WorkerToMainMessage =
     | WorkerArenaSnapshotMessage
     | WorkerStatusMessage
     | WorkerErrorMessage
-    | WorkerSharedBuffersMessage;
+    | WorkerSharedBuffersMessage
+    | WorkerToMainMessageV2;
 
 // ─────────────────────────────────────────────────────────
 // Main → Worker  (streaming commands via MessageChannel)
@@ -1016,6 +1017,13 @@ export type MainToWorkerCommand =
  * does not recurse into `layerStats` arrays to avoid per-frame overhead.
  */
 export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
+    // Keep the legacy high-frequency snapshot path shallow. The strict V2
+    // parser takes a defensive deep snapshot, so only invoke it after the
+    // discriminator proves this is a V2 message.
+    if (isRecord(x)
+        && (x['type'] === 'evidence' || x['type'] === 'worker-error')) {
+        return isWorkerToMainMessageV2(x);
+    }
     if (!isRecord(x)) return false;
     const m = x as Record<string, unknown>;
     if (typeof m['type'] !== 'string') return false;
