@@ -257,6 +257,38 @@ describe('Network V2 objective-gradient updates', () => {
         expect(failedThenValid.getBiases()).toEqual(clean.getBiases());
     });
 
+    it('rejects a mutated compiled penalty outside the canonical coefficient bound without mutation', () => {
+        const network = makeNetwork();
+        network.setWeight(0, 0, 0, 3);
+        const training = compileTraining(network, {
+            dataLoss: { kind: 'mean-squared-error' },
+            penalty: { kind: 'l2', coefficient: 0.5, applyTo: 'weights' },
+            reduction: 'mean-per-sample',
+        }, { learningRate: 0.1 });
+        network.trainBatchV2([[1]], [[0]], training);
+        const before = {
+            weights: network.getWeights(),
+            biases: network.getBiases(),
+            step: network.getStep(),
+            revision: network.getRevision(),
+            recentGradient: network.getRecentGradientSnapshot(),
+        };
+        const mutablePenalty = training.objective.spec.penalty as {
+            kind: 'l2';
+            coefficient: number;
+            applyTo: 'weights';
+        };
+        mutablePenalty.coefficient = 2;
+
+        expect(() => network.trainBatchV2([[1]], [[0]], training)).toThrow(RangeError);
+
+        expect(network.getWeights()).toEqual(before.weights);
+        expect(network.getBiases()).toEqual(before.biases);
+        expect(network.getStep()).toBe(before.step);
+        expect(network.getRevision()).toBe(before.revision);
+        expect(network.getRecentGradientSnapshot()).toEqual(before.recentGradient);
+    });
+
     it('preserves the legacy adapter while adding its L2 gradient exactly once', () => {
         const network = makeNetwork();
         network.setWeight(0, 0, 0, 10);

@@ -433,7 +433,8 @@ export function buildObjectiveBreakdown(
     return { dataLoss, regularizationPenalty, totalObjective };
 }
 
-function validateObjectiveSpec(spec: ObjectiveSpecV2): ObjectiveSpecV2 {
+/** Validate and defensively copy the canonical V2 objective specification. */
+export function validateObjectiveSpec(spec: ObjectiveSpecV2): ObjectiveSpecV2 {
     if (spec == null || typeof spec !== 'object') {
         throw new RangeError('objective specification must be an object');
     }

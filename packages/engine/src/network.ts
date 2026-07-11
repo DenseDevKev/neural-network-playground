@@ -42,6 +42,7 @@ import {
     applyGradientTransformInto,
     buildObjectiveBreakdown,
     gradientNorm,
+    validateObjectiveSpec,
 } from './objective.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
 import { initWeightsInto, initBiasesInto } from './initialization.js';
@@ -474,10 +475,7 @@ function assertCompiledObjectiveCompatibility(
     ) {
         throw new RangeError('compiled objective must provide all objective operations');
     }
-    const spec = objective.spec;
-    if (spec == null || typeof spec !== 'object' || spec.reduction !== 'mean-per-sample') {
-        throw new RangeError('compiled objective must use mean-per-sample reduction');
-    }
+    const spec = validateObjectiveSpec(objective.spec);
 
     switch (spec.dataLoss?.kind) {
         case 'binary-cross-entropy-with-logits':
@@ -499,25 +497,10 @@ function assertCompiledObjectiveCompatibility(
             if (config.outputSize !== 1 || config.outputActivation !== 'linear') {
                 throw new RangeError('regression objectives require one linear output');
             }
-            assertFiniteInRange(spec.dataLoss.delta, 'Huber delta', 0, 1_000_000, {
-                maxInclusive: true,
-            });
             break;
         default:
             throw new RangeError('compiled objective has an unsupported data loss');
     }
-
-    const penalty = spec.penalty;
-    if (penalty?.kind === 'none') return;
-    if (penalty?.kind !== 'l1' && penalty?.kind !== 'l2') {
-        throw new RangeError('compiled objective has an unsupported penalty');
-    }
-    if (penalty.applyTo !== 'weights') {
-        throw new RangeError('compiled objective penalties must apply to weights');
-    }
-    assertFiniteInRange(penalty.coefficient, 'penalty coefficient', 0, 1_000_000, {
-        maxInclusive: true,
-    });
 }
 
 function assertCompiledTrainingHyperparams(
