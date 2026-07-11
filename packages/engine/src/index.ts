@@ -1,6 +1,6 @@
 // ── Engine barrel export ──
 export { Network, buildGridInputs } from './network.js';
-export { PRNG } from './prng.js';
+export { normalizeUint32Seed, PRNG } from './prng.js';
 export { getActivation, softmax, ACTIVATION_LABELS } from './activations.js';
 export type { ActivationFn } from './activations.js';
 export {
@@ -16,7 +16,20 @@ export { getOptimizer, createOptimizerState } from './optimizers.js';
 export type { OptimizerHyperparams } from './optimizers.js';
 export { computeLearningRate, sanitizeLRSchedule, validateLRSchedule } from './schedules.js';
 export type { LRSchedule, LRScheduleType } from './schedules.js';
-export { generateDataset, getDefaultProblemType } from './datasets.js';
+export {
+    DatasetGenerationError,
+    generateDataset,
+    generateDatasetV2,
+    getDefaultProblemType,
+} from './datasets.js';
+export type { DatasetGenerationErrorCode } from './datasets.js';
+export {
+    BINARY_DATASET_IDS,
+    DATASET_IDS,
+    getDatasetContract,
+    MULTICLASS_DATASET_IDS,
+    REGRESSION_DATASET_IDS,
+} from './datasetContracts.js';
 export {
     ALL_FEATURES,
     getActiveFeatures,

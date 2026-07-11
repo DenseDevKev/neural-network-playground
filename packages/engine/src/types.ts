@@ -25,7 +25,12 @@ export type WeightInitType = 'xavier' | 'he' | 'uniform' | 'zeros';
 
 export type RegularizationType = 'none' | 'l1' | 'l2';
 
-export type DatasetType =
+export type TaskKind =
+    | 'binary-classification'
+    | 'multiclass-classification'
+    | 'regression';
+
+export type BinaryDatasetId =
     | 'circle'
     | 'xor'
     | 'gauss'
@@ -33,10 +38,49 @@ export type DatasetType =
     | 'moons'
     | 'checkerboard'
     | 'rings'
-    | 'heart'
-    | 'three-class-clusters'
+    | 'heart';
+
+export type MulticlassDatasetId = 'three-class-clusters';
+
+export type RegressionDatasetId =
     | 'reg-plane'
     | 'reg-gauss';
+
+export type DatasetId = BinaryDatasetId | MulticlassDatasetId | RegressionDatasetId;
+
+/** Compatibility alias for the pre-version-2 positional generator API. */
+export type DatasetType = DatasetId;
+
+export interface DatasetContract {
+    id: DatasetId;
+    taskKind: TaskKind;
+    inputDomain: {
+        x: readonly [number, number];
+        y: readonly [number, number];
+    };
+    targetDomain:
+        | { kind: 'binary'; values: readonly [0, 1] }
+        | { kind: 'classes'; classCount: 3 }
+        | {
+            kind: 'continuous';
+            boundsForNoise: (noise: number) => readonly [number, number];
+        };
+    noise: {
+        minimum: number;
+        maximum: number;
+        meaning: 'coordinate-perturbation' | 'target-perturbation';
+    };
+    generatorVersion: number;
+}
+
+/** Strict, validated request accepted by the version-2 dataset generator. */
+export interface DatasetGenerationRequest {
+    dataset: DatasetId;
+    sampleCount: number;
+    noise: number;
+    seed: number;
+    trainFraction?: number;
+}
 
 /** Configuration for the network architecture. */
 export interface NetworkConfig {

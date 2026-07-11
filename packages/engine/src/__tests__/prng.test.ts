@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { PRNG } from '../prng.js';
+import { normalizeUint32Seed, PRNG } from '../prng.js';
+
+describe('normalizeUint32Seed', () => {
+    it.each([42.9, -1, 4_294_967_296, Number.NaN])('rejects seed %s', (seed) => {
+        expect(() => normalizeUint32Seed(seed)).toThrow(/unsigned 32-bit/u);
+    });
+
+    it.each([0, 42, 4_294_967_295])('preserves valid seed %s', (seed) => {
+        expect(normalizeUint32Seed(seed)).toBe(seed);
+    });
+});
 
 describe('PRNG determinism', () => {
     it('same seed produces same sequence', () => {
@@ -53,6 +63,17 @@ describe('PRNG.range', () => {
 });
 
 describe('PRNG.gaussian', () => {
+    it('uses deterministic rejection bounded to mean plus or minus three standard deviations', () => {
+        const a = new PRNG(42);
+        const b = new PRNG(42);
+        const values = Array.from({ length: 20_000 }, () => a.gaussian(5, 2));
+        const sameValues = Array.from({ length: 20_000 }, () => b.gaussian(5, 2));
+
+        expect(values).toEqual(sameValues);
+        expect(Math.min(...values)).toBeGreaterThanOrEqual(-1);
+        expect(Math.max(...values)).toBeLessThanOrEqual(11);
+    });
+
     it('mean is approximately correct over many samples', () => {
         const rng = new PRNG(42);
         let sum = 0;
