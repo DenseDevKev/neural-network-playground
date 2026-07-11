@@ -58,7 +58,7 @@ function snapshotArray(
     ancestors: Set<object>,
     path: string,
 ): readonly unknown[] {
-    if (!isPlainArrayPrototype(Object.getPrototypeOf(value))) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
         throw snapshotError(path, 'arrays must use a standard Array prototype');
     }
     const descriptors = new Map<number, PropertyDescriptor>();
@@ -95,20 +95,6 @@ function snapshotArray(
     return Object.freeze(snapshot);
 }
 
-function isPlainArrayPrototype(prototype: object | null): boolean {
-    if (prototype === Array.prototype) return true;
-    if (prototype === null) return false;
-    const parent = Object.getPrototypeOf(prototype);
-    if (parent === null || Object.getPrototypeOf(parent) !== null) return false;
-    const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
-    return Boolean(
-        constructor &&
-        'value' in constructor &&
-        typeof constructor.value === 'function' &&
-        constructor.value.name === 'Array',
-    );
-}
-
 function snapshotRecord(
     value: object,
     ancestors: Set<object>,
@@ -142,15 +128,7 @@ function snapshotRecord(
 }
 
 function isPlainRecordPrototype(prototype: object | null): boolean {
-    if (prototype === null || prototype === Object.prototype) return true;
-    if (Object.getPrototypeOf(prototype) !== null) return false;
-    const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
-    return Boolean(
-        constructor &&
-        'value' in constructor &&
-        typeof constructor.value === 'function' &&
-        constructor.value.name === 'Object',
-    );
+    return prototype === null || prototype === Object.prototype;
 }
 
 function propertyPath(path: string, key: string): string {

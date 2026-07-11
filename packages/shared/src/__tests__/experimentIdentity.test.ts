@@ -129,11 +129,14 @@ describe('canonicalizeJson', () => {
         extra.note = 'hidden from JSON arrays';
         const exotic = [1, 2];
         Object.setPrototypeOf(exotic, { inherited: true });
+        class ExoticArray extends Array<number> {}
+        const subclass = new ExoticArray(1, 2);
 
         expect(() => canonicalizeJson(sparse)).toThrow(/dense|index/iu);
         expect(() => canonicalizeJson(inherited)).toThrow(/array|prototype|index/iu);
         expect(() => canonicalizeJson(extra)).toThrow(/property|array/iu);
         expect(() => canonicalizeJson(exotic)).toThrow(/array|prototype/iu);
+        expect(() => canonicalizeJson(subclass)).toThrow(/array|prototype/iu);
     });
 
     it('rejects hidden, symbol, accessor, and inherited object state', () => {
@@ -155,12 +158,20 @@ describe('canonicalizeJson', () => {
 
         const inherited = Object.create({ inherited: true }) as Record<string, unknown>;
         inherited.visible = true;
+        const spoofPrototype = Object.create(null) as Record<string, unknown>;
+        Object.defineProperty(spoofPrototype, 'constructor', {
+            value: function Object() {},
+        });
+        spoofPrototype.inherited = true;
+        const spoofed = Object.create(spoofPrototype) as Record<string, unknown>;
+        spoofed.visible = true;
 
         expect(() => canonicalizeJson(hidden)).toThrow(/enumerable|property/iu);
         expect(() => canonicalizeJson(symbol)).toThrow(/symbol/iu);
         expect(() => canonicalizeJson(accessor)).toThrow(/accessor|data property/iu);
         expect(getterCalls).toBe(0);
         expect(() => canonicalizeJson(inherited)).toThrow(/plain|prototype/iu);
+        expect(() => canonicalizeJson(spoofed)).toThrow(/plain|prototype/iu);
     });
 
     it('rejects cycles but permits repeated acyclic references', () => {
