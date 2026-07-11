@@ -1,5 +1,5 @@
-import { PRESETS } from '@nn-playground/shared';
-import type { Preset } from '@nn-playground/shared';
+import { resolveRecipe } from '@nn-playground/shared';
+import type { RecipeCatalogEntry } from '@nn-playground/shared';
 import type { LessonDefinition, LessonTarget } from './types.ts';
 
 export const VALID_LESSON_TARGETS = [
@@ -17,7 +17,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-xor-hidden-layers',
         title: 'XOR Needs Hidden Layers',
         summary: 'See why a straight boundary cannot solve XOR and how hidden layers create bends.',
-        presetId: 'xor-hidden',
+        recipeRef: { id: 'xor-hidden', revision: 1 },
         estimatedMinutes: 4,
         steps: [
             {
@@ -57,7 +57,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-single-neuron-linear-separator',
         title: 'Single Neuron Linear Separator',
         summary: 'Start with the smallest classifier and see why one neuron draws one straight boundary.',
-        presetId: 'single-neuron',
+        recipeRef: { id: 'single-neuron', revision: 1 },
         estimatedMinutes: 3,
         steps: [
             {
@@ -89,7 +89,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-regression-plane-baseline',
         title: 'Regression Plane Baseline',
         summary: 'Switch from class labels to continuous values and fit a simple plane.',
-        presetId: 'regression-plane',
+        recipeRef: { id: 'regression-plane', revision: 1 },
         estimatedMinutes: 3,
         steps: [
             {
@@ -129,7 +129,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-circle-hidden-layer',
         title: 'Circle With One Hidden Layer',
         summary: 'Watch a small hidden layer bend a straight model into a circular boundary.',
-        presetId: 'circle-one-layer',
+        recipeRef: { id: 'circle-one-layer', revision: 1 },
         estimatedMinutes: 4,
         steps: [
             {
@@ -169,7 +169,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-feature-engineering-circle',
         title: 'Feature Engineering Helps',
         summary: 'Use squared inputs to make a circular problem easier before adding hidden layers.',
-        presetId: 'feature-engineering',
+        recipeRef: { id: 'feature-engineering', revision: 1 },
         estimatedMinutes: 4,
         steps: [
             {
@@ -209,7 +209,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-spiral-depth',
         title: 'Spiral Needs Depth',
         summary: 'Explore why twisted data needs more capacity and steadier training.',
-        presetId: 'spiral-deep',
+        recipeRef: { id: 'spiral-deep', revision: 1 },
         estimatedMinutes: 5,
         steps: [
             {
@@ -249,7 +249,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-learning-rate-tuning',
         title: 'Learning Rate Tuning',
         summary: 'Compare update sizes and learn why steady progress beats dramatic jumps.',
-        presetId: 'xor-hidden',
+        recipeRef: { id: 'xor-hidden', revision: 1 },
         estimatedMinutes: 4,
         steps: [
             {
@@ -288,7 +288,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-regularization-overfitting',
         title: 'Regularization and Overfitting',
         summary: 'Use regularization and capacity choices to manage the gap between train and test behavior.',
-        presetId: 'spiral-deep',
+        recipeRef: { id: 'spiral-deep', revision: 1 },
         estimatedMinutes: 5,
         steps: [
             {
@@ -327,7 +327,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-noisy-data-robustness',
         title: 'Noisy Data Robustness',
         summary: 'Learn why noisy points need smoother decisions and more cautious interpretation.',
-        presetId: 'circle-one-layer',
+        recipeRef: { id: 'circle-one-layer', revision: 1 },
         estimatedMinutes: 4,
         steps: [
             {
@@ -367,7 +367,7 @@ export const LESSON_DEFINITIONS = [
         id: 'lesson-three-class-softmax',
         title: 'Three-Class Softmax Lab',
         summary: 'Learn how three output neurons compete through softmax on a compact multiclass dataset.',
-        presetId: 'three-class-clusters',
+        recipeRef: { id: 'three-class-clusters', revision: 1 },
         estimatedMinutes: 5,
         steps: [
             {
@@ -409,12 +409,14 @@ export function getLessonDefinition(id = DEFAULT_LESSON_ID): LessonDefinition | 
     return LESSON_DEFINITIONS.find((lesson) => lesson.id === id) ?? null;
 }
 
-export function getLessonPreset(lesson: LessonDefinition): Preset {
-    const preset = PRESETS.find((item) => item.id === lesson.presetId);
-    if (!preset) {
-        throw new Error(`Missing guided lesson preset: ${lesson.presetId}`);
+export function getLessonRecipe(lesson: LessonDefinition): RecipeCatalogEntry {
+    const entry = resolveRecipe(lesson.recipeRef);
+    if (!entry) {
+        throw new Error(
+            `Missing guided lesson recipe: ${lesson.recipeRef.id}@${lesson.recipeRef.revision}`,
+        );
     }
-    return preset;
+    return entry;
 }
 
 export type { LessonDefinition, LessonStep, LessonTarget } from './types.ts';

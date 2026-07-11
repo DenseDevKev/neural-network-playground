@@ -1,11 +1,13 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ExperimentSchemaIssue } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
     DEFAULT_LESSON_ID,
     LESSON_DEFINITIONS,
     getLessonDefinition,
-    getLessonPreset,
+    getLessonRecipe,
     type LessonStep,
     type LessonTarget,
 } from '../../lessons/lessonRegistry.ts';
@@ -26,6 +28,10 @@ function getInitialDrawerOpen(): boolean {
     return !window.matchMedia(COMPACT_DRAWER_QUERY).matches;
 }
 
+function formatPreparationIssues(issues: readonly ExperimentSchemaIssue[]): string {
+    return issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ');
+}
+
 export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     onReset,
     onHighlightChange,
@@ -33,7 +39,10 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const [selectedLessonId, setSelectedLessonId] = useState(DEFAULT_LESSON_ID);
     const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(getInitialDrawerOpen);
-    const applyPreset = usePlaygroundStore((s) => s.applyPreset);
+    const [isStarting, setIsStarting] = useState(false);
+    const [lessonError, setLessonError] = useState<string | null>(null);
+    const startInFlight = useRef(false);
+    const applyRecipe = usePlaygroundStore((s) => s.applyRecipe);
     const setActiveRecipeSection = useLayoutStore((s) => s.setActiveRecipeSection);
     const setView = useLayoutStore((s) => s.setView);
     const setActiveLessonStep = useLayoutStore((s) => s.setActiveLessonStep);
@@ -42,7 +51,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         () => getLessonDefinition(selectedLessonId) ?? getLessonDefinition(DEFAULT_LESSON_ID)!,
         [selectedLessonId],
     );
-    const lessonPreset = useMemo(() => getLessonPreset(selectedLesson), [selectedLesson]);
+    const lessonRecipe = useMemo(() => getLessonRecipe(selectedLesson), [selectedLesson]);
     const activeStep = activeStepIndex === null ? null : selectedLesson.steps[activeStepIndex];
     const lessonStateClass = activeStep ? 'guided-lesson--active' : '';
 
@@ -72,12 +81,38 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         return () => media.removeEventListener?.('change', syncDrawerDefault);
     }, []);
 
-    const startLesson = () => {
-        applyPreset(lessonPreset);
-        onReset();
-        setActiveStepIndex(0);
-        setActiveLessonStep(selectedLesson.id, 0);
-        focusStep(selectedLesson.steps[0]);
+    const startLesson = async () => {
+        if (startInFlight.current) return;
+        startInFlight.current = true;
+        setIsStarting(true);
+        setLessonError(null);
+        const trainingStore = useTrainingStore.getState();
+        trainingStore.beginConfigChange('preset');
+
+        try {
+            const result = await applyRecipe(lessonRecipe);
+            if (!result.ok) {
+                const message = formatPreparationIssues(result.issues)
+                    || 'Failed to start guided lesson';
+                trainingStore.failConfigChange(message);
+                setLessonError(message);
+                return;
+            }
+
+            onReset();
+            setActiveStepIndex(0);
+            setActiveLessonStep(selectedLesson.id, 0);
+            focusStep(selectedLesson.steps[0]);
+        } catch (error) {
+            const message = error instanceof Error
+                ? error.message
+                : 'Failed to start guided lesson';
+            trainingStore.failConfigChange(message);
+            setLessonError(message);
+        } finally {
+            startInFlight.current = false;
+            setIsStarting(false);
+        }
     };
 
     const goToStep = (nextIndex: number) => {
@@ -95,6 +130,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const selectLesson = (lessonId: string) => {
         setSelectedLessonId(lessonId);
         setActiveStepIndex(null);
+        setLessonError(null);
         clearActiveLessonStep();
         onHighlightChange?.(null);
     };
@@ -103,6 +139,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         <aside
             className={`guided-lesson ${lessonStateClass} ${isDrawerOpen ? 'guided-lesson--open' : 'guided-lesson--collapsed'}`}
             aria-label="Guided lesson mode"
+            aria-busy={isStarting}
         >
             <div className="guided-lesson__header">
                 <div className="guided-lesson__identity">
@@ -127,6 +164,11 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
 
             {isDrawerOpen && (
                 <div className="guided-lesson__content">
+                    {lessonError && (
+                        <div className="config-feedback config-feedback--error" role="alert">
+                            {lessonError}
+                        </div>
+                    )}
                     {activeStep ? (
                         <>
                             <div className="guided-lesson__progress" aria-live="polite">
@@ -173,6 +215,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                                     value={selectedLesson.id}
                                     onChange={(event) => selectLesson(event.target.value)}
                                     aria-label="Guided lesson"
+                                    disabled={isStarting}
                                 >
                                     {LESSON_DEFINITIONS.map((lesson) => (
                                         <option key={lesson.id} value={lesson.id}>
@@ -192,8 +235,9 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                                 className="btn btn--accent btn--sm guided-lesson__start"
                                 onClick={startLesson}
                                 aria-label="Start guided lesson"
+                                disabled={isStarting}
                             >
-                                Start
+                                {isStarting ? 'Starting...' : 'Start'}
                             </button>
                         </>
                     )}

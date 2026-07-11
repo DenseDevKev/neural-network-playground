@@ -1,14 +1,14 @@
-import type { Preset } from '@nn-playground/shared';
+import type { RecipeCatalogEntry } from '@nn-playground/shared';
 import { Tooltip } from '../common/Tooltip.tsx';
 
 interface PresetCardProps {
-    preset: Preset;
+    preset: RecipeCatalogEntry;
     isSelected: boolean;
     disabled?: boolean;
-    onSelect: (preset: Preset) => void;
+    onSelect: (preset: RecipeCatalogEntry) => void;
 }
 
-function formatDifficulty(difficulty: NonNullable<Preset['difficulty']>) {
+function formatDifficulty(difficulty: NonNullable<RecipeCatalogEntry['difficulty']>) {
     return difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
 }
 
@@ -23,11 +23,6 @@ export function PresetCard({ preset, isSelected, disabled = false, onSelect }: P
                 aria-label={`Apply preset: ${preset.title}`}
                 disabled={disabled}
             >
-                {preset.thumbnail && (
-                    <div className="preset-card__thumbnail" aria-hidden="true">
-                        <img src={preset.thumbnail} alt="" />
-                    </div>
-                )}
                 <div className="preset-card__content">
                     <div className="preset-card__header">
                         <span className="preset-card__title">{preset.title}</span>
