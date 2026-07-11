@@ -85,6 +85,13 @@ export interface BatchTrainingResult {
     gradients: GradientDiagnostics;
 }
 
+/** Exact complete gradient supplied to the optimizer for the most recent update. */
+export interface RecentGradientSnapshot {
+    revision: number;
+    weightGradients: number[][][];
+    biasGradients: number[][];
+}
+
 export interface ClipResult {
     totalGradientNorm: number;
     clippedGradientNorm: number;

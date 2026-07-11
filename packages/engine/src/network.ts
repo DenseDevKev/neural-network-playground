@@ -30,8 +30,19 @@ import type {
     LossLandscapeProbeOptions,
     LossLandscapeParameter,
     MulticlassConfusionMatrixCounts,
+    BatchTrainingResult,
+    CompiledObjective,
+    CompiledTrainingContractV2,
+    LearningRateScheduleV2,
+    OptimizerSpecV2,
+    RecentGradientSnapshot,
 } from './types.js';
 import { categoricalCrossEntropy, categoricalCrossEntropyLogitGradient, getLoss } from './losses.js';
+import {
+    applyGradientTransformInto,
+    buildObjectiveBreakdown,
+    gradientNorm,
+} from './objective.js';
 import { computeLearningRate, validateLRSchedule } from './schedules.js';
 import { initWeightsInto, initBiasesInto } from './initialization.js';
 import { transformPoint } from './features.js';
@@ -449,6 +460,165 @@ function assertTrainingHyperparams(training: TrainingConfig): void {
     }
 }
 
+function assertCompiledObjectiveCompatibility(
+    objective: CompiledObjective,
+    config: NetworkConfig,
+): void {
+    if (
+        objective == null ||
+        typeof objective !== 'object' ||
+        typeof objective.evaluateDataSample !== 'function' ||
+        typeof objective.seedOutputDeltaInto !== 'function' ||
+        typeof objective.regularizationPenalty !== 'function' ||
+        typeof objective.addPenaltyGradientInto !== 'function'
+    ) {
+        throw new RangeError('compiled objective must provide all objective operations');
+    }
+    const spec = objective.spec;
+    if (spec == null || typeof spec !== 'object' || spec.reduction !== 'mean-per-sample') {
+        throw new RangeError('compiled objective must use mean-per-sample reduction');
+    }
+
+    switch (spec.dataLoss?.kind) {
+        case 'binary-cross-entropy-with-logits':
+            if (config.outputSize !== 1 || config.outputActivation !== 'sigmoid') {
+                throw new RangeError('binary cross-entropy requires one sigmoid output');
+            }
+            break;
+        case 'categorical-cross-entropy-with-logits':
+            if (config.outputSize !== 3 || config.outputActivation !== 'softmax') {
+                throw new RangeError('categorical cross-entropy requires three softmax outputs');
+            }
+            break;
+        case 'mean-squared-error':
+            if (config.outputSize !== 1 || config.outputActivation !== 'linear') {
+                throw new RangeError('regression objectives require one linear output');
+            }
+            break;
+        case 'huber':
+            if (config.outputSize !== 1 || config.outputActivation !== 'linear') {
+                throw new RangeError('regression objectives require one linear output');
+            }
+            assertFiniteInRange(spec.dataLoss.delta, 'Huber delta', 0, 1_000_000, {
+                maxInclusive: true,
+            });
+            break;
+        default:
+            throw new RangeError('compiled objective has an unsupported data loss');
+    }
+
+    const penalty = spec.penalty;
+    if (penalty?.kind === 'none') return;
+    if (penalty?.kind !== 'l1' && penalty?.kind !== 'l2') {
+        throw new RangeError('compiled objective has an unsupported penalty');
+    }
+    if (penalty.applyTo !== 'weights') {
+        throw new RangeError('compiled objective penalties must apply to weights');
+    }
+    assertFiniteInRange(penalty.coefficient, 'penalty coefficient', 0, 1_000_000, {
+        maxInclusive: true,
+    });
+}
+
+function assertCompiledTrainingHyperparams(
+    training: CompiledTrainingContractV2,
+    config: NetworkConfig,
+): void {
+    if (training == null || typeof training !== 'object') {
+        throw new RangeError('compiled training contract must be an object');
+    }
+    assertFiniteInRange(training.learningRate, 'learningRate', 0, Number.POSITIVE_INFINITY);
+    if (!Number.isFinite(training.batchSize) || !Number.isInteger(training.batchSize) || training.batchSize <= 0) {
+        throw new RangeError('batchSize must be a finite positive integer');
+    }
+
+    switch (training.schedule?.kind) {
+        case 'constant':
+            break;
+        case 'step':
+            if (!Number.isInteger(training.schedule.interval) || training.schedule.interval <= 0) {
+                throw new RangeError('step schedule interval must be a positive integer');
+            }
+            assertFiniteInRange(training.schedule.gamma, 'step schedule gamma', 0, 1, {
+                maxInclusive: true,
+            });
+            break;
+        case 'cosine':
+            if (!Number.isInteger(training.schedule.totalSteps) || training.schedule.totalSteps <= 0) {
+                throw new RangeError('cosine schedule totalSteps must be a positive integer');
+            }
+            assertFiniteInRange(
+                training.schedule.minimumRate,
+                'cosine schedule minimumRate',
+                0,
+                training.learningRate,
+                { minInclusive: true, maxInclusive: true },
+            );
+            break;
+        default:
+            throw new RangeError('compiled training schedule has an unsupported kind');
+    }
+
+    switch (training.optimizer?.kind) {
+        case 'sgd':
+            break;
+        case 'sgd-momentum':
+            assertFiniteInRange(training.optimizer.momentum, 'momentum', 0, 1, {
+                minInclusive: true,
+            });
+            break;
+        case 'adam':
+            assertFiniteInRange(training.optimizer.beta1, 'adam beta1', 0, 1, {
+                minInclusive: true,
+            });
+            assertFiniteInRange(training.optimizer.beta2, 'adam beta2', 0, 1, {
+                minInclusive: true,
+            });
+            assertFiniteInRange(training.optimizer.epsilon, 'adam epsilon', 0, 1, {
+                maxInclusive: true,
+            });
+            break;
+        default:
+            throw new RangeError('compiled training optimizer has an unsupported kind');
+    }
+
+    const clipping = training.gradientClipping;
+    if (clipping?.kind === 'global-norm') {
+        if (clipping.scope !== 'total-objective-gradient') {
+            throw new RangeError('global gradient clipping must cover the total objective gradient');
+        }
+        assertFiniteInRange(clipping.maximumNorm, 'maximum gradient norm', 0, 1_000_000, {
+            maxInclusive: true,
+        });
+    } else if (clipping?.kind !== 'none') {
+        throw new RangeError('compiled gradient clipping has an unsupported kind');
+    }
+
+    assertCompiledObjectiveCompatibility(training.objective, config);
+}
+
+function computeCompiledLearningRate(
+    baseLearningRate: number,
+    step: number,
+    schedule: LearningRateScheduleV2,
+): number {
+    switch (schedule.kind) {
+        case 'constant':
+            return baseLearningRate;
+        case 'step':
+            return baseLearningRate * Math.pow(schedule.gamma, Math.floor(step / schedule.interval));
+        case 'cosine': {
+            const progress = Math.min(step, schedule.totalSteps) / schedule.totalSteps;
+            const cosine = 0.5 * (1 + Math.cos(Math.PI * progress));
+            return schedule.minimumRate + (baseLearningRate - schedule.minimumRate) * cosine;
+        }
+    }
+}
+
+function optimizerStateKind(optimizer: OptimizerSpecV2): TrainingConfig['optimizer'] {
+    return optimizer.kind === 'sgd-momentum' ? 'sgdMomentum' : optimizer.kind;
+}
+
 function normalizePositiveIntegerOption(
     value: number | undefined,
     name: string,
@@ -654,6 +824,8 @@ export class Network {
     private weightGrads: Float64Array[] = [];
     private biasGrads: Float64Array[] = [];
     private recentWeightGrads: Float64Array[] = [];
+    private recentBiasGrads: Float64Array[] = [];
+    private recentGradientRevision = 0;
 
     // Optimizer state. Allocated lazily on the first applyGradients call
     // that actually needs it (SGD stays empty, momentum allocates `m*`,
@@ -680,6 +852,7 @@ export class Network {
     private actDOutput: LayerDActFn;
 
     private currentStep = 0;
+    private currentRevision = 0;
 
     constructor(config: NetworkConfig, seed?: number) {
         const layerSizes = validatedLayerSizes(config);
@@ -701,6 +874,7 @@ export class Network {
             this.weightGrads.push(new Float64Array(fanOut * fanIn));
             this.biasGrads.push(new Float64Array(fanOut));
             this.recentWeightGrads.push(new Float64Array(fanOut * fanIn));
+            this.recentBiasGrads.push(new Float64Array(fanOut));
 
             this.preActs.push(new Float64Array(fanOut));
             this.outputs.push(new Float64Array(fanOut));
@@ -875,6 +1049,23 @@ export class Network {
             this.actDOutput(outDelta, this.preActs[outIdx], outputs, outLen);
         }
 
+        this.accumulateSeededOutputDelta();
+    }
+
+    private backwardCompiled(target: number[], objective: CompiledObjective): void {
+        assertVectorShape(target, this.config.outputSize, 'target');
+        const outIdx = this.weights.length - 1;
+        objective.seedOutputDeltaInto(
+            this.preActs[outIdx],
+            this.outputs[outIdx],
+            target,
+            this.deltas[outIdx],
+        );
+        this.accumulateSeededOutputDelta();
+    }
+
+    private accumulateSeededOutputDelta(): void {
+        const outIdx = this.weights.length - 1;
         // Walk backwards accumulating weight/bias grads and propagating delta.
         for (let l = outIdx; l >= 0; l--) {
             const fanOut = this.layerSizes[l + 1];
@@ -911,94 +1102,112 @@ export class Network {
 
     // ── Apply gradients ──────────────────────────────────────────────────────
 
-    /**
-     * One-pass average → (optional clip) → optimizer update → zero grads.
-     * Global-norm gradient clipping fuses into the same sweep: the first
-     * pass averages in place and accumulates Σg² simultaneously; if the
-     * norm exceeds the clip, we apply a scale multiplier inside the
-     * optimizer kernel (still one extra pass over params, same as before
-     * but without the extra buffer copies).
-     */
+    /** Legacy adapter: transform its complete gradient before optimizer-only kernels. */
     applyGradients(training: TrainingConfig, batchSize: number): void {
         if (!Number.isFinite(batchSize) || batchSize <= 0) {
             throw new RangeError('gradient normalization count must be finite and greater than 0');
         }
         assertTrainingHyperparams(training);
-        this.prepareOptimizer(training.optimizer);
         const lr = computeLearningRate(training.learningRate, this.currentStep, training.lrSchedule);
         assertFiniteInRange(lr, 'effective learningRate', 0, Number.POSITIVE_INFINITY);
-        const invB = 1 / batchSize;
 
-        // Pass 1: average grads, accumulate squared norm.
-        let sqSum = 0;
+        try {
+            this.averageGradientAccumulators(batchSize);
+            const dataGradientNorm = gradientNorm(this.weightGrads, this.biasGrads);
+            const penaltyGradientNorm = this.addLegacyPenaltyGradient(
+                training.regularization,
+                training.regularizationRate,
+            );
+            applyGradientTransformInto(
+                this.weightGrads,
+                this.biasGrads,
+                dataGradientNorm,
+                penaltyGradientNorm,
+                training.gradientClip == null
+                    ? { kind: 'none' }
+                    : {
+                        kind: 'global-norm',
+                        maximumNorm: training.gradientClip,
+                        scope: 'total-objective-gradient',
+                    },
+            );
+            this.captureRecentGradient();
+            this.prepareOptimizer(training.optimizer);
+            this.applyLegacyOptimizerOnly(training, lr);
+            this.finishTrainingUpdate();
+        } catch (error) {
+            this.zeroGradientAccumulators();
+            throw error;
+        }
+    }
+
+    private averageGradientAccumulators(normalizationCount: number): void {
+        const inverseCount = 1 / normalizationCount;
         for (let l = 0; l < this.weightGrads.length; l++) {
-            const wg = this.weightGrads[l];
-            const bg = this.biasGrads[l];
-            for (let i = 0, n = wg.length; i < n; i++) {
-                const g = wg[i] * invB;
-                wg[i] = g;
-                sqSum += g * g;
+            const weightGradients = this.weightGrads[l];
+            const biasGradients = this.biasGrads[l];
+            for (let i = 0; i < weightGradients.length; i++) {
+                weightGradients[i] *= inverseCount;
             }
-            for (let i = 0, n = bg.length; i < n; i++) {
-                const g = bg[i] * invB;
-                bg[i] = g;
-                sqSum += g * g;
+            for (let i = 0; i < biasGradients.length; i++) {
+                biasGradients[i] *= inverseCount;
             }
         }
+    }
 
-        // Resolve global-norm clip scale. `scale === 1` is the common case
-        // and the optimizer kernels strip the multiply when that's true.
-        let scale = 1;
-        const clip = training.gradientClip;
-        if (clip != null && clip > 0) {
-            const norm = Math.sqrt(sqSum);
-            if (norm > clip) scale = clip / norm;
+    private addLegacyPenaltyGradient(
+        regularization: TrainingConfig['regularization'],
+        regularizationRate: number,
+    ): number {
+        if (regularization === 'none') return 0;
+
+        let penaltyGradientNorm = 0;
+        for (let l = 0; l < this.weights.length; l++) {
+            const weights = this.weights[l];
+            const gradients = this.weightGrads[l];
+            for (let i = 0; i < weights.length; i++) {
+                const penaltyGradient = regularization === 'l2'
+                    ? regularizationRate * weights[i]
+                    : regularizationRate * Math.sign(weights[i]);
+                assertFiniteValue(penaltyGradient, `penaltyGradient[${l}][${i}]`);
+                assertFiniteValue(gradients[i] + penaltyGradient, `combinedGradient[${l}][${i}]`);
+                penaltyGradientNorm = Math.hypot(penaltyGradientNorm, penaltyGradient);
+            }
         }
+        assertFiniteValue(penaltyGradientNorm, 'penaltyGradientNorm');
 
-        // Preserve the gradients that were actually applied so inspection
-        // stats remain useful after the accumulators are zeroed below.
+        for (let l = 0; l < this.weights.length; l++) {
+            const weights = this.weights[l];
+            const gradients = this.weightGrads[l];
+            for (let i = 0; i < weights.length; i++) {
+                gradients[i] += regularization === 'l2'
+                    ? regularizationRate * weights[i]
+                    : regularizationRate * Math.sign(weights[i]);
+            }
+        }
+        return penaltyGradientNorm;
+    }
+
+    private captureRecentGradient(): void {
         for (let l = 0; l < this.weightGrads.length; l++) {
-            const wg = this.weightGrads[l];
-            const recent = this.recentWeightGrads[l];
-            if (scale === 1) {
-                recent.set(wg);
-            } else {
-                for (let i = 0, n = wg.length; i < n; i++) recent[i] = wg[i] * scale;
-            }
+            this.recentWeightGrads[l].set(this.weightGrads[l]);
+            this.recentBiasGrads[l].set(this.biasGrads[l]);
         }
+    }
 
-        // Pass 2: optimizer update.
-        switch (training.optimizer) {
-            case 'sgd':
-                this.stepSGD(lr, scale, training.regularization, training.regularizationRate);
-                break;
-            case 'sgdMomentum':
-                this.ensureMomentumState();
-                this.stepMomentum(
-                    lr, scale,
-                    training.regularization, training.regularizationRate,
-                    training.momentum ?? 0.9,
-                );
-                break;
-            case 'adam':
-                this.ensureAdamState();
-                this.stepAdam(
-                    lr, scale,
-                    training.regularization, training.regularizationRate,
-                    training.adamBeta1 ?? 0.9,
-                    training.adamBeta2 ?? 0.999,
-                    training.adamEps ?? 1e-8,
-                );
-                break;
-        }
-
-        // Zero-fill for the next batch.
+    private zeroGradientAccumulators(): void {
         for (let l = 0; l < this.weightGrads.length; l++) {
             this.weightGrads[l].fill(0);
             this.biasGrads[l].fill(0);
         }
+    }
+
+    private finishTrainingUpdate(): void {
+        this.zeroGradientAccumulators();
         this.currentStep++;
         this.optimizerStep++;
+        this.currentRevision++;
+        this.recentGradientRevision = this.currentRevision;
     }
 
     private prepareOptimizer(optimizer: TrainingConfig['optimizer']): void {
@@ -1032,56 +1241,60 @@ export class Network {
         this.hasAdamState = true;
     }
 
-    private stepSGD(
-        lr: number,
-        scale: number,
-        reg: 'none' | 'l1' | 'l2',
-        regRate: number,
-    ): void {
-        const scaleUnity = scale === 1;
+    private applyLegacyOptimizerOnly(training: TrainingConfig, learningRate: number): void {
+        switch (training.optimizer) {
+            case 'sgd':
+                this.stepSGD(learningRate);
+                break;
+            case 'sgdMomentum':
+                this.ensureMomentumState();
+                this.stepMomentum(learningRate, training.momentum ?? 0.9);
+                break;
+            case 'adam':
+                this.ensureAdamState();
+                this.stepAdam(
+                    learningRate,
+                    training.adamBeta1 ?? 0.9,
+                    training.adamBeta2 ?? 0.999,
+                    training.adamEps ?? 1e-8,
+                );
+                break;
+        }
+    }
+
+    private applyCompiledOptimizerOnly(optimizer: OptimizerSpecV2, learningRate: number): void {
+        switch (optimizer.kind) {
+            case 'sgd':
+                this.stepSGD(learningRate);
+                break;
+            case 'sgd-momentum':
+                this.ensureMomentumState();
+                this.stepMomentum(learningRate, optimizer.momentum);
+                break;
+            case 'adam':
+                this.ensureAdamState();
+                this.stepAdam(
+                    learningRate,
+                    optimizer.beta1,
+                    optimizer.beta2,
+                    optimizer.epsilon,
+                );
+                break;
+        }
+    }
+
+    private stepSGD(lr: number): void {
         for (let l = 0; l < this.weights.length; l++) {
             const w = this.weights[l];
             const b = this.biases[l];
             const wg = this.weightGrads[l];
             const bg = this.biasGrads[l];
-            const bn = b.length;
-
-            if (scaleUnity) {
-                for (let i = 0; i < bn; i++) b[i] -= lr * bg[i];
-            } else {
-                for (let i = 0; i < bn; i++) b[i] -= lr * bg[i] * scale;
-            }
-
-            const wn = w.length;
-            if (reg === 'l2') {
-                if (scaleUnity) {
-                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] + regRate * w[i]);
-                } else {
-                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] * scale + regRate * w[i]);
-                }
-            } else if (reg === 'l1') {
-                if (scaleUnity) {
-                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] + regRate * Math.sign(w[i]));
-                } else {
-                    for (let i = 0; i < wn; i++) w[i] -= lr * (wg[i] * scale + regRate * Math.sign(w[i]));
-                }
-            } else {
-                if (scaleUnity) {
-                    for (let i = 0; i < wn; i++) w[i] -= lr * wg[i];
-                } else {
-                    for (let i = 0; i < wn; i++) w[i] -= lr * wg[i] * scale;
-                }
-            }
+            for (let i = 0; i < b.length; i++) b[i] -= lr * bg[i];
+            for (let i = 0; i < w.length; i++) w[i] -= lr * wg[i];
         }
     }
 
-    private stepMomentum(
-        lr: number,
-        scale: number,
-        reg: 'none' | 'l1' | 'l2',
-        regRate: number,
-        mom: number,
-    ): void {
+    private stepMomentum(lr: number, mom: number): void {
         for (let l = 0; l < this.weights.length; l++) {
             const w = this.weights[l];
             const b = this.biases[l];
@@ -1092,7 +1305,7 @@ export class Network {
 
             const bn = b.length;
             for (let i = 0; i < bn; i++) {
-                const g = bg[i] * scale;
+                const g = bg[i];
                 const m = mom * mb[i] + g;
                 mb[i] = m;
                 b[i] -= lr * m;
@@ -1100,9 +1313,7 @@ export class Network {
 
             const wn = w.length;
             for (let i = 0; i < wn; i++) {
-                let g = wg[i] * scale;
-                if (reg === 'l2') g += regRate * w[i];
-                else if (reg === 'l1') g += regRate * Math.sign(w[i]);
+                const g = wg[i];
                 const m = mom * mw[i] + g;
                 mw[i] = m;
                 w[i] -= lr * m;
@@ -1112,9 +1323,6 @@ export class Network {
 
     private stepAdam(
         lr: number,
-        scale: number,
-        reg: 'none' | 'l1' | 'l2',
-        regRate: number,
         beta1: number,
         beta2: number,
         eps: number,
@@ -1139,7 +1347,7 @@ export class Network {
 
             const bn = b.length;
             for (let i = 0; i < bn; i++) {
-                const g = bg[i] * scale;
+                const g = bg[i];
                 const m = beta1 * mb[i] + oneMinusB1 * g;
                 mb[i] = m;
                 const v = beta2 * vb[i] + oneMinusB2 * g * g;
@@ -1151,9 +1359,7 @@ export class Network {
 
             const wn = w.length;
             for (let i = 0; i < wn; i++) {
-                let g = wg[i] * scale;
-                if (reg === 'l2') g += regRate * w[i];
-                else if (reg === 'l1') g += regRate * Math.sign(w[i]);
+                const g = wg[i];
                 const m = beta1 * mw[i] + oneMinusB1 * g;
                 mw[i] = m;
                 const v = beta2 * vw[i] + oneMinusB2 * g * g;
@@ -1194,6 +1400,121 @@ export class Network {
         if (start === end) return 0;
 
         return this.trainValidatedBatch(inputs, targets, start, end, training, indices);
+    }
+
+    trainBatchV2(
+        inputs: number[][],
+        targets: number[][],
+        training: CompiledTrainingContractV2,
+    ): BatchTrainingResult {
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
+        assertCompiledTrainingHyperparams(training, this.config);
+        if (inputs.length === 0) {
+            throw new RangeError('V2 training batch must contain at least one sample');
+        }
+        return this.trainValidatedBatchV2(inputs, targets, 0, inputs.length, training);
+    }
+
+    trainBatchIndexedV2(
+        inputs: number[][],
+        targets: number[][],
+        indices: ArrayLike<number>,
+        start: number,
+        end: number,
+        training: CompiledTrainingContractV2,
+    ): BatchTrainingResult {
+        assertIndexedBatchSelection(
+            inputs,
+            targets,
+            indices,
+            start,
+            end,
+            this.config.inputSize,
+            this.config.outputSize,
+        );
+        assertCompiledTrainingHyperparams(training, this.config);
+        if (start === end) {
+            throw new RangeError('V2 training batch must contain at least one sample');
+        }
+        return this.trainValidatedBatchV2(inputs, targets, start, end, training, indices);
+    }
+
+    private trainValidatedBatchV2(
+        inputs: number[][],
+        targets: number[][],
+        start: number,
+        end: number,
+        training: CompiledTrainingContractV2,
+        indices?: ArrayLike<number>,
+    ): BatchTrainingResult {
+        const sampleCount = end - start;
+        const objective = training.objective;
+        this.zeroGradientAccumulators();
+
+        try {
+            let dataLossSum = 0;
+            const outputLayerIndex = this.preActs.length - 1;
+            for (let sampleOrdinal = start; sampleOrdinal < end; sampleOrdinal++) {
+                const sampleIndex = indices == null ? sampleOrdinal : indices[sampleOrdinal];
+                const outputs = this.forwardInto(inputs[sampleIndex]);
+                const target = targets[sampleIndex];
+                const sampleDataLoss = objective.evaluateDataSample(
+                    this.preActs[outputLayerIndex],
+                    outputs,
+                    target,
+                );
+                assertFiniteValue(sampleDataLoss, `dataLoss[${sampleIndex}]`);
+                dataLossSum += sampleDataLoss;
+                this.backwardCompiled(target, objective);
+            }
+
+            const dataLoss = dataLossSum / sampleCount;
+            const regularizationPenalty = objective.regularizationPenalty(this.weights);
+            const objectiveBreakdown = buildObjectiveBreakdown(dataLoss, regularizationPenalty);
+
+            this.averageGradientAccumulators(sampleCount);
+            const dataGradientNorm = gradientNorm(this.weightGrads, this.biasGrads);
+            const penaltyGradientNorm = objective.addPenaltyGradientInto(
+                this.weights,
+                this.weightGrads,
+            );
+            const diagnostics = applyGradientTransformInto(
+                this.weightGrads,
+                this.biasGrads,
+                dataGradientNorm,
+                penaltyGradientNorm,
+                training.gradientClipping,
+            );
+
+            const learningRate = computeCompiledLearningRate(
+                training.learningRate,
+                this.currentStep,
+                training.schedule,
+            );
+            assertFiniteInRange(
+                learningRate,
+                'effective learningRate',
+                0,
+                Number.POSITIVE_INFINITY,
+                { minInclusive: true },
+            );
+
+            this.captureRecentGradient();
+            this.prepareOptimizer(optimizerStateKind(training.optimizer));
+            this.applyCompiledOptimizerOnly(training.optimizer, learningRate);
+            this.finishTrainingUpdate();
+
+            return {
+                revision: this.currentRevision,
+                step: this.currentStep,
+                sampleCount,
+                objective: objectiveBreakdown,
+                gradients: diagnostics,
+            };
+        } catch (error) {
+            this.zeroGradientAccumulators();
+            throw error;
+        }
     }
 
     private trainValidatedBatch(
@@ -1808,6 +2129,10 @@ export class Network {
         return this.currentStep;
     }
 
+    getRevision(): number {
+        return this.currentRevision;
+    }
+
     createCheckpoint(): NetworkCheckpoint {
         return {
             config: { ...this.config, hiddenLayers: [...this.config.hiddenLayers] },
@@ -1878,7 +2203,9 @@ export class Network {
             this.weightGrads[l].fill(0);
             this.biasGrads[l].fill(0);
             this.recentWeightGrads[l].fill(0);
+            this.recentBiasGrads[l].fill(0);
         }
+        this.recentGradientRevision = 0;
 
         this.hasMomentumState = checkpoint.hasMomentumState;
         this.hasAdamState = checkpoint.hasAdamState;
@@ -1905,8 +2232,19 @@ export class Network {
      *  checks that need to perturb one parameter at a time. */
     setWeight(layerIdx: number, neuronIdx: number, prevIdx: number, value: number): void {
         assertFiniteValue(value, 'weight');
+        if (!Number.isInteger(layerIdx) || layerIdx < 0 || layerIdx >= this.weights.length) {
+            throw new RangeError('weight layer index must reference a valid layer');
+        }
         const fanIn = this.layerSizes[layerIdx];
+        const fanOut = this.layerSizes[layerIdx + 1];
+        if (!Number.isInteger(neuronIdx) || neuronIdx < 0 || neuronIdx >= fanOut) {
+            throw new RangeError('weight neuron index must reference a valid neuron');
+        }
+        if (!Number.isInteger(prevIdx) || prevIdx < 0 || prevIdx >= fanIn) {
+            throw new RangeError('weight input index must reference a valid input');
+        }
         this.weights[layerIdx][neuronIdx * fanIn + prevIdx] = value;
+        this.currentRevision++;
     }
 
     getBias(layerIdx: number, neuronIdx: number): number {
@@ -1915,7 +2253,14 @@ export class Network {
 
     setBias(layerIdx: number, neuronIdx: number, value: number): void {
         assertFiniteValue(value, 'bias');
+        if (!Number.isInteger(layerIdx) || layerIdx < 0 || layerIdx >= this.biases.length) {
+            throw new RangeError('bias layer index must reference a valid layer');
+        }
+        if (!Number.isInteger(neuronIdx) || neuronIdx < 0 || neuronIdx >= this.biases[layerIdx].length) {
+            throw new RangeError('bias neuron index must reference a valid neuron');
+        }
         this.biases[layerIdx][neuronIdx] = value;
+        this.currentRevision++;
     }
 
     /** Nested view of the current weight gradients. Used by gradient_check
@@ -1947,6 +2292,31 @@ export class Network {
             out.push(row);
         }
         return out;
+    }
+
+    getRecentGradientSnapshot(): RecentGradientSnapshot {
+        const weightGradients: number[][][] = [];
+        for (let l = 0; l < this.recentWeightGrads.length; l++) {
+            const fanIn = this.layerSizes[l];
+            const fanOut = this.layerSizes[l + 1];
+            const packed = this.recentWeightGrads[l];
+            const layer: number[][] = [];
+            for (let neuronIndex = 0; neuronIndex < fanOut; neuronIndex++) {
+                const row = new Array<number>(fanIn);
+                const rowStart = neuronIndex * fanIn;
+                for (let inputIndex = 0; inputIndex < fanIn; inputIndex++) {
+                    row[inputIndex] = packed[rowStart + inputIndex];
+                }
+                layer.push(row);
+            }
+            weightGradients.push(layer);
+        }
+
+        return {
+            revision: this.recentGradientRevision,
+            weightGradients,
+            biasGradients: this.recentBiasGrads.map((gradients) => Array.from(gradients)),
+        };
     }
 
     getLayerStats(): LayerStats[] {
@@ -2099,7 +2469,9 @@ export class Network {
             this.weightGrads[l].fill(0);
             this.biasGrads[l].fill(0);
             this.recentWeightGrads[l].fill(0);
+            this.recentBiasGrads[l].fill(0);
         }
+        this.recentGradientRevision = 0;
         this.clearOptimizerState();
         this.activeOptimizer = null;
         this.optimizerStep = 0;
