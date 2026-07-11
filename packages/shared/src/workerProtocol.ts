@@ -9,8 +9,474 @@ import type {
     MulticlassConfusionMatrixData,
     ActivationHistogramLayer,
 } from '@nn-playground/engine';
+import { canonicalRecipeKey, validateExperimentDocument } from './experimentSchema.js';
+import { createStableJsonSnapshot } from './canonicalJson.js';
+import {
+    parseArtifactProvenance,
+    parseLiveTrainingSignal,
+    parsePairedEvaluation,
+} from './metricProvenance.js';
+import type {
+    ArtifactProvenance,
+    EvaluationTrigger,
+    LiveTrainingSignal,
+    PairedEvaluation,
+} from './metricProvenance.js';
 import { isPauseReason } from './types.js';
-import type { PauseReason } from './types.js';
+import type {
+    ExperimentDocumentV2,
+    PauseReason,
+    ValidatedExperimentDocumentV2,
+} from './types.js';
+
+// ─────────────────────────────────────────────────────────
+// Strict protocol version 2
+// ─────────────────────────────────────────────────────────
+
+export const WORKER_PROTOCOL_VERSION = 2 as const;
+
+export interface ClaimedExperimentIdentitiesV2 {
+    readonly canonicalRecipeKey: string;
+    readonly recipeFingerprint: string;
+    readonly datasetKey: string;
+    readonly objectiveKey: string;
+}
+
+export interface WorkerExperimentRequestV2 {
+    readonly type: 'initialize-experiment';
+    readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    readonly requestId: number;
+    readonly document: ExperimentDocumentV2;
+    readonly claimedIdentities: ClaimedExperimentIdentitiesV2;
+}
+
+export type ForcedEvaluationTriggerV2 = Exclude<EvaluationTrigger, 'initial' | 'cadence'>;
+
+export interface ForceEvaluationRequestV2 {
+    readonly type: 'force-evaluation';
+    readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    readonly requestId: number;
+    readonly trigger: ForcedEvaluationTriggerV2;
+}
+
+export interface CaptureRunRequestV2 {
+    readonly type: 'capture-run';
+    readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    readonly requestId: number;
+}
+
+export interface CaptureCheckpointRequestV2 {
+    readonly type: 'capture-checkpoint';
+    readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    readonly requestId: number;
+}
+
+export type MainToWorkerRequestV2 =
+    | WorkerExperimentRequestV2
+    | ForceEvaluationRequestV2
+    | CaptureRunRequestV2
+    | CaptureCheckpointRequestV2;
+
+export interface WorkerArtifactProvenanceV2 {
+    readonly confusionMatrix?: ArtifactProvenance;
+    readonly activationStatistics?: ArtifactProvenance;
+    readonly predictionTrace?: ArtifactProvenance;
+    readonly decisionBoundary?: ArtifactProvenance;
+    readonly lossLandscape?: ArtifactProvenance;
+    readonly neuronGrids?: ArtifactProvenance;
+    readonly activationHistogram?: ArtifactProvenance;
+}
+
+export interface WorkerEvidenceMessageV2 {
+    readonly type: 'evidence';
+    readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    readonly liveSignal?: LiveTrainingSignal;
+    readonly latestEvaluation?: PairedEvaluation;
+    readonly artifacts?: WorkerArtifactProvenanceV2;
+}
+
+export type WorkerProtocolErrorCodeV2 =
+    | 'malformed-request'
+    | 'unsupported-protocol-version'
+    | 'invalid-experiment'
+    | 'identity-mismatch'
+    | 'not-initialized'
+    | 'stale-request'
+    | 'evaluation-failed'
+    | 'artifact-failed'
+    | 'capture-failed'
+    | 'checkpoint-failed'
+    | 'runtime-failure';
+
+export type WorkerProtocolErrorSourceV2 =
+    | 'protocol'
+    | 'preparation'
+    | 'training'
+    | 'evaluation'
+    | 'artifact'
+    | 'persistence'
+    | 'checkpoint'
+    | 'runtime';
+
+export interface WorkerProtocolErrorMessageV2 {
+    readonly type: 'worker-error';
+    readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    readonly requestId: number | null;
+    readonly generationId: number | null;
+    readonly code: WorkerProtocolErrorCodeV2;
+    readonly path: string;
+    readonly message: string;
+    readonly source: WorkerProtocolErrorSourceV2;
+}
+
+export type WorkerToMainMessageV2 = WorkerEvidenceMessageV2 | WorkerProtocolErrorMessageV2;
+
+const EXACT_DIGEST_LENGTH = 43;
+const FORCED_EVALUATION_TRIGGERS = new Set<ForcedEvaluationTriggerV2>([
+    'manual-step',
+    'pause',
+    'checkpoint',
+    'save',
+    'stop-condition',
+    'restore',
+]);
+const WORKER_ERROR_CODES = new Set<WorkerProtocolErrorCodeV2>([
+    'malformed-request',
+    'unsupported-protocol-version',
+    'invalid-experiment',
+    'identity-mismatch',
+    'not-initialized',
+    'stale-request',
+    'evaluation-failed',
+    'artifact-failed',
+    'capture-failed',
+    'checkpoint-failed',
+    'runtime-failure',
+]);
+const WORKER_ERROR_SOURCES = new Set<WorkerProtocolErrorSourceV2>([
+    'protocol',
+    'preparation',
+    'training',
+    'evaluation',
+    'artifact',
+    'persistence',
+    'checkpoint',
+    'runtime',
+]);
+const ARTIFACT_BASIS = {
+    confusionMatrix: new Set(['full-split']),
+    activationStatistics: new Set(['bounded-sample']),
+    predictionTrace: new Set(['bounded-sample']),
+    decisionBoundary: new Set(['prediction-grid']),
+    lossLandscape: new Set(['parameter-grid']),
+    neuronGrids: new Set(['prediction-grid']),
+    activationHistogram: new Set(['bounded-sample']),
+} as const;
+
+function hasExactOwnKeys(
+    value: unknown,
+    required: readonly string[],
+    optional: readonly string[] = [],
+): value is Record<string, unknown> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return false;
+    const object = value as Record<string, unknown>;
+    const allowed = new Set([...required, ...optional]);
+    const keys = Reflect.ownKeys(object);
+    if (keys.some((key) => typeof key !== 'string' || !allowed.has(key))) return false;
+    for (const key of keys) {
+        const descriptor = Object.getOwnPropertyDescriptor(object, key);
+        if (descriptor === undefined || !('value' in descriptor) || !descriptor.enumerable) {
+            return false;
+        }
+    }
+    return required.every((key) => Object.prototype.hasOwnProperty.call(object, key));
+}
+
+function isRequestId(value: unknown): value is number {
+    return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isNullableRequestId(value: unknown): value is number | null {
+    return value === null || isRequestId(value);
+}
+
+function isBoundedString(value: unknown, maximum: number): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= maximum;
+}
+
+function isFingerprint(value: unknown, prefix: 'r2.1.' | 'd2.1.' | 'o2.1.'): value is string {
+    if (typeof value !== 'string' || !value.startsWith(prefix)) return false;
+    const digest = value.slice(prefix.length);
+    return digest.length === EXACT_DIGEST_LENGTH && /^[A-Za-z0-9_-]+$/u.test(digest);
+}
+
+function isClaimedExperimentIdentitiesV2(
+    value: unknown,
+    document: ValidatedExperimentDocumentV2,
+): value is ClaimedExperimentIdentitiesV2 {
+    if (!hasExactOwnKeys(value, [
+        'canonicalRecipeKey',
+        'recipeFingerprint',
+        'datasetKey',
+        'objectiveKey',
+    ])) return false;
+    return isBoundedString(value['canonicalRecipeKey'], 32_768)
+        && value['canonicalRecipeKey'] === canonicalRecipeKey(document.recipe)
+        && isFingerprint(value['recipeFingerprint'], 'r2.1.')
+        && isFingerprint(value['datasetKey'], 'd2.1.')
+        && isFingerprint(value['objectiveKey'], 'o2.1.');
+}
+
+function isWorkerExperimentRequestV2Snapshot(value: unknown): boolean {
+    if (!hasExactOwnKeys(value, [
+        'type',
+        'protocolVersion',
+        'requestId',
+        'document',
+        'claimedIdentities',
+    ])) return false;
+    if (value['type'] !== 'initialize-experiment'
+        || value['protocolVersion'] !== WORKER_PROTOCOL_VERSION
+        || !isRequestId(value['requestId'])) return false;
+    const validated = validateExperimentDocument(value['document']);
+    return validated.ok
+        && isClaimedExperimentIdentitiesV2(value['claimedIdentities'], validated.value);
+}
+
+export function parseWorkerExperimentRequestV2(value: unknown): WorkerExperimentRequestV2 {
+    const snapshot = createStableJsonSnapshot(value);
+    if (!isWorkerExperimentRequestV2Snapshot(snapshot)) {
+        throw new TypeError('worker experiment request: invalid version-2 request');
+    }
+    return snapshot as WorkerExperimentRequestV2;
+}
+
+export function isWorkerExperimentRequestV2(value: unknown): boolean {
+    try {
+        void parseWorkerExperimentRequestV2(value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export function isForceEvaluationRequestV2(value: unknown): boolean {
+    return hasExactOwnKeys(value, ['type', 'protocolVersion', 'requestId', 'trigger'])
+        && value['type'] === 'force-evaluation'
+        && value['protocolVersion'] === WORKER_PROTOCOL_VERSION
+        && isRequestId(value['requestId'])
+        && typeof value['trigger'] === 'string'
+        && FORCED_EVALUATION_TRIGGERS.has(value['trigger'] as ForcedEvaluationTriggerV2);
+}
+
+function isExactCaptureRequest(
+    value: unknown,
+    type: CaptureRunRequestV2['type'] | CaptureCheckpointRequestV2['type'],
+): boolean {
+    return hasExactOwnKeys(value, ['type', 'protocolVersion', 'requestId'])
+        && value['type'] === type
+        && value['protocolVersion'] === WORKER_PROTOCOL_VERSION
+        && isRequestId(value['requestId']);
+}
+
+export function isCaptureRunRequestV2(value: unknown): boolean {
+    return isExactCaptureRequest(value, 'capture-run');
+}
+
+export function isCaptureCheckpointRequestV2(
+    value: unknown,
+): boolean {
+    return isExactCaptureRequest(value, 'capture-checkpoint');
+}
+
+export function parseMainToWorkerRequestV2(value: unknown): MainToWorkerRequestV2 {
+    const snapshot = createStableJsonSnapshot(value);
+    if (isWorkerExperimentRequestV2Snapshot(snapshot)
+        || isForceEvaluationRequestV2(snapshot)
+        || isCaptureRunRequestV2(snapshot)
+        || isCaptureCheckpointRequestV2(snapshot)) {
+        return snapshot as MainToWorkerRequestV2;
+    }
+    throw new TypeError('main-to-worker request: invalid version-2 request');
+}
+
+export function isMainToWorkerRequestV2(value: unknown): boolean {
+    try {
+        void parseMainToWorkerRequestV2(value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function isWorkerArtifactProvenanceV2(value: unknown): value is WorkerArtifactProvenanceV2 {
+    const keys = Object.keys(ARTIFACT_BASIS);
+    if (!hasExactOwnKeys(value, [], keys)) return false;
+    const artifacts = value as Record<string, unknown>;
+    const present = keys.filter((key) => Object.prototype.hasOwnProperty.call(artifacts, key));
+    if (present.length === 0) return false;
+    try {
+        for (const key of present) {
+            const provenance = parseArtifactProvenance(artifacts[key]);
+            const allowed = ARTIFACT_BASIS[key as keyof typeof ARTIFACT_BASIS] as ReadonlySet<string>;
+            if (!allowed.has(provenance.basis.kind)) return false;
+            if (key === 'activationStatistics') {
+                if (provenance.basis.kind !== 'bounded-sample'
+                    || provenance.basis.split !== 'train'
+                    || provenance.basis.sampleCount !== Math.min(
+                        128,
+                        provenance.dataset.trainCount,
+                    )) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+interface EvidenceIdentity {
+    readonly model: { readonly generationId: number };
+    readonly dataset: {
+        readonly generatorVersion: number;
+        readonly datasetKey: string;
+        readonly trainCount: number;
+        readonly testCount: number;
+    };
+    readonly objectiveKey: string;
+}
+
+function hasSameEvidenceIdentity(left: EvidenceIdentity, right: EvidenceIdentity): boolean {
+    return left.model.generationId === right.model.generationId
+        && left.objectiveKey === right.objectiveKey
+        && left.dataset.generatorVersion === right.dataset.generatorVersion
+        && left.dataset.datasetKey === right.dataset.datasetKey
+        && left.dataset.trainCount === right.dataset.trainCount
+        && left.dataset.testCount === right.dataset.testCount;
+}
+
+function isWorkerEvidenceMessageV2Snapshot(value: unknown): boolean {
+    if (!hasExactOwnKeys(
+        value,
+        ['type', 'protocolVersion'],
+        ['liveSignal', 'latestEvaluation', 'artifacts'],
+    )) return false;
+    if (value['type'] !== 'evidence' || value['protocolVersion'] !== WORKER_PROTOCOL_VERSION) {
+        return false;
+    }
+    const hasLive = Object.prototype.hasOwnProperty.call(value, 'liveSignal');
+    const hasEvaluation = Object.prototype.hasOwnProperty.call(value, 'latestEvaluation');
+    const hasArtifacts = Object.prototype.hasOwnProperty.call(value, 'artifacts');
+    if (!hasLive && !hasEvaluation && !hasArtifacts) return false;
+    try {
+        const identities: EvidenceIdentity[] = [];
+        if (hasLive) {
+            const liveSignal = parseLiveTrainingSignal(value['liveSignal']);
+            identities.push(liveSignal);
+        }
+        if (hasEvaluation) {
+            const evaluation = parsePairedEvaluation(value['latestEvaluation']);
+            identities.push(evaluation);
+        }
+        if (hasArtifacts) {
+            const artifacts = value['artifacts'];
+            if (!isWorkerArtifactProvenanceV2(artifacts)) return false;
+            for (const provenance of Object.values(artifacts)) {
+                if (provenance !== undefined) identities.push(provenance);
+            }
+        }
+        const [first, ...rest] = identities;
+        if (first === undefined || rest.some((entry) => !hasSameEvidenceIdentity(first, entry))) {
+            return false;
+        }
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export function parseWorkerEvidenceMessageV2(value: unknown): WorkerEvidenceMessageV2 {
+    const snapshot = createStableJsonSnapshot(value);
+    if (!isWorkerEvidenceMessageV2Snapshot(snapshot)) {
+        throw new TypeError('worker evidence message: invalid version-2 evidence');
+    }
+    return snapshot as WorkerEvidenceMessageV2;
+}
+
+export function isWorkerEvidenceMessageV2(value: unknown): boolean {
+    try {
+        void parseWorkerEvidenceMessageV2(value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function isWorkerProtocolErrorMessageV2Snapshot(
+    value: unknown,
+): boolean {
+    return hasExactOwnKeys(value, [
+        'type',
+        'protocolVersion',
+        'requestId',
+        'generationId',
+        'code',
+        'path',
+        'message',
+        'source',
+    ])
+        && value['type'] === 'worker-error'
+        && value['protocolVersion'] === WORKER_PROTOCOL_VERSION
+        && isNullableRequestId(value['requestId'])
+        && isNullableRequestId(value['generationId'])
+        && typeof value['code'] === 'string'
+        && WORKER_ERROR_CODES.has(value['code'] as WorkerProtocolErrorCodeV2)
+        && isBoundedString(value['path'], 1_024)
+        && isBoundedString(value['message'], 4_096)
+        && typeof value['source'] === 'string'
+        && WORKER_ERROR_SOURCES.has(value['source'] as WorkerProtocolErrorSourceV2);
+}
+
+export function parseWorkerProtocolErrorMessageV2(
+    value: unknown,
+): WorkerProtocolErrorMessageV2 {
+    const snapshot = createStableJsonSnapshot(value);
+    if (!isWorkerProtocolErrorMessageV2Snapshot(snapshot)) {
+        throw new TypeError('worker protocol error: invalid version-2 error');
+    }
+    return snapshot as WorkerProtocolErrorMessageV2;
+}
+
+export function isWorkerProtocolErrorMessageV2(value: unknown): boolean {
+    try {
+        void parseWorkerProtocolErrorMessageV2(value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export function parseWorkerToMainMessageV2(value: unknown): WorkerToMainMessageV2 {
+    const snapshot = createStableJsonSnapshot(value);
+    if (isWorkerEvidenceMessageV2Snapshot(snapshot)
+        || isWorkerProtocolErrorMessageV2Snapshot(snapshot)) {
+        return snapshot as WorkerToMainMessageV2;
+    }
+    throw new TypeError('worker-to-main message: invalid version-2 message');
+}
+
+export function isWorkerToMainMessageV2(value: unknown): boolean {
+    try {
+        void parseWorkerToMainMessageV2(value);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 // ─────────────────────────────────────────────────────────
 // Visualization Demand

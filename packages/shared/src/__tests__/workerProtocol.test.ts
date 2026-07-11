@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+    DEFAULT_EXPERIMENT_DOCUMENT,
     DEFAULT_DEMAND,
+    WORKER_PROTOCOL_VERSION,
+    isCaptureCheckpointRequestV2,
+    isCaptureRunRequestV2,
+    isForceEvaluationRequestV2,
     isMainToWorkerCommand,
+    isWorkerEvidenceMessageV2,
+    isWorkerExperimentRequestV2,
+    isWorkerProtocolErrorMessageV2,
     isWorkerToMainMessage,
+    parseWorkerEvidenceMessageV2,
+    parseWorkerExperimentRequestV2,
+    parseMainToWorkerRequestV2,
+    parseWorkerToMainMessageV2,
+    prepareExperimentDocument,
 } from '../index.js';
 
 describe('isMainToWorkerCommand', () => {
@@ -634,6 +647,280 @@ describe('isWorkerToMainMessage', () => {
             runId: 1,
             status: 'paused',
             pauseReason: 'because',
+        })).toBe(false);
+    });
+});
+
+describe('version 2 worker protocol', () => {
+    async function preparedRequest() {
+        const prepared = await prepareExperimentDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+        if (!prepared.ok) throw new Error('default experiment must prepare');
+        return {
+            type: 'initialize-experiment',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            requestId: 1,
+            document: prepared.value.document,
+            claimedIdentities: prepared.value.identities,
+        } as const;
+    }
+
+    const model = { generationId: 1, revision: 4, step: 4, epoch: 0 } as const;
+    const dataset = {
+        generatorVersion: 2,
+        datasetKey: 'd2.1.' + 'A'.repeat(43),
+        trainCount: 2,
+        testCount: 2,
+    } as const;
+    const provenance = {
+        model,
+        dataset,
+        objectiveKey: 'o2.1.' + 'B'.repeat(43),
+        basis: {
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount: 2,
+            populationCount: 2,
+        },
+    } as const;
+    const evaluation = {
+        evaluationId: 1,
+        trigger: 'cadence',
+        model,
+        dataset,
+        objectiveKey: 'o2.1.' + 'B'.repeat(43),
+        train: {
+            basis: { kind: 'full-split', split: 'train', sampleCount: 2, populationCount: 2 },
+            values: { dataLoss: 0.25 },
+        },
+        test: {
+            basis: { kind: 'full-split', split: 'test', sampleCount: 2, populationCount: 2 },
+            values: { dataLoss: 0.5 },
+        },
+        objective: { regularizationPenalty: 0.1, trainTotalObjective: 0.35 },
+    } as const;
+    const liveSignal = {
+        model,
+        dataset,
+        objectiveKey: 'o2.1.' + 'B'.repeat(43),
+        basis: {
+            kind: 'mini-batch-ema',
+            alpha: 0.1,
+            latestBatchSize: 2,
+            throughStep: 4,
+        },
+        dataLoss: 0.3,
+    } as const;
+
+    it('accepts only an exact version-2 document plus all claimed identities', async () => {
+        const request = await preparedRequest();
+        expect(WORKER_PROTOCOL_VERSION).toBe(2);
+        expect(isWorkerExperimentRequestV2(request)).toBe(true);
+
+        const { objectiveKey: _missing, ...missingIdentity } = request.claimedIdentities;
+        expect(isWorkerExperimentRequestV2({
+            ...request,
+            claimedIdentities: missingIdentity,
+        })).toBe(false);
+        expect(isWorkerExperimentRequestV2({ ...request, protocolVersion: 1 })).toBe(false);
+        expect(isWorkerExperimentRequestV2({ ...request, unexpected: true })).toBe(false);
+        expect(isWorkerExperimentRequestV2({
+            ...request,
+            document: { ...request.document, unexpected: true },
+        })).toBe(false);
+
+        const accessor = { ...request } as Record<string, unknown>;
+        Object.defineProperty(accessor, 'type', {
+            enumerable: true,
+            get: () => 'initialize-experiment',
+        });
+        expect(isWorkerExperimentRequestV2(accessor)).toBe(false);
+
+        const customPrototype = { ...request };
+        Object.setPrototypeOf(customPrototype, { inherited: true });
+        expect(isWorkerExperimentRequestV2(customPrototype)).toBe(false);
+
+        const mutableRequest: any = structuredClone(request);
+        const parsed = parseWorkerExperimentRequestV2(mutableRequest);
+        mutableRequest.document.view.showTestData = true;
+        mutableRequest.claimedIdentities.datasetKey = 'd2.1.' + 'Z'.repeat(43);
+        expect(parsed.document.view.showTestData).toBe(false);
+        expect(parsed.claimedIdentities.datasetKey).not.toContain('ZZZZ');
+        expect(Object.isFrozen(parsed)).toBe(true);
+        expect(Object.isFrozen(parsed.document)).toBe(true);
+        expect(() => parseWorkerExperimentRequestV2({ ...request, protocolVersion: 1 }))
+            .toThrow('worker experiment request');
+    });
+
+    it('validates live, paired, and artifact provenance on evidence messages', () => {
+        const message = {
+            type: 'evidence',
+            protocolVersion: 2,
+            liveSignal,
+            latestEvaluation: evaluation,
+            artifacts: {
+                activationStatistics: provenance,
+                predictionTrace: {
+                    ...provenance,
+                    basis: {
+                        kind: 'bounded-sample',
+                        split: 'test',
+                        sampleCount: 1,
+                        populationCount: 2,
+                    },
+                },
+            },
+        } as const;
+        expect(isWorkerEvidenceMessageV2(message)).toBe(true);
+        expect(isWorkerEvidenceMessageV2({
+            ...message,
+            artifacts: {
+                activationStatistics: {
+                    ...provenance,
+                    basis: { ...provenance.basis, sampleCount: 3 },
+                },
+            },
+        })).toBe(false);
+        expect(isWorkerEvidenceMessageV2({
+            type: 'evidence',
+            protocolVersion: 2,
+        })).toBe(false);
+        expect(isWorkerEvidenceMessageV2({ ...message, accuracy: 0.5 })).toBe(false);
+
+        const parsed = parseWorkerEvidenceMessageV2(message);
+        (message.liveSignal as any).dataLoss = 9;
+        expect(parsed.liveSignal?.dataLoss).toBe(0.3);
+        expect(Object.isFrozen(parsed)).toBe(true);
+        expect(Object.isFrozen(parsed.liveSignal)).toBe(true);
+    });
+
+    it('rejects evidence bundles that mix generations, datasets, or objectives', () => {
+        const message = {
+            type: 'evidence',
+            protocolVersion: 2,
+            liveSignal,
+            latestEvaluation: evaluation,
+            artifacts: { activationStatistics: provenance },
+        } as const;
+
+        expect(isWorkerEvidenceMessageV2({
+            ...message,
+            latestEvaluation: {
+                ...evaluation,
+                dataset: { ...evaluation.dataset, datasetKey: 'd2.1.' + 'C'.repeat(43) },
+            },
+        })).toBe(false);
+        expect(isWorkerEvidenceMessageV2({
+            ...message,
+            artifacts: {
+                activationStatistics: {
+                    ...provenance,
+                    model: { ...provenance.model, generationId: 2 },
+                },
+            },
+        })).toBe(false);
+        expect(isWorkerEvidenceMessageV2({
+            ...message,
+            liveSignal: { ...liveSignal, objectiveKey: 'o2.1.' + 'C'.repeat(43) },
+        })).toBe(false);
+    });
+
+    it('enforces the deterministic bounded training basis for activation statistics', () => {
+        const message = {
+            type: 'evidence',
+            protocolVersion: 2,
+            artifacts: { activationStatistics: provenance },
+        } as const;
+        expect(isWorkerEvidenceMessageV2(message)).toBe(true);
+        expect(isWorkerEvidenceMessageV2({
+            ...message,
+            artifacts: {
+                activationStatistics: {
+                    ...provenance,
+                    basis: { ...provenance.basis, split: 'test' },
+                },
+            },
+        })).toBe(false);
+        expect(isWorkerEvidenceMessageV2({
+            ...message,
+            artifacts: {
+                activationStatistics: {
+                    ...provenance,
+                    basis: { ...provenance.basis, sampleCount: 1 },
+                },
+            },
+        })).toBe(false);
+    });
+
+    it('accepts strict structured errors and rejects unknown sources or fields', () => {
+        const message = {
+            type: 'worker-error',
+            protocolVersion: 2,
+            requestId: 7,
+            generationId: 2,
+            code: 'identity-mismatch',
+            path: 'claimedIdentities.datasetKey',
+            message: 'Dataset identity does not match the prepared document.',
+            source: 'preparation',
+        } as const;
+        expect(isWorkerProtocolErrorMessageV2(message)).toBe(true);
+        expect(isWorkerProtocolErrorMessageV2({ ...message, source: 'somewhere' })).toBe(false);
+        expect(isWorkerProtocolErrorMessageV2({ ...message, detail: 'hidden' })).toBe(false);
+        expect(isWorkerProtocolErrorMessageV2({ ...message, message: '' })).toBe(false);
+        const { requestId: _requestId, ...missingRequestId } = message;
+        expect(isWorkerProtocolErrorMessageV2(missingRequestId)).toBe(false);
+        expect(isWorkerProtocolErrorMessageV2({
+            ...message,
+            requestId: null,
+            generationId: null,
+        })).toBe(true);
+        const parsed = parseWorkerToMainMessageV2(message);
+        expect(parsed).toEqual(message);
+        expect(Object.isFrozen(parsed)).toBe(true);
+    });
+
+    it('uses explicit strict requests for forced evaluation, run capture, and checkpoint capture', () => {
+        expect(isForceEvaluationRequestV2({
+            type: 'force-evaluation',
+            protocolVersion: 2,
+            requestId: 3,
+            trigger: 'pause',
+        })).toBe(true);
+        expect(isCaptureRunRequestV2({
+            type: 'capture-run',
+            protocolVersion: 2,
+            requestId: 4,
+        })).toBe(true);
+        expect(isCaptureCheckpointRequestV2({
+            type: 'capture-checkpoint',
+            protocolVersion: 2,
+            requestId: 5,
+        })).toBe(true);
+
+        expect(isForceEvaluationRequestV2({
+            type: 'force-evaluation',
+            protocolVersion: 2,
+            requestId: 3,
+            trigger: 'cadence',
+        })).toBe(false);
+
+        const parsed = parseMainToWorkerRequestV2({
+            type: 'force-evaluation',
+            protocolVersion: 2,
+            requestId: 3,
+            trigger: 'pause',
+        });
+        expect(parsed).toMatchObject({ type: 'force-evaluation', trigger: 'pause' });
+        expect(Object.isFrozen(parsed)).toBe(true);
+        expect(isCaptureRunRequestV2({
+            type: 'capture-run',
+            protocolVersion: 2,
+            requestId: 0,
+        })).toBe(false);
+        expect(isCaptureCheckpointRequestV2({
+            type: 'capture-checkpoint',
+            protocolVersion: 2,
+            requestId: 5,
+            label: 'silently ignored',
         })).toBe(false);
     });
 });
