@@ -53,6 +53,19 @@ describe('deterministic layer statistics', () => {
         });
     });
 
+    it('preserves tightly clustered population variance at high activation magnitudes', () => {
+        const network = makeLinearNetwork();
+        network.setWeight(0, 0, 0, 1);
+
+        const result = network.computeLayerStatistics([[1e16], [1e16 + 2]]);
+        const layer = result.layers[0];
+
+        expect(Number.isFinite(layer.meanActivation)).toBe(true);
+        expect(layer.meanActivation).toBeGreaterThanOrEqual(1e16);
+        expect(layer.meanActivation).toBeLessThanOrEqual(1e16 + 2);
+        expect(layer.activationStd).toBe(1);
+    });
+
     it('selects a deterministic prefix capped at 128 and ignores unrelated forwards', () => {
         const network = makeLinearNetwork();
         network.setWeight(0, 0, 0, 1);
