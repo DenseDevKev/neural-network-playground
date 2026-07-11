@@ -53,6 +53,16 @@ export type GradientClipSpecV2 =
         readonly scope: 'total-objective-gradient';
     };
 
+export type OptimizerSpecV2 =
+    | { kind: 'sgd' }
+    | { kind: 'sgd-momentum'; momentum: number }
+    | { kind: 'adam'; beta1: number; beta2: number; epsilon: number };
+
+export type LearningRateScheduleV2 =
+    | { kind: 'constant' }
+    | { kind: 'step'; interval: number; gamma: number }
+    | { kind: 'cosine'; totalSteps: number; minimumRate: number };
+
 export interface ObjectiveBreakdown {
     dataLoss: number;
     regularizationPenalty: number;
@@ -225,6 +235,80 @@ export interface FeatureFlags {
     sinY: boolean;
     cosX: boolean;
     cosY: boolean;
+}
+
+export type FeatureId = keyof FeatureFlags;
+
+export interface CompilableExperimentRecipe {
+    data: { sampleCount: number; trainFraction: number; noise: number; seed: number };
+    inputs: { featureIds: readonly FeatureId[] };
+    model: {
+        hiddenLayers: readonly number[];
+        hiddenActivation: ScalarActivationType;
+        initialization: WeightInitType;
+        seed: number;
+    };
+    training: {
+        batchSize: number;
+        learningRate: number;
+        schedule: LearningRateScheduleV2;
+        optimizer: OptimizerSpecV2;
+        gradientClipping: GradientClipSpecV2;
+    };
+    task:
+        | { kind: 'binary-classification'; dataset: BinaryDatasetId }
+        | { kind: 'multiclass-classification'; dataset: 'three-class-clusters' }
+        | { kind: 'regression'; dataset: RegressionDatasetId };
+    objective: ObjectiveSpecV2;
+}
+
+export interface CompiledTrainingContractV2 {
+    learningRate: number;
+    batchSize: number;
+    schedule: LearningRateScheduleV2;
+    optimizer: OptimizerSpecV2;
+    gradientClipping: GradientClipSpecV2;
+    objective: CompiledObjective;
+}
+
+export interface CompiledDataConfig {
+    dataset: DatasetId;
+    sampleCount: number;
+    trainFraction: number;
+    noise: number;
+    seed: number;
+}
+
+export type CompiledTaskContract =
+    | {
+        kind: 'binary-classification';
+        dataset: BinaryDatasetId;
+        outputSize: 1;
+        outputActivation: 'sigmoid';
+        target: { kind: 'scalar'; values: readonly [0, 1] };
+    }
+    | {
+        kind: 'multiclass-classification';
+        dataset: 'three-class-clusters';
+        outputSize: 3;
+        outputActivation: 'softmax';
+        target: { kind: 'one-hot'; length: 3 };
+    }
+    | {
+        kind: 'regression';
+        dataset: RegressionDatasetId;
+        outputSize: 1;
+        outputActivation: 'linear';
+        target: { kind: 'scalar'; finite: true };
+    };
+
+export interface CompiledExperimentConfig {
+    network: NetworkConfig;
+    training: CompiledTrainingContractV2;
+    data: CompiledDataConfig;
+    features: FeatureFlags;
+    objective: CompiledObjective;
+    task: CompiledTaskContract;
 }
 
 /** Per-sample data record. */
