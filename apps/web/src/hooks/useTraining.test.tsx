@@ -11,6 +11,7 @@ import {
 } from '@nn-playground/shared';
 import type { WorkerToMainMessage } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
+import { setNoise } from '../store/recipeEdits.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
 import { getFrameBuffer, getFrameVersions, resetFrameBuffer, updateFrameBuffer } from '../worker/frameBuffer.ts';
 
@@ -819,6 +820,54 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().status).toBe('paused');
         expect(useTrainingStore.getState().checkpointTimeline.restoredCheckpointId).toBe(1);
         expect(getFrameBuffer().weights).toBeInstanceOf(Float32Array);
+    });
+
+    it('does not label a deferred restore with a recipe that changed while restoration was pending', async () => {
+        const restoreResult = {
+            snapshot: makeSnapshot(0),
+            runId: 101,
+            timeline: {
+                checkpoints: [
+                    { id: 1, step: 0, epoch: 0, trainLoss: 0.4, testLoss: 0.5, label: 'Step 0' },
+                ],
+                maxCheckpoints: 8,
+                evictedCount: 0,
+                liveCheckpointId: 1,
+                restoredCheckpointId: 1,
+            },
+        };
+        const restoreGate = deferred<typeof restoreResult>();
+        bridge.workerApi.restoreCheckpoint.mockReturnValueOnce(restoreGate.promise);
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        bridge.workerApi.updateConfig.mockClear();
+
+        let pendingRestore!: Promise<void>;
+        act(() => {
+            pendingRestore = result.current.restoreCheckpoint(1);
+        });
+        await waitFor(() => expect(bridge.workerApi.restoreCheckpoint).toHaveBeenCalledWith(1));
+
+        await act(async () => {
+            await usePlaygroundStore.getState().editRecipe((recipe) => (
+                setNoise(recipe, recipe.data.noise + 1)
+            ));
+        });
+        const editedFingerprint = usePlaygroundStore.getState().prepared!.identities.recipeFingerprint;
+        await act(async () => {
+            await Promise.resolve();
+        });
+        expect(bridge.workerApi.updateConfig).not.toHaveBeenCalled();
+
+        restoreGate.resolve(restoreResult);
+        await act(async () => {
+            await pendingRestore;
+        });
+        await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(useTrainingStore.getState().trainedRecipeSource).toBe('config-sync'));
+
+        expect(useTrainingStore.getState().trainedRecipeFingerprint).toBe(editedFingerprint);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(2);
     });
 
     it('clears pause reason on reset', async () => {

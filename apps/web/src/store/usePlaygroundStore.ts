@@ -221,6 +221,25 @@ export async function initializePlaygroundStateFromHash(
     };
 }
 
+/**
+ * Read the fragment from the full URL instead of `Location.hash` so a bare
+ * trailing `#` remains distinguishable from a URL with no fragment.
+ */
+export function getRawExperimentHash(href: string): string {
+    const hashIndex = href.indexOf('#');
+    return hashIndex === -1 ? '' : href.slice(hashIndex);
+}
+
+export function initializePlaygroundStateFromLocation(
+    location: Pick<Location, 'href'>,
+    prepare: PrepareExperiment = prepareExperimentDocument,
+): Promise<PlaygroundStoreInitialization> {
+    return initializePlaygroundStateFromHash(
+        getRawExperimentHash(location.href),
+        prepare,
+    );
+}
+
 const defaultPreparation = await prepareExperimentDocument(DEFAULT_EXPERIMENT_DOCUMENT);
 if (!defaultPreparation.ok) {
     const detail = defaultPreparation.issues
@@ -365,7 +384,7 @@ export function createPlaygroundStore(
                 return { ok: true, value: hash };
             },
             loadFromUrl: async () => {
-                const raw = window.location.hash;
+                const raw = getRawExperimentHash(window.location.href);
                 const decoded = decodeExperimentUrl(raw);
                 if (!decoded.ok) {
                     const requestId = ++nextRequestId;
@@ -525,9 +544,9 @@ export function createPlaygroundStore(
     });
 }
 
-const productionInitialization = await initializePlaygroundStateFromHash(
-    typeof window === 'undefined' ? '' : window.location.hash,
-);
+const productionInitialization = typeof window === 'undefined'
+    ? await initializePlaygroundStateFromHash('')
+    : await initializePlaygroundStateFromLocation(window.location);
 
 export const usePlaygroundStore = createPlaygroundStore({
     ...productionInitialization,

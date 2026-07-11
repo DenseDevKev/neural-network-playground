@@ -12,6 +12,7 @@ import {
 import { setLearningRate, setNoise } from './recipeEdits.ts';
 import {
     createPlaygroundStore,
+    initializePlaygroundStateFromLocation,
     initializePlaygroundStateFromHash,
 } from './usePlaygroundStore.ts';
 
@@ -177,6 +178,30 @@ describe('atomic prepared-document store', () => {
             .toBe(initial.document.recipe.data.noise);
     });
 
+    it('does not publish an older failure after the newer request succeeds', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const controlled = controlledPreparation();
+        const store = createReadyStore(initial, controlled.prepare);
+        const olderFailure = store.getState().replaceDocument({
+            ...initial.document,
+            recipe: {
+                ...initial.document.recipe,
+                data: { ...initial.document.recipe.data, sampleCount: 1 },
+            },
+        });
+        const newerSuccess = store.getState().replaceDocument(withNoise(initial, 13));
+
+        controlled.resolve(1);
+        expect((await newerSuccess).ok).toBe(true);
+        const published = store.getState().prepared;
+        controlled.resolve(0);
+        expect((await olderFailure).ok).toBe(false);
+
+        expect(store.getState().prepared).toBe(published);
+        expect(store.getState().prepared?.document.recipe.data.noise).toBe(13);
+        expect(store.getState().preparation).toMatchObject({ status: 'ready', requestId: 2 });
+    });
+
     it('ignores stale failures before and after a newer success without changing the candidate base', async () => {
         const initial = preset('xor-hidden').prepared;
         const controlled = controlledPreparation();
@@ -322,6 +347,20 @@ describe('atomic prepared-document store', () => {
 });
 
 describe('strict initialization and URL state', () => {
+    it('preserves a bare trailing fragment that Location.hash normalizes to empty', async () => {
+        window.history.replaceState(null, '', '/#');
+        expect(window.location.hash).toBe('');
+        expect(window.location.href.endsWith('#')).toBe(true);
+
+        const initial = await initializePlaygroundStateFromLocation(window.location);
+
+        expect(initial.initialPrepared).toBeNull();
+        expect(initial.incompatibleSource).toEqual({ kind: 'url', raw: '#' });
+        expect(initial.initialIssues).toEqual(expect.arrayContaining([
+            expect.objectContaining({ code: 'legacy-state' }),
+        ]));
+    });
+
     it('prepares the V2 default only for an exactly empty hash', async () => {
         const initial = await initializePlaygroundStateFromHash('');
 
@@ -386,6 +425,19 @@ describe('strict initialization and URL state', () => {
             raw: '#v=3&r=AAAA',
         });
         expect(store.getState().preparation.status).toBe('error');
+    });
+
+    it('loads a browser-normalized bare fragment as incompatible instead of as the default', async () => {
+        const store = createReadyStore();
+        const before = store.getState().prepared;
+        window.history.replaceState(null, '', '/#');
+        expect(window.location.hash).toBe('');
+
+        const result = await store.getState().loadFromUrl();
+
+        expect(result.ok).toBe(false);
+        expect(store.getState().prepared).toBe(before);
+        expect(store.getState().incompatibleSource).toEqual({ kind: 'url', raw: '#' });
     });
 
     it('refuses URL serialization when no compatible experiment is active', async () => {

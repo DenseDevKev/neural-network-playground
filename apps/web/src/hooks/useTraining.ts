@@ -239,6 +239,7 @@ export function useTraining(): TrainingHook {
     const configSyncSeqRef = useRef(0);
     const activeConfigSyncSeqRef = useRef(0);
     const configSyncPendingRef = useRef(false);
+    const restoreBarrierRef = useRef<Promise<void> | null>(null);
 
     // Config selectors (from playground store — stable, rarely changes)
     const network = usePlaygroundStore((s) => s.network);
@@ -404,6 +405,11 @@ export function useTraining(): TrainingHook {
         const seq = beginConfigSync();
 
         const sync = async () => {
+            const restoreBarrier = restoreBarrierRef.current;
+            if (restoreBarrier) {
+                await restoreBarrier;
+                if (!isCurrentConfigSync(seq)) return;
+            }
             let activeRecipe;
             try {
                 activeRecipe = getValidatedPublicRuntimeRecipe();
@@ -602,9 +608,16 @@ export function useTraining(): TrainingHook {
     }, [beginConfigSync, finishConfigSyncIfCurrent, initializeWorker, isCurrentConfigSync, reportWorkerError]);
 
     const restoreCheckpoint = useCallback(async (id: number) => {
-        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+        if (configSyncPendingRef.current
+            || restoreBarrierRef.current !== null
+            || useTrainingStore.getState().pendingConfigSource !== null) {
             return;
         }
+        let releaseRestore!: () => void;
+        const restoreBarrier = new Promise<void>((resolve) => {
+            releaseRestore = resolve;
+        });
+        restoreBarrierRef.current = restoreBarrier;
         if (isPlayingRef.current) {
             postStreamCommand({ type: 'stopTraining' });
             stopRenderLoop();
@@ -614,17 +627,32 @@ export function useTraining(): TrainingHook {
             if (!initializedRef.current) {
                 await initializeWorker();
             }
+            const restoredRecipe = getValidatedPublicRuntimeRecipe();
             const result = await getWorkerApi().restoreCheckpoint(id);
+            const currentFingerprint = usePlaygroundStore.getState()
+                .prepared?.identities.recipeFingerprint ?? null;
+            if (configSyncPendingRef.current
+                || currentFingerprint !== restoredRecipe.recipeFingerprint) {
+                return;
+            }
             newRunTo(result.runId);
             const ts = useTrainingStore.getState();
             applyFreshSnapshotToStore(ts, result.snapshot);
             ts.setCheckpointTimeline(result.timeline as CheckpointTimeline);
-            const activeRecipe = getValidatedPublicRuntimeRecipe();
-            ts.markTrainedRecipe(activeRecipe.config, 'restore', activeRecipe.recipeFingerprint);
+            ts.markTrainedRecipe(
+                restoredRecipe.config,
+                'restore',
+                restoredRecipe.recipeFingerprint,
+            );
             ts.setPauseReason('manual');
             ts.setStatus('paused');
         } catch (error) {
             reportWorkerError(error, 'Failed to restore checkpoint.');
+        } finally {
+            if (restoreBarrierRef.current === restoreBarrier) {
+                restoreBarrierRef.current = null;
+            }
+            releaseRestore();
         }
     }, [initializeWorker, reportWorkerError]);
 

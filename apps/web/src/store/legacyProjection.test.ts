@@ -25,7 +25,14 @@ describe('legacy prepared-experiment projection', () => {
 
         expect(binary.data.problemType).toBe('classification');
         expect(binary.network).toMatchObject({ outputSize: 1, outputActivation: 'sigmoid' });
-        expect(binary.training.lossType).toBe('crossEntropy');
+        expect(binary.training).toMatchObject({
+            lossType: 'crossEntropy',
+            optimizer: 'sgd',
+            gradientClip: null,
+            regularization: 'none',
+            regularizationRate: 0,
+        });
+        expect(binary.training.lrSchedule).toBeUndefined();
         expect(multiclass.data.problemType).toBe('classification');
         expect(multiclass.network).toMatchObject({ outputSize: 3, outputActivation: 'softmax' });
         expect(multiclass.training.lossType).toBe('categoricalCrossEntropy');
@@ -89,6 +96,21 @@ describe('legacy prepared-experiment projection', () => {
             adamBeta2: 0.98,
             adamEps: 1e-7,
             lrSchedule: { type: 'cosine', totalSteps: 321, minLr: 0.0002 },
+        });
+
+        const l1 = await prepare({
+            ...base,
+            recipe: {
+                ...base.recipe,
+                objective: {
+                    ...base.recipe.objective,
+                    penalty: { kind: 'l1', coefficient: 0.02, applyTo: 'weights' },
+                },
+            },
+        });
+        expect(projectPreparedExperiment(l1).training).toMatchObject({
+            regularization: 'l1',
+            regularizationRate: 0.02,
         });
     });
 
