@@ -58,6 +58,9 @@ function snapshotArray(
     ancestors: Set<object>,
     path: string,
 ): readonly unknown[] {
+    if (!isPlainArrayPrototype(Object.getPrototypeOf(value))) {
+        throw snapshotError(path, 'arrays must use a standard Array prototype');
+    }
     const descriptors = new Map<number, PropertyDescriptor>();
     for (const key of Reflect.ownKeys(value)) {
         if (typeof key === 'symbol') {
@@ -90,6 +93,20 @@ function snapshotArray(
         snapshot.push(snapshotValue(descriptor.value, ancestors, arrayPath(path, index)));
     }
     return Object.freeze(snapshot);
+}
+
+function isPlainArrayPrototype(prototype: object | null): boolean {
+    if (prototype === Array.prototype) return true;
+    if (prototype === null) return false;
+    const parent = Object.getPrototypeOf(prototype);
+    if (parent === null || Object.getPrototypeOf(parent) !== null) return false;
+    const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+    return Boolean(
+        constructor &&
+        'value' in constructor &&
+        typeof constructor.value === 'function' &&
+        constructor.value.name === 'Array',
+    );
 }
 
 function snapshotRecord(

@@ -127,10 +127,13 @@ describe('canonicalizeJson', () => {
 
         const extra = [1, 2] as unknown[] & { note?: string };
         extra.note = 'hidden from JSON arrays';
+        const exotic = [1, 2];
+        Object.setPrototypeOf(exotic, { inherited: true });
 
         expect(() => canonicalizeJson(sparse)).toThrow(/dense|index/iu);
         expect(() => canonicalizeJson(inherited)).toThrow(/array|prototype|index/iu);
         expect(() => canonicalizeJson(extra)).toThrow(/property|array/iu);
+        expect(() => canonicalizeJson(exotic)).toThrow(/array|prototype/iu);
     });
 
     it('rejects hidden, symbol, accessor, and inherited object state', () => {
