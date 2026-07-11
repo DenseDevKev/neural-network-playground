@@ -149,15 +149,33 @@ export interface AppConfig {
     ui: UIConfig;
 }
 
-export interface Preset {
-    id: string;
-    title: string;
-    description: string;
-    learningGoal?: string;
-    thumbnail?: string;
-    difficulty?: 'beginner' | 'intermediate' | 'advanced';
-    config: Partial<AppConfig>;
+export type RecipeId =
+    | 'single-neuron'
+    | 'xor-hidden'
+    | 'circle-one-layer'
+    | 'spiral-deep'
+    | 'regression-plane'
+    | 'feature-engineering'
+    | 'three-class-clusters';
+
+export interface RecipeRef {
+    readonly id: RecipeId;
+    readonly revision: number;
 }
+
+export interface RecipeCatalogEntry {
+    readonly id: RecipeId;
+    readonly revision: 1;
+    readonly title: string;
+    readonly description: string;
+    readonly learningGoal?: string;
+    readonly difficulty?: 'beginner' | 'intermediate' | 'advanced';
+    readonly recipe: ValidatedStandardExperimentRecipeV2;
+    readonly prepared: PreparedExperimentDocumentV2;
+}
+
+/** @deprecated Phase 6C callers must migrate to RecipeCatalogEntry. */
+export type Preset = RecipeCatalogEntry;
 
 export type TrainingStatus = 'idle' | 'running' | 'paused';
 

@@ -9,7 +9,7 @@ export {
     COLOR_DARK,
 } from './colorScale.js';
 export type { RGB } from './colorScale.js';
-export { PRESETS } from './presets.js';
+export { PREPARED_PRESETS, PRESETS, resolveRecipe } from './presets.js';
 export { generatePseudocode, generateNumPy, generateTFJS } from './codeExport.js';
 export {
     MAX_EXPERIMENT_JSON_BYTES,
@@ -78,6 +78,9 @@ export {
 export type {
     UIConfig,
     AppConfig,
+    RecipeId,
+    RecipeRef,
+    RecipeCatalogEntry,
     Preset,
     TrainingStatus,
     PauseReason,
