@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_DATA,
@@ -5,14 +6,192 @@ import {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
     MAX_TRAIN_TEST_RATIO,
+    MAX_EXPERIMENT_JSON_BYTES,
+    DEFAULT_EXPERIMENT_DOCUMENT,
+    canonicalizeJson,
+    decodeExperimentJson,
+    decodeExperimentUrl,
     decodeUrlState,
+    encodeExperimentJson,
+    encodeExperimentUrl,
     validateImportedConfig,
     normalizeAppConfig,
     encodeUrlState,
     exportConfigJson,
     importConfigJson
 } from '../index.js';
-import type { AppConfig } from '../types.js';
+import type {
+    AppConfig,
+    ExperimentDocumentV2,
+    ValidatedExperimentDocumentV2,
+} from '../types.js';
+
+function asValidatedForEncoding(
+    document: ExperimentDocumentV2,
+): ValidatedExperimentDocumentV2 {
+    return document as ValidatedExperimentDocumentV2;
+}
+
+function encodeTestBase64Url(value: string): string {
+    const bytes = new TextEncoder().encode(value);
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return globalThis.btoa(binary)
+        .replaceAll('+', '-')
+        .replaceAll('/', '_')
+        .replace(/=+$/u, '');
+}
+
+describe('version-2 experiment URL and JSON codecs', () => {
+    it('encodes the exact canonical document and round-trips every field', () => {
+        const encoded = encodeExperimentUrl(DEFAULT_EXPERIMENT_DOCUMENT);
+        expect(encoded).toMatch(/^#v=2&r=[A-Za-z0-9_-]+$/u);
+
+        const encodedPayload = new URLSearchParams(encoded.slice(1)).get('r');
+        expect(encodedPayload).not.toBeNull();
+        expect(encodedPayload).not.toContain('=');
+        const bytes = Uint8Array.from(
+            globalThis.atob(encodedPayload ?? ''),
+            (character) => character.charCodeAt(0),
+        );
+        expect(new TextDecoder('utf-8', { fatal: true }).decode(bytes)).toBe(
+            canonicalizeJson(DEFAULT_EXPERIMENT_DOCUMENT),
+        );
+
+        expect(decodeExperimentUrl(encoded)).toEqual({
+            ok: true,
+            value: DEFAULT_EXPERIMENT_DOCUMENT,
+        });
+    });
+
+    it('loads the validated V2 default only for an actually empty hash', () => {
+        expect(decodeExperimentUrl('')).toEqual({
+            ok: true,
+            value: DEFAULT_EXPERIMENT_DOCUMENT,
+        });
+        expect(decodeExperimentUrl('#')).toEqual({
+            ok: true,
+            value: DEFAULT_EXPERIMENT_DOCUMENT,
+        });
+        expect(decodeExperimentUrl(' ')).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'legacy-state' })],
+        });
+    });
+
+    it.each([
+        ['unversioned legacy', '#d=circle&lr=0.03', 'legacy-state'],
+        ['version 1', '#v=1&r=legacy', 'legacy-state'],
+        ['future version', '#v=3&r=future', 'unsupported-version'],
+        ['malformed version', '#v=two&r=value', 'invalid-field'],
+        ['missing payload', '#v=2', 'missing-field'],
+        ['duplicate version', '#v=2&v=2&r=value', 'invalid-field'],
+        ['duplicate payload', '#v=2&r=value&r=value', 'invalid-field'],
+        ['unknown field', '#v=2&r=value&extra=1', 'unknown-field'],
+        ['invalid alphabet', '#v=2&r=not+base64', 'invalid-field'],
+        ['invalid length', '#v=2&r=A', 'invalid-field'],
+        ['invalid UTF-8', '#v=2&r=_w', 'invalid-field'],
+        ['invalid JSON', '#v=2&r=bm90LWpzb24', 'invalid-field'],
+    ])('rejects %s without falling back', (_label, hash, code) => {
+        expect(decodeExperimentUrl(hash)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code })],
+        });
+    });
+
+    it('rejects a V2 payload whose document is incompatible', () => {
+        const futureDocument = {
+            ...DEFAULT_EXPERIMENT_DOCUMENT,
+            schemaVersion: 3,
+        } as unknown as ExperimentDocumentV2;
+        const futureUrl = encodeExperimentUrl(asValidatedForEncoding(futureDocument));
+        expect(decodeExperimentUrl(futureUrl)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({
+                code: 'unsupported-version',
+                path: 'schemaVersion',
+            })],
+        });
+
+        const unknownFieldDocument = {
+            ...DEFAULT_EXPERIMENT_DOCUMENT,
+            misspelledSetting: true,
+        } as unknown as ExperimentDocumentV2;
+        const unknownUrl = encodeExperimentUrl(asValidatedForEncoding(unknownFieldDocument));
+        expect(decodeExperimentUrl(unknownUrl)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'unknown-field' })],
+        });
+    });
+
+    it('rejects non-canonical URL syntax and non-canonical document JSON', () => {
+        const canonicalUrl = encodeExperimentUrl(DEFAULT_EXPERIMENT_DOCUMENT);
+        const payload = new URLSearchParams(canonicalUrl.slice(1)).get('r');
+        expect(payload).not.toBeNull();
+
+        expect(decodeExperimentUrl(`#r=${payload ?? ''}&v=2`)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'invalid-field', path: '$' })],
+        });
+
+        const prettyPayload = encodeTestBase64Url(
+            JSON.stringify(DEFAULT_EXPERIMENT_DOCUMENT, null, 2),
+        );
+        expect(decodeExperimentUrl(`#v=2&r=${prettyPayload}`)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'invalid-field', path: 'r' })],
+        });
+    });
+
+    it('exports deterministic pretty JSON and strictly imports the exact envelope', () => {
+        const json = encodeExperimentJson(DEFAULT_EXPERIMENT_DOCUMENT);
+        expect(json.startsWith('{\n  "kind": "nn-playground-experiment",')).toBe(true);
+        expect(json.endsWith('\n}')).toBe(true);
+        expect(JSON.parse(json)).toEqual(DEFAULT_EXPERIMENT_DOCUMENT);
+        expect(decodeExperimentJson(json)).toEqual({
+            ok: true,
+            value: DEFAULT_EXPERIMENT_DOCUMENT,
+        });
+    });
+
+    it.each([
+        ['malformed', '{', 'invalid-field'],
+        ['non-document', 'null', 'invalid-field'],
+        ['random object', '{"unexpected":true}', 'unknown-field'],
+        ['unversioned', JSON.stringify({ kind: 'nn-playground-experiment' }), 'legacy-state'],
+        [
+            'version 1',
+            JSON.stringify({ ...DEFAULT_EXPERIMENT_DOCUMENT, schemaVersion: 1 }),
+            'legacy-state',
+        ],
+        [
+            'future version',
+            JSON.stringify({ ...DEFAULT_EXPERIMENT_DOCUMENT, schemaVersion: 3 }),
+            'unsupported-version',
+        ],
+        [
+            'unknown field',
+            JSON.stringify({ ...DEFAULT_EXPERIMENT_DOCUMENT, typo: true }),
+            'unknown-field',
+        ],
+    ])('rejects %s JSON explicitly', (_label, json, code) => {
+        const result = decodeExperimentJson(json);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+            expect(result.issues).toEqual(
+                expect.arrayContaining([expect.objectContaining({ code })]),
+            );
+        }
+    });
+
+    it('rejects oversized JSON before parsing', () => {
+        const oversized = ' '.repeat(MAX_EXPERIMENT_JSON_BYTES + 1);
+        expect(decodeExperimentJson(oversized)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'resource-limit', path: '$' })],
+        });
+    });
+});
 
 const validConfig: AppConfig = {
     data: { ...DEFAULT_DATA },

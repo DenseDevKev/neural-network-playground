@@ -12,6 +12,11 @@ export type { RGB } from './colorScale.js';
 export { PRESETS } from './presets.js';
 export { generatePseudocode, generateNumPy, generateTFJS } from './codeExport.js';
 export {
+    MAX_EXPERIMENT_JSON_BYTES,
+    decodeExperimentJson,
+    decodeExperimentUrl,
+    encodeExperimentJson,
+    encodeExperimentUrl,
     encodeUrlState,
     decodeUrlState,
     exportConfigJson,
