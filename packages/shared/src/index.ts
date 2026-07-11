@@ -88,6 +88,7 @@ export {
     normalizeVisualizationDemand,
 } from './workerProtocol.js';
 export { structuralEqual } from './structural.js';
+export { canonicalizeJson } from './canonicalJson.js';
 export type {
     VisualizationDemand,
     ActivationHistogramLayout,
