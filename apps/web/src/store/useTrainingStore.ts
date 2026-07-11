@@ -11,15 +11,22 @@ import type {
 import type {
     ArenaModelSummary,
     CheckpointTimeline,
+    LiveTrainingSignal,
+    PairedEvaluation,
     PauseReason,
     RecipeFingerprint,
     TrainingStatus,
 } from '@nn-playground/shared';
-import type { AppConfig } from '@nn-playground/shared';
+import {
+    canonicalizeJson,
+    parseWorkerEvidenceMessageV2,
+    type AppConfig,
+} from '@nn-playground/shared';
 import {
     appendHistoryPoint,
     resetHistoryBuffer,
 } from './historyBuffer.ts';
+import { metricHistoryBuffer } from './metricHistoryBuffer.ts';
 import { normalizeTrainingSpeed } from '../worker/trainingLoop.ts';
 import type { FrameVersions } from '../worker/frameBuffer.ts';
 
@@ -36,6 +43,13 @@ export interface TrainingStore {
     snapshot: NetworkSnapshot | null;
     /** Monotonic counter — bumped every time `historyBuffer` is mutated. */
     historyVersion: number;
+    /** Worker-authored scientific evidence generation currently accepted by the UI. */
+    evidenceGenerationId: number | null;
+    latestLiveSignal: LiveTrainingSignal | null;
+    latestEvaluation: PairedEvaluation | null;
+    /** Independent packed-series versions; charts read the singleton buffer by version. */
+    trainingTrendVersion: number;
+    evaluationHistoryVersion: number;
     frameVersion: number;
     outputGridVersion: number;
     neuronGridsVersion: number;
@@ -84,6 +98,10 @@ export interface TrainingStore {
         checkpointTimeline?: CheckpointTimeline;
     }) => void;
     resetHistory: () => void;
+    /** Validate and atomically publish a strict protocol-V2 evidence message. */
+    applyEvidence: (message: unknown) => void;
+    /** Clear both scientific series and their generation in one publication. */
+    resetEvidence: () => void;
     setFrameVersion: (version: number) => void;
     setFrameVersions: (versions: FrameVersions) => void;
     setTrainPoints: (pts: DataPoint[]) => void;
@@ -115,10 +133,23 @@ const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
     restoredCheckpointId: null,
 };
 
-export const useTrainingStore = create<TrainingStore>((set) => ({
+function evidenceGenerationId(message: ReturnType<typeof parseWorkerEvidenceMessageV2>): number {
+    if (message.liveSignal) return message.liveSignal.model.generationId;
+    if (message.latestEvaluation) return message.latestEvaluation.model.generationId;
+    const artifact = message.artifacts && Object.values(message.artifacts)[0];
+    if (!artifact) throw new TypeError('evidence message has no generation identity');
+    return artifact.model.generationId;
+}
+
+export const useTrainingStore = create<TrainingStore>((set, get) => ({
     status: 'idle',
     snapshot: null,
     historyVersion: 0,
+    evidenceGenerationId: null,
+    latestLiveSignal: null,
+    latestEvaluation: null,
+    trainingTrendVersion: metricHistoryBuffer.versions.trendVersion,
+    evaluationHistoryVersion: metricHistoryBuffer.versions.evaluationVersion,
     frameVersion: 0,
     outputGridVersion: 0,
     neuronGridsVersion: 0,
@@ -166,10 +197,6 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 arenaSummariesVersion: state.arenaSummariesVersion,
             };
 
-            const historyVersion = snapshot.historyPoint
-                ? appendHistoryPoint(snapshot.historyPoint)
-                : state.historyVersion;
-
             return {
                 snapshot,
                 frameVersion: versions.frameVersion,
@@ -181,7 +208,7 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
                 activationHistogramsVersion: versions.activationHistogramsVersion,
                 multiclassBoundaryVersion: versions.multiclassBoundaryVersion,
                 arenaSummariesVersion: versions.arenaSummariesVersion,
-                historyVersion,
+                historyVersion: state.historyVersion,
                 testMetricsStale,
                 checkpointTimeline: checkpointTimeline ?? state.checkpointTimeline,
                 workerError: null,
@@ -198,6 +225,89 @@ export const useTrainingStore = create<TrainingStore>((set) => ({
     resetHistory: () => {
         const version = resetHistoryBuffer();
         set({ historyVersion: version });
+    },
+    applyEvidence: (value) => {
+        // Parse into a detached, deeply-frozen snapshot before inspecting or
+        // mutating any client state. This is the app's worker trust boundary.
+        const message = parseWorkerEvidenceMessageV2(value);
+        const generationId = evidenceGenerationId(message);
+        const current = get();
+        if (current.evidenceGenerationId !== null
+            && current.evidenceGenerationId !== generationId) {
+            throw new TypeError(
+                `evidence generation ${generationId} does not match active generation ${current.evidenceGenerationId}`,
+            );
+        }
+
+        // Preflight both channels before touching either packed series. This
+        // makes a bundle all-or-nothing even when one half is a replay or a
+        // conflict and the other half is new.
+        let appendLive = false;
+        if (message.liveSignal) {
+            const latest = current.latestLiveSignal;
+            if (latest && latest.model.revision === message.liveSignal.model.revision) {
+                if (canonicalizeJson(latest) !== canonicalizeJson(message.liveSignal)) {
+                    throw new TypeError(
+                        `conflicting live signal for generation ${generationId} revision ${message.liveSignal.model.revision}`,
+                    );
+                }
+            } else {
+                appendLive = latest === null
+                    || message.liveSignal.model.revision > latest.model.revision;
+            }
+        }
+
+        let appendEvaluation = message.latestEvaluation !== undefined;
+        if (message.latestEvaluation && current.latestEvaluation
+            && message.latestEvaluation.evaluationId === current.latestEvaluation.evaluationId) {
+            if (canonicalizeJson(current.latestEvaluation)
+                !== canonicalizeJson(message.latestEvaluation)) {
+                throw new TypeError(
+                    `conflicting evaluationId ${message.latestEvaluation.evaluationId}`,
+                );
+            }
+        }
+
+        const establishesGeneration = current.evidenceGenerationId === null;
+        if (!appendLive && !appendEvaluation && !establishesGeneration) return;
+
+        let trainingTrendVersion = current.trainingTrendVersion;
+        let evaluationHistoryVersion = current.evaluationHistoryVersion;
+        // Evaluation goes first: its bounded replay map can still reject a
+        // conflicting retained ID. The already-parsed live append cannot fail,
+        // so a rejected bundle never partially appends its live half.
+        if (appendEvaluation && message.latestEvaluation) {
+            const result = metricHistoryBuffer.appendEvaluation(message.latestEvaluation);
+            evaluationHistoryVersion = result.version;
+            appendEvaluation = result.appended;
+        }
+        if (appendLive && message.liveSignal) {
+            trainingTrendVersion = metricHistoryBuffer.appendTrend(message.liveSignal);
+        }
+
+        if (!appendLive && !appendEvaluation && !establishesGeneration) return;
+
+        set({
+            evidenceGenerationId: generationId,
+            latestLiveSignal: appendLive && message.liveSignal
+                ? message.liveSignal
+                : current.latestLiveSignal,
+            latestEvaluation: appendEvaluation && message.latestEvaluation
+                ? message.latestEvaluation
+                : current.latestEvaluation,
+            trainingTrendVersion,
+            evaluationHistoryVersion,
+        });
+    },
+    resetEvidence: () => {
+        const versions = metricHistoryBuffer.reset();
+        set({
+            evidenceGenerationId: null,
+            latestLiveSignal: null,
+            latestEvaluation: null,
+            trainingTrendVersion: versions.trendVersion,
+            evaluationHistoryVersion: versions.evaluationVersion,
+        });
     },
     setFrameVersion: (frameVersion) => set({ frameVersion }),
     setFrameVersions: (versions) => set({

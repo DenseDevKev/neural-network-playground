@@ -4,7 +4,12 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
-import { useTrainingStore, type TrainingStore } from '../store/useTrainingStore.ts';
+import {
+    useTrainingStore,
+    type TrainedRecipeSource,
+    type TrainingStore,
+} from '../store/useTrainingStore.ts';
+import { projectPreparedExperiment } from '../store/legacyProjection.ts';
 import {
     getWorkerApi,
     setupStreamChannel,
@@ -28,6 +33,7 @@ import {
 } from '../worker/frameBufferLayout.ts';
 import type {
     DataConfig,
+    DataPoint,
     FeatureFlags,
     NetworkConfig,
     NetworkSnapshot,
@@ -36,11 +42,16 @@ import type {
 import type {
     ArenaScalarSnapshot,
     CheckpointTimeline,
+    PairedEvaluation,
+    PreparedExperimentDocumentV2,
+    WorkerEvidenceMessageV2,
+    WorkerExperimentRequestV2,
     WorkerArenaSnapshotMessage,
+    WorkerProtocolErrorMessageV2,
     WorkerSnapshotMessage,
     WorkerToMainMessage,
 } from '@nn-playground/shared';
-import { structuralEqual, validateImportedConfig } from '@nn-playground/shared';
+import { WORKER_PROTOCOL_VERSION } from '@nn-playground/shared';
 
 export interface LiveArenaModelInput {
     label?: string;
@@ -53,32 +64,63 @@ export interface LiveArenaModelInput {
 export interface TrainingHook {
     play: () => void;
     pause: () => void;
-    step: () => void;
-    reset: () => void;
+    step: () => Promise<void>;
+    reset: () => Promise<void>;
     restoreCheckpoint: (id: number) => Promise<void>;
     initializeArena: (modelA: LiveArenaModelInput, modelB: LiveArenaModelInput) => Promise<void>;
     stepArena: (iterations?: number) => Promise<void>;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-    return error instanceof Error ? error.message : fallback;
+    if (error instanceof Error) return error.message;
+    return typeof error === 'string' && error.length > 0 ? error : fallback;
 }
 
-function getValidatedPublicRuntimeRecipe() {
-    const playground = usePlaygroundStore.getState();
-    if (!playground.prepared) {
-        throw new Error(
-            'Training is unavailable because the shared experiment URL is incompatible with version 2.',
-        );
-    }
-    const config = playground.getConfig();
-    const result = validateImportedConfig(config, { allowMulticlass: true });
-    if (!result.config) {
-        throw new Error(result.error ?? 'Invalid playground configuration.');
+function requirePreparedExperiment(): PreparedExperimentDocumentV2 {
+    const prepared = usePlaygroundStore.getState().prepared;
+    if (prepared) return prepared;
+    throw new Error(
+        'Training is unavailable because the shared experiment URL is incompatible with version 2.',
+    );
+}
+
+export function createWorkerExperimentRequestV2(
+    prepared: PreparedExperimentDocumentV2,
+    requestId: number,
+): WorkerExperimentRequestV2 {
+    if (!Number.isSafeInteger(requestId) || requestId < 1) {
+        throw new RangeError('worker requestId must be a positive safe integer');
     }
     return {
-        config: result.config,
-        recipeFingerprint: playground.prepared.identities.recipeFingerprint,
+        type: 'initialize-experiment',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+        requestId,
+        document: prepared.document,
+        claimedIdentities: prepared.identities,
+    };
+}
+
+/**
+ * Direct manual-step RPCs can resolve before cadence evidence already queued
+ * on the ordered MessagePort. Never jump the evaluation series over that gap.
+ */
+export function evidenceForDirectStep(
+    evidence: WorkerEvidenceMessageV2,
+    latestEvaluation: PairedEvaluation | null,
+): WorkerEvidenceMessageV2 | null {
+    const evaluation = evidence.latestEvaluation;
+    if (!evaluation) return evidence;
+    const latestId = latestEvaluation?.evaluationId ?? 0;
+    if (evaluation.evaluationId === latestId
+        || evaluation.evaluationId === latestId + 1) {
+        return evidence;
+    }
+    if (!evidence.liveSignal && !evidence.artifacts) return null;
+    return {
+        type: 'evidence',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+        ...(evidence.liveSignal ? { liveSignal: evidence.liveSignal } : {}),
+        ...(evidence.artifacts ? { artifacts: evidence.artifacts } : {}),
     };
 }
 
@@ -168,15 +210,16 @@ function snapshotForReactState(snapshot: NetworkSnapshot): NetworkSnapshot {
 function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot): void {
     ts.setSnapshot(snapshotForReactState(snapshot));
     ts.setTestMetricsStale(snapshot.testMetricsStale === true);
-    ts.resetHistory();
-    if (snapshot.historyPoint) ts.addHistoryPoint(snapshot.historyPoint);
     ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
 }
 
-async function syncCheckpointTimelineToStore(): Promise<void> {
-    const timeline = await getWorkerApi().getCheckpointTimeline();
-    useTrainingStore.getState().setCheckpointTimeline(timeline as CheckpointTimeline);
-}
+const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
+    checkpoints: [],
+    maxCheckpoints: 8,
+    evictedCount: 0,
+    liveCheckpointId: null,
+    restoredCheckpointId: null,
+};
 
 function applyArenaSnapshotToStore(snapshot: ArenaScalarSnapshot | WorkerArenaSnapshotMessage): void {
     const summaries = snapshot.summaries.map((summary) => ({ ...summary }));
@@ -224,16 +267,21 @@ function createStreamSnapshot(
 
 export function useTraining(): TrainingHook {
     // All refs first (stable hook order)
+    const mountedRef = useRef(true);
     const initializedRef = useRef(false);
-    // Snapshot of the last config objects we successfully sent to the worker.
-    // Kept by reference for structural comparison; not JSON.stringify'd every tick.
-    const prevConfigRef = useRef<{
-        network: unknown;
-        training: unknown;
-        data: unknown;
-        features: unknown;
-    } | null>(null);
+    const prevPreparedRef = useRef<PreparedExperimentDocumentV2 | null>(null);
     const prevConfigSyncNonceRef = useRef(0);
+    const requestIdRef = useRef(0);
+    const activeRequestIdRef = useRef<number | null>(null);
+    const pendingPreparationRequestIdRef = useRef<number | null>(null);
+    const rejectedPreparationRequestIdsRef = useRef(new Set<number>());
+    const lifecycleEpochRef = useRef(0);
+    const streamSetupPromiseRef = useRef<Promise<void> | null>(null);
+    const initializationPromiseRef = useRef<Promise<boolean> | null>(null);
+    const mutationPausePromiseRef = useRef<Promise<void> | null>(null);
+    const mutationPauseResolveRef = useRef<(() => void) | null>(null);
+    const mutationPauseRejectRef = useRef<((error: Error) => void) | null>(null);
+    const manualActionPendingRef = useRef(false);
     const stepsPerFrameRef = useRef(5);
     const isPlayingRef = useRef(false);
     const configSyncSeqRef = useRef(0);
@@ -242,10 +290,7 @@ export function useTraining(): TrainingHook {
     const restoreBarrierRef = useRef<Promise<void> | null>(null);
 
     // Config selectors (from playground store — stable, rarely changes)
-    const network = usePlaygroundStore((s) => s.network);
-    const training = usePlaygroundStore((s) => s.training);
-    const data = usePlaygroundStore((s) => s.data);
-    const features = usePlaygroundStore((s) => s.features);
+    const prepared = usePlaygroundStore((s) => s.prepared);
     const demand = usePlaygroundStore((s) => s.demand);
     const webgpuGrid = usePlaygroundStore((s) => s.featuresUI.webgpuGrid);
 
@@ -254,10 +299,16 @@ export function useTraining(): TrainingHook {
     const configSyncNonce = useTrainingStore((s) => s.configSyncNonce);
 
     const reportWorkerError = useCallback((error: unknown, fallback: string) => {
+        if (!mountedRef.current) return;
+        const message = getErrorMessage(error, fallback);
+        mutationPauseRejectRef.current?.(new Error(message));
+        mutationPausePromiseRef.current = null;
+        mutationPauseResolveRef.current = null;
+        mutationPauseRejectRef.current = null;
         const ts = useTrainingStore.getState();
         isPlayingRef.current = false;
         stopRenderLoop();
-        ts.setWorkerError(getErrorMessage(error, fallback));
+        ts.setWorkerError(message);
         ts.setPauseReason('error');
         ts.setStatus('paused');
         initializedRef.current = false;
@@ -281,42 +332,130 @@ export function useTraining(): TrainingHook {
         }
     }, []);
 
-    const initializeWorker = useCallback(async () => {
-        const { config, recipeFingerprint } = getValidatedPublicRuntimeRecipe();
-        const api = getWorkerApi();
+    const nextRequest = useCallback((nextPrepared: PreparedExperimentDocumentV2) => {
+        const requestId = requestIdRef.current + 1;
+        requestIdRef.current = requestId;
+        activeRequestIdRef.current = requestId;
+        pendingPreparationRequestIdRef.current = requestId;
+        return createWorkerExperimentRequestV2(nextPrepared, requestId);
+    }, []);
+
+    const ensureStreamChannel = useCallback((): Promise<void> => {
+        if (!streamSetupPromiseRef.current) {
+            const promise = setupStreamChannel().catch((error) => {
+                if (streamSetupPromiseRef.current === promise) {
+                    streamSetupPromiseRef.current = null;
+                }
+                throw error;
+            });
+            streamSetupPromiseRef.current = promise;
+        }
+        return streamSetupPromiseRef.current;
+    }, []);
+
+    const pauseForMutation = useCallback((): Promise<void> => {
+        if (mutationPausePromiseRef.current) return mutationPausePromiseRef.current;
+        if (!isPlayingRef.current) return Promise.resolve();
+        isPlayingRef.current = false;
+        stopRenderLoop();
+        let rejectPause!: (error: Error) => void;
+        const promise = new Promise<void>((resolve, reject) => {
+            mutationPauseResolveRef.current = resolve;
+            mutationPauseRejectRef.current = reject;
+            rejectPause = reject;
+        });
+        mutationPausePromiseRef.current = promise;
+        try {
+            postStreamCommand({ type: 'stopTraining' });
+        } catch (error) {
+            mutationPausePromiseRef.current = null;
+            mutationPauseResolveRef.current = null;
+            mutationPauseRejectRef.current = null;
+            rejectPause(error instanceof Error ? error : new Error(String(error)));
+        }
+        return promise;
+    }, []);
+
+    const applyFreshV2Run = useCallback((
+        result: Awaited<ReturnType<ReturnType<typeof getWorkerApi>['initializeExperimentV2']>>,
+    ) => {
         const ts = useTrainingStore.getState();
-        const result = await api.initialize(
-            config.network,
-            config.training,
-            config.data,
-            config.features,
-        );
-        ts.clearWorkerError();
-        applyFreshSnapshotToStore(ts, result.snapshot);
         newRunTo(result.runId);
-        await syncCheckpointTimelineToStore();
+        ts.resetEvidence();
+        ts.applyEvidence(result.evidence);
+        applyFreshSnapshotToStore(ts, result.snapshot);
+        ts.setCheckpointTimeline(EMPTY_CHECKPOINT_TIMELINE);
+        ts.clearWorkerError();
+        ts.clearPauseReason();
+    }, []);
 
-        // Store points reactively so UI renders immediately
+    const publishCommittedV2Run = useCallback((
+        result: Awaited<ReturnType<ReturnType<typeof getWorkerApi>['initializeExperimentV2']>>,
+        owner: PreparedExperimentDocumentV2,
+        source: TrainedRecipeSource,
+    ): boolean => {
+        const ts = useTrainingStore.getState();
+        if (ts.evidenceGenerationId !== null
+            && result.runId <= ts.evidenceGenerationId) return false;
+        applyFreshV2Run(result);
+        ts.setTrainPoints([]);
+        ts.setTestPoints([]);
+        ts.markTrainedRecipe(
+            projectPreparedExperiment(owner),
+            source,
+            owner.identities.recipeFingerprint,
+        );
+        ts.setStatus('idle');
+        initializedRef.current = false;
+        return true;
+    }, [applyFreshV2Run]);
+
+    const initializePrepared = useCallback(async (
+        requestedPrepared: PreparedExperimentDocumentV2 = requirePreparedExperiment(),
+    ): Promise<boolean> => {
+        const lifecycleEpoch = lifecycleEpochRef.current;
+        prevPreparedRef.current = requestedPrepared;
+        const request = nextRequest(requestedPrepared);
+        const api = getWorkerApi();
+        let result;
+        try {
+            await ensureStreamChannel();
+            if (!mountedRef.current
+                || lifecycleEpochRef.current !== lifecycleEpoch
+                || activeRequestIdRef.current !== request.requestId) {
+                return false;
+            }
+            result = await api.initializeExperimentV2(request);
+        } catch (error) {
+            if (!mountedRef.current
+                || lifecycleEpochRef.current !== lifecycleEpoch
+                || activeRequestIdRef.current !== request.requestId) {
+                return false;
+            }
+            pendingPreparationRequestIdRef.current = null;
+            rejectedPreparationRequestIdsRef.current.delete(request.requestId);
+            throw error;
+        }
+        if (!mountedRef.current || lifecycleEpochRef.current !== lifecycleEpoch) return false;
+        if (rejectedPreparationRequestIdsRef.current.delete(request.requestId)) return false;
+        publishCommittedV2Run(result, requestedPrepared, 'initialize');
+        if (activeRequestIdRef.current !== request.requestId) return false;
+        pendingPreparationRequestIdRef.current = null;
+        if (usePlaygroundStore.getState().prepared !== requestedPrepared) return false;
+        const ts = useTrainingStore.getState();
+
+        // Hydration does not own generation identity. A failure below reports
+        // a runtime error, but never rolls the committed run back to stale UI.
         const trainPts = await api.getTrainPoints();
+        if (!mountedRef.current || activeRequestIdRef.current !== request.requestId) return false;
         const testPts = await api.getTestPoints();
-        ts.setTrainPoints(trainPts);
-        ts.setTestPoints(testPts);
-        ts.markTrainedRecipe(config, 'initialize', recipeFingerprint);
-
-        // Record the initial config snapshot to prevent duplicate sync
+        if (!mountedRef.current || activeRequestIdRef.current !== request.requestId) return false;
         const latestState = usePlaygroundStore.getState();
-        prevConfigRef.current = {
-            network: latestState.network,
-            training: latestState.training,
-            data: latestState.data,
-            features: latestState.features,
-        };
-
-        // Set up MessageChannel for streaming
-        await setupStreamChannel();
+        if (latestState.prepared !== requestedPrepared) return false;
 
         // Send initial demand
         await api.updateDemand(latestState.demand);
+        if (!mountedRef.current || activeRequestIdRef.current !== request.requestId) return false;
 
         // AS-4: tell the worker whether the user has opted in to the
         // WebGPU grid path. Capability detection still gates this; the
@@ -328,8 +467,29 @@ export function useTraining(): TrainingHook {
             // Older worker bundles won't expose setWebGpuEnabled — ignore.
         }
 
+        if (!mountedRef.current || activeRequestIdRef.current !== request.requestId) return false;
+        if (usePlaygroundStore.getState().prepared !== requestedPrepared) return false;
+        ts.setTrainPoints(trainPts);
+        ts.setTestPoints(testPts);
         initializedRef.current = true;
-    }, []);
+        return true;
+    }, [ensureStreamChannel, nextRequest, publishCommittedV2Run]);
+
+    const initializeWorker = useCallback((
+        requestedPrepared: PreparedExperimentDocumentV2 = requirePreparedExperiment(),
+    ): Promise<boolean> => {
+        const inFlight = initializationPromiseRef.current;
+        if (inFlight && prevPreparedRef.current === requestedPrepared) return inFlight;
+        const promise = initializePrepared(requestedPrepared);
+        initializationPromiseRef.current = promise;
+        const clear = () => {
+            if (initializationPromiseRef.current === promise) {
+                initializationPromiseRef.current = null;
+            }
+        };
+        void promise.then(clear, clear);
+        return promise;
+    }, [initializePrepared]);
 
     // Keep ref in sync so streaming commands use current speed.
     useEffect(() => {
@@ -343,9 +503,34 @@ export function useTraining(): TrainingHook {
     // ── Snapshot handler: applies streamed snapshots to training store ──
     useEffect(() => {
         const unsubscribe = onSnapshot((msg: WorkerToMainMessage) => {
+            if (!mountedRef.current) return;
             const ts = useTrainingStore.getState();
 
-            if (msg.type === 'snapshot') {
+            if (msg.type === 'evidence') {
+                try {
+                    ts.applyEvidence(msg);
+                } catch (error) {
+                    reportWorkerError(error, 'Received invalid scientific evidence from the worker.');
+                }
+            } else if (msg.type === 'worker-error') {
+                const error = msg as WorkerProtocolErrorMessageV2;
+                if (error.generationId === null) {
+                    if (error.requestId === null
+                        || error.requestId !== pendingPreparationRequestIdRef.current) return;
+                    pendingPreparationRequestIdRef.current = null;
+                    rejectedPreparationRequestIdsRef.current.add(error.requestId);
+                    activeRequestIdRef.current = null;
+                    if (configSyncPendingRef.current) {
+                        configSyncPendingRef.current = false;
+                        ts.failConfigChange(error.message);
+                        return;
+                    }
+                    reportWorkerError(error.message, 'Failed to prepare the experiment.');
+                    return;
+                }
+                if (error.generationId !== ts.evidenceGenerationId) return;
+                reportWorkerError(error.message, 'The training worker failed.');
+            } else if (msg.type === 'snapshot') {
                 const snapshot = createStreamSnapshot(msg, ts.snapshot);
                 const frameVersions = getFrameVersions();
                 ts.applyStreamedSnapshot({
@@ -353,10 +538,16 @@ export function useTraining(): TrainingHook {
                     frameVersion: frameVersions.frameVersion,
                     frameVersions,
                     testMetricsStale: msg.scalars.testMetricsStale === true,
-                    checkpointTimeline: msg.checkpointTimeline,
                 });
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused') {
+                    const resolveMutationPause = mutationPauseResolveRef.current;
+                    if (resolveMutationPause) {
+                        mutationPausePromiseRef.current = null;
+                        mutationPauseResolveRef.current = null;
+                        mutationPauseRejectRef.current = null;
+                        resolveMutationPause();
+                    }
                     if (msg.pauseReason) {
                         isPlayingRef.current = false;
                         stopRenderLoop();
@@ -373,36 +564,45 @@ export function useTraining(): TrainingHook {
                     ts.setStatus('running');
                 }
             } else if (msg.type === 'error') {
-                isPlayingRef.current = false;
-                stopRenderLoop();
-                ts.setWorkerError(msg.message);
-                ts.setPauseReason('error');
-                ts.setStatus('paused');
+                reportWorkerError(msg.message, 'The training worker failed.');
             } else if (msg.type === 'arenaSnapshot') {
                 applyArenaSnapshotToStore(msg);
             }
         });
 
         return unsubscribe;
-    }, []);
+    }, [reportWorkerError]);
 
     // Initialize worker on mount
     useEffect(() => {
-        initializeWorker().catch((error) => {
+        lifecycleEpochRef.current++;
+        mountedRef.current = true;
+        if (!prepared) {
+            reportWorkerError(
+                new Error('Training is unavailable because the shared experiment URL is incompatible with version 2.'),
+                'Failed to initialize training worker.',
+            );
+            return;
+        }
+        initializeWorker(prepared).catch((error) => {
             reportWorkerError(error, 'Failed to initialize training worker.');
         });
-    }, [initializeWorker, reportWorkerError]);
+        // Mount initialization is intentionally one-shot. Later prepared
+        // documents are handled by the ordered config transaction below.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
-    // Sync config changes to worker (rebuild when needed)
+    // Every accepted prepared-document replacement starts a fresh generation.
     useEffect(() => {
-        if (!initializedRef.current) return;
-        const nextSnapshot = { network, training, data, features };
         const isRetry = configSyncNonce !== prevConfigSyncNonceRef.current;
-        if (!isRetry && prevConfigRef.current && structuralEqual(nextSnapshot, prevConfigRef.current)) return;
-        const previousConfigSnapshot = prevConfigRef.current;
-        prevConfigRef.current = nextSnapshot;
+        if (!prepared) return;
+        if (!isRetry && prevPreparedRef.current === prepared) return;
+        const previousPrepared = prevPreparedRef.current;
+        prevPreparedRef.current = prepared;
         prevConfigSyncNonceRef.current = configSyncNonce;
         const seq = beginConfigSync();
+        const request = nextRequest(prepared);
+        const lifecycleEpoch = lifecycleEpochRef.current;
 
         const sync = async () => {
             const restoreBarrier = restoreBarrierRef.current;
@@ -410,65 +610,113 @@ export function useTraining(): TrainingHook {
                 await restoreBarrier;
                 if (!isCurrentConfigSync(seq)) return;
             }
-            let activeRecipe;
+            // Serialize MessagePort pause with the Comlink mutation. The
+            // paused status is the acknowledgement that the old loop and its
+            // forced evaluation have completed.
             try {
-                activeRecipe = getValidatedPublicRuntimeRecipe();
+                await pauseForMutation();
             } catch (error) {
-                if (!isCurrentConfigSync(seq)) return;
-                prevConfigRef.current = previousConfigSnapshot;
-                useTrainingStore.getState().failConfigChange(getErrorMessage(error, 'Invalid playground configuration.'));
-                finishConfigSyncIfCurrent(seq);
+                if (mountedRef.current && isCurrentConfigSync(seq)) {
+                    useTrainingStore.getState().failConfigChange(
+                        getErrorMessage(error, 'Failed to pause the current experiment.'),
+                    );
+                    finishConfigSyncIfCurrent(seq);
+                }
                 return;
             }
-            const { config, recipeFingerprint } = activeRecipe;
-
-            // Stop streaming before config change
-            if (isPlayingRef.current) {
-                postStreamCommand({ type: 'stopTraining' });
-                stopRenderLoop();
-                isPlayingRef.current = false;
-            }
+            if (!mountedRef.current
+                || lifecycleEpochRef.current !== lifecycleEpoch
+                || !isCurrentConfigSync(seq)) return;
 
             const api = getWorkerApi();
             const ts = useTrainingStore.getState();
+            let result: Awaited<ReturnType<typeof api.initializeExperimentV2>>;
             try {
-                const result = await api.updateConfig(
-                    config.network,
-                    config.training,
-                    config.data,
-                    config.features,
-                    false,
-                );
-                if (!isCurrentConfigSync(seq)) return;
-                // Sync to worker's runId AFTER updateConfig returns
-                newRunTo(result.runId);
-                ts.clearPauseReason();
-                applyFreshSnapshotToStore(ts, result.snapshot);
-                const timeline = await api.getCheckpointTimeline();
-                if (!isCurrentConfigSync(seq)) return;
-                ts.setCheckpointTimeline(timeline as CheckpointTimeline);
-
-                // Update points reactively
-                const trainPts = await api.getTrainPoints();
-                if (!isCurrentConfigSync(seq)) return;
-                const testPts = await api.getTestPoints();
-                if (!isCurrentConfigSync(seq)) return;
-                ts.setTrainPoints(trainPts);
-                ts.setTestPoints(testPts);
-                ts.markTrainedRecipe(config, 'config-sync', recipeFingerprint);
-
-                usePlaygroundStore.getState().syncToUrl();
-                ts.finishConfigChange();
-                finishConfigSyncIfCurrent(seq);
+                await ensureStreamChannel();
+                if (!mountedRef.current
+                    || lifecycleEpochRef.current !== lifecycleEpoch
+                    || !isCurrentConfigSync(seq)
+                    || activeRequestIdRef.current !== request.requestId) return;
+                result = await api.initializeExperimentV2(request);
+                if (!mountedRef.current || lifecycleEpochRef.current !== lifecycleEpoch) return;
+                if (rejectedPreparationRequestIdsRef.current.delete(request.requestId)) return;
+                publishCommittedV2Run(result, prepared, 'config-sync');
+                if (!isCurrentConfigSync(seq)
+                    || activeRequestIdRef.current !== request.requestId) return;
+                pendingPreparationRequestIdRef.current = null;
+                const committed = usePlaygroundStore.getState();
+                if (committed.prepared !== prepared) return;
             } catch (error) {
-                if (!isCurrentConfigSync(seq)) return;
-                prevConfigRef.current = previousConfigSnapshot;
+                if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
+                if (pendingPreparationRequestIdRef.current === request.requestId) {
+                    pendingPreparationRequestIdRef.current = null;
+                }
+                rejectedPreparationRequestIdsRef.current.delete(request.requestId);
+                prevPreparedRef.current = previousPrepared;
                 ts.failConfigChange(error instanceof Error ? error.message : 'Failed to update configuration');
                 finishConfigSyncIfCurrent(seq);
+                return;
+            }
+
+            // The worker/app identity commit above cannot be rolled back.
+            // Auxiliary failures become runtime errors, never config rollback.
+            let auxiliaryError: unknown = null;
+            let trainPts: DataPoint[] = [];
+            let testPts: DataPoint[] = [];
+            try {
+                usePlaygroundStore.getState().syncToUrl();
+            } catch (error) {
+                auxiliaryError = error;
+            }
+            try {
+                trainPts = await api.getTrainPoints();
+            } catch (error) {
+                auxiliaryError = error;
+            }
+            if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
+            try {
+                testPts = await api.getTestPoints();
+            } catch (error) {
+                auxiliaryError ??= error;
+            }
+            if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
+            const latest = usePlaygroundStore.getState();
+            if (latest.prepared !== prepared) return;
+            try {
+                await api.updateDemand(latest.demand);
+            } catch (error) {
+                auxiliaryError ??= error;
+            }
+            if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
+            try {
+                await api.setWebGpuEnabled(latest.featuresUI.webgpuGrid);
+            } catch {
+                // Capability and older-bundle fallbacks remain non-fatal.
+            }
+            if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
+
+            ts.setTrainPoints(trainPts);
+            ts.setTestPoints(testPts);
+            initializedRef.current = true;
+            ts.finishConfigChange();
+            finishConfigSyncIfCurrent(seq);
+            if (auxiliaryError !== null) {
+                reportWorkerError(auxiliaryError, 'Failed to hydrate the new experiment runtime.');
             }
         };
-        sync();
-    }, [network, training, data, features, configSyncNonce, beginConfigSync, isCurrentConfigSync, finishConfigSyncIfCurrent]);
+        void sync();
+    }, [
+        prepared,
+        configSyncNonce,
+        beginConfigSync,
+        finishConfigSyncIfCurrent,
+        ensureStreamChannel,
+        isCurrentConfigSync,
+        nextRequest,
+        pauseForMutation,
+        publishCommittedV2Run,
+        reportWorkerError,
+    ]);
 
     // Sync demand changes to worker
     useEffect(() => {
@@ -498,7 +746,10 @@ export function useTraining(): TrainingHook {
     }, [webgpuGrid]);
 
     const play = useCallback(() => {
-        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+        if (configSyncPendingRef.current
+            || mutationPausePromiseRef.current !== null
+            || manualActionPendingRef.current
+            || useTrainingStore.getState().pendingConfigSource !== null) {
             return;
         }
 
@@ -528,50 +779,73 @@ export function useTraining(): TrainingHook {
         if (!isPlayingRef.current && useTrainingStore.getState().status !== 'running') {
             return;
         }
-        isPlayingRef.current = false;
-        postStreamCommand({ type: 'stopTraining' });
-        stopRenderLoop();
         const ts = useTrainingStore.getState();
         ts.setPauseReason('manual');
         ts.setStatus('paused');
-    }, []);
+        void pauseForMutation().catch((error) => {
+            reportWorkerError(error, 'Failed to pause training.');
+        });
+    }, [pauseForMutation, reportWorkerError]);
 
     const step = useCallback(async () => {
         if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
             return;
         }
-        if (isPlayingRef.current) {
-            pause();
-        }
+        if (manualActionPendingRef.current) return;
+        manualActionPendingRef.current = true;
+        const wasPlaying = isPlayingRef.current;
         try {
+            await pauseForMutation();
+            if (configSyncPendingRef.current
+                || useTrainingStore.getState().pendingConfigSource !== null) return;
+            if (wasPlaying) {
+                useTrainingStore.getState().setPauseReason('manual');
+                useTrainingStore.getState().setStatus('paused');
+            }
             if (!initializedRef.current) {
                 await initializeWorker();
+                if (!initializedRef.current) return;
             }
             const api = getWorkerApi();
-            const snap = await api.step(1);
+            const result = await api.stepExperimentV2(1);
+            if (!mountedRef.current) return;
             const ts = useTrainingStore.getState();
-            ts.setSnapshot(snapshotForReactState(snap));
-            ts.setTestMetricsStale(snap.testMetricsStale === true);
-            ts.setFrameVersions(syncSnapshotToFrameBuffer(snap));
-            if (snap.historyPoint) ts.addHistoryPoint(snap.historyPoint);
-            await syncCheckpointTimelineToStore();
+            if (configSyncPendingRef.current
+                || ts.pendingConfigSource !== null
+                || result.runId !== ts.evidenceGenerationId) return;
+            const resultRevision = result.evidence.liveSignal?.model.revision
+                ?? result.evidence.latestEvaluation?.model.revision;
+            const currentRevision = ts.latestLiveSignal?.model.revision
+                ?? ts.latestEvaluation?.model.revision;
+            if (resultRevision !== undefined
+                && currentRevision !== undefined
+                && resultRevision < currentRevision) return;
+            ts.setSnapshot(snapshotForReactState(result.snapshot));
+            ts.setTestMetricsStale(result.snapshot.testMetricsStale === true);
+            ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
+            const directEvidence = evidenceForDirectStep(
+                result.evidence,
+                ts.latestEvaluation,
+            );
+            if (directEvidence) ts.applyEvidence(directEvidence);
         } catch (error) {
             reportWorkerError(error, 'Failed to run a training step.');
+        } finally {
+            manualActionPendingRef.current = false;
         }
-    }, [initializeWorker, pause, reportWorkerError]);
+    }, [initializeWorker, pauseForMutation, reportWorkerError]);
 
     const reset = useCallback(async () => {
-        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
+        if (configSyncPendingRef.current
+            || manualActionPendingRef.current
+            || useTrainingStore.getState().pendingConfigSource !== null) {
             return;
-        }
-        if (isPlayingRef.current) {
-            postStreamCommand({ type: 'stopTraining' });
-            stopRenderLoop();
-            isPlayingRef.current = false;
         }
         const seq = beginConfigSync();
         useTrainingStore.getState().clearPauseReason();
         try {
+            await pauseForMutation();
+            if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
             if (!initializedRef.current) {
                 await initializeWorker();
                 if (!isCurrentConfigSync(seq)) return;
@@ -580,39 +854,46 @@ export function useTraining(): TrainingHook {
                 return;
             }
             const api = getWorkerApi();
-            const result = await api.reset();
+            const resetPrepared = requirePreparedExperiment();
+            const result = await api.resetExperimentV2();
+            if (!mountedRef.current) return;
+            publishCommittedV2Run(result, resetPrepared, 'reset');
             if (!isCurrentConfigSync(seq)) return;
-            newRunTo(result.runId);
+            if (usePlaygroundStore.getState().prepared !== resetPrepared) return;
             const ts = useTrainingStore.getState();
-            applyFreshSnapshotToStore(ts, result.snapshot);
-            const timeline = await api.getCheckpointTimeline();
-            if (!isCurrentConfigSync(seq)) return;
-            ts.setCheckpointTimeline(timeline as CheckpointTimeline);
-            ts.setStatus('idle');
 
-            // Refresh points
+            // Auxiliary reset hydration cannot roll generation identity back.
             const trainPts = await api.getTrainPoints();
-            if (!isCurrentConfigSync(seq)) return;
+            if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
             const testPts = await api.getTestPoints();
-            if (!isCurrentConfigSync(seq)) return;
+            if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
+            if (usePlaygroundStore.getState().prepared !== resetPrepared) return;
             ts.setTrainPoints(trainPts);
             ts.setTestPoints(testPts);
-            const activeRecipe = getValidatedPublicRuntimeRecipe();
-            ts.markTrainedRecipe(activeRecipe.config, 'reset', activeRecipe.recipeFingerprint);
             finishConfigSyncIfCurrent(seq);
         } catch (error) {
             if (!isCurrentConfigSync(seq)) return;
             reportWorkerError(error, 'Failed to reset training.');
             finishConfigSyncIfCurrent(seq);
         }
-    }, [beginConfigSync, finishConfigSyncIfCurrent, initializeWorker, isCurrentConfigSync, reportWorkerError]);
+    }, [beginConfigSync, finishConfigSyncIfCurrent, initializeWorker, isCurrentConfigSync, pauseForMutation, publishCommittedV2Run, reportWorkerError]);
 
     const restoreCheckpoint = useCallback(async (id: number) => {
+        // A prepared document means this hook owns a strict V2 runtime. Until
+        // Task 10 adds versioned checkpoint RPCs, never cross into the legacy
+        // model mutator even if client state is manually seeded.
+        if (usePlaygroundStore.getState().prepared !== null) return;
         if (configSyncPendingRef.current
             || restoreBarrierRef.current !== null
             || useTrainingStore.getState().pendingConfigSource !== null) {
             return;
         }
+        // Protocol V2 does not expose a checkpoint timeline until Task 10.
+        // Keep the legacy restoration branch for that migration, but make it
+        // unreachable from a strict run unless the store owns the requested ID.
+        if (!useTrainingStore.getState().checkpointTimeline.checkpoints.some(
+            (checkpoint) => checkpoint.id === id,
+        )) return;
         let releaseRestore!: () => void;
         const restoreBarrier = new Promise<void>((resolve) => {
             releaseRestore = resolve;
@@ -626,13 +907,14 @@ export function useTraining(): TrainingHook {
         try {
             if (!initializedRef.current) {
                 await initializeWorker();
+                if (!initializedRef.current) return;
             }
-            const restoredRecipe = getValidatedPublicRuntimeRecipe();
+            const restoredPrepared = requirePreparedExperiment();
             const result = await getWorkerApi().restoreCheckpoint(id);
             const currentFingerprint = usePlaygroundStore.getState()
                 .prepared?.identities.recipeFingerprint ?? null;
             if (configSyncPendingRef.current
-                || currentFingerprint !== restoredRecipe.recipeFingerprint) {
+                || currentFingerprint !== restoredPrepared.identities.recipeFingerprint) {
                 return;
             }
             newRunTo(result.runId);
@@ -640,9 +922,9 @@ export function useTraining(): TrainingHook {
             applyFreshSnapshotToStore(ts, result.snapshot);
             ts.setCheckpointTimeline(result.timeline as CheckpointTimeline);
             ts.markTrainedRecipe(
-                restoredRecipe.config,
+                projectPreparedExperiment(restoredPrepared),
                 'restore',
-                restoredRecipe.recipeFingerprint,
+                restoredPrepared.identities.recipeFingerprint,
             );
             ts.setPauseReason('manual');
             ts.setStatus('paused');
@@ -691,12 +973,61 @@ export function useTraining(): TrainingHook {
 
     // Cleanup on unmount
     useEffect(() => {
+        const lifecycleEpoch = lifecycleEpochRef;
+        const rejectedPreparationRequestIds = rejectedPreparationRequestIdsRef;
         return () => {
+            mountedRef.current = false;
+            lifecycleEpoch.current++;
+            activeRequestIdRef.current = null;
+            pendingPreparationRequestIdRef.current = null;
+            rejectedPreparationRequestIds.current.clear();
+            streamSetupPromiseRef.current = null;
+            initializationPromiseRef.current = null;
+            mutationPauseRejectRef.current?.(new Error('Training hook unmounted'));
+            mutationPausePromiseRef.current = null;
+            mutationPauseResolveRef.current = null;
+            mutationPauseRejectRef.current = null;
             activeConfigSyncSeqRef.current = configSyncSeqRef.current + 1;
             configSyncSeqRef.current = activeConfigSyncSeqRef.current;
             configSyncPendingRef.current = false;
+            manualActionPendingRef.current = false;
             isPlayingRef.current = false;
             terminateWorker();
+            const ts = useTrainingStore.getState();
+            ts.resetEvidence();
+            const frameVersions = getFrameVersions();
+            useTrainingStore.setState({
+                status: 'idle',
+                snapshot: null,
+                frameVersion: frameVersions.frameVersion,
+                outputGridVersion: frameVersions.outputGridVersion,
+                neuronGridsVersion: frameVersions.neuronGridsVersion,
+                paramsVersion: frameVersions.paramsVersion,
+                layerStatsVersion: frameVersions.layerStatsVersion,
+                confusionMatrixVersion: frameVersions.confusionMatrixVersion,
+                activationHistogramsVersion: frameVersions.activationHistogramsVersion,
+                multiclassBoundaryVersion: frameVersions.multiclassBoundaryVersion,
+                arenaSummariesVersion: frameVersions.arenaSummariesVersion,
+                arenaSummaries: null,
+                trainPoints: [],
+                testPoints: [],
+                dataConfigLoading: false,
+                networkConfigLoading: false,
+                featuresConfigLoading: false,
+                trainingConfigLoading: false,
+                presetConfigLoading: false,
+                pendingConfigSource: null,
+                configError: null,
+                configErrorSource: null,
+                workerError: null,
+                pauseReason: null,
+                testMetricsStale: false,
+                checkpointTimeline: EMPTY_CHECKPOINT_TIMELINE,
+                trainedRecipeConfig: null,
+                trainedRecipeFingerprint: null,
+                trainedRecipeRecordedAt: null,
+                trainedRecipeSource: null,
+            });
         };
     }, []);
 

@@ -2,8 +2,8 @@
 // Exercises the training loop pipeline through a mocked workerBridge,
 // driving synthetic snapshots and asserting store updates.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 import { useTrainingStore } from '../store/useTrainingStore';
 import { usePlaygroundStore } from '../store/usePlaygroundStore';
@@ -16,6 +16,11 @@ import {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
 } from '@nn-playground/shared';
+import type { WorkerEvidenceMessageV2 } from '@nn-playground/shared';
+import {
+    createScientificTrustFixtures,
+    type ScientificTrustFixtures,
+} from '../test/scientificTrustFixtures.ts';
 
 // ── Fake workerBridge ──
 
@@ -40,7 +45,30 @@ const fakeSnapshot = {
     historyPoint: { step: 10, trainLoss: 0.3, testLoss: 0.4 },
 };
 
+let fixtures: ScientificTrustFixtures;
+
+beforeAll(async () => {
+    fixtures = await createScientificTrustFixtures();
+});
+
+function fakeEvidence(generationId: number): WorkerEvidenceMessageV2 {
+    const model = { ...fixtures.liveSignal.model, generationId };
+    return {
+        type: 'evidence',
+        protocolVersion: 2,
+        liveSignal: { ...fixtures.liveSignal, model },
+        latestEvaluation: { ...fixtures.evaluation, model },
+    };
+}
+
+function fakeStrictResult(runId: number) {
+    return { snapshot: fakeSnapshot, runId, evidence: fakeEvidence(runId) };
+}
+
 const fakeWorkerApi = {
+    initializeExperimentV2: vi.fn(),
+    resetExperimentV2: vi.fn(),
+    stepExperimentV2: vi.fn(),
     initialize: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 1 }),
     updateConfig: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 }),
     reset: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 3 }),
@@ -123,10 +151,11 @@ describe('Training integration', () => {
         fakeStopRenderLoop = vi.fn();
         fakeNewRunTo = vi.fn();
 
-        fakeWorkerApi.initialize.mockResolvedValue({ snapshot: fakeSnapshot, runId: 1 });
-        fakeWorkerApi.updateConfig.mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 });
-        fakeWorkerApi.reset.mockResolvedValue({ snapshot: fakeSnapshot, runId: 3 });
-        fakeWorkerApi.step.mockResolvedValue(fakeSnapshot);
+        fakeWorkerApi.initializeExperimentV2.mockReset()
+            .mockResolvedValueOnce(fakeStrictResult(1))
+            .mockResolvedValue(fakeStrictResult(2));
+        fakeWorkerApi.resetExperimentV2.mockReset().mockResolvedValue(fakeStrictResult(3));
+        fakeWorkerApi.stepExperimentV2.mockReset().mockResolvedValue(fakeStrictResult(1));
         fakeWorkerApi.restoreCheckpoint.mockResolvedValue({
             snapshot: fakeSnapshot,
             runId: 1,
@@ -169,6 +198,7 @@ describe('Training integration', () => {
         });
 
         useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: null,
@@ -199,7 +229,8 @@ describe('Training integration', () => {
             render(<App />);
         });
 
-        expect(fakeWorkerApi.initialize).toHaveBeenCalledTimes(1);
+        expect(fakeWorkerApi.initializeExperimentV2).toHaveBeenCalledTimes(1);
+        expect(fakeWorkerApi.initialize).not.toHaveBeenCalled();
         expect(fakeNewRunTo).toHaveBeenCalledWith(1);
         expect(useTrainingStore.getState().snapshot?.trainLoss).toBe(0.3);
     });
@@ -311,8 +342,9 @@ describe('Dataset switching scenario', () => {
             activeTabRight: 'boundary',
         });
 
-        fakeWorkerApi.initialize.mockResolvedValue({ snapshot: fakeSnapshot, runId: 1 });
-        fakeWorkerApi.updateConfig.mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 });
+        fakeWorkerApi.initializeExperimentV2.mockReset()
+            .mockResolvedValueOnce(fakeStrictResult(1))
+            .mockResolvedValue(fakeStrictResult(2));
         fakeWorkerApi.getTrainPoints.mockResolvedValue([]);
         fakeWorkerApi.getTestPoints.mockResolvedValue([]);
         fakeWorkerApi.updateDemand.mockResolvedValue(undefined);
@@ -328,6 +360,7 @@ describe('Dataset switching scenario', () => {
         });
 
         useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: fakeSnapshot as any,
@@ -346,14 +379,13 @@ describe('Dataset switching scenario', () => {
         });
     });
 
-    it('calls updateConfig and transitions pendingConfigSource on dataset change', async () => {
+    it('rebuilds from the accepted prepared document on dataset change', async () => {
         await act(async () => {
             render(<App />);
         });
 
         // Mark as initialized so config-sync useEffect runs
-        fakeWorkerApi.initialize.mockClear();
-        fakeWorkerApi.updateConfig.mockClear();
+        fakeWorkerApi.initializeExperimentV2.mockClear();
 
         await act(async () => {
             const edited = await usePlaygroundStore.getState().editRecipe(
@@ -367,6 +399,12 @@ describe('Dataset switching scenario', () => {
             await Promise.resolve();
         });
 
+        await waitFor(() => expect(fakeWorkerApi.initializeExperimentV2).toHaveBeenCalledTimes(1));
+        const request = fakeWorkerApi.initializeExperimentV2.mock.calls[0]![0] as {
+            document: { recipe: { task: { dataset: string } } };
+        };
+        expect(request.document.recipe.task.dataset).toBe('xor');
+        expect(fakeWorkerApi.updateConfig).not.toHaveBeenCalled();
         expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
     });
 });

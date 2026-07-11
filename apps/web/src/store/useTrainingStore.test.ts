@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTrainingStore } from './useTrainingStore.ts';
 import { readHistory } from './historyBuffer.ts';
+import { metricHistoryBuffer } from './metricHistoryBuffer.ts';
 import type { NetworkSnapshot } from '@nn-playground/engine';
 import {
     DEFAULT_DATA,
@@ -8,7 +9,18 @@ import {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
     type AppConfig,
+    type WorkerEvidenceMessageV2,
 } from '@nn-playground/shared';
+import {
+    createScientificTrustFixtures,
+    type ScientificTrustFixtures,
+} from '../test/scientificTrustFixtures.ts';
+
+let fixtures: ScientificTrustFixtures;
+
+beforeAll(async () => {
+    fixtures = await createScientificTrustFixtures();
+});
 
 function makeSnapshot(step: number): NetworkSnapshot {
     return {
@@ -44,6 +56,7 @@ function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
 describe('useTrainingStore streamed snapshots', () => {
     beforeEach(() => {
         useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             snapshot: null,
             trainedRecipeConfig: null,
@@ -65,7 +78,7 @@ describe('useTrainingStore streamed snapshots', () => {
         });
     });
 
-    it('applies snapshot, frame version, stale flag, and history in one store publication', () => {
+    it('applies snapshot, frame version, and stale flag without inventing legacy history', () => {
         let publications = 0;
         const unsubscribe = useTrainingStore.subscribe(() => {
             publications++;
@@ -85,7 +98,7 @@ describe('useTrainingStore streamed snapshots', () => {
         expect(state.frameVersion).toBe(7);
         expect(state.testMetricsStale).toBe(true);
         expect(state.workerError).toBeNull();
-        expect(readHistory().count).toBe(1);
+        expect(readHistory().count).toBe(0);
     });
 
     it('publishes the multiclass boundary frame version from streamed frame versions', () => {
@@ -116,7 +129,7 @@ describe('useTrainingStore streamed snapshots', () => {
         expect(useTrainingStore.getState().presetConfigLoading).toBe(true);
         expect(useTrainingStore.getState().dataConfigLoading).toBe(false);
 
-        useTrainingStore.getState().failConfigChange('Preset failed', 'preset');
+        useTrainingStore.getState().failConfigChange('Preset failed');
 
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
         expect(useTrainingStore.getState().presetConfigLoading).toBe(false);
@@ -154,5 +167,184 @@ describe('useTrainingStore streamed snapshots', () => {
 
         expect(useTrainingStore.getState().trainedRecipeConfig?.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
         expect(useTrainingStore.getState().trainedRecipeConfig?.network.hiddenLayers).toEqual([4, 4]);
+    });
+});
+
+function evidenceAt(
+    evaluationId: number,
+    step: number,
+    generationId = fixtures.evaluation.model.generationId,
+): WorkerEvidenceMessageV2 {
+    const model = {
+        generationId,
+        revision: step,
+        step,
+        epoch: Math.floor(step / 10),
+    };
+    const trainDataLoss = 0.6 - evaluationId * 0.01;
+    return {
+        type: 'evidence',
+        protocolVersion: 2,
+        liveSignal: {
+            ...fixtures.liveSignal,
+            model,
+            basis: {
+                ...fixtures.liveSignal.basis,
+                throughStep: step,
+            },
+            dataLoss: trainDataLoss,
+        },
+        latestEvaluation: {
+            ...fixtures.evaluation,
+            evaluationId,
+            trigger: evaluationId === 1 ? 'initial' : 'manual-step',
+            model,
+            train: {
+                ...fixtures.evaluation.train,
+                values: { dataLoss: trainDataLoss },
+            },
+            test: {
+                ...fixtures.evaluation.test,
+                values: { dataLoss: trainDataLoss + 0.1 },
+            },
+            objective: {
+                regularizationPenalty: 0,
+                trainTotalObjective: trainDataLoss,
+            },
+        },
+    };
+}
+
+describe('useTrainingStore scientific evidence', () => {
+    beforeEach(() => {
+        useTrainingStore.getState().resetEvidence();
+    });
+
+    it('publishes a validated evidence bundle atomically with independent versions', () => {
+        const before = useTrainingStore.getState();
+        const coldRead = vi.spyOn(metricHistoryBuffer, 'read');
+        let publications = 0;
+        const unsubscribe = useTrainingStore.subscribe(() => publications++);
+
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        unsubscribe();
+
+        const state = useTrainingStore.getState();
+        expect(publications).toBe(1);
+        expect(state.evidenceGenerationId).toBe(fixtures.liveSignal.model.generationId);
+        expect(state.latestLiveSignal).toEqual(fixtures.liveSignal);
+        expect(state.latestEvaluation).toEqual(fixtures.evaluation);
+        expect(state.trainingTrendVersion).toBe(before.trainingTrendVersion + 1);
+        expect(state.evaluationHistoryVersion).toBe(before.evaluationHistoryVersion + 1);
+        expect(coldRead).not.toHaveBeenCalled();
+        coldRead.mockRestore();
+        expect(metricHistoryBuffer.read().trendHistory).toHaveLength(1);
+        expect(metricHistoryBuffer.read().evaluationHistory).toHaveLength(1);
+    });
+
+    it('deduplicates exact stream/direct replay without publishing or bumping versions', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        const before = useTrainingStore.getState();
+        let publications = 0;
+        const unsubscribe = useTrainingStore.subscribe(() => publications++);
+
+        useTrainingStore.getState().applyEvidence(structuredClone(fixtures.evidence));
+        unsubscribe();
+
+        const state = useTrainingStore.getState();
+        expect(publications).toBe(0);
+        expect(state.trainingTrendVersion).toBe(before.trainingTrendVersion);
+        expect(state.evaluationHistoryVersion).toBe(before.evaluationHistoryVersion);
+        expect(metricHistoryBuffer.read().trendHistory).toHaveLength(1);
+        expect(metricHistoryBuffer.read().evaluationHistory).toHaveLength(1);
+    });
+
+    it('rejects a conflicting same-model live signal before appending a new evaluation', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        const before = metricHistoryBuffer.read();
+        const baseConflict = evidenceAt(2, 0);
+        const conflict: WorkerEvidenceMessageV2 = {
+            ...baseConflict,
+            liveSignal: {
+                ...baseConflict.liveSignal!,
+                dataLoss: fixtures.liveSignal.dataLoss + 0.25,
+            },
+        };
+
+        expect(() => useTrainingStore.getState().applyEvidence(conflict))
+            .toThrow(/conflicting live signal/i);
+        expect(metricHistoryBuffer.read()).toBe(before);
+        expect(useTrainingStore.getState().latestEvaluation?.evaluationId).toBe(1);
+    });
+
+    it('rejects non-identical model coordinates at the same live revision', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        const before = metricHistoryBuffer.versions;
+
+        expect(() => useTrainingStore.getState().applyEvidence({
+            type: 'evidence',
+            protocolVersion: 2,
+            liveSignal: {
+                ...fixtures.liveSignal,
+                model: { ...fixtures.liveSignal.model, step: 1 },
+                basis: { ...fixtures.liveSignal.basis, throughStep: 1 },
+            },
+        })).toThrow(/conflicting live signal/i);
+        expect(metricHistoryBuffer.versions).toEqual(before);
+    });
+
+    it('rejects a conflicting retained evaluation before appending its live signal', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        const before = metricHistoryBuffer.read();
+        const conflict = evidenceAt(1, 1);
+
+        expect(() => useTrainingStore.getState().applyEvidence(conflict))
+            .toThrow(/conflicting evaluationId 1/i);
+        expect(metricHistoryBuffer.read()).toBe(before);
+        expect(useTrainingStore.getState().latestLiveSignal?.model.step).toBe(0);
+    });
+
+    it('rejects a mismatched generation without partially changing either series', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        const before = metricHistoryBuffer.read();
+
+        expect(() => useTrainingStore.getState().applyEvidence(evidenceAt(2, 1, 2)))
+            .toThrow(/generation/i);
+        expect(metricHistoryBuffer.read()).toBe(before);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(1);
+    });
+
+    it('resets generation, latest evidence, and both series in one publication', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        let publications = 0;
+        const unsubscribe = useTrainingStore.subscribe(() => publications++);
+
+        useTrainingStore.getState().resetEvidence();
+        unsubscribe();
+
+        const state = useTrainingStore.getState();
+        expect(publications).toBe(1);
+        expect(state.evidenceGenerationId).toBeNull();
+        expect(state.latestLiveSignal).toBeNull();
+        expect(state.latestEvaluation).toBeNull();
+        expect(metricHistoryBuffer.read().trendHistory).toEqual([]);
+        expect(metricHistoryBuffer.read().evaluationHistory).toEqual([]);
+        expect(state.trainingTrendVersion).toBe(metricHistoryBuffer.versions.trendVersion);
+        expect(state.evaluationHistoryVersion).toBe(metricHistoryBuffer.versions.evaluationVersion);
+    });
+
+    it('rejects malformed evidence before publishing or mutating buffers', () => {
+        const before = metricHistoryBuffer.read();
+        let publications = 0;
+        const unsubscribe = useTrainingStore.subscribe(() => publications++);
+
+        expect(() => useTrainingStore.getState().applyEvidence({
+            ...fixtures.evidence,
+            protocolVersion: 99,
+        })).toThrow(/version-2 evidence/i);
+        unsubscribe();
+
+        expect(publications).toBe(0);
+        expect(metricHistoryBuffer.read()).toBe(before);
     });
 });
