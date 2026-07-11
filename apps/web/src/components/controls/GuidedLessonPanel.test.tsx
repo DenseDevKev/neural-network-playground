@@ -16,7 +16,7 @@ import {
     usePlaygroundStore,
     type PlaygroundStore,
 } from '../../store/usePlaygroundStore.ts';
-import { projectPreparedExperiment } from '../../store/legacyProjection.ts';
+import { setNoise } from '../../store/recipeEdits.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { GuidedLessonPanel } from './GuidedLessonPanel.tsx';
@@ -66,6 +66,31 @@ function resetTrainingTransactionState() {
         configErrorSource: null,
         configSyncNonce: 0,
     });
+}
+
+function deferApplyCompletion(apply: PlaygroundStore['applyRecipe']) {
+    let release!: () => void;
+    let pending: Promise<ApplyResult> | null = null;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const applyRecipe = vi.fn((entry: Parameters<PlaygroundStore['applyRecipe']>[0]) => {
+        pending = (async () => {
+            const result = await apply(entry);
+            await gate;
+            return result;
+        })();
+        return pending;
+    });
+
+    return {
+        applyRecipe,
+        release,
+        wait: async () => {
+            if (!pending) throw new Error('Deferred apply was not started');
+            return pending;
+        },
+    };
 }
 
 describe('GuidedLessonPanel', () => {
@@ -194,39 +219,10 @@ describe('GuidedLessonPanel', () => {
             discretizeOutput: true,
         }));
         expect(viewResult.ok).toBe(true);
-        const fastApplyRecipe = vi.fn(async (entry: Parameters<PlaygroundStore['applyRecipe']>[0]) => {
-            const current = usePlaygroundStore.getState().prepared;
-            if (!current) {
-                return {
-                    ok: false as const,
-                    issues: [{
-                        code: 'invalid-field' as const,
-                        path: '$',
-                        message: 'No current test document',
-                    }],
-                };
-            }
-            const prepared: PreparedExperimentDocumentV2 = {
-                ...entry.prepared,
-                document: {
-                    ...entry.prepared.document,
-                    view: current.document.view,
-                },
-            };
-            const projection = projectPreparedExperiment(prepared);
-            usePlaygroundStore.setState((state) => ({
-                prepared,
-                ...projection,
-                preparation: {
-                    status: 'ready',
-                    requestId: state.preparation.requestId + 1,
-                    issues: [],
-                },
-                incompatibleSource: null,
-            }));
-            return { ok: true as const, value: prepared };
-        });
-        usePlaygroundStore.setState({ applyRecipe: fastApplyRecipe });
+        const canonicalApplyRecipe = vi.fn((entry: Parameters<PlaygroundStore['applyRecipe']>[0]) => (
+            originalApplyRecipe(entry)
+        ));
+        usePlaygroundStore.setState({ applyRecipe: canonicalApplyRecipe });
 
         for (const source of PREPARED_PRESETS) {
             for (const lesson of LESSON_DEFINITIONS) {
@@ -268,7 +264,7 @@ describe('GuidedLessonPanel', () => {
                     activeLessonId: lesson.id,
                     activeLessonStepIndex: 0,
                 });
-                expect(fastApplyRecipe).toHaveBeenLastCalledWith(target);
+                expect(canonicalApplyRecipe).toHaveBeenLastCalledWith(target);
 
                 unmount();
                 useTrainingStore.getState().finishConfigChange();
@@ -282,12 +278,8 @@ describe('GuidedLessonPanel', () => {
         const onHighlightChange = vi.fn();
         const lesson = getLessonDefinition()!;
         const target = getLessonRecipe(lesson);
-        let resolveApply!: (result: ApplyResult) => void;
-        const pending = new Promise<ApplyResult>((resolve) => {
-            resolveApply = resolve;
-        });
-        const applyRecipe = vi.fn(() => pending);
-        usePlaygroundStore.setState({ applyRecipe });
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
         useLayoutStore.setState({
             view: 'run',
             phase: 'run',
@@ -301,8 +293,8 @@ describe('GuidedLessonPanel', () => {
         const startButton = screen.getByRole('button', { name: 'Start guided lesson' });
         await user.click(startButton);
 
-        expect(applyRecipe).toHaveBeenCalledTimes(1);
-        expect(applyRecipe).toHaveBeenCalledWith(target);
+        expect(deferred.applyRecipe).toHaveBeenCalledTimes(1);
+        expect(deferred.applyRecipe).toHaveBeenCalledWith(target);
         expect(startButton).toBeDisabled();
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: 'preset',
@@ -319,11 +311,11 @@ describe('GuidedLessonPanel', () => {
         expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
 
         await user.click(startButton);
-        expect(applyRecipe).toHaveBeenCalledTimes(1);
+        expect(deferred.applyRecipe).toHaveBeenCalledTimes(1);
 
         await act(async () => {
-            resolveApply({ ok: true, value: target.prepared });
-            await pending;
+            deferred.release();
+            await deferred.wait();
         });
 
         expect(onReset).toHaveBeenCalledTimes(1);
@@ -335,6 +327,175 @@ describe('GuidedLessonPanel', () => {
             view: 'build',
         });
         expect(container.querySelector('.guided-lesson')).toHaveClass('guided-lesson--active');
+    });
+
+    it('does not activate a stale lesson start after a newer recipe edit wins', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const target = getLessonRecipe(getLessonDefinition()!);
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        const { container } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        let newerEdit!: Awaited<ReturnType<PlaygroundStore['editRecipe']>>;
+        await act(async () => {
+            useTrainingStore.getState().beginConfigChange('network');
+            newerEdit = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setNoise(recipe, recipe.data.noise + 1),
+            );
+        });
+        expect(newerEdit.ok).toBe(true);
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).not.toHaveBeenCalled();
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: 'network',
+            networkConfigLoading: true,
+            configError: null,
+        });
+        expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
+    });
+
+    it('does not activate an older same-target lesson result', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const target = getLessonRecipe(getLessonDefinition()!);
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        const { container } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        await act(async () => {
+            const newerResult = await originalApplyRecipe(target);
+            expect(newerResult.ok).toBe(true);
+        });
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).not.toHaveBeenCalled();
+        expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
+    });
+
+    it('does not report an older failure over a newer config transaction', async () => {
+        const user = userEvent.setup();
+        let resolveApply!: (result: ApplyResult) => void;
+        const pending = new Promise<ApplyResult>((resolve) => {
+            resolveApply = resolve;
+        });
+        usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
+
+        render(<GuidedLessonPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await act(async () => {
+            useTrainingStore.getState().beginConfigChange('network');
+            const newerEdit = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setNoise(recipe, recipe.data.noise + 1),
+            );
+            expect(newerEdit.ok).toBe(true);
+        });
+
+        await act(async () => {
+            resolveApply({
+                ok: false,
+                issues: [{ code: 'invalid-field', path: 'recipe', message: 'Obsolete failure' }],
+            });
+            await pending;
+        });
+
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: 'network',
+            networkConfigLoading: true,
+            presetConfigLoading: false,
+            configError: null,
+        });
+    });
+
+    it('does not activate or highlight after a pending lesson start unmounts', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const target = getLessonRecipe(getLessonDefinition()!);
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        const { unmount } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        unmount();
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).toHaveBeenLastCalledWith(null);
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
+    });
+
+    it('records a still-current preparation failure after the lesson panel unmounts', async () => {
+        const user = userEvent.setup();
+        let resolveApply!: (result: ApplyResult) => void;
+        const pending = new Promise<ApplyResult>((resolve) => {
+            resolveApply = resolve;
+        });
+        usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
+
+        const { unmount } = render(<GuidedLessonPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        unmount();
+
+        await act(async () => {
+            resolveApply({
+                ok: false,
+                issues: [{ code: 'invalid-field', path: 'recipe', message: 'Current failure' }],
+            });
+            await pending;
+        });
+
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: null,
+            presetConfigLoading: false,
+            configErrorSource: 'preset',
+            configError: 'recipe: Current failure',
+        });
     });
 
     it('keeps the prior experiment and inactive UI with a persistent accessible error on failure', async () => {

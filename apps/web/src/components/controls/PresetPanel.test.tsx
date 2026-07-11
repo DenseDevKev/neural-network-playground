@@ -38,6 +38,31 @@ function resetTrainingTransactionState() {
     });
 }
 
+function deferApplyCompletion(apply: PlaygroundStore['applyRecipe']) {
+    let release!: () => void;
+    let pending: Promise<ApplyResult> | null = null;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const applyRecipe = vi.fn((entry: Parameters<PlaygroundStore['applyRecipe']>[0]) => {
+        pending = (async () => {
+            const result = await apply(entry);
+            await gate;
+            return result;
+        })();
+        return pending;
+    });
+
+    return {
+        applyRecipe,
+        release,
+        wait: async () => {
+            if (!pending) throw new Error('Deferred apply was not started');
+            return pending;
+        },
+    };
+}
+
 describe('PresetPanel', () => {
     let originalApplyRecipe: PlaygroundStore['applyRecipe'];
 
@@ -248,6 +273,163 @@ describe('PresetPanel', () => {
         expect(onApplied).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: `Apply preset: ${target.title}` }))
             .toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('does not reset or report a stale successful apply after a newer edit wins', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onApplied = vi.fn();
+        const target = resolveRecipe({ id: 'xor-hidden', revision: 1 })!;
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
+        await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
+        await waitFor(() => {
+            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        let newerEdit!: Awaited<ReturnType<PlaygroundStore['editRecipe']>>;
+        await act(async () => {
+            useTrainingStore.getState().beginConfigChange('network');
+            newerEdit = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setNoise(recipe, recipe.data.noise + 1),
+            );
+        });
+        expect(newerEdit.ok).toBe(true);
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onApplied).not.toHaveBeenCalled();
+        expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            .not.toBe(target.prepared.identities.canonicalRecipeKey);
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: 'network',
+            networkConfigLoading: true,
+            configError: null,
+        });
+    });
+
+    it('does not report an older same-target preset result', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onApplied = vi.fn();
+        const target = resolveRecipe({ id: 'xor-hidden', revision: 1 })!;
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
+        await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
+        await waitFor(() => {
+            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        await act(async () => {
+            const newerResult = await originalApplyRecipe(target);
+            expect(newerResult.ok).toBe(true);
+        });
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onApplied).not.toHaveBeenCalled();
+    });
+
+    it('records a still-current preparation failure after the preset panel unmounts', async () => {
+        const user = userEvent.setup();
+        const target = resolveRecipe({ id: 'xor-hidden', revision: 1 })!;
+        let resolveApply!: (result: ApplyResult) => void;
+        const pending = new Promise<ApplyResult>((resolve) => {
+            resolveApply = resolve;
+        });
+        usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
+
+        const { unmount } = render(<PresetPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
+        unmount();
+
+        await act(async () => {
+            resolveApply({
+                ok: false,
+                issues: [{ code: 'invalid-field', path: 'recipe', message: 'Current failure' }],
+            });
+            await pending;
+        });
+
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: null,
+            presetConfigLoading: false,
+            configErrorSource: 'preset',
+            configError: 'recipe: Current failure',
+        });
+    });
+
+    it('does not report an older failure over a newer config transaction', async () => {
+        const user = userEvent.setup();
+        const target = resolveRecipe({ id: 'xor-hidden', revision: 1 })!;
+        let resolveApply!: (result: ApplyResult) => void;
+        const pending = new Promise<ApplyResult>((resolve) => {
+            resolveApply = resolve;
+        });
+        usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
+
+        render(<PresetPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
+        await act(async () => {
+            useTrainingStore.getState().beginConfigChange('network');
+            const newerEdit = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setNoise(recipe, recipe.data.noise + 1),
+            );
+            expect(newerEdit.ok).toBe(true);
+        });
+
+        await act(async () => {
+            resolveApply({
+                ok: false,
+                issues: [{ code: 'invalid-field', path: 'recipe', message: 'Obsolete failure' }],
+            });
+            await pending;
+        });
+
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: 'network',
+            networkConfigLoading: true,
+            presetConfigLoading: false,
+            configError: null,
+        });
+    });
+
+    it('does not invoke callbacks after a pending apply unmounts', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onApplied = vi.fn();
+        const target = resolveRecipe({ id: 'xor-hidden', revision: 1 })!;
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        const { unmount } = render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
+        await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
+        await waitFor(() => {
+            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        unmount();
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onApplied).not.toHaveBeenCalled();
     });
 
     it('keeps preset-specific config errors retryable', async () => {

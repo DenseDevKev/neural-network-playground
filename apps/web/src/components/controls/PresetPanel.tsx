@@ -1,7 +1,7 @@
 // ── Preset Panel ──
 // Card grid to quickly apply curated experiment presets.
 
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef } from 'react';
 import {
     PREPARED_PRESETS,
     type ExperimentSchemaIssue,
@@ -28,6 +28,14 @@ export const PresetPanel = memo(function PresetPanel({ onReset, onApplied }: Pre
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const pendingSelection = useRef(false);
+    const mounted = useRef(true);
+
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+        };
+    }, []);
 
     const handleSelect = useCallback(
         async (entry: RecipeCatalogEntry) => {
@@ -39,18 +47,28 @@ export const PresetPanel = memo(function PresetPanel({ onReset, onApplied }: Pre
             pendingSelection.current = true;
             const trainingStore = useTrainingStore.getState();
             trainingStore.beginConfigChange('preset');
+            let requestId = usePlaygroundStore.getState().preparation.requestId;
             try {
-                const result = await applyRecipe(entry);
+                const pendingResult = applyRecipe(entry);
+                requestId = usePlaygroundStore.getState().preparation.requestId;
+                const result = await pendingResult;
+                const playground = usePlaygroundStore.getState();
+                if (playground.preparation.requestId !== requestId) return;
+
                 if (!result.ok) {
                     trainingStore.failConfigChange(formatPreparationIssues(result.issues));
                     return;
                 }
+
+                if (playground.prepared !== result.value || !mounted.current) return;
                 onReset();
-                onApplied?.();
+                if (mounted.current) onApplied?.();
             } catch (error) {
-                trainingStore.failConfigChange(
-                    error instanceof Error ? error.message : 'Failed to apply preset',
-                );
+                if (usePlaygroundStore.getState().preparation.requestId === requestId) {
+                    trainingStore.failConfigChange(
+                        error instanceof Error ? error.message : 'Failed to apply preset',
+                    );
+                }
             } finally {
                 pendingSelection.current = false;
             }

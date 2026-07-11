@@ -42,6 +42,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const [isStarting, setIsStarting] = useState(false);
     const [lessonError, setLessonError] = useState<string | null>(null);
     const startInFlight = useRef(false);
+    const mounted = useRef(true);
     const applyRecipe = usePlaygroundStore((s) => s.applyRecipe);
     const setActiveRecipeSection = useLayoutStore((s) => s.setActiveRecipeSection);
     const setView = useLayoutStore((s) => s.setView);
@@ -54,6 +55,13 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const lessonRecipe = useMemo(() => getLessonRecipe(selectedLesson), [selectedLesson]);
     const activeStep = activeStepIndex === null ? null : selectedLesson.steps[activeStepIndex];
     const lessonStateClass = activeStep ? 'guided-lesson--active' : '';
+
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+        };
+    }, []);
 
     const focusStep = useCallback(
         (step: LessonStep) => {
@@ -88,30 +96,40 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         setLessonError(null);
         const trainingStore = useTrainingStore.getState();
         trainingStore.beginConfigChange('preset');
+        let requestId = usePlaygroundStore.getState().preparation.requestId;
 
         try {
-            const result = await applyRecipe(lessonRecipe);
+            const pendingResult = applyRecipe(lessonRecipe);
+            requestId = usePlaygroundStore.getState().preparation.requestId;
+            const result = await pendingResult;
+            const playground = usePlaygroundStore.getState();
+            if (playground.preparation.requestId !== requestId) return;
+
             if (!result.ok) {
                 const message = formatPreparationIssues(result.issues)
                     || 'Failed to start guided lesson';
                 trainingStore.failConfigChange(message);
-                setLessonError(message);
+                if (mounted.current) setLessonError(message);
                 return;
             }
 
+            if (playground.prepared !== result.value || !mounted.current) return;
             onReset();
+            if (!mounted.current) return;
             setActiveStepIndex(0);
             setActiveLessonStep(selectedLesson.id, 0);
             focusStep(selectedLesson.steps[0]);
         } catch (error) {
-            const message = error instanceof Error
-                ? error.message
-                : 'Failed to start guided lesson';
-            trainingStore.failConfigChange(message);
-            setLessonError(message);
+            if (usePlaygroundStore.getState().preparation.requestId === requestId) {
+                const message = error instanceof Error
+                    ? error.message
+                    : 'Failed to start guided lesson';
+                trainingStore.failConfigChange(message);
+                if (mounted.current) setLessonError(message);
+            }
         } finally {
             startInFlight.current = false;
-            setIsStarting(false);
+            if (mounted.current) setIsStarting(false);
         }
     };
 
