@@ -111,9 +111,10 @@ function expectRejectedWithoutMutation(
     network: Network,
     candidate: unknown,
     trainingStep = 12,
+    expectedOptimizer: OptimizerSpecV2 = adam,
 ): void {
     const before = {
-        session: network.captureSessionState(adam),
+        session: network.captureSessionState(expectedOptimizer),
         trainingStep: network.getStep(),
         revision: network.getRevision(),
         weightGrads: network.getWeightGrads(),
@@ -121,9 +122,9 @@ function expectRejectedWithoutMutation(
         recentGradient: network.getRecentGradientSnapshot(),
     };
 
-    expect(() => network.restoreSessionState(candidate, adam, trainingStep)).toThrow(RangeError);
+    expect(() => network.restoreSessionState(candidate, expectedOptimizer, trainingStep)).toThrow(RangeError);
 
-    expect(network.captureSessionState(adam)).toEqual(before.session);
+    expect(network.captureSessionState(expectedOptimizer)).toEqual(before.session);
     expect(network.getStep()).toBe(before.trainingStep);
     expect(network.getRevision()).toBe(before.revision);
     expect(network.getWeightGrads()).toEqual(before.weightGrads);
@@ -210,6 +211,36 @@ describe('Network V2 session state', () => {
         captured.optimizer.secondWeightMoment[0][0] = 789;
         expect(validated.network.layers[0].biases[0]).not.toBe(789);
         expect(validated.optimizer.secondWeightMoment[0][0]).not.toBe(789);
+    });
+
+    it('rejects deceptive typed-array accessors before an earlier live layer can mutate', () => {
+        class DeceptiveFloat64Array extends Float64Array {
+            get length(): number {
+                return 2;
+            }
+
+            get byteLength(): number {
+                return 16;
+            }
+        }
+
+        const network = new Network(networkConfig);
+        network.trainBatchV2([[1, -1]], [[0.75]], makeTraining(sgd));
+        const candidate = cloneSessionState(network.captureSessionState(sgd));
+        candidate.network.layers[0].weights[0] += 100;
+        const deceptiveLaterWeights = new DeceptiveFloat64Array(3);
+        deceptiveLaterWeights.set(candidate.network.layers[1].weights);
+        candidate.network.layers[1].weights = deceptiveLaterWeights;
+
+        let validationError: unknown;
+        try {
+            validateNetworkSessionStateV2(candidate, expectedShape, sgd);
+        } catch (error) {
+            validationError = error;
+        }
+
+        expectRejectedWithoutMutation(network, candidate, 12, sgd);
+        expect(validationError).toBeInstanceOf(RangeError);
     });
 
     it.each([

@@ -5,6 +5,24 @@ import type {
 } from './types.js';
 
 const NETWORK_SESSION_MAXIMUM_BYTES = 256 * 1024;
+const FLOAT64_BYTES_PER_ELEMENT = 8;
+
+type TypedArrayIntrinsicGetter = (this: unknown) => number;
+
+const TYPED_ARRAY_PROTOTYPE = Object.getPrototypeOf(Float64Array.prototype) as object;
+
+function getTypedArrayIntrinsicGetter(
+    propertyName: 'length' | 'byteLength',
+): TypedArrayIntrinsicGetter {
+    const getter = Object.getOwnPropertyDescriptor(TYPED_ARRAY_PROTOTYPE, propertyName)?.get;
+    if (typeof getter !== 'function') {
+        throw new Error(`missing intrinsic TypedArray ${propertyName} getter`);
+    }
+    return getter;
+}
+
+const GET_TYPED_ARRAY_LENGTH = getTypedArrayIntrinsicGetter('length');
+const GET_TYPED_ARRAY_BYTE_LENGTH = getTypedArrayIntrinsicGetter('byteLength');
 
 type RecordValue = Record<string, unknown>;
 
@@ -61,25 +79,56 @@ function expectedOptimizerKind(expectedOptimizer: OptimizerSpecV2): OptimizerSpe
     }
 }
 
+function inspectFloat64Buffer(
+    value: unknown,
+    name: string,
+): { buffer: Float64Array; length: number; byteLength: number } {
+    if (!(value instanceof Float64Array)) {
+        throw new RangeError(`${name} must be a Float64Array`);
+    }
+
+    let length: number;
+    let byteLength: number;
+    try {
+        length = Reflect.apply(GET_TYPED_ARRAY_LENGTH, value, []);
+        byteLength = Reflect.apply(GET_TYPED_ARRAY_BYTE_LENGTH, value, []);
+    } catch {
+        throw new RangeError(`${name} must be a compatible Float64Array`);
+    }
+    if (
+        !Number.isSafeInteger(length) ||
+        length < 0 ||
+        !Number.isSafeInteger(byteLength) ||
+        byteLength !== length * FLOAT64_BYTES_PER_ELEMENT
+    ) {
+        throw new RangeError(`${name} must use a valid Float64 representation`);
+    }
+    return { buffer: value, length, byteLength };
+}
+
 function cloneFiniteBuffer(
     value: unknown,
     expectedLength: number,
     name: string,
     byteBudget: { used: number; maximum: number },
 ): Float64Array {
-    if (!(value instanceof Float64Array) || value.length !== expectedLength) {
+    const inspected = inspectFloat64Buffer(value, name);
+    if (inspected.length !== expectedLength) {
         throw new RangeError(`${name} must be a Float64Array of length ${expectedLength}`);
     }
-    byteBudget.used += value.byteLength;
+    byteBudget.used += inspected.byteLength;
     if (byteBudget.used > byteBudget.maximum) {
         throw new RangeError(`network session typed arrays must not exceed ${byteBudget.maximum} bytes`);
     }
-    for (let index = 0; index < value.length; index++) {
-        if (!Number.isFinite(value[index])) {
+    const clone = new Float64Array(inspected.length);
+    for (let index = 0; index < inspected.length; index++) {
+        const element = inspected.buffer[index];
+        if (!Number.isFinite(element)) {
             throw new RangeError(`${name}[${index}] must be finite`);
         }
+        clone[index] = element;
     }
-    return new Float64Array(value);
+    return clone;
 }
 
 function cloneFiniteBufferList(
@@ -117,6 +166,8 @@ export function validateNetworkSessionStateV2(
         throw new RangeError(`network session state.network.layers must have ${layerSizes.length - 1} layers`);
     }
 
+    const weightLengths: number[] = [];
+    const biasLengths: number[] = [];
     const layers = value.network.layers.map((layerValue, layerIndex) => {
         const name = `network session state.network.layers[${layerIndex}]`;
         assertRecord(layerValue, name);
@@ -133,6 +184,8 @@ export function validateNetworkSessionStateV2(
         if (!Number.isSafeInteger(weightLength)) {
             throw new RangeError(`${name} parameter count exceeds the safe integer range`);
         }
+        weightLengths.push(weightLength);
+        biasLengths.push(outputSize);
         return {
             inputSize,
             outputSize,
@@ -141,8 +194,6 @@ export function validateNetworkSessionStateV2(
         };
     });
 
-    const weightLengths = layers.map((layer) => layer.weights.length);
-    const biasLengths = layers.map((layer) => layer.biases.length);
     assertRecord(value.optimizer, 'network session state.optimizer');
     if (value.optimizer.kind !== optimizerKind) {
         throw new RangeError(`network session optimizer kind must be ${optimizerKind}`);
