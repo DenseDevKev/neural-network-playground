@@ -17,14 +17,14 @@ describe('MSE loss', () => {
         expect(mse.loss(0.5, 0.5)).toBe(0);
     });
 
-    it('loss is 0.5 * (p - t)²', () => {
-        expect(mse.loss(1, 0)).toBeCloseTo(0.5, 8);
-        expect(mse.loss(0.3, 0.7)).toBeCloseTo(0.5 * 0.16, 8);
+    it('loss is the true squared error for one output', () => {
+        expect(mse.loss(1, 0)).toBe(1);
+        expect(mse.loss(0.3, 0.7)).toBeCloseTo(0.16, 8);
     });
 
-    it('gradient is (p - t)', () => {
-        expect(mse.dloss(1, 0)).toBe(1);
-        expect(mse.dloss(0.3, 0.7)).toBeCloseTo(-0.4, 8);
+    it('gradient is 2 * (p - t) for one output', () => {
+        expect(mse.dloss(1, 0)).toBe(2);
+        expect(mse.dloss(0.3, 0.7)).toBeCloseTo(-0.8, 8);
     });
 
     it('gradient at equal values is 0', () => {
@@ -223,8 +223,8 @@ describe('batchLoss', () => {
         const mse = getLoss('mse');
         const preds = [0, 1];
         const targets = [1, 0];
-        // Each sample: 0.5 * 1² = 0.5
-        expect(batchLoss(mse, preds, targets)).toBeCloseTo(0.5, 8);
+        // Each sample: 1² = 1
+        expect(batchLoss(mse, preds, targets)).toBe(1);
     });
 
     it('returns 0 for perfect predictions', () => {

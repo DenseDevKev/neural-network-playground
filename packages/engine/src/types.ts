@@ -25,6 +25,93 @@ export type WeightInitType = 'xavier' | 'he' | 'uniform' | 'zeros';
 
 export type RegularizationType = 'none' | 'l1' | 'l2';
 
+export type DataLossSpecV2 =
+    | { readonly kind: 'binary-cross-entropy-with-logits' }
+    | { readonly kind: 'categorical-cross-entropy-with-logits' }
+    | { readonly kind: 'mean-squared-error' }
+    | { readonly kind: 'huber'; readonly delta: number };
+
+export type PenaltySpecV2 =
+    | { readonly kind: 'none' }
+    | {
+        readonly kind: 'l1' | 'l2';
+        readonly coefficient: number;
+        readonly applyTo: 'weights';
+    };
+
+export interface ObjectiveSpecV2 {
+    readonly dataLoss: DataLossSpecV2;
+    readonly penalty: PenaltySpecV2;
+    readonly reduction: 'mean-per-sample';
+}
+
+export type GradientClipSpecV2 =
+    | { readonly kind: 'none' }
+    | {
+        readonly kind: 'global-norm';
+        readonly maximumNorm: number;
+        readonly scope: 'total-objective-gradient';
+    };
+
+export interface ObjectiveBreakdown {
+    dataLoss: number;
+    regularizationPenalty: number;
+    totalObjective: number;
+}
+
+export interface GradientDiagnostics {
+    dataGradientNorm: number;
+    penaltyGradientNorm: number;
+    totalGradientNorm: number;
+    clippedGradientNorm: number;
+    clipScale: number;
+}
+
+export interface BatchTrainingResult {
+    revision: number;
+    step: number;
+    sampleCount: number;
+    objective: ObjectiveBreakdown;
+    gradients: GradientDiagnostics;
+}
+
+export interface ClipResult {
+    totalGradientNorm: number;
+    clippedGradientNorm: number;
+    clipScale: number;
+}
+
+/** Mutable numeric storage accepted by objective kernels without framework coupling. */
+export interface MutableNumericArray extends ArrayLike<number> {
+    [index: number]: number;
+}
+
+/** Network fields needed to compile and validate an objective. */
+export interface ObjectiveNetworkConfig {
+    outputSize: number;
+    outputActivation: ActivationType;
+}
+
+export interface CompiledObjective {
+    readonly spec: ObjectiveSpecV2;
+    evaluateDataSample(
+        logits: ArrayLike<number>,
+        outputs: ArrayLike<number>,
+        target: ArrayLike<number>,
+    ): number;
+    seedOutputDeltaInto(
+        logits: ArrayLike<number>,
+        outputs: ArrayLike<number>,
+        target: ArrayLike<number>,
+        destination: MutableNumericArray,
+    ): void;
+    regularizationPenalty(weights: readonly ArrayLike<number>[]): number;
+    addPenaltyGradientInto(
+        weights: readonly ArrayLike<number>[],
+        weightGradients: readonly MutableNumericArray[],
+    ): number;
+}
+
 export type TaskKind =
     | 'binary-classification'
     | 'multiclass-classification'

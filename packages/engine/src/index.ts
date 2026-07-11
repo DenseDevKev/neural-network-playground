@@ -12,6 +12,25 @@ export {
     isLossCompatible,
     describeLossIncompatibility,
 } from './losses.js';
+export {
+    applyGradientTransformInto,
+    binaryCrossEntropyLogitDelta,
+    binaryCrossEntropyWithLogits,
+    buildObjectiveBreakdown,
+    categoricalCrossEntropyLogitDelta,
+    categoricalCrossEntropyWithLogits,
+    compileObjective,
+    computeGradientTransform,
+    gradientNorm,
+    huberLoss,
+    huberLossDelta,
+    l1Penalty,
+    l1PenaltyGradient,
+    l2Penalty,
+    l2PenaltyGradient,
+    meanSquaredError,
+    meanSquaredErrorDelta,
+} from './objective.js';
 export { getOptimizer, createOptimizerState } from './optimizers.js';
 export type { OptimizerHyperparams } from './optimizers.js';
 export { computeLearningRate, sanitizeLRSchedule, validateLRSchedule } from './schedules.js';

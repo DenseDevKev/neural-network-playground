@@ -1,5 +1,6 @@
 // ── Loss functions with output-layer gradients ──
 import type { LossType, ScalarLossType, ActivationType } from './types.js';
+import { meanSquaredErrorScalar, meanSquaredErrorScalarDelta } from './objective.js';
 
 export interface LossFn {
     /** Compute loss for a single sample. */
@@ -12,8 +13,8 @@ const EPSILON = 1e-7;
 const DISTRIBUTION_SUM_TOLERANCE = 1e-5;
 
 const mse: LossFn = {
-    loss: (p, t) => 0.5 * (p - t) ** 2,
-    dloss: (p, t) => p - t,
+    loss: meanSquaredErrorScalar,
+    dloss: meanSquaredErrorScalarDelta,
 };
 
 const crossEntropy: LossFn = {
