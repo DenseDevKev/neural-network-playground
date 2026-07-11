@@ -122,7 +122,12 @@ function expectRejectedWithoutMutation(
         recentGradient: network.getRecentGradientSnapshot(),
     };
 
-    expect(() => network.restoreSessionState(candidate, expectedOptimizer, trainingStep)).toThrow(RangeError);
+    let restoreError: unknown;
+    try {
+        network.restoreSessionState(candidate, expectedOptimizer, trainingStep);
+    } catch (error) {
+        restoreError = error;
+    }
 
     expect(network.captureSessionState(expectedOptimizer)).toEqual(before.session);
     expect(network.getStep()).toBe(before.trainingStep);
@@ -130,6 +135,7 @@ function expectRejectedWithoutMutation(
     expect(network.getWeightGrads()).toEqual(before.weightGrads);
     expect(network.getBiasGrads()).toEqual(before.biasGrads);
     expect(network.getRecentGradientSnapshot()).toEqual(before.recentGradient);
+    expect(restoreError).toBeInstanceOf(RangeError);
 }
 
 describe('Network V2 session state', () => {
@@ -240,6 +246,48 @@ describe('Network V2 session state', () => {
         }
 
         expectRejectedWithoutMutation(network, candidate, 12, sgd);
+        expect(validationError).toBeInstanceOf(RangeError);
+    });
+
+    it('rejects a sparse later network layer before an earlier live layer can mutate', () => {
+        const network = new Network(networkConfig);
+        network.trainBatchV2([[1, -1]], [[0.75]], makeTraining(sgd));
+        const candidate = cloneSessionState(network.captureSessionState(sgd));
+        candidate.network.layers[0].weights[0] += 100;
+        candidate.network.layers.length = 1;
+        candidate.network.layers.length = 2;
+
+        let validationError: unknown;
+        try {
+            validateNetworkSessionStateV2(candidate, expectedShape, sgd);
+        } catch (error) {
+            validationError = error;
+        }
+
+        expectRejectedWithoutMutation(network, candidate, 12, sgd);
+        expect(validationError).toBeInstanceOf(RangeError);
+    });
+
+    it('rejects a sparse later Adam buffer with an inherited fallback before any mutation', () => {
+        const network = makeTrainedAdamNetwork();
+        const candidate = cloneSessionState(network.captureSessionState(adam));
+        candidate.network.layers[0].weights[0] += 100;
+        if (candidate.optimizer.kind !== 'adam') throw new Error('expected Adam state');
+        const inheritedLaterBuffer = candidate.optimizer.secondBiasMoment[1];
+        candidate.optimizer.secondBiasMoment.length = 1;
+        candidate.optimizer.secondBiasMoment.length = 2;
+        const sparseBufferPrototype = Object.create(Array.prototype) as Float64Array[];
+        sparseBufferPrototype[1] = inheritedLaterBuffer;
+        Object.setPrototypeOf(candidate.optimizer.secondBiasMoment, sparseBufferPrototype);
+
+        let validationError: unknown;
+        try {
+            validateNetworkSessionStateV2(candidate, expectedShape, adam);
+        } catch (error) {
+            validationError = error;
+        }
+
+        expectRejectedWithoutMutation(network, candidate);
         expect(validationError).toBeInstanceOf(RangeError);
     });
 

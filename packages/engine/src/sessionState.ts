@@ -140,12 +140,19 @@ function cloneFiniteBufferList(
     if (!Array.isArray(value) || value.length !== expectedLengths.length) {
         throw new RangeError(`${name} must have ${expectedLengths.length} layers`);
     }
-    return expectedLengths.map((expectedLength, layerIndex) => cloneFiniteBuffer(
-        value[layerIndex],
-        expectedLength,
-        `${name}[${layerIndex}]`,
-        byteBudget,
-    ));
+    const clones: Float64Array[] = [];
+    for (let layerIndex = 0; layerIndex < expectedLengths.length; layerIndex++) {
+        if (!Object.hasOwn(value, layerIndex)) {
+            throw new RangeError(`${name}[${layerIndex}] must be an own array entry`);
+        }
+        clones.push(cloneFiniteBuffer(
+            value[layerIndex],
+            expectedLengths[layerIndex],
+            `${name}[${layerIndex}]`,
+            byteBudget,
+        ));
+    }
+    return clones;
 }
 
 /** Validate a V2 engine session payload and return a fully detached clone. */
@@ -168,8 +175,13 @@ export function validateNetworkSessionStateV2(
 
     const weightLengths: number[] = [];
     const biasLengths: number[] = [];
-    const layers = value.network.layers.map((layerValue, layerIndex) => {
+    const layers: NetworkSessionStateV2['network']['layers'] = [];
+    for (let layerIndex = 0; layerIndex < layerSizes.length - 1; layerIndex++) {
         const name = `network session state.network.layers[${layerIndex}]`;
+        if (!Object.hasOwn(value.network.layers, layerIndex)) {
+            throw new RangeError(`${name} must be an own array entry`);
+        }
+        const layerValue = value.network.layers[layerIndex];
         assertRecord(layerValue, name);
         assertExactKeys(layerValue, ['inputSize', 'outputSize', 'weights', 'biases'], name);
         const inputSize = layerSizes[layerIndex];
@@ -186,13 +198,13 @@ export function validateNetworkSessionStateV2(
         }
         weightLengths.push(weightLength);
         biasLengths.push(outputSize);
-        return {
+        layers.push({
             inputSize,
             outputSize,
             weights: cloneFiniteBuffer(layerValue.weights, weightLength, `${name}.weights`, byteBudget),
             biases: cloneFiniteBuffer(layerValue.biases, outputSize, `${name}.biases`, byteBudget),
-        };
-    });
+        });
+    }
 
     assertRecord(value.optimizer, 'network session state.optimizer');
     if (value.optimizer.kind !== optimizerKind) {
