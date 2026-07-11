@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     compileExperimentRecipe,
+    Network,
     type CompilableExperimentRecipe,
 } from '../index.js';
 // @ts-expect-error -- Vitest's raw loader exposes this source as a string.
@@ -223,6 +224,58 @@ describe('compileExperimentRecipe', () => {
         expect(compiled.training.schedule).not.toBe(schedule);
         expect(compiled.training.optimizer).not.toBe(optimizer);
         expect(compiled.training.gradientClipping).not.toBe(recipe.training.gradientClipping);
+    });
+
+    it('runs one compiled objective through Network training, evaluation, and trace evidence', () => {
+        const recipe: CompilableExperimentRecipe = {
+            data: {
+                sampleCount: 20,
+                trainFraction: 0.5,
+                noise: 0,
+                seed: 19,
+            },
+            inputs: { featureIds: ['x'] },
+            model: {
+                hiddenLayers: [],
+                hiddenActivation: 'linear',
+                initialization: 'zeros',
+                seed: 23,
+            },
+            training: {
+                batchSize: 2,
+                learningRate: 0.1,
+                schedule: { kind: 'constant' },
+                optimizer: { kind: 'sgd' },
+                gradientClipping: { kind: 'none' },
+            },
+            task: { kind: 'regression', dataset: 'reg-plane' },
+            objective: {
+                dataLoss: { kind: 'mean-squared-error' },
+                penalty: { kind: 'none' },
+                reduction: 'mean-per-sample',
+            },
+        };
+        const compiled = compileExperimentRecipe(recipe);
+        const network = new Network(compiled.network);
+        const inputs = [[1], [2]];
+        const targets = [[1], [2]];
+
+        const trainingResult = network.trainBatchV2(inputs, targets, compiled.training);
+        const dataLoss = network.evaluateDataLoss(inputs, targets, compiled.objective);
+        const objective = network.evaluateObjective(inputs, targets, compiled.objective);
+        const trace = network.tracePredictionV2(inputs[0], targets[0], compiled.objective);
+
+        expect(compiled.training.objective).toBe(compiled.objective);
+        expect(trainingResult.objective.dataLoss).toBeCloseTo(2.5, 12);
+        expect(trainingResult.objective.regularizationPenalty).toBe(0);
+        expect(trainingResult.objective.totalObjective).toBeCloseTo(2.5, 12);
+        expect(dataLoss).toBeCloseTo(0.265, 12);
+        expect(objective.dataLoss).toBeCloseTo(0.265, 12);
+        expect(objective.regularizationPenalty).toBe(0);
+        expect(objective.totalObjective).toBeCloseTo(0.265, 12);
+        expect(trace.output[0]).toBeCloseTo(0.8, 12);
+        expect(trace.sampleDataLoss).toBeCloseTo(0.04, 12);
+        expect(trace.regularizationPenalty).toBe(0);
     });
 
     it.each([

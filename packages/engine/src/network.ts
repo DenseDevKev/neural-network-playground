@@ -643,12 +643,10 @@ interface AbsAggregate {
     count: number;
 }
 
-/** Welford moments translated by the first value to retain small spread at large magnitudes. */
+/** Bounded activation values retained for scaled two-pass population moments. */
 interface MomentAggregate {
-    origin: number;
-    meanOffset: number;
-    offsetM2: number;
-    count: number;
+    values: number[];
+    maxAbs: number;
 }
 
 function createAbsAggregate(): AbsAggregate {
@@ -656,7 +654,7 @@ function createAbsAggregate(): AbsAggregate {
 }
 
 function createMomentAggregate(): MomentAggregate {
-    return { origin: 0, meanOffset: 0, offsetM2: 0, count: 0 };
+    return { values: [], maxAbs: 0 };
 }
 
 function addAbsValues(aggregate: AbsAggregate, values: Float64Array): void {
@@ -671,17 +669,9 @@ function addAbsValues(aggregate: AbsAggregate, values: Float64Array): void {
 function addMomentValues(aggregate: MomentAggregate, values: Float64Array): void {
     for (let i = 0; i < values.length; i++) {
         const value = values[i];
-        if (aggregate.count === 0) {
-            aggregate.origin = value;
-            aggregate.count = 1;
-            continue;
-        }
-        const offset = value - aggregate.origin;
-        const nextCount = aggregate.count + 1;
-        const delta = offset - aggregate.meanOffset;
-        aggregate.meanOffset += delta / nextCount;
-        aggregate.offsetM2 += delta * (offset - aggregate.meanOffset);
-        aggregate.count = nextCount;
+        aggregate.values.push(value);
+        const abs = Math.abs(value);
+        if (abs > aggregate.maxAbs) aggregate.maxAbs = abs;
     }
 }
 
@@ -693,10 +683,54 @@ function finishAbsAggregate(aggregate: AbsAggregate): { mean: number; max: numbe
 }
 
 function finishMomentAggregate(aggregate: MomentAggregate): { mean: number; std: number } {
-    if (aggregate.count === 0) return { mean: 0, std: 0 };
-    const mean = aggregate.origin + aggregate.meanOffset;
-    const variance = Math.max(0, aggregate.offsetM2 / aggregate.count);
-    return { mean, std: Math.sqrt(variance) };
+    const count = aggregate.values.length;
+    if (count === 0 || aggregate.maxAbs === 0) return { mean: 0, std: 0 };
+
+    const origin = aggregate.values[0];
+    const normalizedOrigin = origin / aggregate.maxAbs;
+    const normalizedOffset = (value: number): number => {
+        const offset = value - origin;
+        return Number.isFinite(offset)
+            ? offset / aggregate.maxAbs
+            : value / aggregate.maxAbs - normalizedOrigin;
+    };
+
+    let offsetSum = 0;
+    let offsetCorrection = 0;
+    for (let index = 0; index < count; index++) {
+        const offset = normalizedOffset(aggregate.values[index]);
+        const next = offsetSum + offset;
+        offsetCorrection += Math.abs(offsetSum) >= Math.abs(offset)
+            ? (offsetSum - next) + offset
+            : (offset - next) + offsetSum;
+        offsetSum = next;
+    }
+    const normalizedMeanOffset = (offsetSum + offsetCorrection) / count;
+
+    let squaredOffsetSum = 0;
+    let squaredOffsetCorrection = 0;
+    for (let index = 0; index < count; index++) {
+        const centeredOffset = normalizedOffset(aggregate.values[index]) - normalizedMeanOffset;
+        const squaredOffset = centeredOffset * centeredOffset;
+        const next = squaredOffsetSum + squaredOffset;
+        squaredOffsetCorrection += Math.abs(squaredOffsetSum) >= Math.abs(squaredOffset)
+            ? (squaredOffsetSum - next) + squaredOffset
+            : (squaredOffset - next) + squaredOffsetSum;
+        squaredOffsetSum = next;
+    }
+
+    const normalizedMean = Math.max(
+        -1,
+        Math.min(1, normalizedOrigin + normalizedMeanOffset),
+    );
+    const normalizedVariance = Math.min(
+        1,
+        Math.max(0, (squaredOffsetSum + squaredOffsetCorrection) / count),
+    );
+    return {
+        mean: normalizedMean * aggregate.maxAbs,
+        std: Math.sqrt(normalizedVariance) * aggregate.maxAbs,
+    };
 }
 
 function summarizeScaledAbsBuffers(

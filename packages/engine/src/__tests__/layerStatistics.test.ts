@@ -66,6 +66,26 @@ describe('deterministic layer statistics', () => {
         expect(layer.activationStd).toBe(1);
     });
 
+    it('keeps representable population spread finite near Number.MAX_VALUE', () => {
+        const network = makeLinearNetwork();
+        network.setWeight(0, 0, 0, 1);
+        const high = 1e308;
+        const low = high - 2e292;
+        const expectedStd = Math.abs(high - low) / 2;
+
+        const result = network.computeLayerStatistics([[high], [low]]);
+        const layer = result.layers[0];
+
+        expect(Number.isFinite(expectedStd)).toBe(true);
+        expect(expectedStd).toBeGreaterThan(0);
+        expect(Number.isFinite(layer.meanActivation)).toBe(true);
+        expect(layer.meanActivation).toBeGreaterThanOrEqual(low);
+        expect(layer.meanActivation).toBeLessThanOrEqual(high);
+        expect(Number.isFinite(layer.activationStd)).toBe(true);
+        expect(layer.activationStd).toBeGreaterThan(0);
+        expect(layer.activationStd / expectedStd).toBeCloseTo(1, 12);
+    });
+
     it('selects a deterministic prefix capped at 128 and ignores unrelated forwards', () => {
         const network = makeLinearNetwork();
         network.setWeight(0, 0, 0, 1);
