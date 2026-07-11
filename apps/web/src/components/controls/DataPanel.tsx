@@ -1,13 +1,21 @@
 // ── Data Panel ──
 import { memo } from 'react';
+import type { DatasetId } from '@nn-playground/engine';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import type { DatasetType } from '@nn-playground/engine';
+import { commitRecipeEdit } from '../../store/commitRecipeEdit.ts';
+import {
+    reshuffleDataSeed,
+    setNoise,
+    setSampleCount,
+    setTrainFraction,
+    switchDataset,
+} from '../../store/recipeEdits.ts';
 import { LoadingState } from '../common/LoadingState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { DATASET_TOOLTIPS } from '../../data/datasetInsights.ts';
 
-const CLASSIFICATION_DATASETS: { id: DatasetType; label: string }[] = [
+const CLASSIFICATION_DATASETS: { id: DatasetId; label: string }[] = [
     { id: 'circle', label: 'Circle' },
     { id: 'xor', label: 'XOR' },
     { id: 'gauss', label: 'Gaussian' },
@@ -19,7 +27,7 @@ const CLASSIFICATION_DATASETS: { id: DatasetType; label: string }[] = [
     { id: 'three-class-clusters', label: 'Three-Class' },
 ];
 
-const REGRESSION_DATASETS: { id: DatasetType; label: string }[] = [
+const REGRESSION_DATASETS: { id: DatasetId; label: string }[] = [
     { id: 'reg-plane', label: 'Plane' },
     { id: 'reg-gauss', label: 'Multi-Gauss' },
 ];
@@ -30,26 +38,44 @@ interface DataPanelProps {
     onReset: () => void;
 }
 
+function problemLabel(kind: 'binary-classification' | 'multiclass-classification' | 'regression') {
+    if (kind === 'binary-classification') return 'Binary classification';
+    if (kind === 'multiclass-classification') return 'Multiclass classification';
+    return 'Regression';
+}
+
 export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
-    const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const problemType = usePlaygroundStore((s) => s.data.problemType);
-    const noise = usePlaygroundStore((s) => s.data.noise);
-    const trainTestRatio = usePlaygroundStore((s) => s.data.trainTestRatio);
-    const numSamples = usePlaygroundStore((s) => s.data.numSamples);
-    const isLoading = useTrainingStore((s) => s.dataConfigLoading);
-    const trainCount = useTrainingStore((s) => s.trainPoints.length);
-    const testCount = useTrainingStore((s) => s.testPoints.length);
-    const configError = useTrainingStore((s) => s.configError);
-    const configErrorSource = useTrainingStore((s) => s.configErrorSource);
-    const store = usePlaygroundStore;
+    const recipe = usePlaygroundStore((state) => state.prepared?.document.recipe ?? null);
+    const isLoading = useTrainingStore((state) => state.dataConfigLoading);
+    const trainCount = useTrainingStore((state) => state.trainPoints.length);
+    const testCount = useTrainingStore((state) => state.testPoints.length);
+    const configError = useTrainingStore((state) => state.configError);
+    const configErrorSource = useTrainingStore((state) => state.configErrorSource);
 
-    const datasets = problemType === 'regression' ? REGRESSION_DATASETS : CLASSIFICATION_DATASETS;
-
-    const beginDataChange = () => useTrainingStore.getState().beginConfigChange('data');
     const retryDataChange = () => useTrainingStore.getState().retryConfigSync();
 
+    if (!recipe) {
+        return (
+            <div>
+                <LoadingState isLoading={isLoading} inline message="Generating data..." />
+                <div className="config-feedback config-feedback--error" role="alert">
+                    No compatible version-2 experiment is active.
+                </div>
+            </div>
+        );
+    }
+
+    const dataset = recipe.task.dataset;
+    const { noise, trainFraction, sampleCount } = recipe.data;
+    const currentProblemLabel = problemLabel(recipe.task.kind);
+
+    const chooseDataset = (nextDataset: DatasetId) => {
+        if (nextDataset === dataset) return;
+        void commitRecipeEdit('data', (current) => switchDataset(current, nextDataset));
+    };
+
     return (
-        <div>
+        <div aria-busy={isLoading}>
             <LoadingState isLoading={isLoading} inline message="Generating data..." />
             {configError && configErrorSource === 'data' && (
                 <div className="config-feedback config-feedback--error" role="alert">
@@ -60,69 +86,64 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 </div>
             )}
 
-            {/* Problem type toggle */}
             <div className="control-row" style={{ marginBottom: 12 }}>
                 <span className="control-label">Problem</span>
-                <div className="chip-group">
-                    <Tooltip content="Cause: classification uses class labels. Effect: the boundary view shows which region the model assigns to each class.">
-                        <button
-                            type="button"
-                            className={`chip ${problemType === 'classification' ? 'active' : ''}`}
-                            aria-pressed={problemType === 'classification'}
-                            onClick={() => {
-                                if (problemType === 'classification' && dataset === 'circle') return;
-                                beginDataChange();
-                                store.getState().setDataset('circle');
-                            }}
-                        >
-                            Classification
-                        </button>
-                    </Tooltip>
-                    <Tooltip content="Cause: regression predicts a continuous value. Effect: loss tracks distance from a surface instead of class mistakes.">
-                        <button
-                            type="button"
-                            className={`chip ${problemType === 'regression' ? 'active' : ''}`}
-                            aria-pressed={problemType === 'regression'}
-                            onClick={() => {
-                                if (problemType === 'regression' && dataset === 'reg-plane') return;
-                                beginDataChange();
-                                store.getState().setDataset('reg-plane');
-                            }}
-                        >
-                            Regression
-                        </button>
-                    </Tooltip>
+                <span
+                    className="control-value"
+                    aria-label={`Problem type: ${currentProblemLabel}`}
+                >
+                    {currentProblemLabel}
+                </span>
+            </div>
+
+            <div className="control-row" style={{ alignItems: 'flex-start' }}>
+                <span className="control-label">Classification</span>
+                <div
+                    className="chip-group"
+                    aria-label="Classification datasets"
+                    style={{ marginBottom: 8 }}
+                >
+                    {CLASSIFICATION_DATASETS.map((candidate) => (
+                        <Tooltip key={candidate.id} content={DATASET_TOOLTIPS[candidate.id]}>
+                            <button
+                                type="button"
+                                className={`chip ${dataset === candidate.id ? 'active' : ''}`}
+                                onClick={() => chooseDataset(candidate.id)}
+                                aria-pressed={dataset === candidate.id}
+                            >
+                                {candidate.label}
+                            </button>
+                        </Tooltip>
+                    ))}
                 </div>
             </div>
 
-            {/* Dataset selector */}
-            <div className="chip-group" style={{ marginBottom: 12 }}>
-                {datasets.map((ds) => (
-                    <Tooltip key={ds.id} content={DATASET_TOOLTIPS[ds.id]}>
-                        <button
-                            type="button"
-                            className={`chip ${dataset === ds.id ? 'active' : ''}`}
-                            onClick={() => {
-                                if (dataset === ds.id) return;
-                                beginDataChange();
-                                store.getState().setDataset(ds.id);
-                            }}
-                            aria-pressed={dataset === ds.id}
-                        >
-                            {ds.label}
-                        </button>
-                    </Tooltip>
-                ))}
+            <div className="control-row" style={{ alignItems: 'flex-start', marginBottom: 12 }}>
+                <span className="control-label">Regression</span>
+                <div className="chip-group" aria-label="Regression datasets">
+                    {REGRESSION_DATASETS.map((candidate) => (
+                        <Tooltip key={candidate.id} content={DATASET_TOOLTIPS[candidate.id]}>
+                            <button
+                                type="button"
+                                className={`chip ${dataset === candidate.id ? 'active' : ''}`}
+                                onClick={() => chooseDataset(candidate.id)}
+                                aria-pressed={dataset === candidate.id}
+                            >
+                                {candidate.label}
+                            </button>
+                        </Tooltip>
+                    ))}
+                </div>
             </div>
 
             <div
                 className="control-row"
-                aria-label={`Dataset settings: ${numSamples} samples, ${noise} noise, ${Math.round(trainTestRatio * 100)}% train`}
+                aria-label={`Dataset settings: ${sampleCount} samples, ${noise} noise, ${Math.round(trainFraction * 100)}% train`}
                 aria-live="polite"
                 style={{ marginBottom: 8 }}
             >
                 <span className="control-label">Dataset lab</span>
-                <span className="control-value">{numSamples.toLocaleString()} samples</span>
+                <span className="control-value">{sampleCount.toLocaleString()} samples</span>
                 <span className="control-value">{noise} noise</span>
             </div>
 
@@ -133,13 +154,15 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                         <button
                             key={count}
                             type="button"
-                            className={`chip ${numSamples === count ? 'active' : ''}`}
-                            aria-pressed={numSamples === count}
+                            className={`chip ${sampleCount === count ? 'active' : ''}`}
+                            aria-pressed={sampleCount === count}
                             disabled={isLoading}
                             onClick={() => {
-                                if (numSamples === count) return;
-                                beginDataChange();
-                                store.getState().setNumSamples(count);
+                                if (sampleCount === count) return;
+                                void commitRecipeEdit(
+                                    'data',
+                                    (current) => setSampleCount(current, count),
+                                );
                             }}
                         >
                             {count} samples
@@ -148,22 +171,23 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 </div>
             </div>
 
-            {/* Train/test ratio */}
             <div className="control-row">
                 <span className="control-label">Train ratio</span>
-                <span className="control-value">{Math.round(trainTestRatio * 100)}%</span>
+                <span className="control-value">{Math.round(trainFraction * 100)}%</span>
             </div>
             <Tooltip content="Cause: a higher train ratio gives the model more examples to fit. Effect: the test set gets smaller, so generalization estimates become noisier." block>
                 <input
                     type="range"
                     min="10"
                     max="90"
-                    value={Math.round(trainTestRatio * 100)}
-                    onChange={(e) => {
-                        const nextRatio = Number(e.target.value) / 100;
-                        if (nextRatio === trainTestRatio) return;
-                        beginDataChange();
-                        store.getState().setTrainTestRatio(nextRatio);
+                    value={Math.round(trainFraction * 100)}
+                    onChange={(event) => {
+                        const nextFraction = Number(event.target.value) / 100;
+                        if (nextFraction === trainFraction) return;
+                        void commitRecipeEdit(
+                            'data',
+                            (current) => setTrainFraction(current, nextFraction),
+                        );
                     }}
                     aria-label="Train/test split percentage"
                 />
@@ -187,15 +211,13 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     style={{ marginTop: 8, width: '100%' }}
                     disabled={isLoading}
                     onClick={() => {
-                        beginDataChange();
-                        store.getState().reshuffleDataSeed();
+                        void commitRecipeEdit('data', reshuffleDataSeed);
                     }}
                 >
                     Reshuffle split
                 </button>
             </Tooltip>
 
-            {/* Noise */}
             <div className="control-row" style={{ marginTop: 8 }}>
                 <span className="control-label">Noise</span>
                 <span className="control-value">{noise}</span>
@@ -206,11 +228,13 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     min="0"
                     max="50"
                     value={noise}
-                    onChange={(e) => {
-                        const nextNoise = Number(e.target.value);
+                    onChange={(event) => {
+                        const nextNoise = Number(event.target.value);
                         if (nextNoise === noise) return;
-                        beginDataChange();
-                        store.getState().setNoise(nextNoise);
+                        void commitRecipeEdit(
+                            'data',
+                            (current) => setNoise(current, nextNoise),
+                        );
                     }}
                     aria-label="Noise level"
                 />
@@ -222,6 +246,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     className="btn btn--ghost btn--sm"
                     style={{ marginTop: 10, width: '100%' }}
                     onClick={onReset}
+                    aria-label="Reset model & data"
                 >
                     ↻ Reset model & data
                 </button>

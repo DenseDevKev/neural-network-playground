@@ -9,6 +9,7 @@ import { useTrainingStore } from '../store/useTrainingStore';
 import { usePlaygroundStore } from '../store/usePlaygroundStore';
 import { useLayoutStore } from '../store/useLayoutStore';
 import { resetFrameBuffer } from '../worker/frameBuffer';
+import { switchDataset } from '../store/recipeEdits.ts';
 import {
     DEFAULT_DATA,
     DEFAULT_FEATURES,
@@ -355,7 +356,10 @@ describe('Dataset switching scenario', () => {
         fakeWorkerApi.updateConfig.mockClear();
 
         await act(async () => {
-            usePlaygroundStore.getState().setDataset('xor');
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => switchDataset(recipe, 'xor'),
+            );
+            expect(edited.ok).toBe(true);
         });
 
         // Allow async sync to complete

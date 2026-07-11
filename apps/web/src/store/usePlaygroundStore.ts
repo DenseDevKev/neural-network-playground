@@ -1,17 +1,10 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import {
     generateDatasetV2,
-    type ActivationType,
     type DataSplit,
-    type DatasetType,
     type FeatureFlags,
-    type LRSchedule,
-    type LossType,
     type NetworkConfig,
-    type OptimizerType,
-    type RegularizationType,
     type TrainingConfig,
-    type WeightInitType,
 } from '@nn-playground/engine';
 import {
     DEFAULT_DEMAND,
@@ -32,27 +25,7 @@ import {
     type ValidatedStandardExperimentRecipeV2,
     type VisualizationDemand,
 } from '@nn-playground/shared';
-import {
-    reshuffleDataSeed,
-    setBatchSize as editBatchSize,
-    setGradientClipping,
-    setHiddenActivation,
-    setHiddenLayers as editHiddenLayers,
-    setHiddenLayerWidth,
-    setInitialization,
-    setLearningRate as editLearningRate,
-    setNoise as editNoise,
-    setOptimizer as editOptimizer,
-    setPenalty,
-    setRegressionDataLoss,
-    setSampleCount,
-    setSchedule,
-    setTrainFraction,
-    switchDataset,
-    toggleFeature as editFeature,
-    type RecipeEditResult,
-    type RecipeEditIssue,
-} from './recipeEdits.ts';
+import type { RecipeEditIssue, RecipeEditResult } from './recipeEdits.ts';
 import { projectPreparedExperiment } from './legacyProjection.ts';
 
 export interface FeaturesUI {
@@ -117,38 +90,8 @@ export interface PlaygroundStore {
     syncToUrl(): SchemaResult<string>;
     loadFromUrl(): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
 
-    // Transitional control aliases. They only delegate to typed V2 edits.
-    setDataset(type: DatasetType): void;
-    setNoise(noise: number): void;
-    setTrainTestRatio(ratio: number): void;
-    setNumSamples(count: number): void;
-    reshuffleDataSeed(): void;
-    toggleFeature(feature: keyof FeatureFlags): void;
-    setHiddenLayers(layers: number[]): void;
-    addLayer(): void;
-    removeLayer(): void;
-    setNeuronsInLayer(layerIndex: number, count: number): void;
-    setActivation(activation: ActivationType): void;
-    setLearningRate(learningRate: number): void;
-    setBatchSize(batchSize: number): void;
-    setLossType(lossType: LossType): void;
-    setOptimizer(optimizer: OptimizerType): void;
-    setMomentum(momentum: number): void;
-    setGradientClip(maximumNorm: number | null): void;
-    setAdamBetas(beta1: number, beta2: number): void;
-    setHuberDelta(delta: number): void;
-    setLRSchedule(schedule: LRSchedule | undefined): void;
-    setWeightInit(initialization: WeightInitType): void;
-    /** @deprecated Output activation is derived from task and cannot be edited. */
-    setOutputActivation(activation: ActivationType): void;
-    setRegularization(regularization: RegularizationType): void;
-    setRegularizationRate(coefficient: number): void;
-    setShowTestData(show: boolean): void;
-    setDiscretize(discretize: boolean): void;
     setDemand(demand: VisualizationDemand): void;
     regenerateData(): void;
-    /** @deprecated Task 6C callers migrate to applyRecipe. */
-    applyPreset(entry: RecipeCatalogEntry): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
     getConfig(): AppConfig;
 }
 
@@ -176,18 +119,6 @@ function exactCatalogEntry(entry: RecipeCatalogEntry): RecipeCatalogEntry | unde
     if (resolved !== entry) return undefined;
     if (resolved.recipe !== resolved.prepared.document.recipe) return undefined;
     return resolved;
-}
-
-function scheduleFromLegacy(schedule: LRSchedule | undefined) {
-    if (!schedule || schedule.type === 'constant') return { kind: 'constant' } as const;
-    if (schedule.type === 'step') {
-        return { kind: 'step', interval: schedule.stepSize, gamma: schedule.gamma } as const;
-    }
-    return {
-        kind: 'cosine',
-        totalSteps: schedule.totalSteps,
-        minimumRate: schedule.minLr,
-    } as const;
 }
 
 export async function initializePlaygroundStateFromHash(
@@ -351,12 +282,6 @@ export function createPlaygroundStore(
             });
         };
 
-        const fireEdit = (
-            edit: (recipe: ValidatedStandardExperimentRecipeV2) => RecipeEditResult,
-        ): void => {
-            void editRecipe(edit);
-        };
-
         return {
             prepared: initialization.initialPrepared,
             preparation: initialization.initialPrepared
@@ -398,120 +323,6 @@ export function createPlaygroundStore(
                 return replace(decoded.value, { kind: 'url', raw });
             },
 
-            setDataset: (dataset) => fireEdit((recipe) => switchDataset(recipe, dataset)),
-            setNoise: (noise) => fireEdit((recipe) => editNoise(recipe, noise)),
-            setTrainTestRatio: (ratio) => fireEdit((recipe) => setTrainFraction(recipe, ratio)),
-            setNumSamples: (count) => fireEdit((recipe) => setSampleCount(recipe, count)),
-            reshuffleDataSeed: () => fireEdit(reshuffleDataSeed),
-            toggleFeature: (feature) => fireEdit((recipe) => editFeature(recipe, feature)),
-            setHiddenLayers: (layers) => fireEdit((recipe) => editHiddenLayers(recipe, layers)),
-            addLayer: () => fireEdit((recipe) => editHiddenLayers(
-                recipe,
-                [...recipe.model.hiddenLayers, 4],
-            )),
-            removeLayer: () => fireEdit((recipe) => editHiddenLayers(
-                recipe,
-                recipe.model.hiddenLayers.slice(0, -1),
-            )),
-            setNeuronsInLayer: (layerIndex, count) => fireEdit(
-                (recipe) => setHiddenLayerWidth(recipe, layerIndex, count),
-            ),
-            setActivation: (activation) => {
-                if (activation === 'softmax') return;
-                fireEdit((recipe) => setHiddenActivation(recipe, activation));
-            },
-            setLearningRate: (learningRate) => fireEdit(
-                (recipe) => editLearningRate(recipe, learningRate),
-            ),
-            setBatchSize: (batchSize) => fireEdit((recipe) => editBatchSize(recipe, batchSize)),
-            setLossType: (lossType) => fireEdit((recipe) => {
-                if (recipe.task.kind !== 'regression') return { ok: true, recipe };
-                if (lossType === 'mse') {
-                    return setRegressionDataLoss(recipe, { kind: 'mean-squared-error' });
-                }
-                if (lossType === 'huber') {
-                    const delta = recipe.objective.dataLoss.kind === 'huber'
-                        ? recipe.objective.dataLoss.delta
-                        : 1;
-                    return setRegressionDataLoss(recipe, { kind: 'huber', delta });
-                }
-                return { ok: true, recipe };
-            }),
-            setOptimizer: (optimizer) => fireEdit((recipe) => {
-                if (optimizer === 'sgd') return editOptimizer(recipe, { kind: 'sgd' });
-                if (optimizer === 'sgdMomentum') {
-                    const momentum = recipe.training.optimizer.kind === 'sgd-momentum'
-                        ? recipe.training.optimizer.momentum
-                        : 0.9;
-                    return editOptimizer(recipe, { kind: 'sgd-momentum', momentum });
-                }
-                const current = recipe.training.optimizer;
-                return editOptimizer(recipe, {
-                    kind: 'adam',
-                    beta1: current.kind === 'adam' ? current.beta1 : 0.9,
-                    beta2: current.kind === 'adam' ? current.beta2 : 0.999,
-                    epsilon: current.kind === 'adam' ? current.epsilon : 1e-8,
-                });
-            }),
-            setMomentum: (momentum) => fireEdit((recipe) => {
-                if (recipe.training.optimizer.kind !== 'sgd-momentum') {
-                    return { ok: true, recipe };
-                }
-                return editOptimizer(recipe, { kind: 'sgd-momentum', momentum });
-            }),
-            setGradientClip: (maximumNorm) => fireEdit((recipe) => setGradientClipping(
-                recipe,
-                maximumNorm === null
-                    ? { kind: 'none' }
-                    : {
-                        kind: 'global-norm',
-                        maximumNorm,
-                        scope: 'total-objective-gradient',
-                    },
-            )),
-            setAdamBetas: (beta1, beta2) => fireEdit((recipe) => {
-                if (recipe.training.optimizer.kind !== 'adam') return { ok: true, recipe };
-                return editOptimizer(recipe, {
-                    ...recipe.training.optimizer,
-                    beta1,
-                    beta2,
-                });
-            }),
-            setHuberDelta: (delta) => fireEdit((recipe) => {
-                if (recipe.task.kind !== 'regression'
-                    || recipe.objective.dataLoss.kind !== 'huber') {
-                    return { ok: true, recipe };
-                }
-                return setRegressionDataLoss(recipe, { kind: 'huber', delta });
-            }),
-            setLRSchedule: (schedule) => fireEdit(
-                (recipe) => setSchedule(recipe, scheduleFromLegacy(schedule)),
-            ),
-            setWeightInit: (initialization) => fireEdit(
-                (recipe) => setInitialization(recipe, initialization),
-            ),
-            setOutputActivation: () => undefined,
-            setRegularization: (regularization) => fireEdit((recipe) => {
-                if (regularization === 'none') return setPenalty(recipe, { kind: 'none' });
-                const current = recipe.objective.penalty;
-                const coefficient = current.kind === 'none' ? 0.001 : current.coefficient;
-                return setPenalty(recipe, {
-                    kind: regularization,
-                    coefficient,
-                    applyTo: 'weights',
-                });
-            }),
-            setRegularizationRate: (coefficient) => fireEdit((recipe) => {
-                const current = recipe.objective.penalty;
-                if (current.kind === 'none') return { ok: true, recipe };
-                return setPenalty(recipe, { ...current, coefficient });
-            }),
-            setShowTestData: (showTestData) => {
-                void editView((view) => ({ ...view, showTestData }));
-            },
-            setDiscretize: (discretizeOutput) => {
-                void editView((view) => ({ ...view, discretizeOutput }));
-            },
             setDemand: (demand) => set({ demand }),
             regenerateData: () => {
                 const prepared = get().prepared;
@@ -526,7 +337,6 @@ export function createPlaygroundStore(
                 });
                 set({ dataset });
             },
-            applyPreset: (entry) => applyRecipe(entry),
             getConfig: () => {
                 const state = get();
                 if (!state.prepared) {

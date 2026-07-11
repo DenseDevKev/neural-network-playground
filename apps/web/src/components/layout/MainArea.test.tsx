@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { MainArea } from './MainArea.tsx';
+import { BoundaryContent, MainArea } from './MainArea.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
@@ -119,6 +119,24 @@ describe('MainArea right-panel content', () => {
 
         await user.click(screen.getByRole('button', { name: 'Errors' }));
         expect(screen.getByText(/training points whose predicted class does not match/i)).toBeInTheDocument();
+    });
+
+    it('publishes decision view toggles through the canonical editView transaction', async () => {
+        const user = userEvent.setup();
+        const editView = vi.spyOn(usePlaygroundStore.getState(), 'editView');
+        render(<BoundaryContent />);
+
+        await user.click(screen.getByRole('checkbox', { name: 'Show test data' }));
+        await user.click(screen.getByRole('checkbox', { name: 'Discretize output' }));
+
+        await waitFor(() => {
+            expect(editView).toHaveBeenCalledTimes(2);
+            expect(usePlaygroundStore.getState().prepared?.document.view).toEqual({
+                showTestData: true,
+                discretizeOutput: true,
+            });
+        });
+        editView.mockRestore();
     });
 
     it('renders the training explanation surface with the loss chart', () => {

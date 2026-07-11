@@ -81,6 +81,48 @@ function withNoise(
 }
 
 describe('atomic prepared-document store', () => {
+    it('exposes canonical mutation transactions without legacy control aliases', () => {
+        const state = createReadyStore().getState();
+        const legacyAliases = [
+            'setDataset',
+            'setNoise',
+            'setTrainTestRatio',
+            'setNumSamples',
+            'reshuffleDataSeed',
+            'toggleFeature',
+            'setHiddenLayers',
+            'addLayer',
+            'removeLayer',
+            'setNeuronsInLayer',
+            'setActivation',
+            'setLearningRate',
+            'setBatchSize',
+            'setLossType',
+            'setOptimizer',
+            'setMomentum',
+            'setGradientClip',
+            'setAdamBetas',
+            'setHuberDelta',
+            'setLRSchedule',
+            'setWeightInit',
+            'setOutputActivation',
+            'setRegularization',
+            'setRegularizationRate',
+            'setShowTestData',
+            'setDiscretize',
+            'applyPreset',
+        ] as const;
+
+        expect(state).toMatchObject({
+            editRecipe: expect.any(Function),
+            editView: expect.any(Function),
+            applyRecipe: expect.any(Function),
+        });
+        for (const alias of legacyAliases) {
+            expect(state, alias).not.toHaveProperty(alias);
+        }
+    });
+
     it('publishes a successful prepared document and every projection in one ready-state set', async () => {
         const initial = preset('xor-hidden').prepared;
         const targetDocument = withNoise(initial, 7);

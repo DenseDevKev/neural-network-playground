@@ -220,7 +220,6 @@ describe('RunHistoryPanel', () => {
         const onInitializeArena = vi.fn();
         const onStepArena = vi.fn();
         const store = usePlaygroundStore.getState();
-        const applyPreset = vi.spyOn(store, 'applyPreset');
         const applyRecipe = vi.spyOn(store, 'applyRecipe');
         const replaceDocument = vi.spyOn(store, 'replaceDocument');
         const priorPrepared = store.prepared;
@@ -245,7 +244,6 @@ describe('RunHistoryPanel', () => {
         expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
         expect(usePlaygroundStore.getState().prepared).toBe(priorPrepared);
         expect(JSON.stringify(useExperimentMemoryStore.getState().records[0])).toBe(priorBytes);
-        expect(applyPreset).not.toHaveBeenCalled();
         expect(applyRecipe).not.toHaveBeenCalled();
         expect(replaceDocument).not.toHaveBeenCalled();
         expect(onRestore).not.toHaveBeenCalled();

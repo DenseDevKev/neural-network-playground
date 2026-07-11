@@ -1,9 +1,10 @@
 // ── Features Panel ──
 import { memo } from 'react';
+import { ALL_FEATURES } from '@nn-playground/engine';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { ALL_FEATURES } from '@nn-playground/engine';
-import type { FeatureFlags } from '@nn-playground/engine';
+import { commitRecipeEdit } from '../../store/commitRecipeEdit.ts';
+import { toggleFeature } from '../../store/recipeEdits.ts';
 import { LoadingState } from '../common/LoadingState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
 
@@ -20,18 +21,30 @@ const FEATURE_TOOLTIPS: Record<string, string> = {
 };
 
 export const FeaturesPanel = memo(function FeaturesPanel() {
-    const features = usePlaygroundStore((s) => s.features);
-    const isLoading = useTrainingStore((s) => s.featuresConfigLoading);
-    const configError = useTrainingStore((s) => s.configError);
-    const configErrorSource = useTrainingStore((s) => s.configErrorSource);
-    const activeFeatureCount = Object.values(features).filter(Boolean).length;
-    const store = usePlaygroundStore;
+    const featureIds = usePlaygroundStore(
+        (state) => state.prepared?.document.recipe.inputs.featureIds ?? null,
+    );
+    const isLoading = useTrainingStore((state) => state.featuresConfigLoading);
+    const configError = useTrainingStore((state) => state.configError);
+    const configErrorSource = useTrainingStore((state) => state.configErrorSource);
 
-    const beginFeatureChange = () => useTrainingStore.getState().beginConfigChange('features');
     const retryFeatureChange = () => useTrainingStore.getState().retryConfigSync();
 
+    if (!featureIds) {
+        return (
+            <div>
+                <LoadingState isLoading={isLoading} inline message="Updating features..." />
+                <div className="config-feedback config-feedback--error" role="alert">
+                    No compatible version-2 experiment is active.
+                </div>
+            </div>
+        );
+    }
+
+    const selectedFeatureIds = new Set(featureIds);
+
     return (
-        <div>
+        <div aria-busy={isLoading}>
             <LoadingState isLoading={isLoading} inline message="Updating features..." />
             {configError && configErrorSource === 'features' && (
                 <div className="config-feedback config-feedback--error" role="alert">
@@ -43,26 +56,33 @@ export const FeaturesPanel = memo(function FeaturesPanel() {
             )}
 
             <div className="chip-group">
-                {ALL_FEATURES.map((f) => (
-                    <Tooltip key={f.id} content={FEATURE_TOOLTIPS[f.id] ?? `Cause: toggling ${f.label} changes the inputs. Effect: the model sees a different representation of the same data.`}>
-                        <button
-                            type="button"
-                            className={`feature-chip ${features[f.id as keyof FeatureFlags] ? 'active' : ''}`}
-                            onClick={() => {
-                                const featureId = f.id as keyof FeatureFlags;
-                                if (features[featureId] && activeFeatureCount === 1) {
-                                    return;
-                                }
-
-                                beginFeatureChange();
-                                store.getState().toggleFeature(featureId);
-                            }}
-                            aria-pressed={features[f.id as keyof FeatureFlags]}
+                {ALL_FEATURES.map((feature) => {
+                    const isSelected = selectedFeatureIds.has(feature.id);
+                    const isFinalFeature = isSelected && featureIds.length === 1;
+                    return (
+                        <Tooltip
+                            key={feature.id}
+                            content={FEATURE_TOOLTIPS[feature.id]
+                                ?? `Cause: toggling ${feature.label} changes the inputs. Effect: the model sees a different representation of the same data.`}
                         >
-                            {f.label}
-                        </button>
-                    </Tooltip>
-                ))}
+                            <button
+                                type="button"
+                                className={`feature-chip ${isSelected ? 'active' : ''}`}
+                                disabled={isFinalFeature}
+                                onClick={() => {
+                                    if (isFinalFeature) return;
+                                    void commitRecipeEdit(
+                                        'features',
+                                        (current) => toggleFeature(current, feature.id),
+                                    );
+                                }}
+                                aria-pressed={isSelected}
+                            >
+                                {feature.label}
+                            </button>
+                        </Tooltip>
+                    );
+                })}
             </div>
         </div>
     );

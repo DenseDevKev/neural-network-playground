@@ -77,6 +77,7 @@ export const CanvasContent = memo(function CanvasContent() {
 export const BoundaryContent = memo(function BoundaryContent() {
     const showTestData = usePlaygroundStore((s) => s.ui.showTestData);
     const discretize   = usePlaygroundStore((s) => s.ui.discretizeOutput);
+    const editView     = usePlaygroundStore((s) => s.editView);
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
     const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');
@@ -94,12 +95,18 @@ export const BoundaryContent = memo(function BoundaryContent() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
                     <label className="checkbox-row">
                         <input type="checkbox" checked={showTestData}
-                            onChange={(e) => usePlaygroundStore.getState().setShowTestData(e.target.checked)} />
+                            onChange={async (event) => {
+                                const checked = event.currentTarget.checked;
+                                await editView((view) => ({ ...view, showTestData: checked }));
+                            }} />
                         Show test data
                     </label>
                     <label className="checkbox-row">
                         <input type="checkbox" checked={discretize}
-                            onChange={(e) => usePlaygroundStore.getState().setDiscretize(e.target.checked)} />
+                            onChange={async (event) => {
+                                const checked = event.currentTarget.checked;
+                                await editView((view) => ({ ...view, discretizeOutput: checked }));
+                            }} />
                         Discretize output
                     </label>
                     <div className="decision-overlay-controls" aria-label="Decision overlay controls">

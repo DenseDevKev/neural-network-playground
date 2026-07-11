@@ -11,7 +11,7 @@ import {
 } from '@nn-playground/shared';
 import type { WorkerToMainMessage } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
-import { setNoise } from '../store/recipeEdits.ts';
+import { setHiddenLayers, setNoise, setSampleCount } from '../store/recipeEdits.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
 import { getFrameBuffer, getFrameVersions, resetFrameBuffer, updateFrameBuffer } from '../worker/frameBuffer.ts';
 
@@ -784,9 +784,12 @@ describe('useTraining', () => {
         act(() => {
             result.current.play();
         });
-        act(() => {
+        await act(async () => {
             useTrainingStore.getState().beginConfigChange('data');
-            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 1);
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setSampleCount(recipe, DEFAULT_DATA.numSamples + 1),
+            );
+            expect(edited.ok).toBe(true);
         });
 
         await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
@@ -901,9 +904,12 @@ describe('useTraining', () => {
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
         bridge.workerApi.updateConfig.mockClear();
 
-        act(() => {
+        await act(async () => {
             useTrainingStore.getState().beginConfigChange('data');
-            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 1);
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setSampleCount(recipe, DEFAULT_DATA.numSamples + 1),
+            );
+            expect(edited.ok).toBe(true);
         });
 
         await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
@@ -1013,9 +1019,12 @@ describe('useTraining', () => {
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
         bridge.workerApi.updateConfig.mockRejectedValueOnce(new Error('bad network'));
 
-        act(() => {
+        await act(async () => {
             useTrainingStore.getState().beginConfigChange('network');
-            usePlaygroundStore.getState().setHiddenLayers([5, 3]);
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setHiddenLayers(recipe, [5, 3]),
+            );
+            expect(edited.ok).toBe(true);
         });
 
         await waitFor(() => expect(useTrainingStore.getState().configError).toBe('bad network'));
@@ -1066,15 +1075,21 @@ describe('useTraining', () => {
             .mockImplementationOnce(() => second.promise);
         bridge.newRunTo.mockClear();
 
-        act(() => {
+        await act(async () => {
             useTrainingStore.getState().beginConfigChange('data');
-            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 1);
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setSampleCount(recipe, DEFAULT_DATA.numSamples + 1),
+            );
+            expect(edited.ok).toBe(true);
         });
         await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
 
-        act(() => {
+        await act(async () => {
             useTrainingStore.getState().beginConfigChange('data');
-            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 2);
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setSampleCount(recipe, DEFAULT_DATA.numSamples + 2),
+            );
+            expect(edited.ok).toBe(true);
         });
         await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(2));
 
@@ -1105,9 +1120,12 @@ describe('useTraining', () => {
         bridge.postStreamCommand.mockClear();
         bridge.startRenderLoop.mockClear();
 
-        act(() => {
+        await act(async () => {
             useTrainingStore.getState().beginConfigChange('data');
-            usePlaygroundStore.getState().setNumSamples(DEFAULT_DATA.numSamples + 1);
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setSampleCount(recipe, DEFAULT_DATA.numSamples + 1),
+            );
+            expect(edited.ok).toBe(true);
         });
         await waitFor(() => expect(bridge.workerApi.updateConfig).toHaveBeenCalledTimes(1));
 
