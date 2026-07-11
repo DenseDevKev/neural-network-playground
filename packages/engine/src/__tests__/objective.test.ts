@@ -62,6 +62,38 @@ describe('categorical cross-entropy from logits', () => {
         expect(categoricalCrossEntropyLogitDelta([1_000, -1_000], [0, 1])).toEqual([1, -1]);
     });
 
+    it('retains the normalization term for huge equal finite logits', () => {
+        const logits = [1e300, 1e300];
+        const target = [1, 0];
+
+        expect(categoricalCrossEntropyWithLogits(logits, target)).toBeCloseTo(Math.log(2), 12);
+        expect(categoricalCrossEntropyLogitDelta(logits, target)).toEqual([-0.5, 0.5]);
+    });
+
+    it('keeps compiled values and deltas invariant under a common logit offset', () => {
+        const objective = compileObjective({
+            dataLoss: { kind: 'categorical-cross-entropy-with-logits' },
+            penalty: { kind: 'none' },
+            reduction: 'mean-per-sample',
+        }, { outputSize: 3, outputActivation: 'softmax' });
+        const logits = [0, 1, 2];
+        const shiftedLogits = logits.map((logit) => logit + 2 ** 40);
+        const outputs = [0, 0, 0];
+        const target = [0.2, 0.3, 0.5];
+        const delta = new Float64Array(3);
+        const shiftedDelta = new Float64Array(3);
+
+        const loss = objective.evaluateDataSample(logits, outputs, target);
+        const shiftedLoss = objective.evaluateDataSample(shiftedLogits, outputs, target);
+        objective.seedOutputDeltaInto(logits, outputs, target, delta);
+        objective.seedOutputDeltaInto(shiftedLogits, outputs, target, shiftedDelta);
+
+        expect(shiftedLoss).toBeCloseTo(loss, 12);
+        for (let i = 0; i < delta.length; i++) {
+            expect(shiftedDelta[i]).toBeCloseTo(delta[i], 12);
+        }
+    });
+
     it('matches finite differences for normalized soft targets', () => {
         const logits = [0.3, -0.2, 1.1];
         const target = [0.2, 0.3, 0.5];

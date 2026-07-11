@@ -123,16 +123,23 @@ export function binaryCrossEntropyLogitDelta(logit: number, target: number): num
     return stableSigmoid(logit) - target;
 }
 
-function categoricalLogNormalizer(logits: ArrayLike<number>): number {
+function categoricalMaximum(logits: ArrayLike<number>): number {
     let maximum = -Infinity;
     for (let i = 0; i < logits.length; i++) {
         if (logits[i] > maximum) maximum = logits[i];
     }
+    return maximum;
+}
+
+function categoricalShiftedExponentialSum(
+    logits: ArrayLike<number>,
+    maximum: number,
+): number {
     let exponentialSum = 0;
     for (let i = 0; i < logits.length; i++) {
         exponentialSum += Math.exp(logits[i] - maximum);
     }
-    return maximum + Math.log(exponentialSum);
+    return exponentialSum;
 }
 
 /** Stable categorical cross-entropy for normalized targets and raw logits. */
@@ -141,12 +148,15 @@ export function categoricalCrossEntropyWithLogits(
     target: ArrayLike<number>,
 ): number {
     const outputCount = assertCategoricalLogitsAndTarget(logits, target);
-    const logNormalizer = categoricalLogNormalizer(logits);
-    let targetLogitSum = 0;
+    const maximum = categoricalMaximum(logits);
+    const exponentialSum = categoricalShiftedExponentialSum(logits, maximum);
+    const logExponentialSum = Math.log(exponentialSum);
+    let loss = 0;
     for (let i = 0; i < outputCount; i++) {
-        targetLogitSum += target[i] * logits[i];
+        if (target[i] === 0) continue;
+        loss += target[i] * ((maximum - logits[i]) + logExponentialSum);
     }
-    return logNormalizer - targetLogitSum;
+    return loss;
 }
 
 /** Softmax(logits) minus target, the categorical output-logit derivative. */
@@ -155,10 +165,11 @@ export function categoricalCrossEntropyLogitDelta(
     target: ArrayLike<number>,
 ): number[] {
     const outputCount = assertCategoricalLogitsAndTarget(logits, target);
-    const logNormalizer = categoricalLogNormalizer(logits);
+    const maximum = categoricalMaximum(logits);
+    const inverseExponentialSum = 1 / categoricalShiftedExponentialSum(logits, maximum);
     const delta = new Array<number>(outputCount);
     for (let i = 0; i < outputCount; i++) {
-        delta[i] = Math.exp(logits[i] - logNormalizer) - target[i];
+        delta[i] = Math.exp(logits[i] - maximum) * inverseExponentialSum - target[i];
     }
     return delta;
 }
@@ -610,9 +621,10 @@ export function compileObjective(
                     return;
                 case 'categorical-cross-entropy-with-logits': {
                     assertCategoricalLogitsAndTarget(logits, target);
-                    const logNormalizer = categoricalLogNormalizer(logits);
+                    const maximum = categoricalMaximum(logits);
+                    const inverseExponentialSum = 1 / categoricalShiftedExponentialSum(logits, maximum);
                     for (let i = 0; i < outputSize; i++) {
-                        destination[i] = Math.exp(logits[i] - logNormalizer) - target[i];
+                        destination[i] = Math.exp(logits[i] - maximum) * inverseExponentialSum - target[i];
                     }
                     return;
                 }
