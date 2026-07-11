@@ -29,6 +29,10 @@ export {
     validateExperimentRunRecord,
 } from './experimentMemory.js';
 export {
+    EXPERIMENT_SCHEMA_VERSION,
+    validateExperimentDocument,
+} from './experimentSchema.js';
+export {
     DEFAULT_SEED,
     DEFAULT_NUM_SAMPLES,
     GRID_SIZE,
@@ -50,6 +54,7 @@ export {
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
     DEFAULT_DATA,
+    DEFAULT_EXPERIMENT_DOCUMENT,
 } from './constants.js';
 export {
     PAUSE_REASONS,
@@ -61,6 +66,14 @@ export type {
     Preset,
     TrainingStatus,
     PauseReason,
+    CommonRecipeV2,
+    StandardExperimentRecipeV2,
+    ExperimentDocumentV2,
+    ExperimentSchemaIssueCode,
+    ExperimentSchemaIssue,
+    SchemaResult,
+    ValidatedStandardExperimentRecipeV2,
+    ValidatedExperimentDocumentV2,
 } from './types.js';
 export type {
     ExperimentMemoryValidationOptions,

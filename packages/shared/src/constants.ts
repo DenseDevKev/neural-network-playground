@@ -1,5 +1,7 @@
 // ── Shared constants ──
 import type { FeatureFlags, NetworkConfig, TrainingConfig, DataConfig } from '@nn-playground/engine';
+import { validateExperimentDocument } from './experimentSchema.js';
+import type { ExperimentDocumentV2 } from './types.js';
 
 export const DEFAULT_SEED = 42;
 export const DEFAULT_NUM_SAMPLES = 300;
@@ -58,3 +60,57 @@ export const DEFAULT_DATA: DataConfig = {
     numSamples: DEFAULT_NUM_SAMPLES,
     seed: DEFAULT_SEED,
 };
+
+const DEFAULT_EXPERIMENT_DOCUMENT_CANDIDATE = {
+    kind: 'nn-playground-experiment',
+    schemaVersion: 2,
+    recipe: {
+        data: {
+            sampleCount: DEFAULT_NUM_SAMPLES,
+            trainFraction: 0.5,
+            noise: 0,
+            seed: DEFAULT_SEED,
+        },
+        inputs: {
+            featureIds: ['x', 'y'],
+        },
+        model: {
+            hiddenLayers: [4, 4],
+            hiddenActivation: 'tanh',
+            initialization: 'xavier',
+            seed: DEFAULT_SEED,
+        },
+        training: {
+            batchSize: 10,
+            learningRate: 0.03,
+            schedule: { kind: 'constant' },
+            optimizer: { kind: 'sgd' },
+            gradientClipping: { kind: 'none' },
+        },
+        task: {
+            kind: 'binary-classification',
+            dataset: 'circle',
+        },
+        objective: {
+            dataLoss: { kind: 'binary-cross-entropy-with-logits' },
+            penalty: { kind: 'none' },
+            reduction: 'mean-per-sample',
+        },
+    },
+    view: {
+        showTestData: false,
+        discretizeOutput: false,
+    },
+} as const satisfies ExperimentDocumentV2;
+
+const defaultExperimentValidation = validateExperimentDocument(
+    DEFAULT_EXPERIMENT_DOCUMENT_CANDIDATE,
+);
+if (!defaultExperimentValidation.ok) {
+    const details = defaultExperimentValidation.issues
+        .map((issue) => `${issue.code} at ${issue.path}: ${issue.message}`)
+        .join('; ');
+    throw new Error(`Invalid built-in DEFAULT_EXPERIMENT_DOCUMENT: ${details}`);
+}
+
+export const DEFAULT_EXPERIMENT_DOCUMENT = defaultExperimentValidation.value;
