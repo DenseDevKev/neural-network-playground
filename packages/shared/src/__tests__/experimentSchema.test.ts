@@ -40,13 +40,54 @@ function expectIssue(
 }
 
 describe('version-2 experiment schema', () => {
-    it('brands a valid document without replacing its object reference', () => {
+    it('brands an exact deeply frozen plain-data snapshot', () => {
         const candidate = structuredClone(VALID_BINARY_DOCUMENT);
 
         const result = validateExperimentDocument(candidate);
 
         expect(result).toEqual({ ok: true, value: candidate });
-        if (result.ok) expect(result.value).toBe(candidate);
+        if (result.ok) {
+            expect(result.value).not.toBe(candidate);
+            expect(result.value.recipe).not.toBe(candidate.recipe);
+            expect(result.value).toEqual(candidate);
+            expect(Object.isFrozen(result.value)).toBe(true);
+            expect(Object.isFrozen(result.value.recipe)).toBe(true);
+            expect(Object.isFrozen(result.value.recipe.inputs.featureIds)).toBe(true);
+            expect(() => {
+                (result.value.recipe.data as { seed: number }).seed = 43;
+            }).toThrow();
+        }
+    });
+
+    it('rejects hidden, symbol, accessor, sparse, and exotic object state safely', () => {
+        const hidden = cloneDocument();
+        Object.defineProperty(hidden.view, 'hidden', { value: true, enumerable: false });
+        expectIssue(hidden, 'invalid-field', 'view.hidden');
+
+        const symbolState = cloneDocument();
+        symbolState.recipe[Symbol('hidden')] = true;
+        expectIssue(symbolState, 'invalid-field', 'recipe');
+
+        let getterCalls = 0;
+        const accessor = cloneDocument();
+        Object.defineProperty(accessor.recipe.data, 'seed', {
+            enumerable: true,
+            get: () => {
+                getterCalls += 1;
+                return 42;
+            },
+        });
+        expectIssue(accessor, 'invalid-field', 'recipe.data.seed');
+        expect(getterCalls).toBe(0);
+
+        const sparse = cloneDocument();
+        sparse.recipe.inputs.featureIds = new Array(2);
+        sparse.recipe.inputs.featureIds[1] = 'y';
+        expectIssue(sparse, 'invalid-field', 'recipe.inputs.featureIds[0]');
+
+        const exotic = cloneDocument();
+        Object.setPrototypeOf(exotic.recipe.data, { inherited: true });
+        expectIssue(exotic, 'invalid-field', 'recipe.data');
     });
 
     it('collects unknown fields instead of silently dropping them', () => {

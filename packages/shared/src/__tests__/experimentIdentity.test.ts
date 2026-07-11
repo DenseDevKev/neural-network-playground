@@ -62,6 +62,25 @@ describe('canonicalizeJson', () => {
         );
     });
 
+    it('uses UTF-16 rather than Unicode code-point key ordering', () => {
+        expect(canonicalizeJson({ '\uE000': 'bmp', '\u{10000}': 'supplementary' })).toBe(
+            '{"\u{10000}":"supplementary","\uE000":"bmp"}',
+        );
+    });
+
+    it('pins ECMAScript number boundary serialization', () => {
+        expect(canonicalizeJson([
+            Number.MIN_VALUE,
+            Number.MAX_VALUE,
+            9_007_199_254_740_992,
+            1e-6,
+            1e-7,
+            Number('9.999999999999997e22'),
+        ])).toBe(
+            '[5e-324,1.7976931348623157e+308,9007199254740992,0.000001,1e-7,9.999999999999997e+22]',
+        );
+    });
+
     it('is invariant to insertion order and supports null-prototype records', () => {
         const first = { z: 3, a: { d: 4, b: 2 } };
         const second = { a: { b: 2, d: 4 }, z: 3 };
@@ -146,7 +165,7 @@ describe('canonicalizeJson', () => {
         cyclic.self = cyclic;
         const shared = { value: 1 };
 
-        expect(() => canonicalizeJson(cyclic)).toThrow(/cyclic/iu);
+        expect(() => canonicalizeJson(cyclic)).toThrow(/cycl/iu);
         expect(canonicalizeJson([shared, shared])).toBe(
             '[{"value":1},{"value":1}]',
         );
@@ -281,7 +300,10 @@ describe('versioned experiment identities', () => {
         Object.defineProperty(hidden.recipe, 'hidden', { value: true, enumerable: false });
         await expect(prepareExperimentDocument(hidden)).resolves.toMatchObject({
             ok: false,
-            issues: [expect.objectContaining({ code: 'invalid-field', path: '$' })],
+            issues: [expect.objectContaining({
+                code: 'invalid-field',
+                path: 'recipe.hidden',
+            })],
         });
 
         const digestSpy = vi.spyOn(globalThis.crypto.subtle, 'digest').mockRejectedValue(
@@ -296,6 +318,33 @@ describe('versioned experiment identities', () => {
             });
         } finally {
             digestSpy.mockRestore();
+        }
+    });
+
+    it('snapshots Proxy-backed input once so document, compiler, and identities cannot diverge', async () => {
+        const candidate = cloneDefaultDocument();
+        let seedDescriptorReads = 0;
+        candidate.recipe.data = new Proxy(candidate.recipe.data, {
+            getOwnPropertyDescriptor(target, key) {
+                const descriptor = Reflect.getOwnPropertyDescriptor(target, key);
+                if (key === 'seed' && descriptor && 'value' in descriptor) {
+                    seedDescriptorReads += 1;
+                    return { ...descriptor, value: seedDescriptorReads === 1 ? 42 : 43 };
+                }
+                return descriptor;
+            },
+        });
+
+        const result = await prepareExperimentDocument(candidate);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+            expect(result.value.document.recipe.data.seed).toBe(
+                result.value.compiled.data.seed,
+            );
+            const firstKey = canonicalRecipeKey(result.value.document.recipe);
+            const secondKey = canonicalRecipeKey(result.value.document.recipe);
+            expect(firstKey).toBe(secondKey);
+            expect(Object.isFrozen(result.value.document)).toBe(true);
         }
     });
 });

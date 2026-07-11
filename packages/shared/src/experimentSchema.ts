@@ -9,7 +9,11 @@ import {
     type TaskKind,
     type WeightInitType,
 } from '@nn-playground/engine';
-import { canonicalizeJson } from './canonicalJson.js';
+import {
+    StableJsonSnapshotError,
+    canonicalizeJson,
+    createStableJsonSnapshot,
+} from './canonicalJson.js';
 import type {
     DatasetKey,
     ExperimentSchemaIssue,
@@ -784,7 +788,17 @@ export function validateExperimentDocument(
     value: unknown,
 ): SchemaResult<ValidatedExperimentDocumentV2> {
     const collector = new IssueCollector();
-    if (looksLikeLegacyAppState(value)) {
+    let snapshot: unknown;
+    try {
+        snapshot = createStableJsonSnapshot(value);
+    } catch (error) {
+        const path = error instanceof StableJsonSnapshotError ? error.path : '$';
+        const message = error instanceof Error ? error.message : 'could not capture plain data';
+        collector.add('invalid-field', path, message);
+        return { ok: false, issues: collector.issues };
+    }
+
+    if (looksLikeLegacyAppState(snapshot)) {
         collector.add(
             'legacy-state',
             '$',
@@ -794,7 +808,7 @@ export function validateExperimentDocument(
     }
 
     const document = exactRecord(
-        value,
+        snapshot,
         '',
         ['kind', 'schemaVersion', 'recipe', 'view'],
         collector,
@@ -825,7 +839,7 @@ export function validateExperimentDocument(
     if (collector.issues.length > 0) return { ok: false, issues: collector.issues };
     return {
         ok: true,
-        value: value as ValidatedExperimentDocumentV2,
+        value: snapshot as ValidatedExperimentDocumentV2,
     };
 }
 
@@ -958,11 +972,12 @@ export async function prepareExperimentDocument(
 
     try {
         const document = validation.value;
-        const canonicalKey = canonicalRecipeKey(document.recipe);
-        const compiled = compileValidatedExperiment(document.recipe);
+        const recipe = document.recipe;
+        const canonicalKey = canonicalRecipeKey(recipe);
+        const compiled = compileValidatedExperiment(recipe);
 
-        const recipeFingerprintPromise = fingerprintRecipe(document.recipe);
-        const datasetKeyPromise = fingerprintDataset(document.recipe);
+        const recipeFingerprintPromise = fingerprintRecipe(recipe);
+        const datasetKeyPromise = fingerprintDataset(recipe);
         const objectiveKeyPromise = fingerprintCompiledObjective(compiled);
         const [recipeFingerprint, datasetKey, objectiveKey] = await Promise.all([
             recipeFingerprintPromise,

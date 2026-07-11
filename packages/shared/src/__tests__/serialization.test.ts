@@ -18,7 +18,8 @@ import {
     normalizeAppConfig,
     encodeUrlState,
     exportConfigJson,
-    importConfigJson
+    importConfigJson,
+    validateExperimentDocument,
 } from '../index.js';
 import type {
     AppConfig,
@@ -30,6 +31,13 @@ function asValidatedForEncoding(
     document: ExperimentDocumentV2,
 ): ValidatedExperimentDocumentV2 {
     return document as ValidatedExperimentDocumentV2;
+}
+
+function requireValidatedForCodec(value: unknown): ValidatedExperimentDocumentV2 {
+    const result = validateExperimentDocument(value);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(JSON.stringify(result.issues));
+    return result.value;
 }
 
 function encodeTestBase64Url(value: string): string {
@@ -69,13 +77,36 @@ describe('version-2 experiment URL and JSON codecs', () => {
             ok: true,
             value: DEFAULT_EXPERIMENT_DOCUMENT,
         });
-        expect(decodeExperimentUrl('#')).toEqual({
-            ok: true,
-            value: DEFAULT_EXPERIMENT_DOCUMENT,
+        expect(decodeExperimentUrl('#')).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'legacy-state' })],
         });
         expect(decodeExperimentUrl(' ')).toMatchObject({
             ok: false,
-            issues: [expect.objectContaining({ code: 'legacy-state' })],
+            issues: [expect.objectContaining({ code: 'invalid-field' })],
+        });
+    });
+
+    it('requires the literal leading hash marker', () => {
+        const encoded = encodeExperimentUrl(DEFAULT_EXPERIMENT_DOCUMENT);
+        expect(decodeExperimentUrl(encoded.slice(1))).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'invalid-field', path: '$' })],
+        });
+    });
+
+    it('returns an immutable default that cannot poison later empty decodes', () => {
+        const first = decodeExperimentUrl('');
+        expect(first.ok).toBe(true);
+        if (!first.ok) return;
+        expect(Object.isFrozen(first.value)).toBe(true);
+        expect(Object.isFrozen(first.value.recipe.data)).toBe(true);
+        expect(() => {
+            (first.value.recipe.data as { seed: number }).seed = 999;
+        }).toThrow();
+        expect(decodeExperimentUrl('')).toMatchObject({
+            ok: true,
+            value: { recipe: { data: { seed: 42 } } },
         });
     });
 
@@ -154,6 +185,80 @@ describe('version-2 experiment URL and JSON codecs', () => {
         });
     });
 
+    it('round-trips complete multiclass/Adam/step and regression/Huber/cosine branches', () => {
+        const multiclass = requireValidatedForCodec({
+            kind: 'nn-playground-experiment',
+            schemaVersion: 2,
+            recipe: {
+                data: { sampleCount: 500, trainFraction: 0.7, noise: 20, seed: 123 },
+                inputs: { featureIds: ['x', 'y', 'xy'] },
+                model: {
+                    hiddenLayers: [8, 6],
+                    hiddenActivation: 'relu',
+                    initialization: 'he',
+                    seed: 456,
+                },
+                training: {
+                    batchSize: 32,
+                    learningRate: 0.01,
+                    schedule: { kind: 'step', interval: 25, gamma: 0.5 },
+                    optimizer: { kind: 'adam', beta1: 0.8, beta2: 0.95, epsilon: 1e-8 },
+                    gradientClipping: {
+                        kind: 'global-norm',
+                        maximumNorm: 5,
+                        scope: 'total-objective-gradient',
+                    },
+                },
+                task: { kind: 'multiclass-classification', dataset: 'three-class-clusters' },
+                objective: {
+                    dataLoss: { kind: 'categorical-cross-entropy-with-logits' },
+                    penalty: { kind: 'l2', coefficient: 0.01, applyTo: 'weights' },
+                    reduction: 'mean-per-sample',
+                },
+            },
+            view: { showTestData: true, discretizeOutput: true },
+        });
+        const regression = requireValidatedForCodec({
+            kind: 'nn-playground-experiment',
+            schemaVersion: 2,
+            recipe: {
+                data: { sampleCount: 200, trainFraction: 0.6, noise: 10, seed: 1 },
+                inputs: { featureIds: ['x', 'y', 'xSquared'] },
+                model: {
+                    hiddenLayers: [5],
+                    hiddenActivation: 'tanh',
+                    initialization: 'xavier',
+                    seed: 2,
+                },
+                training: {
+                    batchSize: 20,
+                    learningRate: 0.02,
+                    schedule: { kind: 'cosine', totalSteps: 1_000, minimumRate: 0.001 },
+                    optimizer: { kind: 'sgd-momentum', momentum: 0.8 },
+                    gradientClipping: { kind: 'none' },
+                },
+                task: { kind: 'regression', dataset: 'reg-gauss' },
+                objective: {
+                    dataLoss: { kind: 'huber', delta: 1.5 },
+                    penalty: { kind: 'l1', coefficient: 0.001, applyTo: 'weights' },
+                    reduction: 'mean-per-sample',
+                },
+            },
+            view: { showTestData: false, discretizeOutput: false },
+        });
+
+        for (const document of [multiclass, regression]) {
+            expect(decodeExperimentUrl(encodeExperimentUrl(document))).toEqual({
+                ok: true,
+                value: document,
+            });
+            expect(decodeExperimentJson(encodeExperimentJson(document))).toEqual({
+                ok: true,
+                value: document,
+            });
+        }
+    });
+
     it.each([
         ['malformed', '{', 'invalid-field'],
         ['non-document', 'null', 'invalid-field'],
@@ -189,6 +294,55 @@ describe('version-2 experiment URL and JSON codecs', () => {
         expect(decodeExperimentJson(oversized)).toMatchObject({
             ok: false,
             issues: [expect.objectContaining({ code: 'resource-limit', path: '$' })],
+        });
+    });
+
+    it('rejects duplicate JSON members at every object depth', () => {
+        const json = encodeExperimentJson(DEFAULT_EXPERIMENT_DOCUMENT);
+        const duplicateVersion = json.replace(
+            '"schemaVersion": 2',
+            '"schemaVersion": 1,\n  "schemaVersion": 2',
+        );
+        expect(decodeExperimentJson(duplicateVersion)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'invalid-field', path: '$' })],
+        });
+
+        const duplicateSeed = json.replace(
+            '"seed": 42',
+            '"seed": 41,\n      "seed": 42',
+        );
+        expect(decodeExperimentJson(duplicateSeed)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'invalid-field', path: '$' })],
+        });
+    });
+
+    it('enforces UTF-8 and URL size limits before amplified decoding', () => {
+        const exactAscii = `${' '.repeat(MAX_EXPERIMENT_JSON_BYTES - 4)}null`;
+        const exactAsciiResult = decodeExperimentJson(exactAscii);
+        expect(exactAsciiResult.ok).toBe(false);
+        if (!exactAsciiResult.ok) {
+            expect(exactAsciiResult.issues.some((issue) => issue.code === 'resource-limit')).toBe(false);
+        }
+
+        const exactMultibyte = `${' '.repeat(MAX_EXPERIMENT_JSON_BYTES - 2)}é`;
+        const exactMultibyteResult = decodeExperimentJson(exactMultibyte);
+        expect(exactMultibyteResult.ok).toBe(false);
+        if (!exactMultibyteResult.ok) {
+            expect(exactMultibyteResult.issues.some((issue) => issue.code === 'resource-limit')).toBe(false);
+        }
+        expect(decodeExperimentJson(`${exactMultibyte}x`)).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'resource-limit' })],
+        });
+
+        const maximumPayloadCharacters = Math.ceil(MAX_EXPERIMENT_JSON_BYTES * 4 / 3);
+        expect(
+            decodeExperimentUrl(`#v=2&r=${'A'.repeat(maximumPayloadCharacters + 1)}`),
+        ).toMatchObject({
+            ok: false,
+            issues: [expect.objectContaining({ code: 'resource-limit', path: 'r' })],
         });
     });
 });

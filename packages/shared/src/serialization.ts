@@ -37,6 +37,9 @@ import {
 import { countActiveFeatures, isLossCompatible, sanitizeLRSchedule } from '@nn-playground/engine';
 
 export const MAX_EXPERIMENT_JSON_BYTES = 4 * 1024 * 1024;
+const MAX_BASE64URL_PAYLOAD_CHARACTERS = Math.ceil(
+    MAX_EXPERIMENT_JSON_BYTES * 4 / 3,
+);
 
 const BASE64URL_ALPHABET =
     'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -73,7 +76,8 @@ function decodeBase64UrlBytes(value: string): Uint8Array {
         throw new TypeError('base64url payload has an invalid length');
     }
 
-    const bytes: number[] = [];
+    const bytes = new Uint8Array(Math.floor(value.length * 6 / 8));
+    let byteIndex = 0;
     let accumulator = 0;
     let bitCount = 0;
     for (const character of value) {
@@ -85,7 +89,8 @@ function decodeBase64UrlBytes(value: string): Uint8Array {
         bitCount += 6;
         if (bitCount >= 8) {
             bitCount -= 8;
-            bytes.push((accumulator >>> bitCount) & 0xff);
+            bytes[byteIndex] = (accumulator >>> bitCount) & 0xff;
+            byteIndex += 1;
             accumulator &= bitCount === 0 ? 0 : (1 << bitCount) - 1;
         }
     }
@@ -93,11 +98,10 @@ function decodeBase64UrlBytes(value: string): Uint8Array {
         throw new TypeError('base64url payload has non-canonical trailing bits');
     }
 
-    const decoded = Uint8Array.from(bytes);
-    if (encodeBase64UrlBytes(decoded) !== value) {
+    if (byteIndex !== bytes.length || encodeBase64UrlBytes(bytes) !== value) {
         throw new TypeError('base64url payload is not canonical');
     }
-    return decoded;
+    return bytes;
 }
 
 function isV2Record(value: unknown): value is Record<string, unknown> {
@@ -141,11 +145,25 @@ export function encodeExperimentUrl(document: ValidatedExperimentDocumentV2): st
 export function decodeExperimentUrl(
     hash: string,
 ): SchemaResult<ValidatedExperimentDocumentV2> {
-    if (hash === '' || hash === '#') {
+    if (hash === '') {
         return { ok: true, value: DEFAULT_EXPERIMENT_DOCUMENT };
     }
+    if (!hash.startsWith('#')) {
+        return schemaFailure(
+            'invalid-field',
+            '$',
+            'V2 URL state must begin with #',
+        );
+    }
 
-    const source = hash.startsWith('#') ? hash.slice(1) : hash;
+    const source = hash.slice(1);
+    if (source.length > 6 + MAX_BASE64URL_PAYLOAD_CHARACTERS) {
+        return schemaFailure(
+            'resource-limit',
+            'r',
+            `URL document exceeds ${MAX_EXPERIMENT_JSON_BYTES} UTF-8 bytes`,
+        );
+    }
     const parameters = new URLSearchParams(source);
     const versions = parameters.getAll('v');
     if (versions.length === 0) {
@@ -227,6 +245,85 @@ export function decodeExperimentUrl(
     }
 }
 
+function assertNoDuplicateJsonObjectKeys(json: string): void {
+    let index = 0;
+
+    const skipWhitespace = (): void => {
+        while (/\s/u.test(json[index] ?? '')) index += 1;
+    };
+
+    const parseString = (): string => {
+        const start = index;
+        index += 1;
+        while (index < json.length) {
+            const character = json[index];
+            index += 1;
+            if (character === '"') {
+                return JSON.parse(json.slice(start, index)) as string;
+            }
+            if (character === '\\') {
+                const escape = json[index];
+                index += 1;
+                if (escape === 'u') index += 4;
+            }
+        }
+        throw new SyntaxError('unterminated JSON string');
+    };
+
+    const parseValue = (): void => {
+        skipWhitespace();
+        const character = json[index];
+        if (character === '{') {
+            index += 1;
+            skipWhitespace();
+            const keys = new Set<string>();
+            if (json[index] === '}') {
+                index += 1;
+                return;
+            }
+            while (index < json.length) {
+                skipWhitespace();
+                const key = parseString();
+                if (keys.has(key)) {
+                    throw new SyntaxError(`duplicate JSON object member ${JSON.stringify(key)}`);
+                }
+                keys.add(key);
+                skipWhitespace();
+                index += 1; // colon; JSON.parse already proved the grammar.
+                parseValue();
+                skipWhitespace();
+                const separator = json[index];
+                index += 1;
+                if (separator === '}') return;
+            }
+            return;
+        }
+        if (character === '[') {
+            index += 1;
+            skipWhitespace();
+            if (json[index] === ']') {
+                index += 1;
+                return;
+            }
+            while (index < json.length) {
+                parseValue();
+                skipWhitespace();
+                const separator = json[index];
+                index += 1;
+                if (separator === ']') return;
+            }
+            return;
+        }
+        if (character === '"') {
+            parseString();
+            return;
+        }
+        while (index < json.length && !/[\s,}\]]/u.test(json[index])) index += 1;
+    };
+
+    parseValue();
+}
+
 /** Encode a validated V2 document as deterministic, pretty JSON. */
 export function encodeExperimentJson(document: ValidatedExperimentDocumentV2): string {
     const canonicalDocument = canonicalizeJson(document);
@@ -245,7 +342,9 @@ export function decodeExperimentJson(
         );
     }
     try {
-        return validateDecodedDocument(JSON.parse(json) as unknown);
+        const parsed = JSON.parse(json) as unknown;
+        assertNoDuplicateJsonObjectKeys(json);
+        return validateDecodedDocument(parsed);
     } catch (error) {
         const detail = error instanceof Error ? error.message : 'malformed JSON';
         return schemaFailure('invalid-field', '$', `invalid experiment JSON: ${detail}`);

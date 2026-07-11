@@ -307,7 +307,7 @@ pnpm --filter @nn-playground/shared test -- src/__tests__/experimentSchema.test.
 
 Expected: missing `experimentSchema` module.
 
-- [ ] **Step 4: Implement a bounded strict collector.** Validate exact keys at every discriminated layer, cap at 100 issues, never repair/copy/clamp, and return the original input branded only when there are no issues. Derive parameter count from `[features, ...hidden, output]`, and require positive train/test populations after `floor(sampleCount * trainFraction)`.
+- [ ] **Step 4: Implement a bounded strict collector.** Validate exact keys at every discriminated layer, cap at 100 issues, never repair or clamp, and return a deeply frozen exact plain-data snapshot branded only when there are no issues. Derive parameter count from `[features, ...hidden, output]`, and require positive train/test populations after `floor(sampleCount * trainFraction)`. **Implementation amendment (2026-07-11):** an independent review reproduced Proxy/getter input that validated one seed and hashed another. The stable snapshot is therefore mandatory; it preserves every submitted data value without normalization while preventing document/compiler/identity divergence.
 
 - [ ] **Step 5: Compile only validated recipes.** Derive output size/activation/target contract/task metrics and the objective. `compileExperimentRecipe()` remains pure and performs no dataset/network allocation. Keep `compileValidatedExperiment()` internal to `prepareExperimentDocument()` and built-in validation so arbitrary callers cannot bypass the public preparation transaction. Validate the built-in default at module initialization and throw only for a programmer invariant.
 

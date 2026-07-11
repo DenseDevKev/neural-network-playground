@@ -5,8 +5,148 @@
  * when unsupported JavaScript state is rejected instead of being silently
  * omitted by `JSON.stringify`.
  */
+export class StableJsonSnapshotError extends TypeError {
+    constructor(
+        readonly path: string,
+        message: string,
+    ) {
+        super(message);
+        this.name = 'StableJsonSnapshotError';
+    }
+}
+
+/**
+ * Capture one immutable plain-data view without invoking accessors. Proxy traps
+ * may participate in this single capture, but every later consumer receives
+ * only the detached snapshot, so validation, compilation, and identity cannot
+ * observe different versions of the input.
+ */
+export function createStableJsonSnapshot<T>(value: T): T {
+    return snapshotValue(value, new Set<object>(), '') as T;
+}
+
 export function canonicalizeJson(value: unknown): string {
-    return serializeCanonicalValue(value, new Set<object>());
+    const snapshot = createStableJsonSnapshot(value);
+    return serializeCanonicalValue(snapshot, new Set<object>());
+}
+
+function snapshotValue(
+    value: unknown,
+    ancestors: Set<object>,
+    path: string,
+): unknown {
+    if ((typeof value !== 'object' && typeof value !== 'function') || value === null) {
+        return value;
+    }
+    if (typeof value === 'function') return value;
+    if (ancestors.has(value)) {
+        throw snapshotError(path, 'plain-data snapshots cannot contain cycles');
+    }
+
+    ancestors.add(value);
+    try {
+        return Array.isArray(value)
+            ? snapshotArray(value, ancestors, path)
+            : snapshotRecord(value, ancestors, path);
+    } finally {
+        ancestors.delete(value);
+    }
+}
+
+function snapshotArray(
+    value: unknown[],
+    ancestors: Set<object>,
+    path: string,
+): readonly unknown[] {
+    const descriptors = new Map<number, PropertyDescriptor>();
+    for (const key of Reflect.ownKeys(value)) {
+        if (typeof key === 'symbol') {
+            throw snapshotError(path, 'arrays cannot contain symbol properties');
+        }
+        if (key === 'length') continue;
+        const index = canonicalArrayIndex(key, value.length);
+        if (index === undefined) {
+            throw snapshotError(
+                propertyPath(path, key),
+                'arrays cannot contain non-index properties',
+            );
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !descriptor.enumerable) {
+            throw snapshotError(arrayPath(path, index), 'array indexes must be enumerable');
+        }
+        if (!('value' in descriptor)) {
+            throw snapshotError(arrayPath(path, index), 'array accessors are not allowed');
+        }
+        descriptors.set(index, descriptor);
+    }
+
+    const snapshot: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+        const descriptor = descriptors.get(index);
+        if (!descriptor) {
+            throw snapshotError(arrayPath(path, index), 'arrays must contain every own index');
+        }
+        snapshot.push(snapshotValue(descriptor.value, ancestors, arrayPath(path, index)));
+    }
+    return Object.freeze(snapshot);
+}
+
+function snapshotRecord(
+    value: object,
+    ancestors: Set<object>,
+    path: string,
+): Readonly<Record<string, unknown>> {
+    if (!isPlainRecordPrototype(Object.getPrototypeOf(value))) {
+        throw snapshotError(path, 'objects must be plain records');
+    }
+
+    const snapshot: Record<string, unknown> = {};
+    for (const key of Reflect.ownKeys(value)) {
+        if (typeof key === 'symbol') {
+            throw snapshotError(path, 'objects cannot contain symbol properties');
+        }
+        const child = propertyPath(path, key);
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !descriptor.enumerable) {
+            throw snapshotError(child, 'object properties must be enumerable');
+        }
+        if (!('value' in descriptor)) {
+            throw snapshotError(child, 'object accessors are not allowed');
+        }
+        Object.defineProperty(snapshot, key, {
+            value: snapshotValue(descriptor.value, ancestors, child),
+            enumerable: true,
+            configurable: false,
+            writable: false,
+        });
+    }
+    return Object.freeze(snapshot);
+}
+
+function isPlainRecordPrototype(prototype: object | null): boolean {
+    if (prototype === null || prototype === Object.prototype) return true;
+    if (Object.getPrototypeOf(prototype) !== null) return false;
+    const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+    return Boolean(
+        constructor &&
+        'value' in constructor &&
+        typeof constructor.value === 'function' &&
+        constructor.value.name === 'Object',
+    );
+}
+
+function propertyPath(path: string, key: string): string {
+    return path ? `${path}.${key}` : key;
+}
+
+function arrayPath(path: string, index: number): string {
+    return `${path}[${index}]`;
+}
+
+function snapshotError(path: string, message: string): StableJsonSnapshotError {
+    const displayPath = path || '$';
+    return new StableJsonSnapshotError(displayPath, `${displayPath}: ${message}`);
 }
 
 function serializeCanonicalValue(value: unknown, ancestors: Set<object>): string {

@@ -324,6 +324,8 @@ decodeExperimentUrl(hash: string): SchemaResult<ValidatedExperimentDocumentV2>
 
 Validated values are branded. The store, worker bridge, preset catalog, lesson registry, imports, URL decoder, persistence reader, and restore path must pass through this boundary. Type assertions alone do not create the brand.
 
+The validation boundary captures one detached, deeply frozen plain-data snapshot before branding. It rejects accessors, hidden or symbol-keyed state, sparse arrays, cycles, and exotic records. Validation, compilation, canonicalization, and all fingerprints consume only that snapshot. This review-driven amendment prevents Proxy/getter inputs from presenting different values to different phases; it is an exact snapshot, not repair, normalization, or clamping.
+
 `prepareExperimentDocument()` is the only public runtime-entry transaction. It validates synchronously, compiles the validated recipe through an internal pure `compileExperimentRecipe()`, awaits recipe/dataset/objective identities in parallel, and returns:
 
 ```ts

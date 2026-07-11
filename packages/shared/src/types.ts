@@ -104,12 +104,20 @@ export type SchemaResult<T> =
 declare const validatedRecipeBrand: unique symbol;
 declare const validatedDocumentBrand: unique symbol;
 
-export type ValidatedStandardExperimentRecipeV2 = StandardExperimentRecipeV2 & {
+export type DeepReadonly<T> = T extends (...args: never[]) => unknown
+    ? T
+    : T extends readonly (infer Element)[]
+        ? readonly DeepReadonly<Element>[]
+        : T extends object
+            ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+            : T;
+
+export type ValidatedStandardExperimentRecipeV2 = DeepReadonly<StandardExperimentRecipeV2> & {
     readonly [validatedRecipeBrand]: true;
 };
 
-export type ValidatedExperimentDocumentV2 = Omit<ExperimentDocumentV2, 'recipe'> & {
-    recipe: ValidatedStandardExperimentRecipeV2;
+export type ValidatedExperimentDocumentV2 = Omit<DeepReadonly<ExperimentDocumentV2>, 'recipe'> & {
+    readonly recipe: ValidatedStandardExperimentRecipeV2;
     readonly [validatedDocumentBrand]: true;
 };
 
@@ -118,13 +126,13 @@ export type DatasetKey = string & { readonly __brand: 'DatasetKey' };
 export type ObjectiveKey = string & { readonly __brand: 'ObjectiveKey' };
 
 export interface PreparedExperimentDocumentV2 {
-    document: ValidatedExperimentDocumentV2;
-    compiled: CompiledExperimentConfig;
-    identities: {
-        canonicalRecipeKey: string;
-        recipeFingerprint: RecipeFingerprint;
-        datasetKey: DatasetKey;
-        objectiveKey: ObjectiveKey;
+    readonly document: ValidatedExperimentDocumentV2;
+    readonly compiled: CompiledExperimentConfig;
+    readonly identities: {
+        readonly canonicalRecipeKey: string;
+        readonly recipeFingerprint: RecipeFingerprint;
+        readonly datasetKey: DatasetKey;
+        readonly objectiveKey: ObjectiveKey;
     };
 }
 
