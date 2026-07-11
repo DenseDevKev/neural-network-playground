@@ -309,3 +309,143 @@ describe('Network V2 objective-gradient updates', () => {
         expect(network.getRecentGradientSnapshot().weightGradients[0][0][0]).toBe(5);
     });
 });
+
+describe('Network V2 objective evidence', () => {
+    it('uses the same true-MSE data loss for training, evaluation, and prediction trace', () => {
+        const network = makeNetwork();
+        network.setWeight(0, 0, 0, 2);
+        network.setBias(0, 0, 1);
+        const inputs = [[2], [3]];
+        const targets = [[4], [8]];
+        const objectiveSpec: ObjectiveSpecV2 = {
+            dataLoss: { kind: 'mean-squared-error' },
+            penalty: { kind: 'l2', coefficient: 0.5, applyTo: 'weights' },
+            reduction: 'mean-per-sample',
+        };
+        const objective = compileObjective(objectiveSpec, network.config);
+        const training = compileTraining(network, objectiveSpec, { learningRate: 0.1 });
+        const trainingNetwork = Network.deserialize(network.serialize());
+
+        const dataLoss = network.evaluateDataLoss(inputs, targets, objective);
+        const breakdown = network.evaluateObjective(inputs, targets, objective);
+        const trace = network.tracePredictionV2(inputs[0], targets[0], objective);
+        const trainingResult = trainingNetwork.trainBatchV2(inputs, targets, training);
+
+        expect(dataLoss).toBe(1);
+        expect(breakdown).toEqual({
+            dataLoss: 1,
+            regularizationPenalty: 1,
+            totalObjective: 2,
+        });
+        expect(trainingResult.objective).toEqual(breakdown);
+        expect(trace.sampleDataLoss).toBe(1);
+        expect(trace.regularizationPenalty).toBe(1);
+        expect(trace.output).toEqual([5]);
+        expect(trace.layers[0].activations).toEqual([5]);
+        expect('totalObjective' in trace).toBe(false);
+    });
+
+    it('probes the complete training objective and distinguishes samples from parameter positions', () => {
+        const network = makeNetwork({ inputSize: 2 });
+        network.setWeight(0, 0, 0, 0.25);
+        network.setWeight(0, 0, 1, -0.5);
+        network.setBias(0, 0, 0.1);
+        const inputs = [[1, 0], [0, 1], [1, 1], [2, -1], [-1, 2]];
+        const targets = [[0], [1], [0.5], [2], [-1]];
+        const objectiveSpec: ObjectiveSpecV2 = {
+            dataLoss: { kind: 'mean-squared-error' },
+            penalty: { kind: 'l2', coefficient: 0.25, applyTo: 'weights' },
+            reduction: 'mean-per-sample',
+        };
+        const training = compileTraining(network, objectiveSpec, { learningRate: 0.1 });
+        const expectedCenter = network.evaluateObjective(
+            inputs.slice(0, 3),
+            targets.slice(0, 3),
+            training.objective,
+        ).totalObjective;
+
+        const probe = network.probeObjectiveLandscape(inputs, targets, training, {
+            gridSize: 7,
+            maxSamples: 3,
+            radius: 0.1,
+        });
+
+        expect(probe.basis).toBe('training-objective');
+        expect(probe.sampleCount).toBe(3);
+        expect(probe.parameterPositionCount).toBe(49);
+        expect(probe.objectives).toHaveLength(49);
+        expect(probe.centerObjective).toBeCloseTo(expectedCenter, 6);
+    });
+
+    it('rejects an incompatible mutated objective before evaluation, trace, or landscape evidence', () => {
+        const network = makeNetwork();
+        const training = compileTraining(network, regressionObjective);
+        (training.objective.spec as { dataLoss: { kind: string } }).dataLoss.kind =
+            'binary-cross-entropy-with-logits';
+
+        expect(() => network.evaluateDataLoss([[1]], [[0]], training.objective)).toThrow(RangeError);
+        expect(() => network.evaluateObjective([[1]], [[0]], training.objective)).toThrow(RangeError);
+        expect(() => network.tracePredictionV2([1], [0], training.objective)).toThrow(RangeError);
+        expect(() => network.probeObjectiveLandscape(
+            [[1], [2]],
+            [[0], [1]],
+            training,
+        )).toThrow(RangeError);
+        expect(() => network.explainBackpropStepV2([[1]], [[0]], training)).toThrow(RangeError);
+    });
+
+    it('matches an equivalent V2 dry-run and preserves every live training-state surface', () => {
+        const network = makeNetwork({ inputSize: 2 });
+        network.setWeight(0, 0, 0, 0.5);
+        network.setWeight(0, 0, 1, -0.25);
+        network.setBias(0, 0, 0.1);
+        const objectiveSpec: ObjectiveSpecV2 = {
+            dataLoss: { kind: 'mean-squared-error' },
+            penalty: { kind: 'l2', coefficient: 0.2, applyTo: 'weights' },
+            reduction: 'mean-per-sample',
+        };
+        const training = compileTraining(network, objectiveSpec, {
+            learningRate: 0.05,
+            optimizer: { kind: 'adam', beta1: 0.9, beta2: 0.999, epsilon: 1e-8 },
+            gradientClipping: {
+                kind: 'global-norm',
+                maximumNorm: 0.25,
+                scope: 'total-objective-gradient',
+            },
+        });
+        network.trainBatchV2([[1, 0]], [[0]], training);
+        network.setBias(0, 0, network.getBias(0, 0) + 0.01);
+        const inputs = [[1, 2], [-1, 0.5]];
+        const targets = [[1], [-0.5]];
+        const before = {
+            checkpoint: network.createCheckpoint(),
+            weights: network.getWeights(),
+            biases: network.getBiases(),
+            weightGrads: network.getWeightGrads(),
+            biasGrads: network.getBiasGrads(),
+            step: network.getStep(),
+            revision: network.getRevision(),
+            recentGradient: network.getRecentGradientSnapshot(),
+        };
+        const expectedDryRun = new Network(network.config);
+        expectedDryRun.restoreCheckpoint(before.checkpoint);
+        const expected = expectedDryRun.trainBatchV2(inputs, targets, training);
+
+        const explanation = network.explainBackpropStepV2(inputs, targets, training);
+
+        expect(explanation.objective).toEqual(expected.objective);
+        expect(explanation.gradients).toEqual(expected.gradients);
+        expect(explanation.batchSize).toBe(inputs.length);
+        expect(explanation.layers).toHaveLength(1);
+        expect(explanation.layers[0].meanAbsErrorSignal).toBeGreaterThan(0);
+        expect(explanation.layers[0].meanAbsUpdate).toBeGreaterThan(0);
+        expect(network.createCheckpoint()).toEqual(before.checkpoint);
+        expect(network.getWeights()).toEqual(before.weights);
+        expect(network.getBiases()).toEqual(before.biases);
+        expect(network.getWeightGrads()).toEqual(before.weightGrads);
+        expect(network.getBiasGrads()).toEqual(before.biasGrads);
+        expect(network.getStep()).toBe(before.step);
+        expect(network.getRevision()).toBe(before.revision);
+        expect(network.getRecentGradientSnapshot()).toEqual(before.recentGradient);
+    });
+});

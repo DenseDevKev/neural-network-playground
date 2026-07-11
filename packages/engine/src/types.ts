@@ -376,6 +376,15 @@ export interface LayerStats {
     meanAbsGradient: number;
 }
 
+/** Deterministic bounded-sample activation statistics for one model revision. */
+export interface LayerStatisticsResult {
+    revision: number;
+    gradientRevision: number;
+    sampleCount: number;
+    populationCount: number;
+    layers: LayerStats[];
+}
+
 /** Runtime-only options for compact activation histogram inspection. */
 export interface ActivationHistogramOptions {
     /** Number of fixed-width bins per layer. Defaults to 12. */
@@ -433,6 +442,17 @@ export interface PredictionTrace {
     layers: PredictionTraceLayer[];
 }
 
+/** Objective-aware prediction evidence without attributing the model penalty to one sample. */
+export interface PredictionTraceV2 {
+    input: number[];
+    target: number[];
+    output: number[];
+    prediction: number | number[];
+    sampleDataLoss: number;
+    regularizationPenalty: number;
+    layers: PredictionTraceLayer[];
+}
+
 export type BackpropExplanationStatus = 'tiny' | 'healthy' | 'large' | 'clipped';
 
 /** Bounded scalar summary for one layer in a dry-run backprop explanation. */
@@ -458,6 +478,16 @@ export interface BackpropExplanation {
     globalGradientNorm: number;
     globalClipScale: number;
     clipped: boolean;
+    layers: BackpropExplanationLayer[];
+    summary: string;
+}
+
+/** Objective-aware pure dry-run preview of the next mini-batch update. */
+export interface BackpropExplanationV2 {
+    batchSize: number;
+    learningRate: number;
+    objective: ObjectiveBreakdown;
+    gradients: GradientDiagnostics;
     layers: BackpropExplanationLayer[];
     summary: string;
 }
@@ -508,6 +538,32 @@ export interface LossLandscapeProbe {
     minLoss: number;
     maxLoss: number;
     best: LossLandscapeBestCell;
+    summary: string;
+}
+
+/** Best cell found in a bounded 2D training-objective grid. */
+export interface ObjectiveLandscapeBestCell {
+    row: number;
+    col: number;
+    objective: number;
+    offsetA: number;
+    offsetB: number;
+}
+
+/** Objective-aware local parameter slice evaluated on one deterministic sample prefix. */
+export interface ObjectiveLandscapeProbe {
+    basis: 'training-objective';
+    gridSize: number;
+    sampleCount: number;
+    parameterPositionCount: number;
+    radius: number;
+    axisA: LossLandscapeProbeAxis;
+    axisB: LossLandscapeProbeAxis;
+    objectives: Float32Array;
+    centerObjective: number;
+    minObjective: number;
+    maxObjective: number;
+    best: ObjectiveLandscapeBestCell;
     summary: string;
 }
 

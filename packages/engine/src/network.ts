@@ -19,14 +19,17 @@ import type {
     LayerStats,
     ActivationType,
     PredictionTrace,
+    PredictionTraceV2,
     ActivationHistogramOptions,
     ActivationHistogramResult,
     ActivationHistogramLayer,
     NetworkCheckpoint,
     BackpropExplanation,
+    BackpropExplanationV2,
     BackpropExplanationLayer,
     BackpropExplanationStatus,
     LossLandscapeProbe,
+    ObjectiveLandscapeProbe,
     LossLandscapeProbeOptions,
     LossLandscapeParameter,
     MulticlassConfusionMatrixCounts,
@@ -36,6 +39,8 @@ import type {
     LearningRateScheduleV2,
     OptimizerSpecV2,
     RecentGradientSnapshot,
+    LayerStatisticsResult,
+    ObjectiveBreakdown,
 } from './types.js';
 import { categoricalCrossEntropy, categoricalCrossEntropyLogitGradient, getLoss } from './losses.js';
 import {
@@ -958,6 +963,55 @@ export class Network {
         return { loss, count: output.length };
     }
 
+    private evaluateCompiledDataLossPrefix(
+        inputs: number[][],
+        targets: number[][],
+        sampleCount: number,
+        objective: CompiledObjective,
+    ): number {
+        let dataLossSum = 0;
+        const outputLayerIndex = this.preActs.length - 1;
+        for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+            const outputs = this.forwardInto(inputs[sampleIndex]);
+            const sampleDataLoss = objective.evaluateDataSample(
+                this.preActs[outputLayerIndex],
+                outputs,
+                targets[sampleIndex],
+            );
+            assertFiniteValue(sampleDataLoss, `dataLoss[${sampleIndex}]`);
+            dataLossSum += sampleDataLoss;
+            assertFiniteValue(dataLossSum, 'dataLoss sum');
+        }
+        const dataLoss = dataLossSum / sampleCount;
+        assertFiniteValue(dataLoss, 'dataLoss');
+        return dataLoss;
+    }
+
+    /** Predictive data loss under the same compiled objective used by V2 training. */
+    evaluateDataLoss(
+        inputs: number[][],
+        targets: number[][],
+        objective: CompiledObjective,
+    ): number {
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
+        if (inputs.length === 0) {
+            throw new RangeError('V2 evaluation must contain at least one sample');
+        }
+        assertCompiledObjectiveCompatibility(objective, this.config);
+        return this.evaluateCompiledDataLossPrefix(inputs, targets, inputs.length, objective);
+    }
+
+    /** Predictive data loss plus one current model-wide penalty. */
+    evaluateObjective(
+        inputs: number[][],
+        targets: number[][],
+        objective: CompiledObjective,
+    ): ObjectiveBreakdown {
+        const dataLoss = this.evaluateDataLoss(inputs, targets, objective);
+        const regularizationPenalty = objective.regularizationPenalty(this.weights);
+        return buildObjectiveBreakdown(dataLoss, regularizationPenalty);
+    }
+
     /** Capture a pure-copy trace for one prediction without mutating training state. */
     tracePrediction(
         input: number[],
@@ -991,6 +1045,42 @@ export class Network {
             output,
             prediction: output.length === 1 ? output[0] : [...output],
             lossContribution,
+            layers: this.outputs.map((layerOutput, layerIndex) => ({
+                layerIndex,
+                preActivations: Array.from(this.preActs[layerIndex]),
+                activations: Array.from(layerOutput),
+            })),
+        };
+    }
+
+    /** Capture one objective-aware prediction trace with model penalty kept separate. */
+    tracePredictionV2(
+        input: number[],
+        target: number[],
+        objective: CompiledObjective,
+    ): PredictionTraceV2 {
+        assertVectorShape(input, this.config.inputSize, 'input');
+        assertVectorShape(target, this.config.outputSize, 'target');
+        assertCompiledObjectiveCompatibility(objective, this.config);
+        const out = this.forwardInto(input);
+        const output = Array.from(out);
+        const outputLayerIndex = this.preActs.length - 1;
+        const sampleDataLoss = objective.evaluateDataSample(
+            this.preActs[outputLayerIndex],
+            out,
+            target,
+        );
+        assertFiniteValue(sampleDataLoss, 'sampleDataLoss');
+        const regularizationPenalty = objective.regularizationPenalty(this.weights);
+        buildObjectiveBreakdown(sampleDataLoss, regularizationPenalty);
+
+        return {
+            input: [...input],
+            target: [...target],
+            output,
+            prediction: output.length === 1 ? output[0] : [...output],
+            sampleDataLoss,
+            regularizationPenalty,
             layers: this.outputs.map((layerOutput, layerIndex) => ({
                 layerIndex,
                 preActivations: Array.from(this.preActs[layerIndex]),
@@ -1654,6 +1744,99 @@ export class Network {
         };
     }
 
+    /** Preview the exact V2 objective update on a clone without touching live state. */
+    explainBackpropStepV2(
+        inputs: number[][],
+        targets: number[][],
+        training: CompiledTrainingContractV2,
+    ): BackpropExplanationV2 {
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
+        assertCompiledTrainingHyperparams(training, this.config);
+        if (inputs.length === 0) {
+            throw new RangeError('V2 backprop explanation batch must contain at least one sample');
+        }
+
+        const dryRun = new Network(this.config);
+        dryRun.restoreCheckpoint(this.createCheckpoint());
+        return dryRun.explainBackpropStepV2InPlace(inputs, targets, training);
+    }
+
+    private explainBackpropStepV2InPlace(
+        inputs: number[][],
+        targets: number[][],
+        training: CompiledTrainingContractV2,
+    ): BackpropExplanationV2 {
+        const beforeWeights = clonePackedBuffers(this.weights);
+        const beforeBiases = clonePackedBuffers(this.biases);
+        const signalAggregates = this.deltas.map(() => createAbsAggregate());
+        const activationAggregates = this.outputs.map(() => createMomentAggregate());
+
+        for (let sampleIndex = 0; sampleIndex < inputs.length; sampleIndex++) {
+            this.forwardInto(inputs[sampleIndex]);
+            for (let layerIndex = 0; layerIndex < this.outputs.length; layerIndex++) {
+                addMomentValues(activationAggregates[layerIndex], this.outputs[layerIndex]);
+            }
+            this.backwardCompiled(targets[sampleIndex], training.objective);
+            for (let layerIndex = 0; layerIndex < this.deltas.length; layerIndex++) {
+                addAbsValues(signalAggregates[layerIndex], this.deltas[layerIndex]);
+            }
+        }
+
+        this.zeroGradientAccumulators();
+        const learningRate = computeCompiledLearningRate(
+            training.learningRate,
+            this.currentStep,
+            training.schedule,
+        );
+        const result = this.trainBatchV2(inputs, targets, training);
+        const layers: BackpropExplanationLayer[] = [];
+
+        for (let layerIndex = 0; layerIndex < this.weights.length; layerIndex++) {
+            const signal = finishAbsAggregate(signalAggregates[layerIndex]);
+            const gradient = summarizeScaledAbsBuffers(
+                this.recentWeightGrads[layerIndex],
+                this.recentBiasGrads[layerIndex],
+                1,
+            );
+            const update = summarizeAbsDiffBuffers(
+                beforeWeights[layerIndex],
+                this.weights[layerIndex],
+                beforeBiases[layerIndex],
+                this.biases[layerIndex],
+            );
+            const activations = finishMomentAggregate(activationAggregates[layerIndex]);
+            const status = getBackpropStatus(update.mean, result.gradients.clipScale);
+            layers.push({
+                layerIndex,
+                meanAbsErrorSignal: signal.mean,
+                maxAbsErrorSignal: signal.max,
+                meanAbsGradient: gradient.mean,
+                maxAbsGradient: gradient.max,
+                meanAbsUpdate: update.mean,
+                maxAbsUpdate: update.max,
+                meanActivation: activations.mean,
+                activationStd: activations.std,
+                status,
+                note: describeBackpropLayer(status),
+            });
+        }
+
+        const clipped = result.gradients.clipScale < 1;
+        const healthyCount = layers.filter((layer) => layer.status === 'healthy').length;
+        const summary = clipped
+            ? `Backprop preview clipped the complete objective gradient by ${result.gradients.clipScale.toFixed(3)}.`
+            : `Backprop preview found ${healthyCount} healthy layer update${healthyCount === 1 ? '' : 's'}.`;
+
+        return {
+            batchSize: inputs.length,
+            learningRate,
+            objective: result.objective,
+            gradients: result.gradients,
+            layers,
+            summary,
+        };
+    }
+
     probeLossLandscape(
         inputs: number[][],
         targets: number[][],
@@ -1731,6 +1914,98 @@ export class Network {
                 offsetB: offsets[bestRow],
             },
             summary: `Loss surface probe found best loss ${bestLoss.toFixed(4)} near ${toLossLandscapeParameter(axisA).label} ${offsets[bestCol].toFixed(3)} and ${toLossLandscapeParameter(axisB).label} ${offsets[bestRow].toFixed(3)}.`,
+        };
+    }
+
+    /** Probe a deterministic local slice of the complete compiled training objective. */
+    probeObjectiveLandscape(
+        inputs: number[][],
+        targets: number[][],
+        training: CompiledTrainingContractV2,
+        options: LossLandscapeProbeOptions = {},
+    ): ObjectiveLandscapeProbe {
+        assertBatchShapes(inputs, targets, this.config.inputSize, this.config.outputSize);
+        assertCompiledTrainingHyperparams(training, this.config);
+        if (inputs.length === 0) {
+            throw new RangeError('objective landscape probe batch must contain at least one sample');
+        }
+
+        const gridSize = normalizeLossLandscapeGridSize(options.gridSize);
+        const maxSamples = normalizeLossLandscapeMaxSamples(options.maxSamples);
+        const radius = normalizeLossLandscapeRadius(options.radius);
+        const sampleCount = Math.min(inputs.length, maxSamples);
+        const parameterPositionCount = gridSize * gridSize;
+        const [axisA, axisB] = this.getDefaultLossLandscapeAxes();
+        const offsets = buildLossLandscapeOffsets(gridSize, radius);
+        const checkpoint = this.createCheckpoint();
+        const dryRun = new Network(this.config);
+        const objectives = new Float32Array(parameterPositionCount);
+        let minObjective = Number.POSITIVE_INFINITY;
+        let maxObjective = Number.NEGATIVE_INFINITY;
+        let bestObjective = Number.POSITIVE_INFINITY;
+        let bestRow = 0;
+        let bestCol = 0;
+
+        for (let row = 0; row < gridSize; row++) {
+            for (let col = 0; col < gridSize; col++) {
+                dryRun.restoreCheckpoint(checkpoint);
+                dryRun.applyLossLandscapeOffset(axisA, offsets[col]);
+                dryRun.applyLossLandscapeOffset(axisB, offsets[row]);
+                const dataLoss = dryRun.evaluateCompiledDataLossPrefix(
+                    inputs,
+                    targets,
+                    sampleCount,
+                    training.objective,
+                );
+                const regularizationPenalty = training.objective.regularizationPenalty(
+                    dryRun.weights,
+                );
+                const objective = buildObjectiveBreakdown(
+                    dataLoss,
+                    regularizationPenalty,
+                ).totalObjective;
+                const storedObjective = Math.fround(objective);
+                assertFiniteValue(storedObjective, `objective[${row},${col}]`);
+                const index = row * gridSize + col;
+                objectives[index] = storedObjective;
+                if (storedObjective < minObjective) minObjective = storedObjective;
+                if (storedObjective > maxObjective) maxObjective = storedObjective;
+                if (storedObjective < bestObjective) {
+                    bestObjective = storedObjective;
+                    bestRow = row;
+                    bestCol = col;
+                }
+            }
+        }
+
+        const center = Math.floor(gridSize / 2);
+        const centerObjective = objectives[center * gridSize + center];
+        return {
+            basis: 'training-objective',
+            gridSize,
+            sampleCount,
+            parameterPositionCount,
+            radius,
+            axisA: {
+                parameter: toLossLandscapeParameter(axisA),
+                offsets: [...offsets],
+            },
+            axisB: {
+                parameter: toLossLandscapeParameter(axisB),
+                offsets: [...offsets],
+            },
+            objectives,
+            centerObjective,
+            minObjective,
+            maxObjective,
+            best: {
+                row: bestRow,
+                col: bestCol,
+                objective: bestObjective,
+                offsetA: offsets[bestCol],
+                offsetB: offsets[bestRow],
+            },
+            summary: `Training-objective probe found best objective ${bestObjective.toFixed(4)} near ${toLossLandscapeParameter(axisA).label} ${offsets[bestCol].toFixed(3)} and ${toLossLandscapeParameter(axisB).label} ${offsets[bestRow].toFixed(3)}.`,
         };
     }
 
@@ -2341,6 +2616,76 @@ export class Network {
             stats.push({ meanActivation, activationStd, meanAbsWeight, meanAbsGradient });
         }
         return stats;
+    }
+
+    /** Aggregate deterministic bounded-prefix activation statistics for every layer. */
+    computeLayerStatistics(
+        inputs: readonly ArrayLike<number>[],
+        maxSamples = 128,
+    ): LayerStatisticsResult {
+        if (!Array.isArray(inputs) || inputs.length === 0) {
+            throw new RangeError('layer statistics inputs must be a non-empty array');
+        }
+        if (!Number.isSafeInteger(maxSamples) || maxSamples <= 0) {
+            throw new RangeError('layer statistics maxSamples must be a positive integer');
+        }
+        for (let sampleIndex = 0; sampleIndex < inputs.length; sampleIndex++) {
+            assertVectorShape(inputs[sampleIndex], this.config.inputSize, `inputs[${sampleIndex}]`);
+        }
+
+        const populationCount = inputs.length;
+        const sampleCount = Math.min(128, maxSamples, populationCount);
+        const activationAggregates = this.outputs.map(() => createMomentAggregate());
+        for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+            this.forwardInto(inputs[sampleIndex]);
+            for (let layerIndex = 0; layerIndex < this.outputs.length; layerIndex++) {
+                const activations = this.outputs[layerIndex];
+                for (let neuronIndex = 0; neuronIndex < activations.length; neuronIndex++) {
+                    assertFiniteValue(
+                        activations[neuronIndex],
+                        `activation[${sampleIndex}][${layerIndex}][${neuronIndex}]`,
+                    );
+                }
+                addMomentValues(activationAggregates[layerIndex], activations);
+            }
+        }
+
+        const layers = this.weights.map((weights, layerIndex) => {
+            let sumAbsWeight = 0;
+            for (let index = 0; index < weights.length; index++) {
+                sumAbsWeight += Math.abs(weights[index]);
+            }
+            const meanAbsWeight = weights.length > 0 ? sumAbsWeight / weights.length : 0;
+
+            const gradients = this.recentWeightGrads[layerIndex];
+            let sumAbsGradient = 0;
+            for (let index = 0; index < gradients.length; index++) {
+                sumAbsGradient += Math.abs(gradients[index]);
+            }
+            const meanAbsGradient = gradients.length > 0
+                ? sumAbsGradient / gradients.length
+                : 0;
+            const activation = finishMomentAggregate(activationAggregates[layerIndex]);
+
+            assertFiniteValue(activation.mean, `layers[${layerIndex}].meanActivation`);
+            assertFiniteValue(activation.std, `layers[${layerIndex}].activationStd`);
+            assertFiniteValue(meanAbsWeight, `layers[${layerIndex}].meanAbsWeight`);
+            assertFiniteValue(meanAbsGradient, `layers[${layerIndex}].meanAbsGradient`);
+            return {
+                meanActivation: activation.mean,
+                activationStd: activation.std,
+                meanAbsWeight,
+                meanAbsGradient,
+            };
+        });
+
+        return {
+            revision: this.currentRevision,
+            gradientRevision: this.recentGradientRevision,
+            sampleCount,
+            populationCount,
+            layers,
+        };
     }
 
     computeActivationHistograms(
