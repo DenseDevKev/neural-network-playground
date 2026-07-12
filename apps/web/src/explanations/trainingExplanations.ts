@@ -18,13 +18,17 @@ export const VALID_RELATED_PANEL_IDS = [
 ] as const satisfies readonly RelatedPanelId[];
 
 export interface ExplanationContext {
-    step: number;
-    trainLoss: number;
-    testLoss: number;
-    trainAccuracy?: number;
-    testAccuracy?: number;
+    currentStep: number;
+    fullEvaluation: {
+        step: number;
+        trainDataLoss: number;
+        testDataLoss: number;
+        trainAccuracy?: number;
+        testAccuracy?: number;
+        trainSampleCount: number;
+        testSampleCount: number;
+    } | null;
     pauseReason?: PauseReason | null;
-    testMetricsStale?: boolean;
 }
 
 export interface ExplanationActionDescriptor {
@@ -45,6 +49,7 @@ export interface ExplanationRuleDescriptor {
 
 export interface RuntimeExplanationRule extends ExplanationRuleDescriptor {
     when: (context: ExplanationContext) => boolean;
+    describe?: (context: ExplanationContext) => Partial<ExplanationRuleDescriptor>;
 }
 
 const GENERALIZATION_GAP_THRESHOLD = 0.15;
@@ -113,11 +118,11 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
         when: (context) => context.pauseReason === 'plateau',
     },
     {
-        id: 'test-metrics-stale',
+        id: 'evaluation-age',
         priority: 60,
-        title: 'Test metrics are catching up',
-        explanation: 'The test set is evaluated less often than training updates, so the latest test value may be a cached reading.',
-        suggestedAction: 'Pause briefly or wait for the next full test evaluation before judging generalization.',
+        title: 'Full evaluation trails the batch trend',
+        explanation: 'The latest full-split evaluation was measured at an earlier model step than the current batch trend.',
+        suggestedAction: 'Use the evaluation step and sample counts when comparing the full train and test readings.',
         relatedPanelIds: ['loss'],
         actions: [
             {
@@ -126,13 +131,22 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
                 learningReason: 'The chart keeps training and held-out readings in one place.',
             },
         ],
-        when: (context) => context.testMetricsStale === true,
+        when: (context) => (
+            context.fullEvaluation !== null &&
+            context.currentStep > context.fullEvaluation.step
+        ),
+        describe: (context) => {
+            const evaluation = context.fullEvaluation!;
+            return {
+                explanation: `Full evaluation at step ${evaluation.step} used all ${evaluation.trainSampleCount} train and ${evaluation.testSampleCount} test samples; the batch trend is now at step ${context.currentStep}.`,
+            };
+        },
     },
     {
         id: 'generalization-gap',
         priority: 40,
         title: 'Test loss is higher than train loss',
-        explanation: 'The model is fitting the training data better than the held-out test data.',
+        explanation: 'A paired full-split evaluation measured higher test data loss than train data loss.',
         suggestedAction: 'Try more regularization, less training time, or a simpler architecture.',
         relatedPanelIds: ['loss', 'hyperparams'],
         actions: [
@@ -147,12 +161,23 @@ export const TRAINING_EXPLANATION_RULES: readonly RuntimeExplanationRule[] = [
                 learningReason: 'The loss chart makes the generalization gap easier to compare.',
             },
         ],
-        when: (context) => (
-            context.step > 0 &&
-            finite(context.trainLoss) &&
-            finite(context.testLoss) &&
-            context.testLoss - context.trainLoss >= GENERALIZATION_GAP_THRESHOLD
-        ),
+        when: (context) => {
+            const evaluation = context.fullEvaluation;
+            return (
+                context.currentStep > 0 &&
+                evaluation !== null &&
+                finite(evaluation.trainDataLoss) &&
+                finite(evaluation.testDataLoss) &&
+                evaluation.testDataLoss - evaluation.trainDataLoss >= GENERALIZATION_GAP_THRESHOLD
+            );
+        },
+        describe: (context) => {
+            const evaluation = context.fullEvaluation!;
+            const gap = evaluation.testDataLoss - evaluation.trainDataLoss;
+            return {
+                explanation: `At full evaluation step ${evaluation.step}, test data loss (${evaluation.testDataLoss.toFixed(4)}) exceeded train data loss (${evaluation.trainDataLoss.toFixed(4)}) by ${gap.toFixed(4)} across all ${evaluation.trainSampleCount} train and ${evaluation.testSampleCount} test samples.`,
+            };
+        },
     },
 ];
 
@@ -165,5 +190,8 @@ export function selectTrainingExplanations(
             b.priority - a.priority ||
             (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
         ))
-        .map(({ when: _when, ...descriptor }) => descriptor);
+        .map(({ when: _when, describe, ...descriptor }) => ({
+            ...descriptor,
+            ...describe?.(context),
+        }));
 }

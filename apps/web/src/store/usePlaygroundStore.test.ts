@@ -397,7 +397,7 @@ describe('strict initialization and URL state', () => {
         const initial = await initializePlaygroundStateFromLocation(window.location);
 
         expect(initial.initialPrepared).toBeNull();
-        expect(initial.incompatibleSource).toEqual({ kind: 'url', raw: '#' });
+        expect(initial.incompatibleSource).toEqual({ kind: 'url', rawHash: '#' });
         expect(initial.initialIssues).toEqual(expect.arrayContaining([
             expect.objectContaining({ code: 'legacy-state' }),
         ]));
@@ -433,7 +433,7 @@ describe('strict initialization and URL state', () => {
 
         expect(initial.initialPrepared).toBeNull();
         expect(store.getState().prepared).toBeNull();
-        expect(store.getState().incompatibleSource).toEqual({ kind: 'url', raw });
+        expect(store.getState().incompatibleSource).toEqual({ kind: 'url', rawHash: raw });
         expect(store.getState().preparation.status).toBe('error');
         expect(store.getState().preparation.issues.length).toBeGreaterThan(0);
         expect((await store.getState().applyRecipe(preset('xor-hidden'))).ok).toBe(false);
@@ -453,33 +453,58 @@ describe('strict initialization and URL state', () => {
         expect(window.location.hash).toBe(result.ok ? result.value : '');
     });
 
-    it('persists strict load failure while retaining the last successful experiment', async () => {
+    it('turns a strict URL load failure into a source-preserving incompatible state', async () => {
         const store = createReadyStore();
-        const before = store.getState().prepared;
         window.history.replaceState(null, '', '#v=3&r=AAAA');
 
         const result = await store.getState().loadFromUrl();
 
         expect(result.ok).toBe(false);
-        expect(store.getState().prepared).toBe(before);
-        expect(store.getState().incompatibleSource).toEqual({
-            kind: 'url',
-            raw: '#v=3&r=AAAA',
+        expect(store.getState().access).toEqual({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'url', rawHash: '#v=3&r=AAAA' },
+            issues: expect.arrayContaining([expect.objectContaining({
+                code: 'unsupported-version',
+            })]),
         });
         expect(store.getState().preparation.status).toBe('error');
     });
 
     it('loads a browser-normalized bare fragment as incompatible instead of as the default', async () => {
         const store = createReadyStore();
-        const before = store.getState().prepared;
         window.history.replaceState(null, '', '/#');
         expect(window.location.hash).toBe('');
 
         const result = await store.getState().loadFromUrl();
 
         expect(result.ok).toBe(false);
-        expect(store.getState().prepared).toBe(before);
-        expect(store.getState().incompatibleSource).toEqual({ kind: 'url', raw: '#' });
+        expect(store.getState().access).toMatchObject({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'url', rawHash: '#' },
+        });
+    });
+
+    it('retains the exact failed import File and clears the active document', async () => {
+        const store = createReadyStore();
+        const file = new File(['{"schemaVersion":1}'], 'legacy.json', {
+            type: 'application/json',
+        });
+        const issues = [{
+            code: 'legacy-state' as const,
+            path: 'schemaVersion',
+            message: 'schema version 1 is incompatible',
+        }];
+
+        store.getState().markIncompatible({ kind: 'file', file }, issues);
+
+        expect(store.getState().access).toEqual({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'file', file },
+            issues,
+        });
     });
 
     it('refuses URL serialization when no compatible experiment is active', async () => {

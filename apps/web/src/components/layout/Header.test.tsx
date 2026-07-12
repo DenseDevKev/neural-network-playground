@@ -63,28 +63,43 @@ describe('Header', () => {
         });
     });
 
-    it('renders training metrics from the store snapshot', () => {
+    it('labels a newer batch trend separately from the paired full evaluation', () => {
         useTrainingStore.setState({
             snapshot: {
-                epoch: 12,
-                trainLoss: 0.1234,
-                testLoss: 0.5678,
-                trainMetrics: {
-                    accuracy: 0.527,
-                },
-                testMetrics: {
-                    accuracy: 0.493,
-                },
+                epoch: 99,
+                trainLoss: 9,
+                testLoss: 8,
             } as any,
+            latestLiveSignal: {
+                model: { generationId: 4, revision: 1240, step: 1240, epoch: 12 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+                objectiveKey: 'o',
+                basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 10, throughStep: 1240 },
+                dataLoss: 0.1234,
+            },
+            latestEvaluation: {
+                evaluationId: 31,
+                trigger: 'cadence',
+                model: { generationId: 4, revision: 1230, step: 1230, epoch: 11 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+                objectiveKey: 'o',
+                train: { basis: { kind: 'full-split', split: 'train', sampleCount: 210, populationCount: 210 }, values: { dataLoss: 0.2345, accuracy: 0.527 } },
+                test: { basis: { kind: 'full-split', split: 'test', sampleCount: 90, populationCount: 90 }, values: { dataLoss: 0.5678, accuracy: 0.493 } },
+                objective: { regularizationPenalty: 0.01, trainTotalObjective: 0.2445 },
+            },
         });
 
         renderHeader();
 
         expect(screen.getByText('0012')).toBeInTheDocument();
         expect(screen.getByText('0.1234')).toBeInTheDocument();
+        expect(screen.getByText(/Batch trend \(EMA\).*step 1,240/i)).toBeInTheDocument();
+        expect(screen.getByText(/Train data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
+        expect(screen.getByText(/Test data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
+        expect(screen.getByText('0.2345')).toBeInTheDocument();
         expect(screen.getByText('0.5678')).toBeInTheDocument();
         expect(screen.getByText('49.3%')).toBeInTheDocument();
-        expect(screen.queryByText('52.7%')).not.toBeInTheDocument();
+        expect(screen.queryByText('9.0000')).not.toBeInTheDocument();
     });
 
     it('uses the primary header play button to start and pause training', async () => {

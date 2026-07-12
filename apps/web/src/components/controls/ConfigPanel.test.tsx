@@ -243,7 +243,7 @@ describe('ConfigPanel strict V2 transport', () => {
         const target = await requirePrepared(documentWithNoise(before, 17));
         const gate = deferred<void>();
         const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument')
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
             .mockImplementation(async (value) => {
                 const result = await originalReplace(value);
                 await gate.promise;
@@ -258,7 +258,7 @@ describe('ConfigPanel strict V2 transport', () => {
             { type: 'application/json' },
         ));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceDocument).toHaveBeenCalledTimes(1);
+            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
         });
         expect(onReset).not.toHaveBeenCalled();
         expect(screen.queryByText('Imported!')).not.toBeInTheDocument();
@@ -316,45 +316,53 @@ describe('ConfigPanel strict V2 transport', () => {
             ),
             '$: invalid experiment JSON: duplicate JSON object member "schemaVersion"',
         ],
-    ])('rejects %s without mutating the exact prepared experiment', async (_label, json, message) => {
+    ])('rejects %s into an exact source-preserving incompatible state', async (_label, json, message) => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
-        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument');
+        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument');
         const { container } = render(<ConfigPanel onReset={onReset} />);
         const input = fileInput(container);
-
-        await selectFile(input, new File([json], 'incompatible.json', {
+        const file = new File([json], 'incompatible.json', {
             type: 'application/json',
-        }));
+        });
+
+        await selectFile(input, file);
 
         expect(await screen.findByRole('alert')).toHaveTextContent(message);
         expect(replaceDocument).not.toHaveBeenCalled();
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
-        expect(usePlaygroundStore.getState().prepared?.identities).toBe(before.identities);
+        expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'file', file },
+        });
+        expect(usePlaygroundStore.getState().prepared).toBeNull();
         expect(onReset).not.toHaveBeenCalled();
         expect(input.value).toBe('');
     });
 
     it('rejects files over the exact UTF-8 byte limit before reading', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
         const readAsText = vi.spyOn(FileReader.prototype, 'readAsText');
-        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument');
+        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument');
         const { container } = render(<ConfigPanel onReset={onReset} />);
         const input = fileInput(container);
 
-        await selectFile(input, new File(
+        const file = new File(
             [new Uint8Array(MAX_EXPERIMENT_JSON_BYTES + 1)],
             'oversized.json',
             { type: 'application/json' },
-        ));
+        );
+        await selectFile(input, file);
 
         expect(screen.getByRole('alert')).toHaveTextContent(
             `$: experiment JSON exceeds ${MAX_EXPERIMENT_JSON_BYTES} UTF-8 bytes`,
         );
         expect(readAsText).not.toHaveBeenCalled();
         expect(replaceDocument).not.toHaveBeenCalled();
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'file', file },
+        });
         expect(onReset).not.toHaveBeenCalled();
         expect(input.value).toBe('');
     });
@@ -388,13 +396,22 @@ describe('ConfigPanel strict V2 transport', () => {
         const before = usePlaygroundStore.getState().prepared!;
         const { container } = render(<ConfigPanel onReset={onReset} />);
         const input = fileInput(container);
-
-        await selectFile(input, new File(['{}'], 'unreadable.json', {
+        const file = new File(['{}'], 'unreadable.json', {
             type: 'application/json',
-        }));
+        });
+
+        await selectFile(input, file);
 
         expect(screen.getByRole('alert')).toHaveTextContent('$: Could not read config file');
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'file', file },
+            issues: [{ path: '$', message: 'Could not read config file' }],
+        });
+        expect(usePlaygroundStore.getState().access.source.kind === 'file'
+            ? usePlaygroundStore.getState().access.source.file
+            : null).toBe(file);
         expect(onReset).not.toHaveBeenCalled();
         expect(input.value).toBe('');
     });
@@ -404,25 +421,29 @@ describe('ConfigPanel strict V2 transport', () => {
             .mockImplementation(function () {
                 this.onabort?.call(this, new ProgressEvent('abort'));
             });
-        const before = usePlaygroundStore.getState().prepared!;
         const { container } = render(<ConfigPanel onReset={vi.fn()} />);
         const input = fileInput(container);
-
-        await selectFile(input, new File(['{}'], 'aborted.json', {
+        const file = new File(['{}'], 'aborted.json', {
             type: 'application/json',
-        }));
+        });
+
+        await selectFile(input, file);
 
         expect(screen.getByRole('alert')).toHaveTextContent('$: Config file read was canceled');
         expect(screen.getByRole('button', { name: /import json/i })).toBeEnabled();
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'file', file },
+        });
         expect(input.value).toBe('');
     });
 
-    it('retains the exact prepared identity and reports preparation issues', async () => {
+    it('retains the exact file and reports preparation issues', async () => {
         const onReset = vi.fn();
         const before = usePlaygroundStore.getState().prepared!;
         const target = await requirePrepared(documentWithNoise(before, 19));
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument').mockResolvedValue({
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument').mockResolvedValue({
             ok: false,
             issues: [{
                 code: 'incompatible-task',
@@ -431,18 +452,23 @@ describe('ConfigPanel strict V2 transport', () => {
             }],
         });
         const { container } = render(<ConfigPanel onReset={onReset} />);
-
-        await selectFile(fileInput(container), new File(
+        const file = new File(
             [encodeExperimentJson(target.document)],
             'unpreparable-v2.json',
             { type: 'application/json' },
-        ));
+        );
+
+        await selectFile(fileInput(container), file);
 
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'recipe.objective.dataLoss: objective cannot be compiled for this task',
         );
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
-        expect(usePlaygroundStore.getState().prepared?.identities).toBe(before.identities);
+        expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'file', file },
+        });
+        expect(usePlaygroundStore.getState().prepared).toBeNull();
         expect(onReset).not.toHaveBeenCalled();
     });
 
@@ -453,7 +479,7 @@ describe('ConfigPanel strict V2 transport', () => {
         const newer = documentWithNoise(before, 23);
         const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
         const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument')
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
             .mockImplementationOnce(() => importResult.promise);
         const { container } = render(<ConfigPanel onReset={onReset} />);
 
@@ -463,7 +489,7 @@ describe('ConfigPanel strict V2 transport', () => {
             { type: 'application/json' },
         ));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceDocument).toHaveBeenCalledTimes(1);
+            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
         });
         const newerResult = await originalReplace(newer);
         expect(newerResult.ok).toBe(true);
@@ -487,7 +513,7 @@ describe('ConfigPanel strict V2 transport', () => {
         const second = await requirePrepared(documentWithNoise(before, 27));
         const gate = deferred<void>();
         const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument')
+        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
             .mockImplementation(async (value) => {
                 const result = await originalReplace(value);
                 await gate.promise;
@@ -564,7 +590,7 @@ describe('ConfigPanel strict V2 transport', () => {
         const newer = documentWithNoise(before, 35);
         const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
         const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument')
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
             .mockImplementationOnce(() => importResult.promise);
         const { container } = render(<ConfigPanel onReset={onReset} />);
 
@@ -574,7 +600,7 @@ describe('ConfigPanel strict V2 transport', () => {
             { type: 'application/json' },
         ));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceDocument).toHaveBeenCalledTimes(1);
+            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
         });
         const newerResult = await originalReplace(newer);
         expect(newerResult.ok).toBe(true);
@@ -600,7 +626,7 @@ describe('ConfigPanel strict V2 transport', () => {
         const newer = documentWithNoise(before, 39);
         const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
         const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument')
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
             .mockImplementationOnce(() => importResult.promise);
         const { container } = render(<ConfigPanel onReset={onReset} />);
 
@@ -610,7 +636,7 @@ describe('ConfigPanel strict V2 transport', () => {
             { type: 'application/json' },
         ));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceDocument).toHaveBeenCalledTimes(1);
+            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
         });
         const newerResult = await originalReplace(newer);
         expect(newerResult.ok).toBe(true);

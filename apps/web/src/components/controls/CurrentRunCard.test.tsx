@@ -57,17 +57,36 @@ describe('CurrentRunCard', () => {
         useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
         useTrainingStore.setState({
             status: 'running',
-            snapshot: { step: 128, epoch: 4, trainLoss: 0.2, testLoss: 0.3 } as any,
+            snapshot: { step: 999, epoch: 99, trainLoss: 9, testLoss: 8 } as any,
+            latestLiveSignal: {
+                model: { generationId: 1, revision: 128, step: 128, epoch: 4 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+                objectiveKey: 'o',
+                basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 10, throughStep: 128 },
+                dataLoss: 0.2,
+            },
+            latestEvaluation: {
+                evaluationId: 3,
+                trigger: 'cadence',
+                model: { generationId: 1, revision: 120, step: 120, epoch: 3 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+                objectiveKey: 'o',
+                train: { basis: { kind: 'full-split', split: 'train', sampleCount: 210, populationCount: 210 }, values: { dataLoss: 0.22, accuracy: 0.9 } },
+                test: { basis: { kind: 'full-split', split: 'test', sampleCount: 90, populationCount: 90 }, values: { dataLoss: 0.31, accuracy: 0.8 } },
+                objective: { regularizationPenalty: 0.01, trainTotalObjective: 0.23 },
+            },
         });
 
         render(<CurrentRunCard />);
 
         expect(screen.getByText('Live run')).toBeInTheDocument();
-        expect(screen.getByText('Snapshot step 128')).toBeInTheDocument();
+        expect(screen.getByText('Batch trend through step 128')).toBeInTheDocument();
+        expect(screen.getByText('Full evaluation 3 at step 120')).toBeInTheDocument();
         expect(screen.getByText('Epoch 4')).toBeInTheDocument();
-        expect(screen.getByText('train 0.2000')).toBeInTheDocument();
-        expect(screen.getByText('test 0.3000')).toBeInTheDocument();
-        expect(screen.getByText('gap +0.1000')).toBeInTheDocument();
+        expect(screen.getByText('Batch trend (EMA) 0.2000')).toBeInTheDocument();
+        expect(screen.getByText('Train data loss (full split) 0.2200')).toBeInTheDocument();
+        expect(screen.getByText('Test data loss (full split) 0.3100')).toBeInTheDocument();
+        expect(screen.getByText('gap +0.0900')).toBeInTheDocument();
     });
 
     it('prioritizes pending config sync over generic idle state', () => {
@@ -97,18 +116,25 @@ describe('CurrentRunCard', () => {
         expect(screen.getByText('Paused manually.')).toBeInTheDocument();
     });
 
-    it('explains stale metrics without treating the recipe as drifted', () => {
+    it('states evaluation age without a global stale-metrics claim', () => {
         useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
         useTrainingStore.setState({
             snapshot: { step: 72, epoch: 4 } as any,
-            testMetricsStale: true,
+            latestLiveSignal: {
+                model: { generationId: 1, revision: 72, step: 72, epoch: 4 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 7, testCount: 3 },
+                objectiveKey: 'o',
+                basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 2, throughStep: 72 },
+                dataLoss: 0.4,
+            },
+            latestEvaluation: null,
         });
 
         render(<CurrentRunCard />);
 
-        expect(screen.getByText('Stale metrics')).toBeInTheDocument();
-        expect(screen.getByText('The latest evidence is reusing cached test metrics until a fresh pass completes.')).toBeInTheDocument();
-        expect(screen.getByText('metrics stale')).toBeInTheDocument();
+        expect(screen.getByText('Awaiting full evaluation')).toBeInTheDocument();
+        expect(screen.getByText(/Batch trend is current through step 72/i)).toBeInTheDocument();
+        expect(screen.queryByText(/metrics stale/i)).not.toBeInTheDocument();
     });
 
     it('surfaces worker failure as the current run state', () => {

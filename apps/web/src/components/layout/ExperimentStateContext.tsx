@@ -4,6 +4,10 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type EvidenceViewId } from '../../store/useLayoutStore.ts';
 import { getRecipeDrift } from '../../store/recipeIdentity.ts';
+import {
+    selectScientificEvidence,
+    type ScientificEvidence,
+} from '../../store/evidenceSelectors.ts';
 
 type EvidenceViewName = 'Boundary' | 'Loss' | 'Confusion' | 'Inspection' | 'Code' | 'History';
 
@@ -85,11 +89,15 @@ function useExperimentContext() {
         (s) => s.prepared?.identities.recipeFingerprint ?? null,
     );
     const status = useTrainingStore((s) => s.status);
-    const snapshot = useTrainingStore((s) => s.snapshot);
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
-    const testMetricsStale = useTrainingStore((s) => s.testMetricsStale);
     const workerError = useTrainingStore((s) => s.workerError);
     const configError = useTrainingStore((s) => s.configError);
+    const evidence = useMemo(
+        () => selectScientificEvidence({ latestLiveSignal, latestEvaluation }),
+        [latestEvaluation, latestLiveSignal],
+    );
     const drift = useMemo(
         () => getRecipeDrift(
             trainedRecipeConfig,
@@ -106,9 +114,8 @@ function useExperimentContext() {
     return {
         drift,
         status,
-        snapshot,
+        evidence,
         pendingConfigSource,
-        testMetricsStale,
         workerError,
         configError,
     };
@@ -124,12 +131,12 @@ function formatSignedMetric(value: number | undefined): string {
 }
 
 export const TopologyStateBadge = memo(function TopologyStateBadge() {
-    const { drift, status, snapshot, pendingConfigSource } = useExperimentContext();
-    const label = status === 'running' && snapshot
+    const { drift, status, evidence, pendingConfigSource } = useExperimentContext();
+    const label = status === 'running' && evidence.currentModel
         ? 'Live Run'
         : drift.hasDrift
             ? 'Drifted Recipe'
-            : snapshot
+            : evidence.currentModel
                 ? 'Trained Snapshot'
                 : 'Draft Blueprint';
 
@@ -144,31 +151,51 @@ export const TopologyStateBadge = memo(function TopologyStateBadge() {
     );
 });
 
+function exactEvidenceCopy(view: string, evidence: ScientificEvidence): string {
+    const evaluation = evidence.fullEvaluation;
+    const currentModel = evidence.currentModel;
+    if (!evaluation || !currentModel) {
+        return `${view} evidence has no paired full evaluation.`;
+    }
+    if (view === 'Confusion') {
+        return `Confusion uses full evaluation ${evaluation.evaluationId} at step ${evaluation.step.toLocaleString()} across all ${evaluation.testSampleCount.toLocaleString()} test samples; the current model is at step ${currentModel.step.toLocaleString()}.`;
+    }
+    if (evidence.batchTrend) {
+        return `${view} has batch trend through step ${evidence.batchTrend.step.toLocaleString()} and full evaluation ${evaluation.evaluationId} at step ${evaluation.step.toLocaleString()} using all ${evaluation.trainSampleCount.toLocaleString()} train and ${evaluation.testSampleCount.toLocaleString()} test samples.`;
+    }
+    return `${view} uses full evaluation ${evaluation.evaluationId} at step ${evaluation.step.toLocaleString()} across all ${evaluation.trainSampleCount.toLocaleString()} train and ${evaluation.testSampleCount.toLocaleString()} test samples.`;
+}
+
 export const EvidenceContextLine = memo(function EvidenceContextLine({ view }: { view: string }) {
-    const { drift, status, snapshot, pendingConfigSource, testMetricsStale, workerError, configError } = useExperimentContext();
+    const { drift, status, evidence, pendingConfigSource, workerError, configError } = useExperimentContext();
+    const currentModel = evidence.currentModel;
 
     let copy: string;
     let stateLabel = 'Fresh';
     if (workerError || configError) {
         stateLabel = 'Unavailable';
         copy = `${view} evidence is unavailable until the worker reconnects.`;
-    } else if (!snapshot) {
+    } else if (!currentModel) {
         stateLabel = 'Empty';
         copy = `Train to see ${view} evidence.`;
     } else if (pendingConfigSource) {
         stateLabel = 'Updating';
-        copy = `${view} evidence reflects trained snapshot step ${snapshot.step.toLocaleString()}; updating ${sourceText(pendingConfigSource)}.`;
+        copy = `${view} evidence reflects trained model step ${currentModel.step.toLocaleString()}; updating ${sourceText(pendingConfigSource)}.`;
     } else if (drift.hasDrift) {
         stateLabel = 'Drift';
-        copy = `${view} evidence belongs to trained snapshot step ${snapshot.step.toLocaleString()}; current recipe has drift.`;
-    } else if (testMetricsStale) {
-        stateLabel = 'Stale';
-        copy = `${view} evidence uses cached test metrics from snapshot step ${snapshot.step.toLocaleString()}.`;
+        copy = `${view} evidence belongs to trained model step ${currentModel.step.toLocaleString()}; current recipe has drift.`;
+    } else if ((evidence.evaluationAgeSteps ?? 0) > 0) {
+        stateLabel = 'Evaluation age';
+        copy = exactEvidenceCopy(view, evidence);
     } else if (status === 'running') {
         stateLabel = 'Live';
-        copy = `${view} evidence follows live run step ${snapshot.step.toLocaleString()}.`;
+        copy = evidence.fullEvaluation
+            ? exactEvidenceCopy(view, evidence)
+            : `${view} batch trend follows the live model through step ${currentModel.step.toLocaleString()}; no paired full evaluation has been published yet.`;
     } else {
-        copy = `${view} evidence reflects trained snapshot step ${snapshot.step.toLocaleString()}.`;
+        copy = evidence.fullEvaluation
+            ? exactEvidenceCopy(view, evidence)
+            : `${view} evidence reflects trained model step ${currentModel.step.toLocaleString()}; no paired full evaluation has been published yet.`;
     }
     const explanation = getEvidenceMeta(view).explanation;
 
@@ -207,7 +234,7 @@ export const EvidenceFrame = memo(function EvidenceFrame({
 });
 
 export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
-    const { drift, status, snapshot, pendingConfigSource, testMetricsStale, workerError, configError } = useExperimentContext();
+    const { drift, status, evidence, pendingConfigSource, workerError, configError } = useExperimentContext();
     const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);
     const visibleEvidenceView = activeEvidenceView === 'history' ? 'boundary' : activeEvidenceView;
     const activeEvidence = EVIDENCE_VIEW_LABELS[visibleEvidenceView];
@@ -217,26 +244,26 @@ export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
     if (workerError || configError) {
         stateLabel = 'Unavailable';
         copy = 'Diagnostics are unavailable until the worker reconnects.';
-    } else if (pendingConfigSource && snapshot) {
+    } else if (pendingConfigSource && evidence.currentModel) {
         stateLabel = 'Updating';
-        copy = `Topology is syncing ${sourceText(pendingConfigSource)} while ${activeEvidence} evidence still reflects snapshot step ${snapshot.step.toLocaleString()}.`;
-    } else if (drift.hasDrift && snapshot) {
+        copy = `Topology is syncing ${sourceText(pendingConfigSource)} while ${activeEvidence} evidence still reflects model step ${evidence.currentModel.step.toLocaleString()}.`;
+    } else if (drift.hasDrift && evidence.currentModel) {
         stateLabel = 'Mixed';
-        copy = `Topology shows the draft recipe while ${activeEvidence} evidence belongs to trained snapshot step ${snapshot.step.toLocaleString()}.`;
-    } else if (testMetricsStale && snapshot) {
-        stateLabel = 'Stale';
-        copy = status === 'running'
-            ? `Topology is live; ${activeEvidence} evidence uses cached metrics from snapshot step ${snapshot.step.toLocaleString()}.`
-            : `${activeEvidence} evidence uses cached metrics from snapshot step ${snapshot.step.toLocaleString()}.`;
-    } else if (status === 'running' && snapshot) {
+        copy = `Topology shows the draft recipe while ${activeEvidence} evidence belongs to trained model step ${evidence.currentModel.step.toLocaleString()}.`;
+    } else if ((evidence.evaluationAgeSteps ?? 0) > 0) {
+        stateLabel = 'Evaluation age';
+        copy = exactEvidenceCopy(activeEvidence, evidence);
+    } else if (status === 'running' && evidence.currentModel) {
         stateLabel = 'Live';
-        copy = `Topology and ${activeEvidence} are reading live run step ${snapshot.step.toLocaleString()}.`;
-    } else if (snapshot) {
+        copy = evidence.fullEvaluation
+            ? exactEvidenceCopy(activeEvidence, evidence)
+            : `Topology and ${activeEvidence} follow the batch trend through live model step ${evidence.currentModel.step.toLocaleString()}.`;
+    } else if (evidence.currentModel) {
         stateLabel = 'Snapshot';
-        copy = `Topology and ${activeEvidence} reflect trained snapshot step ${snapshot.step.toLocaleString()}.`;
+        copy = evidence.fullEvaluation
+            ? exactEvidenceCopy(activeEvidence, evidence)
+            : `Topology and ${activeEvidence} reflect trained model step ${evidence.currentModel.step.toLocaleString()}.`;
     }
-
-    const gap = snapshot ? snapshot.testLoss - snapshot.trainLoss : undefined;
 
     return (
         <div className="forge-cockpit-strip" role="status" aria-label="Diagnostic cockpit state">
@@ -244,11 +271,19 @@ export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
                 <span>{stateLabel}</span>
                 <strong>{copy}</strong>
             </div>
-            {snapshot && (
+            {evidence.currentModel && (
                 <div className="forge-cockpit-strip__metrics" aria-label="Cockpit metrics">
-                    <span>{`train ${formatMetric(snapshot.trainLoss)}`}</span>
-                    <span>{`test ${formatMetric(snapshot.testLoss)}`}</span>
-                    <span>{`gap ${formatSignedMetric(gap)}`}</span>
+                    {evidence.batchTrend && (
+                        <span>{`Batch trend (EMA) ${formatMetric(evidence.batchTrend.dataLoss)}`}</span>
+                    )}
+                    {evidence.fullEvaluation && (
+                        <>
+                            <span>{`Train data loss (full split) ${formatMetric(evidence.fullEvaluation.trainDataLoss)}`}</span>
+                            <span>{`Test data loss (full split) ${formatMetric(evidence.fullEvaluation.testDataLoss)}`}</span>
+                            <span>{`Training objective ${formatMetric(evidence.fullEvaluation.trainingObjective)}`}</span>
+                            <span>{`gap ${formatSignedMetric(evidence.generalizationGap ?? undefined)}`}</span>
+                        </>
+                    )}
                 </div>
             )}
         </div>

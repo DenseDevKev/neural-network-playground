@@ -1,10 +1,11 @@
 // ── Header ── brand + Build/Run switch + live metrics + instrument menus
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { TrainingProgressBar } from './TrainingProgressBar.tsx';
 import { getTrainingLifecycleUi } from '../controls/trainingLifecycle.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 
 interface HeaderProps {
     training: Pick<TrainingHook, 'play' | 'pause'>;
@@ -35,21 +36,27 @@ function useFlash(value: string) {
 }
 
 export const Header = memo(function Header({ training, openSurface, onToggleSurface }: HeaderProps) {
-    const snapshot = useTrainingStore((s) => s.snapshot);
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
     const status = useTrainingStore((s) => s.status);
     const pauseReason = useTrainingStore((s) => s.pauseReason);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
-    const stale = useTrainingStore((s) => s.testMetricsStale);
     const view = useLayoutStore((s) => s.view);
     const setView = useLayoutStore((s) => s.setView);
 
-    const epoch = snapshot?.epoch ?? 0;
-    const trainLoss = (snapshot?.trainLoss ?? 0).toFixed(4);
-    const testLoss = (snapshot?.testLoss ?? 0).toFixed(4);
-    const accuracy = snapshot?.testMetrics?.accuracy;
+    const evidence = useMemo(() => selectScientificEvidence({
+        latestLiveSignal,
+        latestEvaluation,
+    }), [latestEvaluation, latestLiveSignal]);
+    const epoch = evidence.currentModel?.epoch ?? 0;
+    const batchLoss = evidence.batchTrend?.dataLoss.toFixed(4) ?? '—';
+    const trainLoss = evidence.fullEvaluation?.trainDataLoss.toFixed(4) ?? '—';
+    const testLoss = evidence.fullEvaluation?.testDataLoss.toFixed(4) ?? '—';
+    const accuracy = evidence.fullEvaluation?.testAccuracy;
     const accStr = accuracy != null ? `${(accuracy * 100).toFixed(1)}%` : '—';
 
     const flashEpoch = useFlash(String(epoch));
+    const flashBatch = useFlash(batchLoss);
     const flashTrain = useFlash(trainLoss);
     const flashTest = useFlash(testLoss);
     const flashAcc = useFlash(accStr);
@@ -89,16 +96,26 @@ export const Header = memo(function Header({ training, openSurface, onToggleSurf
                     </span>
                 </div>
                 <div className="forge-metric">
-                    <span className="forge-metric__label">Train Loss</span>
+                    <span className="forge-metric__label">
+                        {`Batch trend (EMA)${evidence.batchTrend ? ` · step ${evidence.batchTrend.step.toLocaleString()}` : ''}`}
+                    </span>
+                    <span className={`forge-metric__value forge-metric__value--accent ${flashBatch ? 'forge-metric__value--updated' : ''}`}>
+                        {batchLoss}
+                    </span>
+                </div>
+                <div className="forge-metric">
+                    <span className="forge-metric__label">
+                        {`Train data loss (full split)${evidence.fullEvaluation ? ` · step ${evidence.fullEvaluation.step.toLocaleString()}` : ''}`}
+                    </span>
                     <span className={`forge-metric__value forge-metric__value--accent ${flashTrain ? 'forge-metric__value--updated' : ''}`}>
                         {trainLoss}
                     </span>
                 </div>
                 <div className="forge-metric">
                     <span className="forge-metric__label">
-                        Test Loss{stale && <span title="Stale / cached" aria-label="Stale metric"> ~</span>}
+                        {`Test data loss (full split)${evidence.fullEvaluation ? ` · step ${evidence.fullEvaluation.step.toLocaleString()}` : ''}`}
                     </span>
-                    <span className={`forge-metric__value forge-metric__value--primary ${flashTest ? 'forge-metric__value--updated' : ''} ${stale ? 'header__metric-value--stale' : ''}`}>
+                    <span className={`forge-metric__value forge-metric__value--primary ${flashTest ? 'forge-metric__value--updated' : ''}`}>
                         {testLoss}
                     </span>
                 </div>

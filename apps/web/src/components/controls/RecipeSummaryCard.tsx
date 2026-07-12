@@ -3,6 +3,7 @@ import type { AppConfig } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getRecipeDrift, summarizeRecipe } from '../../store/recipeIdentity.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 
 function useCurrentRecipeConfig(): AppConfig {
     const data = usePlaygroundStore((s) => s.data);
@@ -22,7 +23,12 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
         (s) => s.prepared?.identities.recipeFingerprint ?? null,
     );
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
-    const testMetricsStale = useTrainingStore((s) => s.testMetricsStale);
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
+    const evidence = useMemo(() => selectScientificEvidence({
+        latestLiveSignal,
+        latestEvaluation,
+    }), [latestEvaluation, latestLiveSignal]);
     const summary = useMemo(() => summarizeRecipe(currentConfig), [currentConfig]);
     const drift = useMemo(
         () => getRecipeDrift(
@@ -36,29 +42,31 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
         ),
         [trainedRecipeConfig, currentConfig, trainedRecipeFingerprint, currentRecipeFingerprint],
     );
-    const showsStaleEvidence = !drift.hasDrift && testMetricsStale;
+    const showsAgedEvaluation = !drift.hasDrift
+        && evidence.evaluationAgeSteps !== null
+        && evidence.evaluationAgeSteps > 0;
     const pillLabel = pendingConfigSource
         ? 'Updating'
         : drift.hasDrift
             ? 'Drift'
-            : showsStaleEvidence
-                ? 'Stale'
+            : showsAgedEvaluation
+                ? 'Evaluation age'
                 : 'Ready';
-    const noteHeadline = showsStaleEvidence
-        ? 'Current recipe accepted; evidence metrics are stale.'
+    const noteHeadline = showsAgedEvaluation && evidence.fullEvaluation && evidence.batchTrend
+        ? `Full evaluation at step ${evidence.fullEvaluation.step.toLocaleString()}; batch trend through step ${evidence.batchTrend.step.toLocaleString()}.`
         : drift.headline;
-    const noteResolution = showsStaleEvidence
-        ? 'Run, step, or resume to refresh evidence for this recipe.'
+    const noteResolution = showsAgedEvaluation
+        ? `Paired train/test evidence is ${evidence.evaluationAgeSteps} step${evidence.evaluationAgeSteps === 1 ? '' : 's'} behind the current model.`
         : drift.resolution;
     const noteClassName = [
         'forge-drift-note',
         drift.hasDrift ? 'forge-drift-note--active' : '',
-        showsStaleEvidence ? 'forge-drift-note--stale' : '',
+        showsAgedEvaluation ? 'forge-drift-note--stale' : '',
     ].filter(Boolean).join(' ');
     const pillClassName = [
         'forge-context-pill',
         drift.hasDrift ? 'forge-context-pill--drift' : '',
-        showsStaleEvidence ? 'forge-context-pill--stale' : '',
+        showsAgedEvaluation ? 'forge-context-pill--stale' : '',
     ].filter(Boolean).join(' ');
 
     return (

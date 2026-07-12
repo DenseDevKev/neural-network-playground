@@ -5,6 +5,13 @@ import type { ReactNode } from 'react';
 import App from './App';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { useLayoutStore } from './store/useLayoutStore.ts';
+import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
+import {
+    DEFAULT_EXPERIMENT_DOCUMENT,
+    prepareExperimentDocument,
+} from '@nn-playground/shared';
+
+const useTrainingMount = vi.hoisted(() => vi.fn());
 
 const trainingMock = {
     play: vi.fn(),
@@ -15,7 +22,10 @@ const trainingMock = {
 };
 
 vi.mock('./hooks/useTraining.ts', () => ({
-    useTraining: () => trainingMock,
+    useTraining: () => {
+        useTrainingMount();
+        return trainingMock;
+    },
 }));
 
 vi.mock('./components/layout/Header.tsx', () => ({
@@ -80,13 +90,23 @@ vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel:
 vi.mock('./components/controls/RunHistoryPanel.tsx',   () => ({ RunHistoryPanel: () => <div>RunHistory</div> }));
 
 describe('App accessibility shell', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         window.localStorage.clear();
         trainingMock.play.mockReset();
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();
         trainingMock.reset.mockReset();
         trainingMock.restoreCheckpoint.mockReset();
+        useTrainingMount.mockClear();
+
+        const prepared = await prepareExperimentDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+        if (!prepared.ok) throw new Error('default experiment fixture did not prepare');
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: prepared.value },
+            prepared: prepared.value,
+            preparation: { status: 'ready', requestId: 0, issues: [] },
+            incompatibleSource: null,
+        });
 
         useTrainingStore.setState({
             status: 'idle',
@@ -107,6 +127,24 @@ describe('App accessibility shell', () => {
             activeTabLeft: 'data',
             activeTabRight: 'boundary',
         });
+    });
+
+    it('renders durable compatibility recovery without mounting the training hook', () => {
+        usePlaygroundStore.getState().markIncompatible(
+            { kind: 'url', rawHash: '#d=xor&n=0.2' },
+            [{
+                code: 'legacy-state',
+                path: 'schemaVersion',
+                message: 'unversioned experiment documents are incompatible',
+            }],
+        );
+
+        render(<App />);
+
+        expect(useTrainingMount).not.toHaveBeenCalled();
+        expect(screen.getByRole('main', { name: 'Experiment compatibility' }))
+            .toBeInTheDocument();
+        expect(screen.getByText('#d=xor&n=0.2')).toBeInTheDocument();
     });
 
     it('renders a skip link to the main content', () => {

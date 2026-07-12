@@ -1,5 +1,6 @@
 import { memo, type KeyboardEvent } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 import { selectTrainingExplanations } from '../../explanations/trainingExplanations.ts';
 import { focusExplanationActionTarget } from '../../explanations/explanationActionFocus.ts';
 
@@ -12,20 +13,24 @@ function stopShortcutPropagation(event: KeyboardEvent<HTMLButtonElement>) {
 }
 
 export const TrainingExplanationPanel = memo(function TrainingExplanationPanel() {
-    const snapshot = useTrainingStore((state) => state.snapshot);
+    const latestLiveSignal = useTrainingStore((state) => state.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((state) => state.latestEvaluation);
     const pauseReason = useTrainingStore((state) => state.pauseReason);
-    const testMetricsStale = useTrainingStore((state) => state.testMetricsStale);
-
-    if (!snapshot) return null;
+    const evidence = selectScientificEvidence({ latestLiveSignal, latestEvaluation });
+    const fullEvaluation = evidence.fullEvaluation;
 
     const [explanation] = selectTrainingExplanations({
-        step: snapshot.step,
-        trainLoss: snapshot.trainLoss,
-        testLoss: snapshot.testLoss,
-        trainAccuracy: snapshot.trainMetrics.accuracy,
-        testAccuracy: snapshot.testMetrics.accuracy,
+        currentStep: evidence.currentModel?.step ?? 0,
+        fullEvaluation: fullEvaluation === null ? null : {
+            step: fullEvaluation.step,
+            trainDataLoss: fullEvaluation.trainDataLoss,
+            testDataLoss: fullEvaluation.testDataLoss,
+            trainAccuracy: fullEvaluation.trainAccuracy,
+            testAccuracy: fullEvaluation.testAccuracy,
+            trainSampleCount: fullEvaluation.trainSampleCount,
+            testSampleCount: fullEvaluation.testSampleCount,
+        },
         pauseReason,
-        testMetricsStale,
     });
 
     if (!explanation) return null;

@@ -33,6 +33,7 @@ import { ConfigPanel } from './components/controls/ConfigPanel.tsx';
 import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
+import { CompatibilityState } from './components/common/CompatibilityState.tsx';
 import { deriveVisualizationDemand } from './components/layout/deriveVisualizationDemand.ts';
 
 const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
@@ -70,6 +71,17 @@ function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
 }
 
 export default function App() {
+    const access = usePlaygroundStore((state) => state.access);
+    const startFresh = usePlaygroundStore((state) => state.startFresh);
+
+    if (access.status === 'incompatible') {
+        return <CompatibilityState access={access} onStartFresh={startFresh} />;
+    }
+
+    return <CompatiblePlayground />;
+}
+
+function CompatiblePlayground() {
     const training = useTraining();
     const view = useLayoutStore((s) => s.view);
     const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);

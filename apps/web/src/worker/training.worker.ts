@@ -42,6 +42,9 @@ import type {
     CompiledExperimentConfig,
     CompiledTaskContract,
     MulticlassConfusionMatrixData,
+    PredictionTraceV2,
+    BackpropExplanationV2,
+    ObjectiveLandscapeProbe,
 } from '@nn-playground/engine';
 import {
     GRID_SIZE,
@@ -91,6 +94,7 @@ import type {
     SessionCheckpointV2,
     CaptureCheckpointRequestV2,
     RestoreCheckpointRequestV2,
+    ModelRevision,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 import {
@@ -340,11 +344,39 @@ export interface PredictionTraceResponse {
     trace: PredictionTrace;
 }
 
+export interface PredictionTraceResponseV2 {
+    readonly runId: number;
+    readonly model: ModelRevision;
+    readonly dataset: DatasetRevision;
+    readonly objectiveKey: string;
+    readonly sample: {
+        readonly source: 'train' | 'test';
+        readonly index: number;
+        readonly x: number;
+        readonly y: number;
+        readonly label: number;
+    };
+    readonly trace: PredictionTraceV2;
+}
+
 export interface BackpropExplanationResponse {
     runId: number;
     step: number;
     epoch: number;
     explanation: BackpropExplanation;
+}
+
+export interface BackpropExplanationResponseV2 {
+    readonly runId: number;
+    readonly model: ModelRevision;
+    readonly dataset: DatasetRevision;
+    readonly objectiveKey: string;
+    readonly basis: {
+        readonly kind: 'next-mini-batch';
+        readonly sampleCount: number;
+        readonly populationCount: number;
+    };
+    readonly explanation: BackpropExplanationV2;
 }
 
 export interface SerializableLossLandscapeProbe {
@@ -372,6 +404,31 @@ export interface LossLandscapeProbeResponse {
     step: number;
     epoch: number;
     probe: SerializableLossLandscapeProbe;
+}
+
+export interface SerializableObjectiveLandscapeProbe {
+    readonly basis: 'training-objective';
+    readonly gridSize: number;
+    readonly sampleCount: number;
+    readonly parameterPositionCount: number;
+    readonly radius: number;
+    readonly axisA: ObjectiveLandscapeProbe['axisA'];
+    readonly axisB: ObjectiveLandscapeProbe['axisB'];
+    readonly objectives: number[];
+    readonly centerObjective: number;
+    readonly minObjective: number;
+    readonly maxObjective: number;
+    readonly best: ObjectiveLandscapeProbe['best'];
+    readonly summary: string;
+}
+
+export interface ObjectiveLandscapeResponseV2 {
+    readonly runId: number;
+    readonly model: ModelRevision;
+    readonly provenance: ArtifactProvenance & {
+        readonly basis: Extract<ArtifactBasis, { kind: 'parameter-grid' }>;
+    };
+    readonly probe: SerializableObjectiveLandscapeProbe;
 }
 
 // Helper: reset back-pressure state. Called when the consumer on the other
@@ -3241,10 +3298,24 @@ function resolveBackpropPreviewBatch(): { inputs: number[][]; targets: number[][
     return { inputs, targets };
 }
 
-function serializeLossLandscapeProbe(probe: LossLandscapeProbe): SerializableLossLandscapeProbe {
+function currentV2Model(): ModelRevision {
+    const { network, epochRef } = requireV2Runtime();
     return {
+        generationId: state.runId,
+        revision: network.getRevision(),
+        step: network.getStep(),
+        epoch: epochRef.value,
+    };
+}
+
+function serializeObjectiveLandscapeProbe(
+    probe: ObjectiveLandscapeProbe,
+): SerializableObjectiveLandscapeProbe {
+    return {
+        basis: probe.basis,
         gridSize: probe.gridSize,
         sampleCount: probe.sampleCount,
+        parameterPositionCount: probe.parameterPositionCount,
         radius: probe.radius,
         axisA: {
             parameter: { ...probe.axisA.parameter },
@@ -3254,10 +3325,10 @@ function serializeLossLandscapeProbe(probe: LossLandscapeProbe): SerializableLos
             parameter: { ...probe.axisB.parameter },
             offsets: [...probe.axisB.offsets],
         },
-        losses: Array.from(probe.losses),
-        centerLoss: probe.centerLoss,
-        minLoss: probe.minLoss,
-        maxLoss: probe.maxLoss,
+        objectives: Array.from(probe.objectives),
+        centerObjective: probe.centerObjective,
+        minObjective: probe.minObjective,
+        maxObjective: probe.maxObjective,
         best: { ...probe.best },
         summary: probe.summary,
     };
@@ -3887,67 +3958,85 @@ export const workerApi = {
         return state.testPoints;
     },
 
-    getPredictionTrace(request: PredictionTraceRequest): PredictionTraceResponse {
-        if (!state.network || !state.trainingConfig || !state.features) {
-            throw new Error('Not initialized');
-        }
-
-        const sample = resolveTraceSample(request);
-        const input = transformPoint(sample.x, sample.y, state.activeFeatures);
-        const target = sample.label === undefined
-            ? undefined
-            : encodeTargetLabel(sample.label, state.networkConfig?.outputSize ?? 1);
-        const trace = state.network.tracePrediction(
-            input,
-            target,
-            target ? state.trainingConfig.lossType : undefined,
-            state.trainingConfig.huberDelta,
-        );
-
-        return {
-            runId: state.runId,
-            step: state.network.getStep(),
-            sample,
-            trace,
-        };
+    getPredictionTraceV2(request: PredictionTraceRequest): Promise<PredictionTraceResponseV2> {
+        return enqueueV2Mutation(() => {
+            const { network, compiled, runtime } = requireV2Runtime();
+            const sample = resolveTraceSample(request);
+            if (sample.source === 'custom' || sample.index === undefined || sample.label === undefined) {
+                throw new Error(
+                    'Objective-aware prediction traces require a target-bearing train or test example.',
+                );
+            }
+            const input = transformPoint(sample.x, sample.y, state.activeFeatures);
+            const target = encodeTargetLabel(sample.label, compiled.network.outputSize);
+            return {
+                runId: state.runId,
+                model: currentV2Model(),
+                dataset: runtime.dataset,
+                objectiveKey: runtime.objectiveKey,
+                sample: {
+                    source: sample.source,
+                    index: sample.index,
+                    x: sample.x,
+                    y: sample.y,
+                    label: sample.label,
+                },
+                trace: network.tracePredictionV2(input, target, compiled.objective),
+            };
+        });
     },
 
-    getBackpropExplanation(): BackpropExplanationResponse {
-        if (!state.network || !state.trainingConfig) {
-            throw new Error('Not initialized');
-        }
-
-        const batch = resolveBackpropPreviewBatch();
-        return {
-            runId: state.runId,
-            step: state.network.getStep(),
-            epoch: state.epoch,
-            explanation: state.network.explainBackpropStep(
-                batch.inputs,
-                batch.targets,
-                state.trainingConfig,
-            ),
-        };
+    getBackpropExplanationV2(): Promise<BackpropExplanationResponseV2> {
+        return enqueueV2Mutation(() => {
+            const { network, compiled, runtime } = requireV2Runtime();
+            const batch = resolveBackpropPreviewBatch();
+            return {
+                runId: state.runId,
+                model: currentV2Model(),
+                dataset: runtime.dataset,
+                objectiveKey: runtime.objectiveKey,
+                basis: {
+                    kind: 'next-mini-batch',
+                    sampleCount: batch.inputs.length,
+                    populationCount: state.trainInputs.length,
+                },
+                explanation: network.explainBackpropStepV2(
+                    batch.inputs,
+                    batch.targets,
+                    compiled.training,
+                ),
+            };
+        });
     },
 
-    getLossLandscapeProbe(options: LossLandscapeProbeOptions = {}): LossLandscapeProbeResponse {
-        if (!state.network || !state.trainingConfig) {
-            throw new Error('Not initialized');
-        }
-
-        const probe = state.network.probeLossLandscape(
-            state.trainInputs,
-            state.trainTargets,
-            state.trainingConfig,
-            options,
-        );
-
-        return {
-            runId: state.runId,
-            step: state.network.getStep(),
-            epoch: state.epoch,
-            probe: serializeLossLandscapeProbe(probe),
-        };
+    getObjectiveLandscapeV2(
+        options: LossLandscapeProbeOptions = {},
+    ): Promise<ObjectiveLandscapeResponseV2> {
+        return enqueueV2Mutation(() => {
+            const { network, compiled, runtime } = requireV2Runtime();
+            const model = currentV2Model();
+            const probe = network.probeObjectiveLandscape(
+                state.trainInputs,
+                state.trainTargets,
+                compiled.training,
+                options,
+            );
+            return {
+                runId: state.runId,
+                model,
+                provenance: {
+                    model,
+                    dataset: runtime.dataset,
+                    objectiveKey: runtime.objectiveKey,
+                    basis: {
+                        kind: 'parameter-grid',
+                        sampleCount: probe.sampleCount,
+                        parameterPositions: probe.parameterPositionCount,
+                    },
+                },
+                probe: serializeObjectiveLandscapeProbe(probe),
+            };
+        });
     },
 
     /** Update what visual data the UI currently needs. */

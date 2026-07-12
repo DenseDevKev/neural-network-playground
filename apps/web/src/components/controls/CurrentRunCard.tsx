@@ -3,6 +3,7 @@ import type { AppConfig, PauseReason, TrainingStatus } from '@nn-playground/shar
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
 import { getRecipeDrift } from '../../store/recipeIdentity.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 
 function formatMetric(value: number | undefined): string {
     return value === undefined || !Number.isFinite(value) ? 'n/a' : value.toFixed(4);
@@ -70,8 +71,9 @@ function getRunStateCopy(args: {
     workerError: string | null;
     configError: string | null;
     pauseReason: PauseReason | null;
-    staleMetrics: boolean;
-    hasSnapshot: boolean;
+    hasModelEvidence: boolean;
+    hasFullEvaluation: boolean;
+    evaluationAgeSteps: number | null;
     hasDrift: boolean;
 }) {
     if (args.workerError) {
@@ -98,7 +100,7 @@ function getRunStateCopy(args: {
         };
     }
 
-    if (!args.hasSnapshot) {
+    if (!args.hasModelEvidence) {
         return {
             tone: 'idle',
             title: 'Ready to train',
@@ -122,19 +124,29 @@ function getRunStateCopy(args: {
         };
     }
 
-    if (args.staleMetrics) {
-        return {
-            tone: 'stale',
-            title: 'Stale metrics',
-            detail: 'The latest evidence is reusing cached test metrics until a fresh pass completes.',
-        };
-    }
-
     if (args.status === 'paused') {
         return {
             tone: 'paused',
             title: 'Paused run',
             detail: pauseReasonCopy(args.pauseReason),
+        };
+    }
+
+    if (!args.hasFullEvaluation) {
+        return {
+            tone: 'pending',
+            title: 'Awaiting full evaluation',
+            detail: args.step === null
+                ? 'A paired full train/test evaluation has not been published yet.'
+                : `Batch trend is current through step ${args.step.toLocaleString()}; a paired full train/test evaluation has not been published yet.`,
+        };
+    }
+
+    if ((args.evaluationAgeSteps ?? 0) > 0) {
+        return {
+            tone: 'stale',
+            title: 'Evaluation behind batch trend',
+            detail: `The paired full evaluation is ${args.evaluationAgeSteps} step${args.evaluationAgeSteps === 1 ? '' : 's'} behind the batch trend.`,
         };
     }
 
@@ -158,7 +170,12 @@ export const CurrentRunCard = memo(function CurrentRunCard() {
     const workerError = useTrainingStore((s) => s.workerError);
     const configError = useTrainingStore((s) => s.configError);
     const pauseReason = useTrainingStore((s) => s.pauseReason);
-    const testMetricsStale = useTrainingStore((s) => s.testMetricsStale);
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
+    const evidence = useMemo(() => selectScientificEvidence({
+        latestLiveSignal,
+        latestEvaluation,
+    }), [latestEvaluation, latestLiveSignal]);
 
     const drift = useMemo(
         () => getRecipeDrift(
@@ -174,13 +191,14 @@ export const CurrentRunCard = memo(function CurrentRunCard() {
     );
     const state = getRunStateCopy({
         status,
-        step: snapshot?.step ?? null,
+        step: evidence.currentModel?.step ?? snapshot?.step ?? null,
         pendingConfigSource,
         workerError,
         configError,
         pauseReason,
-        staleMetrics: testMetricsStale,
-        hasSnapshot: snapshot !== null,
+        hasModelEvidence: evidence.currentModel !== null || snapshot !== null,
+        hasFullEvaluation: evidence.fullEvaluation !== null,
+        evaluationAgeSteps: evidence.evaluationAgeSteps,
         hasDrift: drift.hasDrift,
     });
 
@@ -199,17 +217,19 @@ export const CurrentRunCard = memo(function CurrentRunCard() {
                 <p>{state.detail}</p>
             </div>
             <div className="forge-run-card__meta" aria-label="Run snapshot metadata">
-                <span>{snapshot ? `Snapshot step ${snapshot.step.toLocaleString()}` : 'No snapshot'}</span>
-                <span>{snapshot ? `Epoch ${snapshot.epoch.toLocaleString()}` : 'Epoch 0'}</span>
-                {testMetricsStale && <span>metrics stale</span>}
+                <span>{evidence.batchTrend ? `Batch trend through step ${evidence.batchTrend.step.toLocaleString()}` : 'No batch trend'}</span>
+                <span>{evidence.fullEvaluation ? `Full evaluation ${evidence.fullEvaluation.evaluationId} at step ${evidence.fullEvaluation.step.toLocaleString()}` : 'No full evaluation'}</span>
+                <span>{evidence.currentModel ? `Epoch ${evidence.currentModel.epoch.toLocaleString()}` : 'Epoch 0'}</span>
                 {drift.groupLabels.length > 0 && <span>{drift.groupLabels.join(', ')}</span>}
             </div>
-            {snapshot && (
+            {evidence.currentModel && (
                 <div className="forge-run-card__metrics" aria-label="Run metrics">
-                    <span>{`train ${formatMetric(snapshot.trainLoss)}`}</span>
-                    <span>{`test ${formatMetric(snapshot.testLoss)}`}</span>
-                    <span>{`gap ${formatSignedMetric(snapshot.testLoss - snapshot.trainLoss)}`}</span>
-                    <span>{`accuracy ${formatAccuracy(snapshot.testMetrics?.accuracy)}`}</span>
+                    <span>{`Batch trend (EMA) ${formatMetric(evidence.batchTrend?.dataLoss)}`}</span>
+                    <span>{`Train data loss (full split) ${formatMetric(evidence.fullEvaluation?.trainDataLoss)}`}</span>
+                    <span>{`Test data loss (full split) ${formatMetric(evidence.fullEvaluation?.testDataLoss)}`}</span>
+                    <span>{`Training objective ${formatMetric(evidence.fullEvaluation?.trainingObjective)}`}</span>
+                    <span>{`gap ${formatSignedMetric(evidence.generalizationGap ?? undefined)}`}</span>
+                    <span>{`accuracy ${formatAccuracy(evidence.fullEvaluation?.testAccuracy)}`}</span>
                 </div>
             )}
         </section>

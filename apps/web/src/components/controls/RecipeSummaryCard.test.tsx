@@ -70,17 +70,33 @@ describe('RecipeSummaryCard', () => {
         expect(screen.getByText('4 x 4 -> 8 x 4')).toBeInTheDocument();
     });
 
-    it('does not describe stale evidence as aligned with the current recipe', () => {
+    it('states the exact paired-evaluation age instead of a global stale flag', () => {
         useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'config-sync');
         useTrainingStore.setState({
             snapshot: { step: 42, epoch: 2 } as any,
-            testMetricsStale: true,
+            latestLiveSignal: {
+                model: { generationId: 1, revision: 42, step: 42, epoch: 2 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 7, testCount: 3 },
+                objectiveKey: 'o',
+                basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 2, throughStep: 42 },
+                dataLoss: 0.4,
+            },
+            latestEvaluation: {
+                evaluationId: 2,
+                trigger: 'cadence',
+                model: { generationId: 1, revision: 40, step: 40, epoch: 2 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 7, testCount: 3 },
+                objectiveKey: 'o',
+                train: { basis: { kind: 'full-split', split: 'train', sampleCount: 7, populationCount: 7 }, values: { dataLoss: 0.3 } },
+                test: { basis: { kind: 'full-split', split: 'test', sampleCount: 3, populationCount: 3 }, values: { dataLoss: 0.4 } },
+                objective: { regularizationPenalty: 0, trainTotalObjective: 0.3 },
+            },
         });
 
         render(<RecipeSummaryCard />);
 
-        expect(screen.getByText('Current recipe accepted; evidence metrics are stale.')).toBeInTheDocument();
-        expect(screen.getByText('Run, step, or resume to refresh evidence for this recipe.')).toBeInTheDocument();
+        expect(screen.getByText('Full evaluation at step 40; batch trend through step 42.')).toBeInTheDocument();
+        expect(screen.getByText('Paired train/test evidence is 2 steps behind the current model.')).toBeInTheDocument();
         expect(screen.queryByText('Evidence is aligned with the current recipe.')).not.toBeInTheDocument();
     });
 });

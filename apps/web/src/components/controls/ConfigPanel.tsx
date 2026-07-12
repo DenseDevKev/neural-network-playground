@@ -67,6 +67,17 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
         if (mounted.current) setIsImporting(false);
     }, []);
 
+    const rejectFile = useCallback((
+        file: File,
+        issues: readonly ExperimentSchemaIssue[],
+    ) => {
+        usePlaygroundStore.getState().markIncompatible(
+            { kind: 'file', file },
+            issues,
+        );
+        reportError(formatIssues(issues));
+    }, [reportError]);
+
     const handleExport = useCallback(() => {
         const prepared = usePlaygroundStore.getState().prepared;
         if (!prepared) {
@@ -116,8 +127,11 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                 return;
             }
 
+            const currentUrl = new URL(window.location.href);
+            currentUrl.hash = syncResult.value.slice(1);
+            const absoluteUrl = currentUrl.href;
             try {
-                await writeText.call(navigator.clipboard, window.location.href);
+                await writeText.call(navigator.clipboard, absoluteUrl);
                 reportSuccess('URL copied!');
             } catch (clipboardError) {
                 reportError(errorMessage(clipboardError, '$: Could not copy URL'));
@@ -144,9 +158,11 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
             }
 
             if (file.size > MAX_EXPERIMENT_JSON_BYTES) {
-                reportError(
-                    `$: experiment JSON exceeds ${MAX_EXPERIMENT_JSON_BYTES} UTF-8 bytes`,
-                );
+                rejectFile(file, [{
+                    code: 'resource-limit',
+                    path: '$',
+                    message: `experiment JSON exceeds ${MAX_EXPERIMENT_JSON_BYTES} UTF-8 bytes`,
+                }]);
                 input.value = '';
                 return;
             }
@@ -163,7 +179,11 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                     && usePlaygroundStore.getState().preparation.requestId
                         === selectionRequestId
                 ) {
-                    reportError('$: Could not read config file');
+                    rejectFile(file, [{
+                        code: 'invalid-field',
+                        path: '$',
+                        message: 'Could not read config file',
+                    }]);
                 }
                 finishImport();
             };
@@ -173,7 +193,11 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                     && usePlaygroundStore.getState().preparation.requestId
                         === selectionRequestId
                 ) {
-                    reportError('$: Config file read was canceled');
+                    rejectFile(file, [{
+                        code: 'invalid-field',
+                        path: '$',
+                        message: 'Config file read was canceled',
+                    }]);
                 }
                 finishImport();
             };
@@ -189,13 +213,17 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
 
                     const text = loadEvent.target?.result;
                     if (typeof text !== 'string') {
-                        reportError('$: Could not read config file');
+                        rejectFile(file, [{
+                            code: 'invalid-field',
+                            path: '$',
+                            message: 'Could not read config file',
+                        }]);
                         return;
                     }
 
                     const decoded = decodeExperimentJson(text);
                     if (!decoded.ok) {
-                        reportError(formatIssues(decoded.issues) || '$: Invalid experiment JSON');
+                        rejectFile(file, decoded.issues);
                         return;
                     }
 
@@ -203,7 +231,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                     let result;
                     try {
                         const pendingResult = usePlaygroundStore.getState()
-                            .replaceDocument(decoded.value);
+                            .replaceImportedDocument(decoded.value, file);
                         preparationRequestId = usePlaygroundStore.getState()
                             .preparation.requestId;
                         result = await pendingResult;
@@ -212,10 +240,14 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                             usePlaygroundStore.getState().preparation.requestId
                             === preparationRequestId
                         ) {
-                            reportError(errorMessage(
-                                preparationError,
-                                '$: Experiment could not be prepared',
-                            ));
+                            rejectFile(file, [{
+                                code: 'invalid-field',
+                                path: '$',
+                                message: errorMessage(
+                                    preparationError,
+                                    'Experiment could not be prepared',
+                                ),
+                            }]);
                         }
                         return;
                     }
@@ -228,10 +260,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                     }
 
                     if (!result.ok) {
-                        reportError(
-                            formatIssues(result.issues)
-                            || '$: Experiment could not be prepared',
-                        );
+                        rejectFile(file, result.issues);
                         return;
                     }
 
@@ -253,14 +282,18 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
             try {
                 reader.readAsText(file);
             } catch (readError) {
-                reportError(errorMessage(readError, '$: Could not read config file'));
+                rejectFile(file, [{
+                    code: 'invalid-field',
+                    path: '$',
+                    message: errorMessage(readError, 'Could not read config file'),
+                }]);
                 finishImport();
             } finally {
                 // Permit choosing the same file again, including after any failure.
                 input.value = '';
             }
         },
-        [finishImport, onReset, reportError, reportSuccess],
+        [finishImport, onReset, rejectFile, reportError, reportSuccess],
     );
 
     return (

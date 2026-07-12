@@ -7,12 +7,16 @@ import {
 } from './trainingExplanations.ts';
 
 const baseContext: ExplanationContext = {
-    step: 10,
-    trainLoss: 0.4,
-    testLoss: 0.5,
-    trainAccuracy: 0.7,
-    testAccuracy: 0.65,
-    testMetricsStale: false,
+    currentStep: 10,
+    fullEvaluation: {
+        step: 10,
+        trainDataLoss: 0.4,
+        testDataLoss: 0.5,
+        trainAccuracy: 0.7,
+        testAccuracy: 0.65,
+        trainSampleCount: 70,
+        testSampleCount: 30,
+    },
 };
 
 describe('selectTrainingExplanations', () => {
@@ -20,14 +24,18 @@ describe('selectTrainingExplanations', () => {
         const explanations = selectTrainingExplanations({
             ...baseContext,
             pauseReason: 'diverged',
-            testMetricsStale: true,
-            trainLoss: 0.2,
-            testLoss: 0.6,
+            currentStep: 12,
+            fullEvaluation: {
+                ...baseContext.fullEvaluation!,
+                step: 10,
+                trainDataLoss: 0.2,
+                testDataLoss: 0.6,
+            },
         });
 
         expect(explanations.map((rule) => rule.id)).toEqual([
             'pause-diverged',
-            'test-metrics-stale',
+            'evaluation-age',
             'generalization-gap',
         ]);
     });
@@ -46,16 +54,25 @@ describe('selectTrainingExplanations', () => {
         expect(explanation.relatedPanelIds).toContain('hyperparams');
     });
 
-    it('explains stale test metrics without requiring a pause reason', () => {
+    it('explains exact full-evaluation age without a global stale flag', () => {
         const [explanation] = selectTrainingExplanations({
             ...baseContext,
-            testMetricsStale: true,
+            currentStep: 12,
         });
 
         expect(explanation).toMatchObject({
-            id: 'test-metrics-stale',
-            title: 'Test metrics are catching up',
+            id: 'evaluation-age',
+            title: 'Full evaluation trails the batch trend',
         });
+    });
+
+    it('never infers generalization without one paired full evaluation', () => {
+        const explanations = selectTrainingExplanations({
+            currentStep: 50,
+            fullEvaluation: null,
+        });
+
+        expect(explanations.map((rule) => rule.id)).not.toContain('generalization-gap');
     });
 
     it('keeps related panel ids constrained to known layout panels', () => {
@@ -91,7 +108,7 @@ describe('selectTrainingExplanations', () => {
                 { label: 'Inspect the plateau', targetPanelId: 'loss' },
                 { label: 'Adjust model capacity', targetPanelId: 'network' },
             ],
-            'test-metrics-stale': [
+            'evaluation-age': [
                 { label: 'Open loss & accuracy', targetPanelId: 'loss' },
             ],
             'generalization-gap': [
