@@ -284,6 +284,65 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(workerApi.getMetricHistoryV2()).toEqual(historyBefore);
     });
 
+    it('rejects the removed custom prediction-trace source at the worker boundary', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const getTrace = workerApi.getPredictionTraceV2 as (request: unknown) => Promise<unknown>;
+
+        await expect(getTrace({ source: 'custom', index: 0 })).rejects.toThrow(TypeError);
+    });
+
+    it('rejects arbitrary prediction-trace sources at the worker boundary', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const getTrace = workerApi.getPredictionTraceV2 as (request: unknown) => Promise<unknown>;
+
+        await expect(getTrace({ source: 'validation', index: 0 })).rejects.toThrow(TypeError);
+    });
+
+    it('rejects malformed prediction-trace request shapes and indices', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const initialized = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const getTrace = workerApi.getPredictionTraceV2 as (request: unknown) => Promise<unknown>;
+        const testCount = initialized.evidence.latestEvaluation!.dataset.testCount;
+
+        await expect(getTrace({ source: 'train', index: 0, extra: true })).rejects.toThrow(TypeError);
+        await expect(getTrace({ source: 'train', index: 0.5 })).rejects.toThrow(RangeError);
+        await expect(getTrace({ source: 'train', index: -1 })).rejects.toThrow(RangeError);
+        await expect(getTrace({ source: 'test', index: testCount })).rejects.toThrow(RangeError);
+    });
+
+    it('rejects accessor-backed prediction-trace requests without invoking accessors', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const getTrace = workerApi.getPredictionTraceV2 as (request: unknown) => Promise<unknown>;
+        let sourceRead = false;
+        const request = Object.defineProperties({}, {
+            source: {
+                enumerable: true,
+                get: () => {
+                    sourceRead = true;
+                    return 'train';
+                },
+            },
+            index: { enumerable: true, value: 0 },
+        });
+
+        await expect(getTrace(request)).rejects.toThrow(TypeError);
+        expect(sourceRead).toBe(false);
+    });
+
+    it('preserves exact train and test prediction traces', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+
+        const trainTrace = await workerApi.getPredictionTraceV2({ source: 'train', index: 0 });
+        const testTrace = await workerApi.getPredictionTraceV2({ source: 'test', index: 0 });
+
+        expect(trainTrace.sample).toMatchObject({ source: 'train', index: 0 });
+        expect(testTrace.sample).toMatchObject({ source: 'test', index: 0 });
+    });
+
     it('commits a prepared experiment and returns a validated initial pair', async () => {
         const fixtures = await createScientificTrustFixtures();
         workerApi.updateDemand(DEFAULT_DEMAND);

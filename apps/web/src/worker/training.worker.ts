@@ -2398,6 +2398,40 @@ function handleStreamCommand(cmd: unknown): void {
     }
 }
 
+function parsePredictionTraceRequest(request: unknown): PredictionTraceRequest {
+    if (typeof request !== 'object' || request === null || Array.isArray(request)) {
+        throw new TypeError('prediction trace request must be a plain record');
+    }
+    const prototype = Object.getPrototypeOf(request);
+    if (prototype !== Object.prototype && prototype !== null) {
+        throw new TypeError('prediction trace request must have a plain record prototype');
+    }
+    const expectedKeys = new Set(['source', 'index']);
+    const ownKeys = Reflect.ownKeys(request);
+    if (ownKeys.length !== expectedKeys.size
+        || ownKeys.some((key) => typeof key !== 'string' || !expectedKeys.has(key))) {
+        throw new TypeError('prediction trace request must contain exactly index and source');
+    }
+    const descriptors = new Map<string, PropertyDescriptor>();
+    for (const key of expectedKeys) {
+        const descriptor = Object.getOwnPropertyDescriptor(request, key);
+        if (descriptor === undefined || !('value' in descriptor) || !descriptor.enumerable) {
+            throw new TypeError(`prediction trace request ${key} must be an enumerable data property`);
+        }
+        descriptors.set(key, descriptor);
+    }
+
+    const source = descriptors.get('source')!.value as unknown;
+    if (source !== 'train' && source !== 'test') {
+        throw new TypeError('prediction trace request source must be train or test');
+    }
+    const index = descriptors.get('index')!.value as unknown;
+    if (!Number.isSafeInteger(index) || (index as number) < 0) {
+        throw new RangeError('prediction trace request index must be a non-negative safe integer');
+    }
+    return { source, index: index as number };
+}
+
 function resolveTraceSample(request: PredictionTraceRequest): {
     source: PredictionTraceSampleSource;
     index: number;
@@ -2955,10 +2989,16 @@ export const workerApi = {
         return state.testPoints;
     },
 
-    getPredictionTraceV2(request: PredictionTraceRequest): Promise<PredictionTraceResponseV2> {
+    getPredictionTraceV2(request: unknown): Promise<PredictionTraceResponseV2> {
+        let parsed: PredictionTraceRequest;
+        try {
+            parsed = parsePredictionTraceRequest(request);
+        } catch (error) {
+            return Promise.reject(error);
+        }
         return enqueueV2Mutation(() => {
             const { network, compiled, runtime } = requireV2Runtime();
-            const sample = resolveTraceSample(request);
+            const sample = resolveTraceSample(parsed);
             const input = transformPoint(sample.x, sample.y, state.activeFeatures);
             const target = encodeTargetLabel(sample.label, compiled.network.outputSize);
             return {
