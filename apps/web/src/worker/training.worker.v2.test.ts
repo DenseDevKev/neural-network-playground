@@ -336,7 +336,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         });
     });
 
-    it('keeps coincident cadence and checkpoint pairs uncommitted when step-50 capture fails', async () => {
+    it('retries pending step-50 cadence and checkpoint before the next ordinary train step', async () => {
         const fixtures = await createScientificTrustFixtures();
         const capture = createCapturingPort();
         workerApi.setStreamPort(capture.port);
@@ -359,16 +359,95 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(workerApi.getCheckpointTimeline()).toEqual(timelineBefore);
         expect(evidenceMessages(capture.messages)).toEqual([]);
 
-        const recovered = await workerApi.captureCheckpointV2({
+        capture.messages.length = 0;
+        const trainSpy = vi.spyOn(Network.prototype, 'trainBatchIndexedV2');
+        const recovered = await workerApi.stepExperimentV2(1);
+        const history = workerApi.getMetricHistoryV2();
+        const recoveredEvaluations = history.evaluationHistory.slice(-3);
+        expect(recoveredEvaluations.map(({ evaluationId, trigger, model }) => ({
+            evaluationId,
+            trigger,
+            step: model.step,
+        }))).toEqual([
+            { evaluationId: nextEvaluationId, trigger: 'cadence', step: 50 },
+            { evaluationId: nextEvaluationId + 1, trigger: 'checkpoint', step: 50 },
+            { evaluationId: nextEvaluationId + 2, trigger: 'manual-step', step: 51 },
+        ]);
+        expect(evidenceMessages(capture.messages).map(
+            (message) => message.latestEvaluation?.trigger,
+        )).toEqual(['cadence', 'checkpoint', 'manual-step']);
+        expect(recovered.evidence.liveSignal?.model).toEqual(
+            recovered.evidence.latestEvaluation?.model,
+        );
+        expect(recovered.snapshot).toMatchObject({
+            step: 51,
+            epoch: recovered.evidence.latestEvaluation?.model.epoch,
+        });
+        expect(history.trendHistory.at(-1)).toEqual(recovered.evidence.liveSignal);
+
+        const retriedCheckpointId = recovered.checkpointTimeline.liveCheckpointId!;
+        const retriedCheckpoint = getV2CheckpointForTests(retriedCheckpointId);
+        expect(retriedCheckpoint.evaluation).toMatchObject({
+            evaluationId: nextEvaluationId + 1,
+            trigger: 'checkpoint',
+            model: { step: 50 },
+        });
+        expect(trainSpy).toHaveBeenCalledTimes(1);
+        expect(trainSpy.mock.calls[0]?.[3]).toBe(retriedCheckpoint.cursor.batchStart);
+
+        const current = await workerApi.captureCheckpointV2({
             type: 'capture-checkpoint',
             protocolVersion: WORKER_PROTOCOL_VERSION,
             requestId: nextRequestId++,
         });
-        expect(recovered.evidence.latestEvaluation).toMatchObject({
-            evaluationId: nextEvaluationId,
-            trigger: 'checkpoint',
-            model: { step: 50 },
+        const currentCheckpoint = getV2CheckpointForTests(
+            current.checkpointTimeline.liveCheckpointId!,
+        );
+        expect(currentCheckpoint.model).toEqual(recovered.evidence.latestEvaluation?.model);
+        expect(currentCheckpoint.cursor).toMatchObject({
+            epoch: recovered.evidence.latestEvaluation?.model.epoch,
+            batchStart: trainSpy.mock.calls[0]?.[4],
         });
+    });
+
+    it('repeated pending checkpoint retry failure leaves model and cursor unmodified', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        for (let index = 0; index < 4; index++) await workerApi.stepExperimentV2(10);
+        await workerApi.stepExperimentV2(5);
+        const captureStateSpy = vi.spyOn(Network.prototype, 'captureSessionState');
+        captureStateSpy.mockImplementationOnce(() => {
+            throw new Error('initial step-50 capture failed');
+        });
+        await expect(workerApi.stepExperimentV2(5)).rejects.toThrow(
+            'initial step-50 capture failed',
+        );
+        const historyAfterInitialFailure = workerApi.getMetricHistoryV2();
+        const timelineAfterInitialFailure = workerApi.getCheckpointTimeline();
+        capture.messages.length = 0;
+        captureStateSpy.mockImplementationOnce(() => {
+            throw new Error('retry step-50 capture failed');
+        });
+        const trainSpy = vi.spyOn(Network.prototype, 'trainBatchIndexedV2');
+
+        await expect(workerApi.stepExperimentV2(1)).rejects.toThrow(
+            'retry step-50 capture failed',
+        );
+
+        expect(trainSpy).not.toHaveBeenCalled();
+        expect(workerApi.getMetricHistoryV2()).toEqual(historyAfterInitialFailure);
+        expect(workerApi.getCheckpointTimeline()).toEqual(timelineAfterInitialFailure);
+        expect(evidenceMessages(capture.messages)).toEqual([]);
+
+        const recovered = await workerApi.stepExperimentV2(1);
+        expect(trainSpy).toHaveBeenCalledTimes(1);
+        expect(trainSpy.mock.calls[0]?.[3]).toBe(50);
+        expect(recovered.evidence.liveSignal?.model).toMatchObject({ step: 51 });
+        expect(recovered.evidence.latestEvaluation?.model).toEqual(
+            recovered.evidence.liveSignal?.model,
+        );
     });
 
     it('commits coincident runtime pairs before publishing either pair', async () => {

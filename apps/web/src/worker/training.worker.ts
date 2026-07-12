@@ -834,6 +834,25 @@ function captureCheckpointAfterCadenceV2(
     return { cadenceEvaluation, checkpointEvaluation };
 }
 
+function resolvePendingCadenceBeforeTrainingV2(
+    runtime: EvaluationRuntime,
+    history: RuntimeMetricHistory,
+): PairedEvaluation | undefined {
+    const preparedCadence = runtime.prepareCadenceEvaluation();
+    if (preparedCadence === undefined) return undefined;
+    const pendingStep = preparedCadence.evaluation.model.step;
+    if (pendingStep > 0 && pendingStep % CHECKPOINT_STEP_INTERVAL === 0) {
+        return captureCheckpointAfterCadenceV2(preparedCadence).cadenceEvaluation;
+    }
+
+    const evidence = makeEvidenceV2(undefined, preparedCadence.evaluation);
+    beginV2Mutation();
+    const cadenceEvaluation = preparedCadence.commit();
+    history.appendEvaluation(cadenceEvaluation);
+    postEvidenceV2(evidence);
+    return cadenceEvaluation;
+}
+
 /** Narrow module-only seam for validating worker-private checkpoint transactions. */
 export function getV2CheckpointForTests(id: number): SessionCheckpointV2 {
     const entry = state.checkpoints.find((candidate) => candidate.summary.id === id);
@@ -2786,6 +2805,7 @@ function trainOneStepV2(): {
     cadenceEvaluation?: PairedEvaluation;
 } | undefined {
     const { compiled, network, runtime, history, epochRef } = requireV2Runtime();
+    let cadenceEvaluation = resolvePendingCadenceBeforeTrainingV2(runtime, history);
     const batchSize = compiled.training.batchSize;
     const sampleCount = state.trainInputs.length;
     if (sampleCount === 0) return undefined;
@@ -2836,20 +2856,18 @@ function trainOneStepV2(): {
     const checkpointDue = result.step > 0
         && result.step % CHECKPOINT_STEP_INTERVAL === 0;
     const preparedCadence = runtime.prepareCadenceEvaluation();
-    let cadenceEvaluation: PairedEvaluation | undefined;
-    if (checkpointDue && preparedCadence !== undefined) {
-        cadenceEvaluation = captureCheckpointAfterCadenceV2(
-            preparedCadence,
-        ).cadenceEvaluation;
-    } else {
-        cadenceEvaluation = preparedCadence?.commit();
-        if (cadenceEvaluation !== undefined) {
+    if (preparedCadence !== undefined) {
+        if (checkpointDue) {
+            cadenceEvaluation = captureCheckpointAfterCadenceV2(
+                preparedCadence,
+            ).cadenceEvaluation;
+        } else {
+            cadenceEvaluation = preparedCadence.commit();
             history.appendEvaluation(cadenceEvaluation);
             // Cadence evidence is never coalesced into a latest-wins visual frame.
             postEvidenceV2(makeEvidenceV2(undefined, cadenceEvaluation));
         }
-        if (checkpointDue) forceAndCaptureCheckpointV2();
-    }
+    } else if (checkpointDue) forceAndCaptureCheckpointV2();
     return cadenceEvaluation === undefined
         ? { liveSignal }
         : { liveSignal, cadenceEvaluation };
