@@ -105,7 +105,9 @@ function NeuronCountControl({
 }
 
 export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
-    const prepared = usePlaygroundStore((state) => state.prepared);
+    const prepared = usePlaygroundStore((state) => state.access.status === 'ready'
+        ? state.access.prepared
+        : null);
     const isLoading = useTrainingStore((state) => state.networkConfigLoading);
     const configError = useTrainingStore((state) => state.configError);
     const configErrorSource = useTrainingStore((state) => state.configErrorSource);

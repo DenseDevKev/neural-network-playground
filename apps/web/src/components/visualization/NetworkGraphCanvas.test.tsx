@@ -13,8 +13,12 @@ import {
     getFrameVersion,
 } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { PREPARED_PRESETS } from '@nn-playground/shared';
+import {
+    installPreparedForTest,
+    updateCompiledForTest,
+} from '../../test/playgroundStoreTestUtils.ts';
 import {
     edgeFilterOptions,
     hitTestEdge,
@@ -24,6 +28,11 @@ import {
     paintNodes,
     shouldRenderEdge,
 } from './networkGraphPainter.ts';
+
+const BASE_PREPARED = PREPARED_PRESETS.find((entry) => entry.id === 'single-neuron')!.prepared;
+const MULTICLASS_PREPARED = PREPARED_PRESETS.find(
+    (entry) => entry.id === 'three-class-clusters',
+)!.prepared;
 
 // Minimal Canvas2D mock — just enough for paintEdges/paintNodes/paintLabels
 // to run. We assert at the integration level that the component mounts and
@@ -83,20 +92,12 @@ describe('NetworkGraphCanvas', () => {
             activeLessonId: null,
             activeLessonStepIndex: null,
         });
-        usePlaygroundStore.setState({
-            data: {
-                ...usePlaygroundStore.getState().data,
-                dataset: 'gauss',
-            },
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [],
-                outputSize: 1,
-                outputActivation: 'sigmoid',
-                activation: 'tanh',
-            },
+        installPreparedForTest(BASE_PREPARED);
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            data: { ...compiled.data, dataset: 'gauss' },
+            network: { ...compiled.network, hiddenLayers: [], activation: 'tanh' },
             features: {
-                ...usePlaygroundStore.getState().features,
                 x: true,
                 y: true,
                 xSquared: false,
@@ -107,7 +108,7 @@ describe('NetworkGraphCanvas', () => {
                 cosX: false,
                 cosY: false,
             },
-        });
+        }));
 
         HTMLCanvasElement.prototype.getContext = vi.fn(
             () => createMockContext() as unknown as CanvasRenderingContext2D,
@@ -147,12 +148,10 @@ describe('NetworkGraphCanvas', () => {
         });
 
         // Match the network shape the component reads from the store.
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [2],
-            },
-        });
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [2] },
+        }));
 
         const { container } = render(<NetworkGraphCanvas />);
         const canvas = container.querySelector('canvas');
@@ -160,13 +159,10 @@ describe('NetworkGraphCanvas', () => {
     });
 
     it('exposes a screen-reader summary describing the network shape', () => {
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [4, 4],
-                activation: 'tanh',
-            },
-        });
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [4, 4], activation: 'tanh' },
+        }));
         const { container } = render(<NetworkGraphCanvas />);
         const desc = container.querySelector('#network-graph-desc');
         expect(desc).not.toBeNull();
@@ -175,12 +171,10 @@ describe('NetworkGraphCanvas', () => {
     });
 
     it('renders architecture story and capacity badge inside the graph', () => {
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [4, 4],
-            },
-        });
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [4, 4] },
+        }));
 
         render(<NetworkGraphCanvas />);
 
@@ -192,15 +186,11 @@ describe('NetworkGraphCanvas', () => {
     });
 
     it('describes approved multiclass output shapes without scalar copy', () => {
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [4, 4],
-                outputSize: 3,
-                outputActivation: 'softmax',
-                activation: 'tanh',
-            },
-        });
+        installPreparedForTest(MULTICLASS_PREPARED);
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [4, 4], activation: 'tanh' },
+        }));
 
         const { container } = render(<NetworkGraphCanvas />);
 
@@ -211,28 +201,21 @@ describe('NetworkGraphCanvas', () => {
     });
 
     it('shows dataset topology hints only for clear mismatches', () => {
-        usePlaygroundStore.setState({
-            data: {
-                ...usePlaygroundStore.getState().data,
-                dataset: 'xor',
-            },
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [],
-            },
-        });
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            data: { ...compiled.data, dataset: 'xor' },
+            network: { ...compiled.network, hiddenLayers: [] },
+        }));
 
         const { rerender } = render(<NetworkGraphCanvas />);
 
         expect(screen.getByText('XOR is not linearly separable, so add a hidden layer before training.')).toBeInTheDocument();
 
         act(() => {
-            usePlaygroundStore.setState({
-                network: {
-                    ...usePlaygroundStore.getState().network,
-                    hiddenLayers: [4],
-                },
-            });
+            updateCompiledForTest((compiled) => ({
+                ...compiled,
+                network: { ...compiled.network, hiddenLayers: [4] },
+            }));
         });
         rerender(<NetworkGraphCanvas />);
 
@@ -292,12 +275,10 @@ describe('NetworkGraphCanvas', () => {
     });
 
     it('keeps architecture edit controls out of the topology stage', () => {
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [2],
-            },
-        });
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [2] },
+        }));
         render(<NetworkGraphCanvas />);
 
         expect(screen.queryByRole('button', { name: /Add neuron to hidden layer/i })).not.toBeInTheDocument();
@@ -307,12 +288,10 @@ describe('NetworkGraphCanvas', () => {
     });
 
     it('renders active network lesson copy and a ghost layer hint', () => {
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [],
-            },
-        });
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [] },
+        }));
         useLayoutStore.setState({
             activeLessonId: 'lesson-xor-hidden-layers',
             activeLessonStepIndex: 1,

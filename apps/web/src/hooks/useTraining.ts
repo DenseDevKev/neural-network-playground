@@ -9,7 +9,6 @@ import {
     type TrainedRecipeSource,
     type TrainingStore,
 } from '../store/useTrainingStore.ts';
-import { projectPreparedExperiment } from '../store/legacyProjection.ts';
 import {
     getWorkerApi,
     setupStreamChannel,
@@ -35,26 +34,18 @@ import {
     flattenWeights,
 } from '../worker/frameBufferLayout.ts';
 import type {
-    DataConfig,
     DataPoint,
-    FeatureFlags,
-    NetworkConfig,
-    NetworkSnapshot,
-    TrainingConfig,
 } from '@nn-playground/engine';
 import { getDatasetContract } from '@nn-playground/engine';
 import type {
     ArtifactProvenance,
-    ArenaScalarSnapshot,
     CheckpointTimeline,
     PairedEvaluation,
     PreparedExperimentDocumentV2,
     WorkerEvidenceMessageV2,
     WorkerArtifactProvenanceV2,
     WorkerExperimentRequestV2,
-    WorkerArenaSnapshotMessage,
     WorkerProtocolErrorMessageV2,
-    WorkerSnapshotMessage,
     WorkerToMainMessage,
 } from '@nn-playground/shared';
 import {
@@ -66,22 +57,12 @@ import {
 } from '@nn-playground/shared';
 import type { WorkerExperimentResultV2 } from '../worker/training.worker.ts';
 
-export interface LiveArenaModelInput {
-    label?: string;
-    network: NetworkConfig;
-    training: TrainingConfig;
-    data: DataConfig;
-    features: FeatureFlags;
-}
-
 export interface TrainingHook {
     play: () => void;
     pause: () => void;
     step: () => Promise<void>;
     reset: () => Promise<void>;
     restoreCheckpoint: (id: number) => Promise<void>;
-    initializeArena: (modelA: LiveArenaModelInput, modelB: LiveArenaModelInput) => Promise<void>;
-    stepArena: (iterations?: number) => Promise<void>;
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -90,11 +71,16 @@ function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 function requirePreparedExperiment(): PreparedExperimentDocumentV2 {
-    const prepared = usePlaygroundStore.getState().prepared;
-    if (prepared) return prepared;
+    const access = usePlaygroundStore.getState().access;
+    if (access.status === 'ready') return access.prepared;
     throw new Error(
         'Training is unavailable because the shared experiment URL is incompatible with version 2.',
     );
+}
+
+function currentPreparedExperiment(): PreparedExperimentDocumentV2 | null {
+    const access = usePlaygroundStore.getState().access;
+    return access.status === 'ready' ? access.prepared : null;
 }
 
 export function createWorkerExperimentRequestV2(
@@ -365,44 +351,16 @@ function preflightStrictV2Result(
                 + confusionMatrix.counts[8]
             ) / expectedCount;
     };
-    const classification = expectedPrepared.compiled.task.kind !== 'regression';
     if (!validateTaskSide(evaluation.train, expectedTrainCount)
-        || !validateTaskSide(evaluation.test, expectedTestCount)
-        || (classification && (
-            snapshot.trainMetrics.accuracy === undefined
-            || snapshot.testMetrics.accuracy === undefined
-        ))
-        || (!classification && (
-            snapshot.trainMetrics.accuracy !== undefined
-            || snapshot.testMetrics.accuracy !== undefined
-        ))) {
+        || !validateTaskSide(evaluation.test, expectedTestCount)) {
         throw new Error('direct V2 result task metrics do not match the prepared task');
     }
-    if (Object.prototype.hasOwnProperty.call(snapshot, 'historyPoint')) {
-        throw new Error('direct V2 result cannot contain legacy historyPoint');
-    }
-    const finiteScalars = [
-        snapshot.trainLoss,
-        snapshot.testLoss,
-        snapshot.trainMetrics.loss,
-        snapshot.testMetrics.loss,
-        snapshot.trainMetrics.accuracy,
-        snapshot.testMetrics.accuracy,
-    ];
     if (!Number.isSafeInteger(snapshot.step)
         || snapshot.step < 0
         || !Number.isSafeInteger(snapshot.epoch)
         || snapshot.epoch < 0
         || snapshot.gridSize !== GRID_SIZE
-        || snapshot.trainLoss !== snapshot.trainMetrics.loss
-        || snapshot.testLoss !== snapshot.testMetrics.loss
-        || (snapshot.trainMetrics.accuracy !== undefined
-            && (snapshot.trainMetrics.accuracy < 0 || snapshot.trainMetrics.accuracy > 1))
-        || (snapshot.testMetrics.accuracy !== undefined
-            && (snapshot.testMetrics.accuracy < 0 || snapshot.testMetrics.accuracy > 1))
-        || (snapshot.testMetricsStale !== undefined
-            && typeof snapshot.testMetricsStale !== 'boolean')
-        || finiteScalars.some((value) => value !== undefined && !Number.isFinite(value))) {
+    ) {
         throw new Error('direct V2 result contains invalid snapshot scalars');
     }
 
@@ -764,44 +722,11 @@ function buildStrictV2FramePatch(
     return patch;
 }
 
-function strictSnapshotForReactState(result: WorkerExperimentResultV2): NetworkSnapshot {
-    const { snapshot } = result;
-    const evaluation = result.evidence.latestEvaluation;
-    if (evaluation === undefined) throw new Error('direct V2 snapshot requires current evaluation');
-    const {
-        activationHistograms: _activationHistograms,
-        multiclassBoundary: _multiclassBoundary,
-        neuronGrids: _neuronGrids,
-        layerStats: _layerStats,
-        historyPoint: _historyPoint,
-        ...rest
-    } = snapshot;
-    return {
-        ...rest,
-        trainLoss: evaluation.train.values.dataLoss,
-        testLoss: evaluation.test.values.dataLoss,
-        testMetricsStale: false,
-        weights: [],
-        biases: [],
-        outputGrid: [],
-        trainMetrics: {
-            loss: evaluation.train.values.dataLoss,
-            accuracy: evaluation.train.values.accuracy,
-        },
-        testMetrics: {
-            loss: evaluation.test.values.dataLoss,
-            accuracy: evaluation.test.values.accuracy,
-        },
-    };
-}
-
 function applyFreshV2SnapshotToStore(
     ts: TrainingStore,
-    result: WorkerExperimentResultV2,
+    _result: WorkerExperimentResultV2,
     frameVersions: FrameVersions,
 ): void {
-    ts.setSnapshot(strictSnapshotForReactState(result));
-    ts.setTestMetricsStale(false);
     ts.setFrameVersions(frameVersions);
 }
 
@@ -812,57 +737,6 @@ const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
     liveCheckpointId: null,
     restoredCheckpointId: null,
 };
-
-function applyArenaSnapshotToStore(snapshot: ArenaScalarSnapshot | WorkerArenaSnapshotMessage): void {
-    const summaries = snapshot.summaries.map((summary) => ({ ...summary }));
-    updateFrameBuffer({ arenaSummaries: summaries });
-    const ts = useTrainingStore.getState();
-    ts.setFrameVersions(getFrameVersions());
-    ts.setArenaSummaries(summaries);
-}
-
-function createStreamSnapshot(
-    msg: WorkerSnapshotMessage,
-    previousSnapshot: NetworkSnapshot | null,
-): NetworkSnapshot {
-    const strict = msg.protocolVersion === 2;
-    return {
-        step: msg.scalars.step,
-        epoch: msg.scalars.epoch,
-        trainLoss: msg.scalars.trainLoss,
-        testLoss: msg.scalars.testLoss,
-        trainMetrics: {
-            loss: msg.scalars.trainLoss,
-            accuracy: msg.scalars.trainAccuracy,
-        },
-        testMetrics: {
-            loss: msg.scalars.testLoss,
-            accuracy: msg.scalars.testAccuracy,
-            ...(strict ? {} : {
-                confusionMatrix: msg.confusionMatrix ?? (
-                    msg.scalars.testMetricsStale === false
-                        ? undefined
-                        : previousSnapshot?.testMetrics.confusionMatrix
-                ),
-            }),
-        },
-        weights: strict ? [] : previousSnapshot?.weights ?? [],
-        biases: strict ? [] : previousSnapshot?.biases ?? [],
-        outputGrid: strict
-            ? []
-            : msg.outputGrid !== undefined && msg.outputGrid.length === 0
-                ? []
-                : previousSnapshot?.outputGrid ?? [],
-        gridSize: msg.scalars.gridSize,
-        neuronGrids: strict
-            ? undefined
-            : msg.neuronGrids !== undefined && msg.neuronGrids.length === 0
-                ? undefined
-                : previousSnapshot?.neuronGrids,
-        layerStats: strict ? undefined : previousSnapshot?.layerStats,
-        ...(msg.historyPoint === undefined ? {} : { historyPoint: msg.historyPoint }),
-    };
-}
 
 export function useTraining(): TrainingHook {
     // All refs first (stable hook order)
@@ -890,7 +764,9 @@ export function useTraining(): TrainingHook {
     const restoreBarrierRef = useRef<Promise<void> | null>(null);
 
     // Config selectors (from playground store — stable, rarely changes)
-    const prepared = usePlaygroundStore((s) => s.prepared);
+    const prepared = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared : null
+    ));
     const demand = usePlaygroundStore((s) => s.demand);
     const webgpuGrid = usePlaygroundStore((s) => s.featuresUI.webgpuGrid);
 
@@ -966,7 +842,7 @@ export function useTraining(): TrainingHook {
         });
         mutationPausePromiseRef.current = promise;
         try {
-            postStreamCommand({ type: 'stopTraining' });
+            postStreamCommand({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         } catch (error) {
             mutationPausePromiseRef.current = null;
             mutationPauseResolveRef.current = null;
@@ -1015,7 +891,7 @@ export function useTraining(): TrainingHook {
         ts.setTrainPoints([]);
         ts.setTestPoints([]);
         ts.markTrainedRecipe(
-            projectPreparedExperiment(owner),
+            owner.document.recipe,
             source,
             owner.identities.recipeFingerprint,
         );
@@ -1055,17 +931,18 @@ export function useTraining(): TrainingHook {
         publishCommittedV2Run(result, requestedPrepared, 'initialize');
         if (activeRequestIdRef.current !== request.requestId) return false;
         pendingPreparationRequestIdRef.current = null;
-        if (usePlaygroundStore.getState().prepared !== requestedPrepared) return false;
+        if (currentPreparedExperiment() !== requestedPrepared) return false;
         const ts = useTrainingStore.getState();
 
         // Hydration does not own generation identity. A failure below reports
         // a runtime error, but never rolls the committed run back to stale UI.
-        const trainPts = await api.getTrainPoints();
+        const trainPts = await api.getTrainPointsV2();
         if (!mountedRef.current || activeRequestIdRef.current !== request.requestId) return false;
-        const testPts = await api.getTestPoints();
+        const testPts = await api.getTestPointsV2();
         if (!mountedRef.current || activeRequestIdRef.current !== request.requestId) return false;
         const latestState = usePlaygroundStore.getState();
-        if (latestState.prepared !== requestedPrepared) return false;
+        if (latestState.access.status !== 'ready'
+            || latestState.access.prepared !== requestedPrepared) return false;
 
         // Send initial demand
         await api.updateDemand(latestState.demand);
@@ -1082,7 +959,7 @@ export function useTraining(): TrainingHook {
         }
 
         if (!mountedRef.current || activeRequestIdRef.current !== request.requestId) return false;
-        if (usePlaygroundStore.getState().prepared !== requestedPrepared) return false;
+        if (currentPreparedExperiment() !== requestedPrepared) return false;
         ts.setTrainPoints(trainPts);
         ts.setTestPoints(testPts);
         initializedRef.current = true;
@@ -1110,7 +987,7 @@ export function useTraining(): TrainingHook {
         stepsPerFrameRef.current = stepsPerFrame;
         // If currently playing, update the worker's speed
         if (isPlayingRef.current) {
-            postStreamCommand({ type: 'updateSpeed', stepsPerFrame });
+            postStreamCommand({ type: 'updateSpeed', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame });
         }
     }, [stepsPerFrame]);
 
@@ -1150,18 +1027,10 @@ export function useTraining(): TrainingHook {
                 reportWorkerError(error.message, 'The training worker failed.');
             } else if (msg.type === 'snapshot') {
                 try {
-                    const checkpointTimeline = msg.protocolVersion === WORKER_PROTOCOL_VERSION
-                        ? parseCheckpointTimelineV2(msg.checkpointTimeline)
-                        : msg.checkpointTimeline === undefined
-                            ? undefined
-                            : parseCheckpointTimelineV2(msg.checkpointTimeline);
-                    const snapshot = createStreamSnapshot(msg, ts.snapshot);
+                    const checkpointTimeline = parseCheckpointTimelineV2(msg.checkpointTimeline);
                     const frameVersions = getFrameVersions();
-                    ts.applyStreamedSnapshot({
-                        snapshot,
-                        frameVersion: frameVersions.frameVersion,
+                    ts.applyStreamedFrame({
                         frameVersions,
-                        testMetricsStale: msg.scalars.testMetricsStale === true,
                         checkpointTimeline,
                     });
                 } catch (error) {
@@ -1193,8 +1062,6 @@ export function useTraining(): TrainingHook {
                 }
             } else if (msg.type === 'error') {
                 reportWorkerError(msg.message, 'The training worker failed.');
-            } else if (msg.type === 'arenaSnapshot') {
-                applyArenaSnapshotToStore(msg);
             }
         });
 
@@ -1273,7 +1140,8 @@ export function useTraining(): TrainingHook {
                     || activeRequestIdRef.current !== request.requestId) return;
                 pendingPreparationRequestIdRef.current = null;
                 const committed = usePlaygroundStore.getState();
-                if (committed.prepared !== prepared) return;
+                if (committed.access.status !== 'ready'
+                    || committed.access.prepared !== prepared) return;
             } catch (error) {
                 if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
                 if (pendingPreparationRequestIdRef.current === request.requestId) {
@@ -1297,19 +1165,20 @@ export function useTraining(): TrainingHook {
                 auxiliaryError = error;
             }
             try {
-                trainPts = await api.getTrainPoints();
+                trainPts = await api.getTrainPointsV2();
             } catch (error) {
                 auxiliaryError = error;
             }
             if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
             try {
-                testPts = await api.getTestPoints();
+                testPts = await api.getTestPointsV2();
             } catch (error) {
                 auxiliaryError ??= error;
             }
             if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
             const latest = usePlaygroundStore.getState();
-            if (latest.prepared !== prepared) return;
+            if (latest.access.status !== 'ready'
+                || latest.access.prepared !== prepared) return;
             try {
                 await api.updateDemand(latest.demand);
             } catch (error) {
@@ -1350,7 +1219,7 @@ export function useTraining(): TrainingHook {
     useEffect(() => {
         if (!initializedRef.current) return;
         if (isPlayingRef.current) {
-            postStreamCommand({ type: 'updateDemand', demand });
+            postStreamCommand({ type: 'updateDemand', protocolVersion: WORKER_PROTOCOL_VERSION, demand });
             return;
         }
         void getWorkerApi().updateDemand(demand).catch((error: unknown) => {
@@ -1387,7 +1256,11 @@ export function useTraining(): TrainingHook {
             ts.clearPauseReason();
             ts.setStatus('running');
             startRenderLoop();
-            postStreamCommand({ type: 'startTraining', stepsPerFrame: stepsPerFrameRef.current });
+            postStreamCommand({
+                type: 'startTraining',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+                stepsPerFrame: stepsPerFrameRef.current,
+            });
         };
 
         if (!initializedRef.current) {
@@ -1468,8 +1341,6 @@ export function useTraining(): TrainingHook {
                 );
             updateFrameBuffer(framePatch, { requireArtifactProvenance: true });
             const frameVersions = getFrameVersions();
-            ts.setSnapshot(strictSnapshotForReactState(result));
-            ts.setTestMetricsStale(false);
             ts.setFrameVersions(frameVersions);
             if (preparedEvidence !== null) ts.commitEvidenceAppend(preparedEvidence);
             ts.setCheckpointTimeline(parseCheckpointTimelineV2(result.checkpointTimeline));
@@ -1504,15 +1375,15 @@ export function useTraining(): TrainingHook {
             if (!mountedRef.current) return;
             publishCommittedV2Run(result, resetPrepared, 'reset');
             if (!isCurrentConfigSync(seq)) return;
-            if (usePlaygroundStore.getState().prepared !== resetPrepared) return;
+            if (currentPreparedExperiment() !== resetPrepared) return;
             const ts = useTrainingStore.getState();
 
             // Auxiliary reset hydration cannot roll generation identity back.
-            const trainPts = await api.getTrainPoints();
+            const trainPts = await api.getTrainPointsV2();
             if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
-            const testPts = await api.getTestPoints();
+            const testPts = await api.getTestPointsV2();
             if (!mountedRef.current || !isCurrentConfigSync(seq)) return;
-            if (usePlaygroundStore.getState().prepared !== resetPrepared) return;
+            if (currentPreparedExperiment() !== resetPrepared) return;
             ts.setTrainPoints(trainPts);
             ts.setTestPoints(testPts);
             initializedRef.current = true;
@@ -1564,7 +1435,7 @@ export function useTraining(): TrainingHook {
                 requestId,
                 checkpointId: id,
             });
-            const currentPrepared = usePlaygroundStore.getState().prepared;
+            const currentPrepared = currentPreparedExperiment();
             if (!mountedRef.current
                 || configSyncPendingRef.current
                 || currentPrepared?.identities.recipeFingerprint
@@ -1596,12 +1467,10 @@ export function useTraining(): TrainingHook {
             ts.commitEvidenceReplacement(evidenceReplacement);
             updateFrameBuffer(framePatch, { requireArtifactProvenance: true });
             const frameVersions = getFrameVersions();
-            ts.setSnapshot(strictSnapshotForReactState(result));
-            ts.setTestMetricsStale(false);
             ts.setFrameVersions(frameVersions);
             ts.setCheckpointTimeline(timeline);
             ts.markTrainedRecipe(
-                projectPreparedExperiment(restoredPrepared),
+                restoredPrepared.document.recipe,
                 'restore',
                 restoredPrepared.identities.recipeFingerprint,
             );
@@ -1618,39 +1487,6 @@ export function useTraining(): TrainingHook {
             releaseRestore();
         }
     }, [initializeWorker, pauseForMutation, reportWorkerError]);
-
-    const initializeArena = useCallback(async (modelA: LiveArenaModelInput, modelB: LiveArenaModelInput) => {
-        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
-            return;
-        }
-        if (isPlayingRef.current) {
-            pause();
-        }
-        try {
-            if (!initializedRef.current) {
-                await initializeWorker();
-            }
-            const snapshot = await getWorkerApi().initializeArena({ modelA, modelB });
-            applyArenaSnapshotToStore(snapshot as ArenaScalarSnapshot);
-        } catch (error) {
-            reportWorkerError(error, 'Failed to initialize live arena.');
-        }
-    }, [initializeWorker, pause, reportWorkerError]);
-
-    const stepArena = useCallback(async (iterations: number = 1) => {
-        if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {
-            return;
-        }
-        try {
-            if (!initializedRef.current) {
-                await initializeWorker();
-            }
-            const snapshot = await getWorkerApi().stepArena(iterations);
-            applyArenaSnapshotToStore(snapshot as ArenaScalarSnapshot);
-        } catch (error) {
-            reportWorkerError(error, 'Failed to step live arena.');
-        }
-    }, [initializeWorker, reportWorkerError]);
 
     // Cleanup on unmount
     useEffect(() => {
@@ -1679,7 +1515,6 @@ export function useTraining(): TrainingHook {
             const frameVersions = getFrameVersions();
             useTrainingStore.setState({
                 status: 'idle',
-                snapshot: null,
                 frameVersion: frameVersions.frameVersion,
                 outputGridVersion: frameVersions.outputGridVersion,
                 neuronGridsVersion: frameVersions.neuronGridsVersion,
@@ -1688,8 +1523,6 @@ export function useTraining(): TrainingHook {
                 confusionMatrixVersion: frameVersions.confusionMatrixVersion,
                 activationHistogramsVersion: frameVersions.activationHistogramsVersion,
                 multiclassBoundaryVersion: frameVersions.multiclassBoundaryVersion,
-                arenaSummariesVersion: frameVersions.arenaSummariesVersion,
-                arenaSummaries: null,
                 trainPoints: [],
                 testPoints: [],
                 dataConfigLoading: false,
@@ -1702,9 +1535,8 @@ export function useTraining(): TrainingHook {
                 configErrorSource: null,
                 workerError: null,
                 pauseReason: null,
-                testMetricsStale: false,
                 checkpointTimeline: EMPTY_CHECKPOINT_TIMELINE,
-                trainedRecipeConfig: null,
+                trainedRecipe: null,
                 trainedRecipeFingerprint: null,
                 trainedRecipeRecordedAt: null,
                 trainedRecipeSource: null,
@@ -1712,5 +1544,5 @@ export function useTraining(): TrainingHook {
         };
     }, []);
 
-    return { play, pause, step, reset, restoreCheckpoint, initializeArena, stepArena };
+    return { play, pause, step, reset, restoreCheckpoint };
 }

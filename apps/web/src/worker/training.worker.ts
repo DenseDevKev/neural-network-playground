@@ -1,7 +1,7 @@
 // ── Training Web Worker ──
 // Owns the engine instance, runs training off the main thread.
 // Hybrid communication:
-//   - Comlink RPC for commands (initialize, updateConfig, reset, step, etc.)
+//   - Comlink RPC for strict version-2 experiment commands
 //   - MessagePort commands for high-frequency streamed snapshots during training
 
 import * as Comlink from 'comlink';
@@ -10,15 +10,11 @@ import {
     NonFiniteNumericalError,
     PRNG,
     buildGridInputs,
-    generateDataset,
     generateDatasetV2,
     getDatasetContract,
     getActiveFeatures,
     transformPoint,
     transformDataset,
-    countActiveFeatures,
-    isLossCompatible,
-    describeLossIncompatibility,
     detectWebGPU,
     WebGPUGridPredictor,
     exceedsGpuShape,
@@ -26,18 +22,9 @@ import {
 } from '@nn-playground/engine';
 import type {
     NetworkConfig,
-    TrainingConfig,
-    DataConfig,
-    FeatureFlags,
     NetworkSnapshot,
     DataPoint,
-    HistoryPoint,
-    Metrics,
-    PredictionTrace,
     ActivationHistogramResult,
-    NetworkCheckpoint,
-    BackpropExplanation,
-    LossLandscapeProbe,
     LossLandscapeProbeOptions,
     CompiledExperimentConfig,
     CompiledTaskContract,
@@ -52,7 +39,6 @@ import {
     isMainToWorkerCommand,
     normalizeVisualizationDemand,
     structuralEqual,
-    normalizeAppConfig,
     parseWorkerEvidenceMessageV2,
     parseWorkerProtocolErrorMessageV2,
     parseCaptureRunArtifactRequestV2,
@@ -70,13 +56,9 @@ import type {
     VisualizationDemand,
     WorkerSnapshotMessage,
     WorkerStatusMessage,
-    WorkerErrorMessage,
     WorkerSharedBuffersMessage,
     CheckpointTimeline,
     CheckpointSummary,
-    ArenaScalarSnapshot,
-    ArenaSide,
-    ArenaModelSummary,
     DatasetRevision,
     EvaluationValues,
     ForcedEvaluationTriggerV2,
@@ -114,13 +96,9 @@ import {
     type StopConditionState,
 } from './stopConditions.ts';
 import {
-    createMiniBatchScratch,
-    fillMiniBatchScratch,
     getTrainingStepsForTick,
     normalizeTrainingSpeed,
-    type MiniBatchScratch,
 } from './trainingLoop.ts';
-import { projectPreparedExperiment } from '../store/legacyProjection.ts';
 import {
     EvaluationRuntime,
     TerminalDivergenceError,
@@ -137,7 +115,7 @@ import {
 } from './experimentTransaction.ts';
 
 interface WorkerState {
-    /** Canonical V2 preparation. Null means the worker is on the legacy path. */
+    /** Canonical V2 preparation. Null means the worker is not initialized. */
     prepared: PreparedExperimentDocumentV2 | null;
     /** Exact compiled contract associated with `prepared`. */
     compiled: CompiledExperimentConfig | null;
@@ -153,9 +131,6 @@ interface WorkerState {
     v2NetworkRef: { value: Network } | null;
     network: Network | null;
     networkConfig: NetworkConfig | null;
-    trainingConfig: TrainingConfig | null;
-    dataConfig: DataConfig | null;
-    features: FeatureFlags | null;
     activeFeatures: FeatureSpec[];
     trainInputs: number[][];
     trainTargets: number[][];
@@ -166,41 +141,20 @@ interface WorkerState {
     gridInputs: number[][];
     epoch: number;
     running: boolean;
-    rafId: number | null;
     /** Shuffled index array — re-shuffled at the start of each epoch. */
     shuffledIndices: number[];
     /** Authoritative start offset of the next strict V2 batch. */
     batchStart: number;
-    /** Reusable mini-batch views, filled with sample references each step. */
-    batchScratch: MiniBatchScratch | null;
     /** Separate PRNG for epoch shuffling, independent from network weights. */
     shufflePrng: PRNG | null;
     /** What visual data the UI currently needs. */
     demand: VisualizationDemand;
-    /** Counter for test-eval frequency gating. */
-    snapshotsSinceLastTestEval: number;
-    /** Counter for train-eval frequency gating. Between full evals we report
-     *  the EMA of per-step batch loss instead. */
-    snapshotsSinceLastTrainEval: number;
     /** Counter for grid-rebuild frequency gating. */
     snapshotsSinceLastGrid: number;
     /** Counter for activation histogram frequency gating. */
     snapshotsSinceLastActivationHistogram: number;
-    /** Cached last test metrics to reuse when skipping test evaluation. */
-    lastTestMetrics: { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null;
-    /** Cached last train metrics (full-dataset evaluation). Between
-     *  intervals we overlay a running EMA of batch loss on top of the cached
-     *  accuracy to give the UI a responsive-looking curve. */
-    lastTrainMetrics: { loss: number; accuracy?: number } | null;
-    /** Exponential moving average of per-step batch loss, used between full
-     *  train-set evaluations. Initialized lazily to the first observed loss. */
-    lossEma: number | null;
-    /** EMA decay (0..1]. Lower = more responsive to recent batches. */
-    lossEmaAlpha: number;
-    /** True when the most recent snapshot reused cached test metrics instead of re-evaluating. */
-    testMetricsStale: boolean;
     /** Runtime-only bounded checkpoint ring buffer. Heavy model state stays in the worker. */
-    checkpoints: RuntimeCheckpoint[];
+    checkpoints: V2RuntimeCheckpoint[];
     nextCheckpointId: number;
     checkpointEvictedCount: number;
     restoredCheckpointId: number | null;
@@ -268,57 +222,10 @@ interface WorkerState {
     awaitingAck: boolean;
 }
 
-interface LegacyRuntimeCheckpoint {
-    kind: 'legacy';
-    summary: CheckpointSummary;
-    checkpoint: NetworkCheckpoint;
-    epoch: number;
-    shuffledIndices: number[];
-    lossEma: number | null;
-    lastTrainMetrics: WorkerState['lastTrainMetrics'];
-    lastTestMetrics: WorkerState['lastTestMetrics'];
-    snapshotsSinceLastTrainEval: number;
-    snapshotsSinceLastTestEval: number;
-    snapshotsSinceLastGrid: number;
-    snapshotsSinceLastActivationHistogram: number;
-}
-
 interface V2RuntimeCheckpoint {
     kind: 'v2';
     summary: CheckpointSummary;
     checkpoint: SessionCheckpointV2;
-}
-
-type RuntimeCheckpoint = LegacyRuntimeCheckpoint | V2RuntimeCheckpoint;
-
-interface ArenaModelInput {
-    label?: string;
-    network: NetworkConfig;
-    training: TrainingConfig;
-    data: DataConfig;
-    features: FeatureFlags;
-}
-
-interface InitializeArenaRequest {
-    modelA: ArenaModelInput;
-    modelB: ArenaModelInput;
-}
-
-interface ArenaSlot {
-    side: ArenaSide;
-    label: string;
-    network: Network;
-    trainingConfig: TrainingConfig;
-    dataConfig: DataConfig;
-    trainInputs: number[][];
-    trainTargets: number[][];
-    testInputs: number[][];
-    testTargets: number[][];
-    epoch: number;
-    shuffledIndices: number[];
-    shufflePrng: PRNG;
-    status: ArenaModelSummary['status'];
-    pauseReason: PauseReason | null;
 }
 
 export type PredictionTraceSampleSource = 'train' | 'test' | 'custom';
@@ -329,19 +236,6 @@ export interface PredictionTraceRequest {
     x?: number;
     y?: number;
     label?: number;
-}
-
-export interface PredictionTraceResponse {
-    runId: number;
-    step: number;
-    sample: {
-        source: PredictionTraceSampleSource;
-        index?: number;
-        x: number;
-        y: number;
-        label?: number;
-    };
-    trace: PredictionTrace;
 }
 
 export interface PredictionTraceResponseV2 {
@@ -359,13 +253,6 @@ export interface PredictionTraceResponseV2 {
     readonly trace: PredictionTraceV2;
 }
 
-export interface BackpropExplanationResponse {
-    runId: number;
-    step: number;
-    epoch: number;
-    explanation: BackpropExplanation;
-}
-
 export interface BackpropExplanationResponseV2 {
     readonly runId: number;
     readonly model: ModelRevision;
@@ -377,33 +264,6 @@ export interface BackpropExplanationResponseV2 {
         readonly populationCount: number;
     };
     readonly explanation: BackpropExplanationV2;
-}
-
-export interface SerializableLossLandscapeProbe {
-    gridSize: number;
-    sampleCount: number;
-    radius: number;
-    axisA: {
-        parameter: LossLandscapeProbe['axisA']['parameter'];
-        offsets: number[];
-    };
-    axisB: {
-        parameter: LossLandscapeProbe['axisB']['parameter'];
-        offsets: number[];
-    };
-    losses: number[];
-    centerLoss: number;
-    minLoss: number;
-    maxLoss: number;
-    best: LossLandscapeProbe['best'];
-    summary: string;
-}
-
-export interface LossLandscapeProbeResponse {
-    runId: number;
-    step: number;
-    epoch: number;
-    probe: SerializableLossLandscapeProbe;
 }
 
 export interface SerializableObjectiveLandscapeProbe {
@@ -446,6 +306,7 @@ function postSharedBuffersHandshake(): void {
     const views = state.sharedViews;
     const handshake: WorkerSharedBuffersMessage = {
         type: 'sharedBuffers',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
         runId: state.runId,
         control: views.controlSAB,
         outputGrid: views.outputGridSAB,
@@ -460,26 +321,11 @@ function postSharedBuffersHandshake(): void {
 }
 
 
-// Post an error message to the main thread via the stream port. If the port
-// isn't yet set (e.g. module-eval failure before setStreamPort), fall back to
-// console so the error at least appears in devtools.
-function postError(message: string): void {
-    const errMsg: WorkerErrorMessage = {
-        type: 'error',
-        runId: state.runId,
-        message,
-    };
-    if (state.streamPort) {
-        state.streamPort.postMessage(errMsg);
-    } else {
-        console.error('[worker]', message);
-    }
-}
-
 function postStatus(status: WorkerStatusMessage['status'], pauseReason?: PauseReason | null): void {
     if (!state.streamPort) return;
     const statusMsg: WorkerStatusMessage = {
         type: 'status',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
         runId: state.runId,
         status,
     };
@@ -489,98 +335,8 @@ function postStatus(status: WorkerStatusMessage['status'], pauseReason?: PauseRe
     state.streamPort.postMessage(statusMsg);
 }
 
-/** Validate config compatibility — throws on incompatible loss/activation. */
-function validateConfigs(network: NetworkConfig, training: TrainingConfig): void {
-    if (!isLossCompatible(training.lossType, network.outputActivation)) {
-        throw new Error(describeLossIncompatibility(training.lossType, network.outputActivation));
-    }
-}
-
 const WORKER_MULTICLASS_OUTPUT_SIZE = 3;
-
-function hasWorkerMulticlassContract(network: NetworkConfig, training: TrainingConfig): boolean {
-    return (
-        network.outputSize !== 1 ||
-        network.outputActivation === 'softmax' ||
-        training.lossType === 'categoricalCrossEntropy'
-    );
-}
-
-function isApprovedWorkerMulticlassConfig(
-    network: NetworkConfig,
-    training: TrainingConfig,
-    data: DataConfig,
-): boolean {
-    return (
-        data.dataset === 'three-class-clusters' &&
-        data.problemType === 'classification' &&
-        network.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE &&
-        network.outputActivation === 'softmax' &&
-        training.lossType === 'categoricalCrossEntropy'
-    );
-}
-
-function assertApprovedWorkerMulticlassConfig(
-    network: NetworkConfig,
-    training: TrainingConfig,
-    data: DataConfig,
-): void {
-    if (!hasWorkerMulticlassContract(network, training)) return;
-    if (isApprovedWorkerMulticlassConfig(network, training, data)) return;
-
-    throw new Error(
-        'Worker multiclass mode requires the approved three-class dataset, classification data, output size 3, softmax output activation, and categorical cross-entropy loss.',
-    );
-}
-
-function assertScalarLiveArenaConfig(network: NetworkConfig, training: TrainingConfig): void {
-    if (!hasWorkerMulticlassContract(network, training)) return;
-    throw new Error('Multiclass live arena is not enabled; live arena is currently scalar-only.');
-}
-
-function normalizeWorkerConfig(
-    networkConfig: NetworkConfig,
-    trainingConfig: TrainingConfig,
-    dataConfig: DataConfig,
-    features: FeatureFlags,
-): {
-    network: NetworkConfig;
-    training: TrainingConfig;
-    data: DataConfig;
-    features: FeatureFlags;
-} {
-    const isWorkerMulticlassRequest = hasWorkerMulticlassContract(networkConfig, trainingConfig);
-    const result = normalizeAppConfig({
-        network: networkConfig,
-        training: trainingConfig,
-        data: dataConfig,
-        features,
-        ui: { showTestData: false, discretizeOutput: false },
-    }, { allowMulticlass: isWorkerMulticlassRequest });
-
-    if (!result.config) {
-        throw new Error(result.error ?? 'Invalid playground configuration.');
-    }
-
-    if (isWorkerMulticlassRequest) {
-        assertApprovedWorkerMulticlassConfig(result.config.network, result.config.training, result.config.data);
-    }
-
-    const normalizedNetwork: NetworkConfig = result.config.network;
-    const normalizedTraining: TrainingConfig = result.config.training;
-
-    validateConfigs(normalizedNetwork, normalizedTraining);
-    return {
-        network: normalizedNetwork,
-        training: normalizedTraining,
-        data: result.config.data,
-        features: result.config.features,
-    };
-}
-
-// Structural equality has moved to @nn-playground/shared (`structuralEqual`).
-// Keeping a local alias avoids touching every call site below.
-const configsEqual = structuralEqual;
+const V2_LIVE_LOSS_EMA_ALPHA = 0.1;
 
 const WORKER_PERF_ENABLED = import.meta.env.DEV && import.meta.env.VITE_WORKER_PERF === '1';
 const ACTIVATION_HISTOGRAM_BIN_COUNT = 12;
@@ -623,9 +379,6 @@ const state: WorkerState = {
     v2NetworkRef: null,
     network: null,
     networkConfig: null,
-    trainingConfig: null,
-    dataConfig: null,
-    features: null,
     activeFeatures: [],
     trainInputs: [],
     trainTargets: [],
@@ -636,21 +389,12 @@ const state: WorkerState = {
     gridInputs: [],
     epoch: 0,
     running: false,
-    rafId: null,
     shuffledIndices: [],
     batchStart: 0,
-    batchScratch: null,
     shufflePrng: null,
     demand: { ...DEFAULT_DEMAND },
-    snapshotsSinceLastTestEval: 0,
-    snapshotsSinceLastTrainEval: 0,
     snapshotsSinceLastGrid: 0,
     snapshotsSinceLastActivationHistogram: 0,
-    lastTestMetrics: null,
-    lastTrainMetrics: null,
-    lossEma: null,
-    lossEmaAlpha: 0.1,
-    testMetricsStale: false,
     checkpoints: [],
     nextCheckpointId: 1,
     checkpointEvictedCount: 0,
@@ -681,26 +425,6 @@ const state: WorkerState = {
     awaitingAck: false,
 };
 
-const arenaState: {
-    slots: [ArenaSlot, ArenaSlot] | null;
-    runId: number;
-    snapshotId: number;
-} = {
-    slots: null,
-    runId: 0,
-    snapshotId: 0,
-};
-
-function cloneMetrics<T extends { loss: number; accuracy?: number; confusionMatrix?: { tp: number; tn: number; fp: number; fn: number } } | null>(metrics: T): T {
-    if (metrics === null) return null as T;
-    return {
-        ...metrics,
-        confusionMatrix: metrics.confusionMatrix
-            ? { ...metrics.confusionMatrix }
-            : undefined,
-    } as T;
-}
-
 function buildCheckpointTimeline(): CheckpointTimeline {
     const timeline = {
         checkpoints: state.checkpoints.map((entry) => ({ ...entry.summary })),
@@ -709,49 +433,7 @@ function buildCheckpointTimeline(): CheckpointTimeline {
         liveCheckpointId: state.checkpoints.at(-1)?.summary.id ?? null,
         restoredCheckpointId: state.restoredCheckpointId,
     };
-    return state.prepared ? parseCheckpointTimelineV2(timeline) : timeline;
-}
-
-function captureCheckpointFromSnapshot(snap: NetworkSnapshot): void {
-    if (!state.network) return;
-    const latest = state.checkpoints.at(-1);
-    if (latest && latest.summary.step === snap.step) return;
-    if (latest && snap.step - latest.summary.step < CHECKPOINT_STEP_INTERVAL) return;
-
-    const id = state.nextCheckpointId++;
-    const summary: CheckpointSummary = {
-        id,
-        step: snap.step,
-        epoch: snap.epoch,
-        trainLoss: snap.trainLoss,
-        testLoss: snap.testLoss,
-        trainAccuracy: snap.trainMetrics.accuracy,
-        testAccuracy: snap.testMetrics.accuracy,
-        label: `Step ${snap.step}`,
-    };
-
-    state.checkpoints.push({
-        kind: 'legacy',
-        summary,
-        checkpoint: state.network.createCheckpoint(),
-        epoch: state.epoch,
-        shuffledIndices: [...state.shuffledIndices],
-        lossEma: state.lossEma,
-        lastTrainMetrics: cloneMetrics(state.lastTrainMetrics),
-        lastTestMetrics: cloneMetrics(state.lastTestMetrics),
-        snapshotsSinceLastTrainEval: state.snapshotsSinceLastTrainEval,
-        snapshotsSinceLastTestEval: state.snapshotsSinceLastTestEval,
-        snapshotsSinceLastGrid: state.snapshotsSinceLastGrid,
-        snapshotsSinceLastActivationHistogram: state.snapshotsSinceLastActivationHistogram,
-    });
-
-    while (state.checkpoints.length > CHECKPOINT_MAX_COUNT) {
-        const evicted = state.checkpoints.shift();
-        state.checkpointEvictedCount++;
-        if (evicted && state.restoredCheckpointId === evicted.summary.id) {
-            state.restoredCheckpointId = null;
-        }
-    }
+    return parseCheckpointTimelineV2(timeline);
 }
 
 function resetCheckpoints(): void {
@@ -823,8 +505,8 @@ function prepareV2CheckpointEntry(evaluation: PairedEvaluation): V2RuntimeCheckp
         id,
         step: evaluation.model.step,
         epoch: evaluation.model.epoch,
-        trainLoss: evaluation.train.values.dataLoss,
-        testLoss: evaluation.test.values.dataLoss,
+        trainDataLoss: evaluation.train.values.dataLoss,
+        testDataLoss: evaluation.test.values.dataLoss,
         ...(evaluation.train.values.accuracy === undefined
             ? {}
             : { trainAccuracy: evaluation.train.values.accuracy }),
@@ -917,6 +599,11 @@ export function getV2CheckpointForTests(id: number): SessionCheckpointV2 {
     return structuredClone(entry.checkpoint);
 }
 
+/** Module-only checkpoint timeline seam for strict V2 runtime tests. */
+export function getV2CheckpointTimelineForTests(): CheckpointTimeline {
+    return buildCheckpointTimeline();
+}
+
 /** Narrow module-only corruption seam; checkpoint payload never enters the product RPC surface. */
 export function replaceV2CheckpointForTests(id: number, checkpoint: unknown): void {
     const entry = state.checkpoints.find((candidate) => candidate.summary.id === id);
@@ -927,7 +614,6 @@ export function replaceV2CheckpointForTests(id: number, checkpoint: unknown): vo
 interface V2RuntimeBuild {
     readonly prepared: PreparedExperimentDocumentV2;
     readonly compiled: CompiledExperimentConfig;
-    readonly projection: ReturnType<typeof projectPreparedExperiment>;
     readonly network: Network;
     readonly datasetRevision: DatasetRevision;
     readonly runtime: EvaluationRuntime;
@@ -947,7 +633,6 @@ interface V2RuntimeBuild {
     readonly shuffledIndices: number[];
     readonly batchStart: number;
     readonly shufflePrng: PRNG;
-    readonly batchScratch: MiniBatchScratch;
     readonly outputGridBuffer: Float32Array;
     readonly neuronGridsBuffer: Float32Array;
     readonly multiclassClassGridBuffer: Uint8Array | null;
@@ -1040,14 +725,6 @@ function beginV2Mutation(): number {
     }
     v2MutationSequence++;
     return v2MutationSequence;
-}
-
-function assertLegacyModelMutationAllowed(apiName: string): void {
-    if (state.prepared !== null) {
-        throw new Error(
-            `Legacy ${apiName} is unavailable while a V2 experiment is active; use the V2 worker API.`,
-        );
-    }
 }
 
 function requireV2Runtime(): {
@@ -1335,7 +1012,7 @@ function createEvaluationRuntimeForNetwork(args: EvaluationNetworkInputs & {
         generationId: args.generationId,
         dataset: args.dataset,
         objectiveKey: args.objectiveKey,
-        emaAlpha: state.lossEmaAlpha,
+        emaAlpha: V2_LIVE_LOSS_EMA_ALPHA,
         getCurrentModel: args.getCurrentModel,
         ...createEvaluationComputationForNetwork(args),
     });
@@ -1349,7 +1026,6 @@ function stageV2Runtime(
     v2AllocationCount++;
     const compiled = prepared.compiled;
     const split = generateDatasetV2({ ...compiled.data });
-    const projection = projectPreparedExperiment(prepared);
     const activeFeatures = getActiveFeatures(compiled.features);
     const trainInputs = transformDataset(split.train, activeFeatures);
     const trainTargets = encodeTargets(split.train, compiled.task.outputSize);
@@ -1411,7 +1087,6 @@ function stageV2Runtime(
     return {
         prepared,
         compiled,
-        projection,
         network,
         datasetRevision,
         runtime,
@@ -1431,7 +1106,6 @@ function stageV2Runtime(
         shuffledIndices,
         batchStart: 0,
         shufflePrng,
-        batchScratch: createMiniBatchScratch(compiled.training.batchSize),
         outputGridBuffer: new Float32Array(GRID_SIZE * GRID_SIZE),
         neuronGridsBuffer: new Float32Array(totalNeurons * GRID_SIZE * GRID_SIZE),
         multiclassClassGridBuffer: compiled.task.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE
@@ -1454,10 +1128,7 @@ function installStagedV2State(staged: V2RuntimeBuild, generationId: number): voi
     state.v2EpochRef = staged.epochRef;
     state.v2NetworkRef = staged.networkRef;
     state.network = staged.network;
-    state.networkConfig = { ...staged.projection.network };
-    state.trainingConfig = { ...staged.projection.training };
-    state.dataConfig = { ...staged.projection.data };
-    state.features = { ...staged.projection.features };
+    state.networkConfig = { ...staged.compiled.network };
     state.activeFeatures = staged.activeFeatures;
     state.trainInputs = staged.trainInputs;
     state.trainTargets = staged.trainTargets;
@@ -1470,7 +1141,6 @@ function installStagedV2State(staged: V2RuntimeBuild, generationId: number): voi
     state.shuffledIndices = staged.shuffledIndices;
     state.batchStart = staged.batchStart;
     state.shufflePrng = staged.shufflePrng;
-    state.batchScratch = staged.batchScratch;
     state.outputGridBuffer = staged.outputGridBuffer;
     state.neuronGridsBuffer = staged.neuronGridsBuffer;
     state.multiclassClassGridBuffer = staged.multiclassClassGridBuffer;
@@ -1482,18 +1152,12 @@ function installStagedV2State(staged: V2RuntimeBuild, generationId: number): voi
     state.trainLoopTimer = null;
     state.runId = generationId;
     state.snapshotId = 0;
-    state.snapshotsSinceLastTestEval = 0;
-    state.snapshotsSinceLastTrainEval = 0;
     // A fresh strict generation must return its initially demanded boundary
     // artifacts immediately; subsequent snapshots resume normal cadence.
     state.snapshotsSinceLastGrid = state.demand.gridInterval;
     state.snapshotsSinceLastActivationHistogram = state.demand.needActivationHistograms
         ? state.demand.activationHistogramInterval
         : 0;
-    state.lastTestMetrics = null;
-    state.lastTrainMetrics = null;
-    state.lossEma = null;
-    state.testMetricsStale = false;
     state.multiclassBoundaryFresh = false;
     state.gridStale = true;
     state.gridFreshFromGpu = false;
@@ -1557,280 +1221,21 @@ function commitV2Runtime(prepared: PreparedExperimentDocumentV2): WorkerExperime
     };
 }
 
-function buildArenaSlot(side: ArenaSide, input: ArenaModelInput): ArenaSlot {
-    assertScalarLiveArenaConfig(input.network, input.training);
-    const config = normalizeWorkerConfig(
-        input.network,
-        input.training,
-        input.data,
-        input.features,
-    );
-    const activeFeatures = getActiveFeatures(config.features);
-    const split = generateDataset(
-        config.data.dataset,
-        config.data.numSamples,
-        config.data.noise,
-        config.data.trainTestRatio,
-        config.data.seed,
-    );
-    const networkConfig = {
-        ...config.network,
-        inputSize: countActiveFeatures(config.features),
-    };
-    if (networkConfig.outputSize !== 1) {
-        throw new Error('Multiclass live arena is not enabled; live arena is currently scalar-only.');
-    }
-    const network = new Network(networkConfig, networkConfig.seed);
-    const trainInputs = transformDataset(split.train, activeFeatures);
-    const trainTargets = encodeTargets(split.train, networkConfig.outputSize);
-    const testInputs = transformDataset(split.test, activeFeatures);
-    const testTargets = encodeTargets(split.test, networkConfig.outputSize);
-    const shuffledIndices = Array.from({ length: trainInputs.length }, (_, index) => index);
-    const shufflePrng = new PRNG((config.data.seed ?? 42) + (side === 'A' ? 2234 : 3234));
-    if (shuffledIndices.length > 0) {
-        shufflePrng.shuffle(shuffledIndices);
-    }
-
-    return {
-        side,
-        label: input.label ?? `Model ${side}`,
-        network,
-        trainingConfig: config.training,
-        dataConfig: config.data,
-        trainInputs,
-        trainTargets,
-        testInputs,
-        testTargets,
-        epoch: 0,
-        shuffledIndices,
-        shufflePrng,
-        status: 'idle',
-        pauseReason: null,
-    };
-}
-
-function trainArenaSlot(slot: ArenaSlot): void {
-    const n = slot.trainInputs.length;
-    if (n === 0) return;
-
-    const batchSize = slot.trainingConfig.batchSize;
-    const stepBefore = slot.network.getStep();
-    const numBatches = Math.ceil(n / batchSize);
-    const batchSlot = stepBefore % numBatches;
-
-    if (batchSlot === 0 && stepBefore > 0) {
-        slot.shufflePrng.shuffle(slot.shuffledIndices);
-    }
-
-    const startIdx = batchSlot * batchSize;
-    const endIdx = Math.min(startIdx + batchSize, n);
-    if (startIdx === endIdx) return;
-
-    const batchLoss = slot.network.trainBatchIndexed(
-        slot.trainInputs,
-        slot.trainTargets,
-        slot.shuffledIndices,
-        startIdx,
-        endIdx,
-        slot.trainingConfig,
-    );
-    if (!Number.isFinite(batchLoss)) {
-        slot.status = 'paused';
-        slot.pauseReason = 'diverged';
-    }
-    if (batchSlot === numBatches - 1) {
-        slot.epoch++;
-    }
-}
-
-function buildArenaSummary(slot: ArenaSlot): ArenaModelSummary {
-    const lossType = slot.trainingConfig.lossType;
-    const problemType = slot.dataConfig.problemType;
-    const huberDelta = slot.trainingConfig.huberDelta;
-    const trainMetrics = slot.network.evaluate(
-        slot.trainInputs,
-        slot.trainTargets,
-        lossType,
-        problemType,
-        huberDelta,
-    );
-    const testMetrics = slot.network.evaluate(
-        slot.testInputs,
-        slot.testTargets,
-        lossType,
-        problemType,
-        huberDelta,
-    );
-
-    return {
-        side: slot.side,
-        label: slot.label,
-        status: slot.status,
-        pauseReason: slot.pauseReason,
-        step: slot.network.getStep(),
-        epoch: slot.epoch,
-        trainLoss: trainMetrics.loss,
-        testLoss: testMetrics.loss,
-        trainAccuracy: trainMetrics.accuracy,
-        testAccuracy: testMetrics.accuracy,
-    };
-}
-
-function buildArenaSnapshot(): ArenaScalarSnapshot {
-    if (!arenaState.slots) {
-        throw new Error('Arena is not initialized');
-    }
-    return {
-        runId: arenaState.runId,
-        snapshotId: arenaState.snapshotId++,
-        summaries: arenaState.slots.map(buildArenaSummary),
-    };
-}
-
-// Top-level error backstops — catch anything not handled by the per-function
-// try/catch blocks (e.g. errors thrown during module evaluation or in callbacks
-// we don't own). Both routes through postError so the main thread always sees
-// the failure.
+// Top-level error backstops keep every worker failure on the structured V2
+// error channel, including failures that happen before initialization.
 self.addEventListener('error', (event: ErrorEvent) => {
-    postError(`Unhandled worker error: ${event.message ?? String(event)}`);
+    postRuntimeErrorV2(
+        new Error(`Unhandled worker error: ${event.message ?? String(event)}`),
+        'runtime',
+    );
 });
 
 self.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
     const reason = event.reason instanceof Error ? event.reason.message : String(event.reason);
-    postError(`Unhandled worker rejection: ${reason}`);
+    postRuntimeErrorV2(new Error(`Unhandled worker rejection: ${reason}`), 'runtime');
 });
 
 
-
-function buildDataAndNetwork(): void {
-    if (!state.dataConfig || !state.features || !state.networkConfig || !state.trainingConfig) return;
-
-    // Entering through a legacy API intentionally leaves the strict V2 path.
-    state.prepared = null;
-    state.compiled = null;
-    state.datasetRevision = null;
-    state.evaluationRuntime = null;
-    state.metricHistory = null;
-    state.v2EpochRef = null;
-    state.v2NetworkRef = null;
-
-    state.activeFeatures = getActiveFeatures(state.features);
-    const inputSize = countActiveFeatures(state.features);
-
-    // Generate data
-    const split = generateDataset(
-        state.dataConfig.dataset,
-        state.dataConfig.numSamples,
-        state.dataConfig.noise,
-        state.dataConfig.trainTestRatio,
-        state.dataConfig.seed,
-    );
-
-    // Create network
-    const config: NetworkConfig = {
-        ...state.networkConfig,
-        inputSize,
-    };
-    state.networkConfig = config;
-
-    state.trainPoints = split.train;
-    state.testPoints = split.test;
-    state.trainInputs = transformDataset(split.train, state.activeFeatures);
-    state.trainTargets = encodeTargets(split.train, config.outputSize);
-    state.testInputs = transformDataset(split.test, state.activeFeatures);
-    state.testTargets = encodeTargets(split.test, config.outputSize);
-
-    // Build grid inputs. Multiclass snapshots intentionally skip the scalar
-    // boundary buffers until a dedicated visualization slice is approved.
-    state.gridInputs = buildGridInputs(GRID_SIZE, state.activeFeatures);
-
-    state.network = new Network(config, config.seed);
-
-    // Allocate buffers
-    state.outputGridBuffer = new Float32Array(GRID_SIZE * GRID_SIZE);
-    state.multiclassClassGridBuffer = config.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE
-        ? new Uint8Array(GRID_SIZE * GRID_SIZE)
-        : null;
-    state.multiclassConfidenceGridBuffer = config.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE
-        ? new Float32Array(GRID_SIZE * GRID_SIZE)
-        : null;
-    state.multiclassBoundaryFresh = false;
-    const totalNeurons = state.network.getTotalNeuronCount();
-    state.neuronGridsBuffer = new Float32Array(totalNeurons * GRID_SIZE * GRID_SIZE);
-    state.epoch = 0;
-    state.batchStart = 0;
-
-    // (Re-)allocate shared-memory transport. Always allocate fresh on shape
-    // change: SAB sizes must match the new neuron count, and trying to
-    // resize in place risks readers on the main thread indexing past the
-    // end with a stale count.
-    state.sharedViews = null;
-    if (canUseSharedBuffers()) {
-        try {
-            state.sharedViews = allocSharedSnapshotViews(GRID_SIZE, totalNeurons);
-        } catch (err) {
-            // Allocation can legitimately fail on memory-constrained hosts or
-            // if the SAB constructor is disabled at runtime. Fall back to the
-            // postMessage path silently; logs only to worker console.
-            console.warn('[worker] shared-snapshot alloc failed, falling back', err);
-            state.sharedViews = null;
-        }
-    }
-
-    // Cache the flattened grid inputs for the GPU path. Cheap to materialise
-    // at build time (run once per shape) and avoids per-snapshot rebuilds.
-    state.gridInputsFlat = flattenGridInputs(state.gridInputs);
-
-    // Dispose any prior GPU predictor — its bind groups and buffers were
-    // sized to the old shape and cannot be reused. The async (re-)alloc
-    // happens in `ensureGpuPredictor()`, which the snapshot path awaits.
-    if (state.gpuPredictor) {
-        try { state.gpuPredictor.dispose(); } catch { /* ignore */ }
-        state.gpuPredictor = null;
-    }
-
-    // Reset cadence gating + cached metrics + EMA.
-    state.snapshotsSinceLastTestEval = 0;
-    state.snapshotsSinceLastTrainEval = 0;
-    state.snapshotsSinceLastGrid = 0;
-    state.snapshotsSinceLastActivationHistogram = state.demand.needActivationHistograms
-        ? state.demand.activationHistogramInterval
-        : 0;
-    state.lastTestMetrics = null;
-    state.lastTrainMetrics = null;
-    state.lossEma = null;
-    state.gridStale = true;
-    state.gridFreshFromGpu = false;
-    state.testMetricsStale = false;
-    state.stopConditionState = createInitialStopConditionState();
-    state.confusionMatrixVersion++;
-    state.activationHistogramVersion++;
-    state.layerStatsGradientRevision = null;
-    resetCheckpoints();
-
-    // Increment run ID
-    state.runId++;
-    state.snapshotId = 0;
-
-    // New run — drop any stale back-pressure gate.
-    resetAck();
-
-    // Hand the newly-allocated SABs to the main thread (if the stream port
-    // is already connected). When the port arrives later, setStreamPort
-    // will re-emit this handshake.
-    postSharedBuffersHandshake();
-
-    // Initialise shuffle state — seed is offset from data seed to stay independent.
-    const n = state.trainInputs.length;
-    state.shuffledIndices = Array.from({ length: n }, (_, i) => i);
-    state.batchScratch = createMiniBatchScratch(state.trainingConfig!.batchSize);
-    state.shufflePrng = new PRNG((state.dataConfig!.seed ?? 42) + 1234);
-    // Shuffle once up front so the very first epoch is not in generator order
-    // (important for datasets whose generators emit class-sorted samples).
-    if (n > 0) {
-        state.shufflePrng.shuffle(state.shuffledIndices);
-    }
-}
 
 // ── GPU grid prediction (AS-4) ─────────────────────────────────────────────
 export const MAX_WEBGPU_NEURON_READBACK_BYTES = 256 * 1024;
@@ -2076,23 +1481,6 @@ async function runGpuGridIfDue(): Promise<void> {
 
 // ── Snapshot computation ──
 
-function assertFiniteV2SnapshotScalars(snapshot: NetworkSnapshot): void {
-    if (!state.prepared) return;
-    const candidates: Array<readonly [string, number | undefined]> = [
-        ['$.snapshot.trainLoss', snapshot.trainLoss],
-        ['$.snapshot.testLoss', snapshot.testLoss],
-        ['$.snapshot.trainMetrics.loss', snapshot.trainMetrics.loss],
-        ['$.snapshot.testMetrics.loss', snapshot.testMetrics.loss],
-        ['$.snapshot.trainMetrics.accuracy', snapshot.trainMetrics.accuracy],
-        ['$.snapshot.testMetrics.accuracy', snapshot.testMetrics.accuracy],
-    ];
-    for (const [path, value] of candidates) {
-        if (value !== undefined && !Number.isFinite(value)) {
-            throw new TerminalDivergenceError(path, value);
-        }
-    }
-}
-
 /**
  * @param opts.lightweight — when true, skips the deep-copy of weights/biases
  * into the snapshot. The streaming path transfers flat buffers separately
@@ -2100,81 +1488,23 @@ function assertFiniteV2SnapshotScalars(snapshot: NetworkSnapshot): void {
  */
 function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): NetworkSnapshot {
     workerPerfMark('perf:worker:snapshot:start');
-    if (!state.network || !state.trainingConfig || !state.dataConfig) {
-        throw new Error('Not initialized');
-    }
+    const { network, runtime } = requireV2Runtime();
+    const evaluation = runtime.latestEvaluation;
+    if (evaluation === undefined) throw new Error('V2 snapshot requires a paired evaluation');
 
     const { demand } = state;
-    const problemType = state.dataConfig.problemType;
-    const lossType = state.trainingConfig.lossType;
-    const huberDelta = state.trainingConfig.huberDelta;
-
-    // ── Train metrics (gated by trainEvalInterval) ───────────────────────────
-    // Between full dataset evaluations we overlay the running EMA of batch
-    // loss on top of the last accuracy reading. This keeps the loss line
-    // responsive without re-evaluating the entire training set every frame.
-    const shouldRunTrainEval =
-        state.snapshotsSinceLastTrainEval >= demand.trainEvalInterval ||
-        state.lastTrainMetrics === null;
-
-    let trainMetrics: Metrics;
-    if (shouldRunTrainEval) {
-        workerPerfMark('perf:worker:trainEval:start');
-        trainMetrics = state.network.evaluate(
-            state.trainInputs,
-            state.trainTargets,
-            lossType,
-            problemType,
-            huberDelta,
-        );
-        workerPerfMeasure('perf:worker:trainEval', 'perf:worker:trainEval:start');
-        state.lastTrainMetrics = { loss: trainMetrics.loss, accuracy: trainMetrics.accuracy };
-        // Re-align EMA to the just-measured true loss so the next cycle's
-        // EMA readings start from a known-good point.
-        state.lossEma = trainMetrics.loss;
-        state.snapshotsSinceLastTrainEval = 0;
-    } else {
-        // Fall back to EMA-over-cached accuracy. EMA already updated in trainOneStep.
-        const cachedTrain = state.lastTrainMetrics!;
-        const emaLoss = state.lossEma ?? cachedTrain.loss;
-        trainMetrics = {
-            loss: emaLoss,
-            accuracy: cachedTrain.accuracy,
-        };
-        state.snapshotsSinceLastTrainEval++;
-    }
-
-    // ── Test metrics (gated by testEvalInterval) ─────────────────────────────
-    const shouldRunTestEval =
-        state.snapshotsSinceLastTestEval >= demand.testEvalInterval ||
-        state.lastTestMetrics === null;
-
-    let testMetrics;
-    if (shouldRunTestEval) {
-        workerPerfMark('perf:worker:testEval:start');
-        testMetrics = state.network.evaluate(
-            state.testInputs,
-            state.testTargets,
-            lossType,
-            problemType,
-            huberDelta,
-        );
-        workerPerfMeasure('perf:worker:testEval', 'perf:worker:testEval:start');
-        state.lastTestMetrics = {
-            loss: testMetrics.loss,
-            accuracy: testMetrics.accuracy,
-            confusionMatrix: demand.needConfusionMatrix ? testMetrics.confusionMatrix : undefined,
-        };
-        if (demand.needConfusionMatrix && testMetrics.confusionMatrix) {
-            state.confusionMatrixVersion++;
-        }
-        state.snapshotsSinceLastTestEval = 0;
-        state.testMetricsStale = false;
-    } else {
-        testMetrics = state.lastTestMetrics!;
-        state.snapshotsSinceLastTestEval++;
-        state.testMetricsStale = true;
-    }
+    const trainMetrics = {
+        loss: evaluation.train.values.dataLoss,
+        ...(evaluation.train.values.accuracy === undefined
+            ? {}
+            : { accuracy: evaluation.train.values.accuracy }),
+    };
+    const testMetrics = {
+        loss: evaluation.test.values.dataLoss,
+        ...(evaluation.test.values.accuracy === undefined
+            ? {}
+            : { accuracy: evaluation.test.values.accuracy }),
+    };
 
     // ── Decision boundary grid (demand-gated AND cadence-gated) ──────────────
     // The grid is the single most expensive per-snapshot artifact. We only
@@ -2217,7 +1547,7 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         outputGrid = [];
     } else if (shouldRebuildGrid && demand.needNeuronGrids && state.outputGridBuffer && state.neuronGridsBuffer) {
         workerPerfMark('perf:worker:predictGridNeurons:start');
-        state.network.predictGridWithNeuronsInto(
+        network.predictGridWithNeuronsInto(
             state.gridInputs,
             state.outputGridBuffer,
             state.neuronGridsBuffer,
@@ -2229,7 +1559,7 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         state.gridStale = false;
     } else if (shouldRebuildGrid && demand.needDecisionBoundary && state.outputGridBuffer) {
         workerPerfMark('perf:worker:predictGrid:start');
-        state.network.predictGridInto(state.gridInputs, state.outputGridBuffer);
+        network.predictGridInto(state.gridInputs, state.outputGridBuffer);
         workerPerfMeasure('perf:worker:predictGrid', 'perf:worker:predictGrid:start');
         outputGrid = state.outputGridBuffer;
         state.snapshotsSinceLastGrid = 0;
@@ -2240,7 +1570,7 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         state.multiclassConfidenceGridBuffer
     ) {
         workerPerfMark('perf:worker:predictMulticlassBoundary:start');
-        state.network.predictMulticlassBoundaryInto(
+        network.predictMulticlassBoundaryInto(
             state.gridInputs,
             state.multiclassClassGridBuffer,
             state.multiclassConfidenceGridBuffer,
@@ -2267,8 +1597,8 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         outputGrid = [];
     }
 
-    const snap = state.network.getSnapshot(
-        state.network.getStep(),
+    const snap = network.getSnapshot(
+        network.getStep(),
         state.epoch,
         trainMetrics,
         testMetrics,
@@ -2276,12 +1606,6 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         GRID_SIZE,
         { includeParams: !opts.lightweight },
     );
-    if (state.prepared) {
-        delete snap.historyPoint;
-    }
-    // Direct RPC snapshots do not pass through WorkerSnapshotMessage.scalars,
-    // so keep their cadence metadata alongside the metrics themselves.
-    snap.testMetricsStale = state.testMetricsStale;
     // Streamed snapshots carry this through dedicated transferable fields.
     // Direct RPC snapshots need the same bounded payload so a paused manual
     // step can refresh the multiclass Boundary view.
@@ -2305,14 +1629,14 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
     if (demand.needLayerStats) {
         const populationCount = state.trainInputs.length;
         const sampleCount = Math.min(128, populationCount);
-        const statistics = state.network.computeLayerStatistics(state.trainInputs, 128);
+        const statistics = network.computeLayerStatistics(state.trainInputs, 128);
         if (statistics.sampleCount !== sampleCount
             || statistics.populationCount !== populationCount) {
             throw new Error(
                 'Layer statistics sample basis does not match the training population.',
             );
         }
-        if (statistics.revision !== state.network.getRevision()) {
+        if (statistics.revision !== network.getRevision()) {
             throw new Error('layer statistics revision must equal the current model revision');
         }
         snap.layerStats = statistics.layers;
@@ -2326,7 +1650,7 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         wantsActivationHistograms &&
         state.snapshotsSinceLastActivationHistogram >= demand.activationHistogramInterval;
     if (shouldComputeActivationHistograms) {
-        snap.activationHistograms = state.network.computeActivationHistograms(
+        snap.activationHistograms = network.computeActivationHistograms(
             state.trainInputs,
             {
                 binCount: ACTIVATION_HISTOGRAM_BIN_COUNT,
@@ -2338,37 +1662,28 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         state.snapshotsSinceLastActivationHistogram++;
     }
 
-    if (state.prepared) {
-        const pairedMatrix = state.demand.needConfusionMatrix
-            ? state.evaluationRuntime?.latestEvaluation?.test.values.confusionMatrix
-            : undefined;
-        snap.testMetrics.confusionMatrix = undefined;
-        snap.testMetrics.multiclassConfusionMatrix = undefined;
-        if (pairedMatrix !== undefined) {
-            if (isMulticlassConfusionMatrix(pairedMatrix)) {
-                snap.testMetrics.multiclassConfusionMatrix = pairedMatrix;
-            } else {
-                snap.testMetrics.confusionMatrix = pairedMatrix;
-            }
+    const pairedMatrix = demand.needConfusionMatrix
+        ? evaluation.test.values.confusionMatrix
+        : undefined;
+    snap.testMetrics.confusionMatrix = undefined;
+    snap.testMetrics.multiclassConfusionMatrix = undefined;
+    if (pairedMatrix !== undefined) {
+        if (isMulticlassConfusionMatrix(pairedMatrix)) {
+            snap.testMetrics.multiclassConfusionMatrix = pairedMatrix;
+        } else {
+            snap.testMetrics.confusionMatrix = pairedMatrix;
         }
     }
 
-    // Legacy checkpoint payloads cannot restore strict V2 provenance. Keep
-    // them disabled until the dedicated V2 checkpoint transaction lands.
-    assertFiniteV2SnapshotScalars(snap);
-    if (state.prepared) {
-        // Prove the display transport can represent every parameter before
-        // evidence/frame publication; Float64 values may overflow Float32.
-        state.network.getWeightsFlat();
-        state.network.getBiasesFlat();
-    }
-    if (!state.prepared) captureCheckpointFromSnapshot(snap);
+    // Prove the display transport can represent every parameter before
+    // evidence/frame publication; Float64 values may overflow Float32.
+    network.getWeightsFlat();
+    network.getBiasesFlat();
     workerPerfMeasure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
 }
 
 function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot {
-    if (!state.prepared) return computeSnapshotUnchecked(opts);
     return withEngineNumericalBoundary('$.snapshot.engine', () => computeSnapshotUnchecked(opts));
 }
 
@@ -2406,7 +1721,10 @@ function isMulticlassConfusionMatrix(
 function directSnapshotArtifactBundle(
     snapshot: NetworkSnapshot,
 ): Pick<WorkerExperimentResultV2, 'artifacts' | 'layerStatsGradientRevision'> {
-    if (!state.prepared || !state.datasetRevision) return {};
+    requireV2Runtime();
+    if (!state.datasetRevision) {
+        throw new Error('strict direct snapshot requires a dataset revision');
+    }
     const produced: {
         -readonly [Key in keyof WorkerArtifactProvenanceV2]: WorkerArtifactProvenanceV2[Key];
     } = {};
@@ -2479,7 +1797,7 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     // transferables / no per-frame reallocation on the worker side.
     //
     // Note: the Float32Array-or-array type union on snap.outputGrid comes
-    // from the legacy postMessage path. When SAB is active we always fed
+    // from the transferable postMessage path. When SAB is active we always fed
     // the Float32Array pre-alloc buffers into the network predictors, so
     // the `instanceof Float32Array` branches are the only ones that fire.
     const sharedViews = state.sharedViews;
@@ -2524,9 +1842,8 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         // still emit neuronGridLayout when neurons are fresh, so the UI can
         // rebuild subarray slicing keyed to the current neuron count.
     } else {
-        // Legacy postMessage-with-transferable path. Unchanged from before
-        // AS-3 — keeps the codebase green on non-isolated hosts (GH Pages,
-        // test runners).
+        // Transferable postMessage path keeps non-isolated hosts (GH Pages
+        // and test runners) fully functional without SharedArrayBuffer.
         if (snap.outputGrid && snap.outputGrid.length > 0) {
             if (snap.outputGrid instanceof Float32Array) {
                 outputGrid = snap.outputGrid;
@@ -2614,64 +1931,31 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         transferables.push(outputGrid.buffer, neuronGrids.buffer);
     }
 
-    if (state.prepared) {
-        const evaluation = state.evaluationRuntime?.latestEvaluation;
-        const matrix = state.demand.needConfusionMatrix
-            ? evaluation?.test.values.confusionMatrix
-            : undefined;
-        if (matrix !== undefined
-            && evaluation !== undefined
-            && evaluation.evaluationId !== state.lastPackedConfusionEvaluationId) {
-            state.lastPackedConfusionEvaluationId = evaluation.evaluationId;
-            confusionMatrixEvaluationId = evaluation.evaluationId;
-            confusionMatrixProvenance = artifactProvenanceAt(
-                evaluation.test.basis,
-                evaluation.model,
-            );
-            if (isMulticlassConfusionMatrix(matrix)) {
-                multiclassConfusionMatrix = matrix;
-                state.multiclassConfusionMatrixVersion++;
-                multiclassConfusionMatrixVersion = state.multiclassConfusionMatrixVersion;
-            } else {
-                confusionMatrix = matrix;
-                state.confusionMatrixVersion++;
-            }
-        }
-    } else {
-        confusionMatrix = state.testMetricsStale
-            ? undefined
-            : snap.testMetrics?.confusionMatrix;
-        if (
-            !state.testMetricsStale &&
-            state.demand.needConfusionMatrix &&
-            state.networkConfig &&
-            state.trainingConfig &&
-            state.dataConfig &&
-            isApprovedWorkerMulticlassConfig(
-                state.networkConfig,
-                state.trainingConfig,
-                state.dataConfig,
-            ) &&
-            snap.testMetrics?.multiclassConfusionMatrix
-        ) {
-            multiclassConfusionMatrix = snap.testMetrics.multiclassConfusionMatrix;
+    const evaluation = state.evaluationRuntime?.latestEvaluation;
+    const matrix = state.demand.needConfusionMatrix
+        ? evaluation?.test.values.confusionMatrix
+        : undefined;
+    if (matrix !== undefined
+        && evaluation !== undefined
+        && evaluation.evaluationId !== state.lastPackedConfusionEvaluationId) {
+        state.lastPackedConfusionEvaluationId = evaluation.evaluationId;
+        confusionMatrixEvaluationId = evaluation.evaluationId;
+        confusionMatrixProvenance = artifactProvenanceAt(
+            evaluation.test.basis,
+            evaluation.model,
+        );
+        if (isMulticlassConfusionMatrix(matrix)) {
+            multiclassConfusionMatrix = matrix;
             state.multiclassConfusionMatrixVersion++;
             multiclassConfusionMatrixVersion = state.multiclassConfusionMatrixVersion;
+        } else {
+            confusionMatrix = matrix;
+            state.confusionMatrixVersion++;
         }
     }
 
-    const historyPoint: HistoryPoint | undefined = state.prepared
-        ? undefined
-        : {
-            step: snap.step,
-            trainLoss: snap.trainLoss,
-            testLoss: snap.testLoss,
-            trainAccuracy: snap.trainMetrics?.accuracy,
-            testAccuracy: snap.testMetrics?.accuracy,
-        };
-
     let artifacts: WorkerArtifactProvenanceV2 | undefined;
-    if (state.prepared && state.datasetRevision) {
+    if (state.datasetRevision) {
         const produced: WorkerArtifactProvenanceV2 = {
             ...((outputGrid !== undefined && outputGrid.length > 0)
                 || multiclassClassGrid !== undefined
@@ -2728,12 +2012,7 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         scalars: {
             step: snap.step,
             epoch: snap.epoch,
-            trainLoss: snap.trainLoss,
-            testLoss: snap.testLoss,
-            trainAccuracy: snap.trainMetrics?.accuracy,
-            testAccuracy: snap.testMetrics?.accuracy,
             gridSize,
-            testMetricsStale: state.testMetricsStale,
         },
         outputGrid,
         neuronGrids,
@@ -2760,84 +2039,21 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         multiclassConfusionMatrixVersion,
         sharedSeq,
     } as const;
-    let message: WorkerSnapshotMessage;
-    if (state.prepared) {
-        if (!state.network) throw new Error('strict snapshot requires an active network');
-        message = {
-            ...messageBase,
-            protocolVersion: WORKER_PROTOCOL_VERSION,
-            model: {
-                generationId: state.runId,
-                revision: state.network.getRevision(),
-                step: state.network.getStep(),
-                epoch: state.epoch,
-            },
-            checkpointTimeline: buildCheckpointTimeline(),
-        };
-    } else {
-        message = {
-            ...messageBase,
-            ...(historyPoint === undefined ? {} : { historyPoint }),
-            checkpointTimeline: buildCheckpointTimeline(),
-        };
-    }
+    if (!state.network) throw new Error('strict snapshot requires an active network');
+    const message: WorkerSnapshotMessage = {
+        ...messageBase,
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+        model: {
+            generationId: state.runId,
+            revision: state.network.getRevision(),
+            step: state.network.getStep(),
+            epoch: state.epoch,
+        },
+        checkpointTimeline: buildCheckpointTimeline(),
+    };
 
     workerPerfMeasure('perf:worker:snapshotPack', 'perf:worker:snapshotPack:start');
     return { message, transferables };
-}
-
-// ── Training ──
-
-function trainOneStep(): void {
-    if (!state.network || !state.trainingConfig) return;
-
-    const bs = state.trainingConfig.batchSize;
-    const n = state.trainInputs.length;
-    if (n === 0) return;
-
-    // Single source of truth for the step counter: the Network itself.
-    const stepBefore = state.network.getStep();
-    const numBatches = Math.ceil(n / bs);
-    const batchSlot = stepBefore % numBatches;
-
-    if (batchSlot === 0 && stepBefore > 0 && state.shufflePrng) {
-        state.shufflePrng.shuffle(state.shuffledIndices);
-    }
-
-    const startIdx = batchSlot * bs;
-    const endIdx = Math.min(startIdx + bs, n);
-    if (!state.batchScratch) {
-        state.batchScratch = createMiniBatchScratch(bs);
-    }
-    const batch = fillMiniBatchScratch(
-        state.batchScratch,
-        state.trainInputs,
-        state.trainTargets,
-        state.shuffledIndices,
-        startIdx,
-        endIdx,
-    );
-
-    if (batch.inputs.length > 0) {
-        beginV2Mutation();
-        const batchLoss = state.network.trainBatch(batch.inputs, batch.targets, state.trainingConfig);
-        // Feed the running EMA of batch loss. This is what the UI line
-        // actually follows between full-dataset evaluations.
-        if (Number.isFinite(batchLoss)) {
-            if (state.lossEma === null) state.lossEma = batchLoss;
-            else state.lossEma = state.lossEmaAlpha * batchLoss + (1 - state.lossEmaAlpha) * state.lossEma;
-        } else {
-            // Propagate non-finite loss into the EMA so the outer loop's
-            // divergence guard fires on the next snapshot.
-            state.lossEma = batchLoss;
-        }
-        // The network has moved; any cached grid is out of date.
-        state.gridStale = true;
-    }
-
-    if (batchSlot === numBatches - 1) {
-        state.epoch++;
-    }
 }
 
 function forceAndPublishEvaluationV2(
@@ -2907,7 +2123,6 @@ function trainOneStepV2(): {
         dataLoss: result.objective.dataLoss,
     });
     history.appendLiveSignal(liveSignal);
-    state.lossEma = liveSignal.dataLoss;
     state.gridStale = true;
 
     const checkpointDue = result.step > 0
@@ -2939,13 +2154,9 @@ function scheduleNextTick(): void {
     state.trainLoopTimer = setTimeout(() => {
         state.trainLoopTimer = null;
         if (!state.running) return;
-        if (state.prepared) {
-            // Timer-driven V2 batches share the same scientific mutation lane
-            // as RPC capture/reset/step so an awaited capture stays exclusive.
-            void enqueueV2Mutation(() => trainTick());
-        } else {
-            trainTick();
-        }
+        // Timer-driven V2 batches share the same scientific mutation lane as
+        // RPC capture/reset/step so an awaited capture stays exclusive.
+        void enqueueV2Mutation(() => trainTick());
     }, TRAIN_TICK_INTERVAL_MS);
 }
 
@@ -2979,7 +2190,7 @@ async function produceAndPostSnapshot(identity: SnapshotPipelineIdentity): Promi
     }
 
     let stopEvaluation: ReturnType<typeof evaluateStopConditions> | null = null;
-    if (state.running && state.prepared && state.network && state.evaluationRuntime) {
+    if (state.running && state.network && state.evaluationRuntime) {
         const model = {
             generationId: state.runId,
             revision: state.network.getRevision(),
@@ -3028,16 +2239,12 @@ async function produceAndPostSnapshot(identity: SnapshotPipelineIdentity): Promi
     }
 
     const snap = computeSnapshot({ lightweight: true });
-    const legacyDiverged = state.running
-        && state.prepared === null
-        && (!Number.isFinite(snap.trainLoss) || !Number.isFinite(snap.testLoss));
-
     const { message, transferables } = withEngineNumericalBoundary(
         '$.snapshot.parameters',
         () => packSnapshotMessage(snap),
     );
     state.streamPort.postMessage(message, transferables);
-    const pauseReason = stopEvaluation?.pauseReason ?? (legacyDiverged ? 'diverged' : null);
+    const pauseReason = stopEvaluation?.pauseReason ?? null;
     if (pauseReason) {
         stopInternalLoop();
         postStatus('paused', pauseReason);
@@ -3056,8 +2263,7 @@ function trainTick(): void {
             // commands can be processed before more work starts.
             const burst = getTrainingStepsForTick(state.stepsPerFrame);
             for (let i = 0; i < burst && state.running; i++) {
-                if (state.prepared) trainOneStepV2();
-                else trainOneStep();
+                trainOneStepV2();
             }
 
             workerPerfMeasure('perf:worker:trainStep', 'perf:worker:trainStep:start');
@@ -3079,16 +2285,10 @@ function trainTick(): void {
                         || state.network !== pipelineIdentity.network) return;
                     state.awaitingAck = false;
                     stopInternalLoop();
-                    if (state.prepared) {
-                        if (err instanceof TerminalDivergenceError) {
-                            postTerminalDivergenceForPhase(err, 'evaluation');
-                        } else {
-                            postRuntimeErrorV2(err, 'runtime');
-                        }
-                    }
-                    else {
-                        const msg = err instanceof Error ? err.message : String(err);
-                        postError(`Training snapshot error: ${msg}`);
+                    if (err instanceof TerminalDivergenceError) {
+                        postTerminalDivergenceForPhase(err, 'evaluation');
+                    } else {
+                        postRuntimeErrorV2(err, 'runtime');
                     }
                 });
             }
@@ -3099,14 +2299,11 @@ function trainTick(): void {
         }
     } catch (err) {
         stopInternalLoop();
-        if (state.prepared) {
-            if (err instanceof TerminalDivergenceError) {
-                postTerminalDivergenceForPhase(err, 'training');
-            } else {
-                postRuntimeErrorV2(err, 'training');
-            }
+        if (err instanceof TerminalDivergenceError) {
+            postTerminalDivergenceForPhase(err, 'training');
+        } else {
+            postRuntimeErrorV2(err, 'training');
         }
-        else postError(`Training error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
 
@@ -3131,16 +2328,11 @@ function stopInternalLoop(): void {
 function applyDemand(demand: VisualizationDemand): void {
     const confusionDemandChanged = state.demand.needConfusionMatrix !== demand.needConfusionMatrix;
     state.demand = { ...demand };
-    // Force the next snapshot to re-evaluate everything so the UI
-    // immediately reflects the new demand mix, rather than waiting
-    // up to one interval for the counters to roll over.
-    state.snapshotsSinceLastTestEval = demand.testEvalInterval;
-    state.snapshotsSinceLastTrainEval = demand.trainEvalInterval;
+    // Force the next snapshot to refresh its requested visualization payloads.
     state.snapshotsSinceLastGrid = demand.gridInterval;
     state.snapshotsSinceLastActivationHistogram = demand.activationHistogramInterval;
     state.gridStale = true;
     if (confusionDemandChanged) {
-        state.lastTestMetrics = null;
         state.lastPackedConfusionEvaluationId = null;
         state.confusionMatrixVersion++;
     }
@@ -3149,36 +2341,28 @@ function applyDemand(demand: VisualizationDemand): void {
 // ── MessageChannel command handler ──
 
 function reportStreamCommandFailure(error: unknown): void {
-    if (state.prepared) {
-        if (error instanceof TerminalDivergenceError) {
-            postTerminalDivergenceV2(error, 'evaluation', 'evaluation-failed');
-        } else {
-            postRuntimeErrorV2(error, 'runtime');
-        }
+    if (error instanceof TerminalDivergenceError) {
+        postTerminalDivergenceV2(error, 'evaluation', 'evaluation-failed');
     } else {
-        postError(`Command handling error: ${error instanceof Error ? error.message : String(error)}`);
+        postRuntimeErrorV2(error, 'runtime');
     }
 }
 
 function runOrQueueV2StreamMutation(operation: () => void): void {
-    if (state.prepared) {
-        void enqueueV2Mutation(operation).catch(reportStreamCommandFailure);
-    } else {
-        operation();
-    }
+    void enqueueV2Mutation(operation).catch(reportStreamCommandFailure);
 }
 
 function handleStreamCommand(cmd: unknown): void {
     try {
         if (!isMainToWorkerCommand(cmd)) {
             const error = new TypeError('Unknown worker stream command');
-            if (state.prepared) postRuntimeErrorV2(error, 'protocol', 'malformed-request');
-            else postError(error.message + ': ' + JSON.stringify(cmd));
+            postRuntimeErrorV2(error, 'protocol', 'malformed-request');
             return;
         }
         switch (cmd.type) {
             case 'startTraining':
                 runOrQueueV2StreamMutation(() => {
+                    requireV2Runtime();
                     state.stepsPerFrame = normalizeTrainingSpeed(cmd.stepsPerFrame);
                     startInternalLoop();
                     postStatus('running');
@@ -3188,9 +2372,10 @@ function handleStreamCommand(cmd: unknown): void {
             case 'stopTraining':
             {
                 runOrQueueV2StreamMutation(() => {
+                    requireV2Runtime();
                     const wasRunning = state.running;
                     stopInternalLoop();
-                    if (state.prepared && wasRunning) forceAndPublishEvaluationV2('pause');
+                    if (wasRunning) forceAndPublishEvaluationV2('pause');
                     postStatus('paused');
                 });
                 break;
@@ -3258,34 +2443,21 @@ function resolveTraceSample(request: PredictionTraceRequest): {
 }
 
 function resolveBackpropPreviewBatch(): { inputs: number[][]; targets: number[][] } {
-    if (!state.network || !state.trainingConfig) {
-        throw new Error('Not initialized');
-    }
+    const { compiled } = requireV2Runtime();
 
     const n = state.trainInputs.length;
     if (n === 0) {
         throw new Error('No training samples are available for backprop preview');
     }
 
-    const batchSize = state.trainingConfig.batchSize;
-    let startIdx: number;
-    if (state.prepared) {
-        if (state.batchStart === n) {
-            throw new Error('Backprop preview is unavailable at the epoch shuffle boundary; step once before previewing.');
-        }
-        if (state.batchStart < 0 || state.batchStart >= n) {
-            throw new RangeError('Backprop preview batch cursor is outside the training population');
-        }
-        startIdx = state.batchStart;
-    } else {
-        const stepBefore = state.network.getStep();
-        const numBatches = Math.ceil(n / batchSize);
-        const batchSlot = stepBefore % numBatches;
-        if (batchSlot === 0 && stepBefore > 0) {
-            throw new Error('Backprop preview is unavailable at the epoch shuffle boundary; step once before previewing.');
-        }
-        startIdx = batchSlot * batchSize;
+    const batchSize = compiled.training.batchSize;
+    if (state.batchStart === n) {
+        throw new Error('Backprop preview is unavailable at the epoch shuffle boundary; step once before previewing.');
     }
+    if (state.batchStart < 0 || state.batchStart >= n) {
+        throw new RangeError('Backprop preview batch cursor is outside the training population');
+    }
+    const startIdx = state.batchStart;
     const endIdx = Math.min(startIdx + batchSize, n);
     const inputs: number[][] = [];
     const targets: number[][] = [];
@@ -3642,16 +2814,10 @@ function prepareRestoreCandidate(
 }
 
 function resetRestoreDerivedState(network: Network): void {
-    state.lossEma = null;
-    state.lastTrainMetrics = null;
-    state.lastTestMetrics = null;
-    state.snapshotsSinceLastTrainEval = 0;
-    state.snapshotsSinceLastTestEval = 0;
     state.snapshotsSinceLastGrid = state.demand.gridInterval;
     state.snapshotsSinceLastActivationHistogram = state.demand.needActivationHistograms
         ? state.demand.activationHistogramInterval
         : 0;
-    state.testMetricsStale = false;
     state.stopConditionState = createInitialStopConditionState();
     state.gridStale = true;
     state.gridFreshFromGpu = false;
@@ -3801,160 +2967,13 @@ export const workerApi = {
         return requireV2Runtime().history.read();
     },
 
-    initialize(
-        networkConfig: NetworkConfig,
-        trainingConfig: TrainingConfig,
-        dataConfig: DataConfig,
-        features: FeatureFlags,
-    ): { snapshot: NetworkSnapshot; runId: number } {
-        const config = normalizeWorkerConfig(networkConfig, trainingConfig, dataConfig, features);
-        beginV2Mutation();
-        stopInternalLoop();
-        state.networkConfig = { ...config.network };
-        state.trainingConfig = { ...config.training };
-        state.dataConfig = { ...config.data };
-        state.features = { ...config.features };
-        state.running = false;
-        buildDataAndNetwork();
-        return { snapshot: computeSnapshot(), runId: state.runId };
-    },
-
-    updateConfig(
-        networkConfig: NetworkConfig,
-        trainingConfig: TrainingConfig,
-        dataConfig: DataConfig,
-        features: FeatureFlags,
-        rebuild: boolean,
-    ): { snapshot: NetworkSnapshot; runId: number } {
-        assertLegacyModelMutationAllowed('updateConfig');
-        const config = normalizeWorkerConfig(networkConfig, trainingConfig, dataConfig, features);
-        beginV2Mutation();
-        const needsRebuild = rebuild ||
-            !configsEqual(state.networkConfig, config.network) ||
-            !configsEqual(state.dataConfig, config.data) ||
-            !configsEqual(state.features, config.features);
-
-        state.networkConfig = { ...config.network };
-        state.trainingConfig = { ...config.training };
-        state.dataConfig = { ...config.data };
-        state.features = { ...config.features };
-
-        if (needsRebuild) {
-            stopInternalLoop();
-            state.running = false;
-            buildDataAndNetwork();
-        }
-
-        return { snapshot: computeSnapshot(), runId: state.runId };
-    },
-
-    step(iterations: number = 1): NetworkSnapshot {
-        assertLegacyModelMutationAllowed('step');
-        for (let i = 0; i < iterations; i++) {
-            trainOneStep();
-        }
-        return computeSnapshot();
-    },
-
-    initializeArena(request: InitializeArenaRequest): ArenaScalarSnapshot {
-        arenaState.slots = [
-            buildArenaSlot('A', request.modelA),
-            buildArenaSlot('B', request.modelB),
-        ];
-        arenaState.runId++;
-        arenaState.snapshotId = 0;
-        return buildArenaSnapshot();
-    },
-
-    stepArena(iterations: number = 1): ArenaScalarSnapshot {
-        if (!Number.isInteger(iterations) || iterations < 1) {
-            throw new RangeError('arena iterations must be a positive integer');
-        }
-        if (!arenaState.slots) {
-            throw new Error('Arena is not initialized');
-        }
-
-        for (let i = 0; i < iterations; i++) {
-            for (const slot of arenaState.slots) {
-                if (slot.status !== 'paused') {
-                    slot.status = 'running';
-                    trainArenaSlot(slot);
-                }
-            }
-        }
-
-        for (const slot of arenaState.slots) {
-            if (slot.status === 'running') {
-                slot.status = 'paused';
-                slot.pauseReason = null;
-            }
-        }
-
-        return buildArenaSnapshot();
-    },
-
-    reset(): { snapshot: NetworkSnapshot; runId: number } {
-        assertLegacyModelMutationAllowed('reset');
-        beginV2Mutation();
-        stopInternalLoop();
-        buildDataAndNetwork();
-        return { snapshot: computeSnapshot(), runId: state.runId };
-    },
-
-    getCheckpointTimeline(): CheckpointTimeline {
-        return buildCheckpointTimeline();
-    },
-
-    restoreCheckpoint(id: number): { snapshot: NetworkSnapshot; runId: number; timeline: CheckpointTimeline } {
-        assertLegacyModelMutationAllowed('restoreCheckpoint');
-        if (!Number.isInteger(id) || id <= 0) {
-            throw new RangeError('checkpoint id must be a positive integer');
-        }
-        if (!state.network) {
-            throw new Error('Not initialized');
-        }
-
-        const entry = state.checkpoints.find((candidate) => candidate.summary.id === id);
-        if (!entry) {
-            throw new RangeError('checkpoint not found');
-        }
-        if (entry.kind !== 'legacy') {
-            throw new RangeError('legacy checkpoint payload is unavailable');
-        }
-
-        beginV2Mutation();
-        stopInternalLoop();
-        state.network.restoreCheckpoint(entry.checkpoint);
-        state.epoch = entry.epoch;
-        state.shuffledIndices = [...entry.shuffledIndices];
-        state.lossEma = entry.lossEma;
-        state.lastTrainMetrics = cloneMetrics(entry.lastTrainMetrics);
-        state.lastTestMetrics = cloneMetrics(entry.lastTestMetrics);
-        state.snapshotsSinceLastTrainEval = entry.snapshotsSinceLastTrainEval;
-        state.snapshotsSinceLastTestEval = entry.snapshotsSinceLastTestEval;
-        state.snapshotsSinceLastGrid = entry.snapshotsSinceLastGrid;
-        state.snapshotsSinceLastActivationHistogram = entry.snapshotsSinceLastActivationHistogram;
-        state.restoredCheckpointId = id;
-        state.gridStale = true;
-        state.gridFreshFromGpu = false;
-        state.confusionMatrixVersion++;
-        state.activationHistogramVersion++;
-        state.layerStatsGradientRevision = null;
-        resetAck();
-
-        const snapshot = computeSnapshot();
-        return {
-            snapshot,
-            runId: state.runId,
-            timeline: buildCheckpointTimeline(),
-        };
-    },
-
-    getTrainPoints(): DataPoint[] {
+    getTrainPointsV2(): DataPoint[] {
+        requireV2Runtime();
         return state.trainPoints;
     },
 
-    getTestPoints(): DataPoint[] {
+    getTestPointsV2(): DataPoint[] {
+        requireV2Runtime();
         return state.testPoints;
     },
 

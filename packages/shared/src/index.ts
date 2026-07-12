@@ -9,7 +9,7 @@ export {
     COLOR_DARK,
 } from './colorScale.js';
 export type { RGB } from './colorScale.js';
-export { PREPARED_PRESETS, PRESETS, resolveRecipe } from './presets.js';
+export { PREPARED_PRESETS, resolveRecipe } from './presets.js';
 export { generatePseudocode, generateNumPy, generateTFJS } from './codeExport.js';
 export {
     MAX_EXPERIMENT_JSON_BYTES,
@@ -17,12 +17,6 @@ export {
     decodeExperimentUrl,
     encodeExperimentJson,
     encodeExperimentUrl,
-    encodeUrlState,
-    decodeUrlState,
-    exportConfigJson,
-    importConfigJson,
-    validateImportedConfig,
-    normalizeAppConfig,
 } from './serialization.js';
 export {
     SESSION_CHECKPOINT_MAX_TYPED_ARRAY_BYTES,
@@ -91,12 +85,9 @@ export {
     isPauseReason,
 } from './types.js';
 export type {
-    UIConfig,
-    AppConfig,
     RecipeId,
     RecipeRef,
     RecipeCatalogEntry,
-    Preset,
     TrainingStatus,
     PauseReason,
     CommonRecipeV2,
@@ -151,14 +142,10 @@ export type {
     VisualizationDemand,
     ActivationHistogramLayout,
     MulticlassBoundaryLayout,
-    ArenaSide,
-    ArenaModelSummary,
-    ArenaScalarSnapshot,
     CheckpointSummary,
     CheckpointTimeline,
     SnapshotScalars,
     WorkerSnapshotMessage,
-    WorkerArenaSnapshotMessage,
     WorkerStatusMessage,
     WorkerErrorMessage,
     WorkerSharedBuffersMessage,

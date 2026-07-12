@@ -93,7 +93,9 @@ const OPTIMIZER_EXPLANATIONS = {
 } as const;
 
 export const HyperparamPanel = memo(function HyperparamPanel() {
-    const prepared = usePlaygroundStore((state) => state.prepared);
+    const prepared = usePlaygroundStore((state) => state.access.status === 'ready'
+        ? state.access.prepared
+        : null);
     const isLoading = useTrainingStore((state) => state.trainingConfigLoading);
     const configError = useTrainingStore((state) => state.configError);
     const configErrorSource = useTrainingStore((state) => state.configErrorSource);

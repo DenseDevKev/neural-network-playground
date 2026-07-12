@@ -77,6 +77,17 @@ export const InspectionPanel = memo(function InspectionPanel() {
     const latestEvaluation = useTrainingStore((state) => state.latestEvaluation);
     const currentModel = latestLiveSignal?.model ?? latestEvaluation?.model ?? null;
 
+    useEffect(() => {
+        if (!traceResult) return;
+        if (currentModel
+            && currentModel.generationId === traceResult.model.generationId
+            && currentModel.revision === traceResult.model.revision) {
+            return;
+        }
+        setTraceResult(null);
+        setTraceError('Trace cleared because the active model changed.');
+    }, [currentModel, traceResult]);
+
     const responseIsCurrent = (responseModel: PredictionTraceResponseV2['model']) => {
         const state = useTrainingStore.getState();
         const active = state.latestLiveSignal?.model ?? state.latestEvaluation?.model ?? null;
@@ -438,10 +449,15 @@ export const InspectionPanel = memo(function InspectionPanel() {
                 </button>
                 <div aria-live="polite">
                     {traceError ? (
-                        <div className="inspection__empty">Trace failed: {traceError}</div>
+                        <div className="inspection__empty">
+                            {traceError.startsWith('Trace cleared') ? traceError : `Trace failed: ${traceError}`}
+                        </div>
                     ) : null}
                     {traceResult ? (
                         <div className="inspection__layers">
+                            <p className="inspection__basis">
+                                {`Trace from ${traceResult.sample.source === 'train' ? 'training' : 'test'} sample ${traceResult.sample.index.toLocaleString()} · model step ${traceResult.model.step.toLocaleString()} · revision ${traceResult.model.revision.toLocaleString()}`}
+                            </p>
                             <div className="inspection__stat-row">
                                 <span className="inspection__stat-label">Output</span>
                                 <span className="inspection__stat-value">

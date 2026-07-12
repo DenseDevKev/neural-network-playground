@@ -121,7 +121,9 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const removeRecord = useExperimentMemoryStore((state) => state.removeRecord);
     const dismissLegacyNotice = useExperimentMemoryStore((state) => state.dismissLegacyNotice);
     const deleteLegacyStorage = useExperimentMemoryStore((state) => state.deleteLegacyStorage);
-    const prepared = usePlaygroundStore((state) => state.prepared);
+    const prepared = usePlaygroundStore((state) => state.access.status === 'ready'
+        ? state.access.prepared
+        : null);
     const replaceDocument = usePlaygroundStore((state) => state.replaceDocument);
     const [saving, setSaving] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);

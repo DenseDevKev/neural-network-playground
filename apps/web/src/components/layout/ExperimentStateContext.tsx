@@ -1,5 +1,4 @@
 import { memo, type ReactNode, useMemo } from 'react';
-import type { AppConfig } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type EvidenceViewId } from '../../store/useLayoutStore.ts';
@@ -15,16 +14,6 @@ interface EvidenceMeta {
     title: EvidenceViewName;
     interactionModel: string;
     explanation: string;
-}
-
-function useCurrentRecipeConfig(): AppConfig {
-    const data = usePlaygroundStore((s) => s.data);
-    const features = usePlaygroundStore((s) => s.features);
-    const network = usePlaygroundStore((s) => s.network);
-    const training = usePlaygroundStore((s) => s.training);
-    const ui = usePlaygroundStore((s) => s.ui);
-
-    return useMemo(() => ({ data, features, network, training, ui }), [data, features, network, training, ui]);
 }
 
 function sourceText(source: ConfigChangeSource): string {
@@ -82,11 +71,15 @@ function getEvidenceMeta(view: string): EvidenceMeta {
 }
 
 function useExperimentContext() {
-    const currentConfig = useCurrentRecipeConfig();
-    const trainedRecipeConfig = useTrainingStore((s) => s.trainedRecipeConfig);
+    const currentRecipe = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.document.recipe : null
+    ));
+    const trainedRecipe = useTrainingStore((s) => s.trainedRecipe);
     const trainedRecipeFingerprint = useTrainingStore((s) => s.trainedRecipeFingerprint);
     const currentRecipeFingerprint = usePlaygroundStore(
-        (s) => s.prepared?.identities.recipeFingerprint ?? null,
+        (s) => s.access.status === 'ready'
+            ? s.access.prepared.identities.recipeFingerprint
+            : null,
     );
     const status = useTrainingStore((s) => s.status);
     const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
@@ -100,15 +93,15 @@ function useExperimentContext() {
     );
     const drift = useMemo(
         () => getRecipeDrift(
-            trainedRecipeConfig,
-            currentConfig,
+            trainedRecipe,
+            currentRecipe,
             3,
             trainedRecipeFingerprint === null ? undefined : {
                 trainedRecipeFingerprint,
                 currentRecipeFingerprint,
             },
         ),
-        [trainedRecipeConfig, currentConfig, trainedRecipeFingerprint, currentRecipeFingerprint],
+        [trainedRecipe, currentRecipe, trainedRecipeFingerprint, currentRecipeFingerprint],
     );
 
     return {

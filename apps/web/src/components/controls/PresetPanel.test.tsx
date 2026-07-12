@@ -14,12 +14,13 @@ import {
     type PlaygroundStore,
 } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 import { PresetPanel } from './PresetPanel';
 
 type ApplyResult = SchemaResult<PreparedExperimentDocumentV2>;
 
 function resetTrainingTransactionState() {
-    useTrainingStore.getState().resetHistory();
+    useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
         status: 'idle',
         snapshot: null,
@@ -105,12 +106,12 @@ describe('PresetPanel', () => {
         await user.click(button);
 
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
-        expect(usePlaygroundStore.getState().prepared?.identities.recipeFingerprint)
+        expect(currentPreparedForTest()?.identities.recipeFingerprint)
             .toBe(target.prepared.identities.recipeFingerprint);
-        expect(usePlaygroundStore.getState().prepared?.document.view).toEqual({
+        expect(currentPreparedForTest()?.document.view).toEqual({
             showTestData: true,
             discretizeOutput: true,
         });
@@ -145,13 +146,13 @@ describe('PresetPanel', () => {
 
                 await waitFor(() => {
                     expect(
-                        usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey,
+                        currentPreparedForTest()?.identities.canonicalRecipeKey,
                         `${source.id}@${source.revision} -> ${target.id}@${target.revision}`,
                     ).toBe(target.prepared.identities.canonicalRecipeKey);
                 });
-                expect(usePlaygroundStore.getState().prepared?.identities.recipeFingerprint)
+                expect(currentPreparedForTest()?.identities.recipeFingerprint)
                     .toBe(target.prepared.identities.recipeFingerprint);
-                expect(usePlaygroundStore.getState().prepared?.document.view).toEqual({
+                expect(currentPreparedForTest()?.document.view).toEqual({
                     showTestData: true,
                     discretizeOutput: false,
                 });
@@ -253,7 +254,7 @@ describe('PresetPanel', () => {
         const user = userEvent.setup();
         const onReset = vi.fn();
         const onApplied = vi.fn();
-        const prior = usePlaygroundStore.getState().prepared!;
+        const prior = currentPreparedForTest()!;
         const target = resolveRecipe({ id: 'xor-hidden', revision: 1 })!;
         usePlaygroundStore.setState({
             applyRecipe: vi.fn(async () => ({
@@ -268,7 +269,7 @@ describe('PresetPanel', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent('Deliberate failure');
         expect(useTrainingStore.getState().configErrorSource).toBe('preset');
         expect(useTrainingStore.getState().configError).toContain('Deliberate failure');
-        expect(usePlaygroundStore.getState().prepared).toBe(prior);
+        expect(currentPreparedForTest()).toBe(prior);
         expect(onReset).not.toHaveBeenCalled();
         expect(onApplied).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: `Apply preset: ${target.title}` }))
@@ -286,7 +287,7 @@ describe('PresetPanel', () => {
         render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
         await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
         let newerEdit!: Awaited<ReturnType<PlaygroundStore['editRecipe']>>;
@@ -305,7 +306,7 @@ describe('PresetPanel', () => {
 
         expect(onReset).not.toHaveBeenCalled();
         expect(onApplied).not.toHaveBeenCalled();
-        expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+        expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
             .not.toBe(target.prepared.identities.canonicalRecipeKey);
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: 'network',
@@ -325,7 +326,7 @@ describe('PresetPanel', () => {
         render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
         await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
         await act(async () => {
@@ -418,7 +419,7 @@ describe('PresetPanel', () => {
         const { unmount } = render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
         await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
         unmount();

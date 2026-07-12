@@ -8,6 +8,7 @@ import {
 import { FeaturesPanel } from './FeaturesPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 
 async function restoreDocument(document: ExperimentDocumentV2 = DEFAULT_EXPERIMENT_DOCUMENT) {
     const restored = await usePlaygroundStore.getState().replaceDocument(document);
@@ -15,11 +16,11 @@ async function restoreDocument(document: ExperimentDocumentV2 = DEFAULT_EXPERIME
 }
 
 function featureIds() {
-    return usePlaygroundStore.getState().prepared!.document.recipe.inputs.featureIds;
+    return currentPreparedForTest()!.document.recipe.inputs.featureIds;
 }
 
 function resetTrainingTransaction() {
-    useTrainingStore.getState().resetHistory();
+    useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
         status: 'idle',
         snapshot: null,
@@ -63,14 +64,14 @@ describe('FeaturesPanel V2 recipe controls', () => {
 
     it('publishes exact canonical feature order and a new recipe fingerprint', async () => {
         const user = userEvent.setup();
-        const beforeFingerprint = usePlaygroundStore.getState().prepared!.identities.recipeFingerprint;
+        const beforeFingerprint = currentPreparedForTest()!.identities.recipeFingerprint;
         render(<FeaturesPanel />);
 
         await user.click(screen.getByRole('button', { name: 'X₂²' }));
         await user.click(screen.getByRole('button', { name: 'X₁²' }));
 
         await waitFor(() => expect(featureIds()).toEqual(['x', 'y', 'xSquared', 'ySquared']));
-        expect(usePlaygroundStore.getState().prepared!.identities.recipeFingerprint)
+        expect(currentPreparedForTest()!.identities.recipeFingerprint)
             .not.toBe(beforeFingerprint);
         expect(useTrainingStore.getState().pendingConfigSource).toBe('features');
     });
@@ -96,7 +97,7 @@ describe('FeaturesPanel V2 recipe controls', () => {
             },
         };
         await restoreDocument(document);
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
         const user = userEvent.setup();
         render(<FeaturesPanel />);
 
@@ -104,7 +105,7 @@ describe('FeaturesPanel V2 recipe controls', () => {
         expect(finalFeature).toBeDisabled();
         await user.click(finalFeature);
 
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
         expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });

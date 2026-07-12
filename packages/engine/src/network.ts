@@ -13,7 +13,6 @@ import type {
     TrainingConfig,
     SerializedNetwork,
     NetworkSnapshot,
-    HistoryPoint,
     Metrics,
     LossType,
     LayerStats,
@@ -2459,26 +2458,15 @@ export class Network {
         options?: { includeParams?: boolean },
     ): NetworkSnapshot {
         const includeParams = options?.includeParams ?? true;
-        const historyPoint: HistoryPoint = {
-            step,
-            trainLoss: trainMetrics.loss,
-            testLoss: testMetrics.loss,
-            trainAccuracy: trainMetrics.accuracy,
-            testAccuracy: testMetrics.accuracy,
-        };
-
         return {
             step,
             epoch,
             weights: includeParams ? this.getWeights() : [],
             biases: includeParams ? this.getBiases() : [],
-            trainLoss: trainMetrics.loss,
-            testLoss: testMetrics.loss,
             trainMetrics,
             testMetrics,
             outputGrid,
             gridSize,
-            historyPoint,
         };
     }
 

@@ -75,8 +75,12 @@ export const CanvasContent = memo(function CanvasContent() {
 
 // ── Right-panel tab contents ──────────────────────────────────────────────
 export const BoundaryContent = memo(function BoundaryContent() {
-    const showTestData = usePlaygroundStore((s) => s.ui.showTestData);
-    const discretize   = usePlaygroundStore((s) => s.ui.discretizeOutput);
+    const showTestData = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.showTestData
+    ));
+    const discretize = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.discretizeOutput
+    ));
     const editView     = usePlaygroundStore((s) => s.editView);
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
@@ -183,8 +187,12 @@ export const HistoryContent = memo(function HistoryContent() {
 
 // ── Legacy MainArea (for direct-render tests and fallback contexts) ────────
 export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
-    const showTestData = usePlaygroundStore((s) => s.ui.showTestData);
-    const discretize   = usePlaygroundStore((s) => s.ui.discretizeOutput);
+    const showTestData = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.showTestData
+    ));
+    const discretize = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.discretizeOutput
+    ));
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
     const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');

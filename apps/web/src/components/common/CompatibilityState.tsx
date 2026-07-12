@@ -59,7 +59,8 @@ export function CompatibilityState({ access, onStartFresh }: CompatibilityStateP
                 <ul aria-label="Compatibility issues">
                     {access.issues.map((issue, index) => (
                         <li key={`${issue.path}-${issue.code}-${index}`}>
-                            <code>{issue.path}</code>: {issue.message}
+                            <span>Code <code>{issue.code}</code></span>{' · '}
+                            <span>Path <code>{issue.path}</code></span>: {issue.message}
                         </li>
                     ))}
                 </ul>

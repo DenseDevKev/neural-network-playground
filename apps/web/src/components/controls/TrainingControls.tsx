@@ -20,7 +20,9 @@ const RESTORE_GUARANTEE = 'Future shuffles may differ; this checkpoint guarantee
 
 export const TrainingControls = memo(function TrainingControls({ training }: Props) {
     const status = useTrainingStore((s) => s.status);
-    const snapshot = useTrainingStore((s) => s.snapshot);
+    const currentModel = useTrainingStore((s) => (
+        s.latestLiveSignal?.model ?? s.latestEvaluation?.model ?? null
+    ));
     const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
     const setStepsPerFrame = useTrainingStore((s) => s.setStepsPerFrame);
     const pauseReason = useTrainingStore((s) => s.pauseReason);
@@ -159,7 +161,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     <span className="training-bar__timeline-meta">
                         <strong>{selectedCheckpoint.label}</strong>
                         <span>
-                            train {selectedCheckpoint.trainLoss.toFixed(3)} / test {selectedCheckpoint.testLoss.toFixed(3)}
+                            train {selectedCheckpoint.trainDataLoss.toFixed(3)} / test {selectedCheckpoint.testDataLoss.toFixed(3)}
                         </span>
                     </span>
                     <Tooltip
@@ -202,10 +204,10 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         {lifecycle.statusText}
                     </span>
                 )}
-                {snapshot && (
+                {currentModel && (
                     <>
-                        <span>Step {snapshot.step.toLocaleString()}</span>
-                        <span>Epoch {snapshot.epoch}</span>
+                        <span>Step {currentModel.step.toLocaleString()}</span>
+                        <span>Epoch {currentModel.epoch}</span>
                     </>
                 )}
             </div>

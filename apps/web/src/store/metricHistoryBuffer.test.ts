@@ -129,7 +129,7 @@ describe('MetricHistoryBuffer', () => {
         ]);
     });
 
-    it('reconstructs every provenance field without creating a legacy synthetic HistoryPoint', () => {
+    it('reconstructs every provenance field without creating a synthetic scalar point', () => {
         const buffer = new MetricHistoryBuffer();
         const signal = signalAt(7);
         const evaluation = evaluationAt(2);

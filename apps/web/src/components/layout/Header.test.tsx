@@ -34,7 +34,7 @@ function renderHeader({
 describe('Header', () => {
     beforeEach(() => {
         window.localStorage.clear();
-        useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: null,

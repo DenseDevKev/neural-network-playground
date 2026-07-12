@@ -58,7 +58,7 @@ describe('MainArea right-panel content', () => {
             ui: { showTestData: false, discretizeOutput: false },
         });
 
-        useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: {
@@ -72,7 +72,6 @@ describe('MainArea right-panel content', () => {
                 biases: [[0.1, 0.2], [0.3]],
                 outputGrid: [],
                 gridSize: 40,
-                historyPoint: { step: 5, trainLoss: 0.5, testLoss: 0.6 },
             } as any,
             frameVersion: 0,
             trainPoints: [],
@@ -86,7 +85,6 @@ describe('MainArea right-panel content', () => {
             configSyncNonce: 0,
             workerError: null,
             pauseReason: null,
-            testMetricsStale: false,
         });
     });
 
@@ -131,7 +129,8 @@ describe('MainArea right-panel content', () => {
 
         await waitFor(() => {
             expect(editView).toHaveBeenCalledTimes(2);
-            expect(usePlaygroundStore.getState().prepared?.document.view).toEqual({
+            const { access } = usePlaygroundStore.getState();
+            expect(access.status === 'ready' ? access.prepared.document.view : null).toEqual({
                 showTestData: true,
                 discretizeOutput: true,
             });

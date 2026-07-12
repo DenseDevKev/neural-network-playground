@@ -28,7 +28,6 @@ describe('frameBuffer', () => {
             expect(typeof versions.confusionMatrixVersion).toBe('number');
             expect(typeof versions.activationHistogramsVersion).toBe('number');
             expect(typeof versions.multiclassBoundaryVersion).toBe('number');
-            expect(typeof versions.arenaSummariesVersion).toBe('number');
             expect(typeof buffer.multiclassConfusionMatrixVersion).toBe('number');
         });
 
@@ -209,40 +208,6 @@ describe('frameBuffer', () => {
             );
         });
 
-        it('arena summary patch should bump only arena and broad frame versions', () => {
-            const initialVersions = getFrameVersions();
-            const arenaSummaries = [
-                {
-                    side: 'A' as const,
-                    label: 'Model A',
-                    status: 'running' as const,
-                    step: 3,
-                    epoch: 0,
-                    trainLoss: 0.4,
-                    testLoss: 0.5,
-                },
-                {
-                    side: 'B' as const,
-                    label: 'Model B',
-                    status: 'running' as const,
-                    step: 3,
-                    epoch: 0,
-                    trainLoss: 0.45,
-                    testLoss: 0.55,
-                },
-            ];
-
-            const newVersion = updateFrameBuffer({ arenaSummaries });
-
-            expect(newVersion).toBe(initialVersions.frameVersion + 1);
-            expect(getFrameVersions()).toEqual({
-                ...initialVersions,
-                frameVersion: initialVersions.frameVersion + 1,
-                arenaSummariesVersion: initialVersions.arenaSummariesVersion + 1,
-            });
-            expect(getFrameBuffer().arenaSummaries).toBe(arenaSummaries);
-        });
-
         it('multi-domain patches should bump each affected counter once', () => {
             const initialVersions = getFrameVersions();
             const outputGrid = new Float32Array([0, 1, 0, 1]);
@@ -288,7 +253,6 @@ describe('frameBuffer', () => {
                 confusionMatrixVersion: initialVersions.confusionMatrixVersion + 1,
                 activationHistogramsVersion: initialVersions.activationHistogramsVersion + 1,
                 multiclassBoundaryVersion: initialVersions.multiclassBoundaryVersion + 1,
-                arenaSummariesVersion: initialVersions.arenaSummariesVersion + 1,
             });
             expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
             expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(

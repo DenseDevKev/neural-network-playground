@@ -22,7 +22,9 @@ const FEATURE_TOOLTIPS: Record<string, string> = {
 
 export const FeaturesPanel = memo(function FeaturesPanel() {
     const featureIds = usePlaygroundStore(
-        (state) => state.prepared?.document.recipe.inputs.featureIds ?? null,
+        (state) => state.access.status === 'ready'
+            ? state.access.prepared.document.recipe.inputs.featureIds
+            : null,
     );
     const isLoading = useTrainingStore((state) => state.featuresConfigLoading);
     const configError = useTrainingStore((state) => state.configError);

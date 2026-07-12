@@ -5,11 +5,7 @@ import {
     softmax,
 } from '@nn-playground/engine';
 import {
-    DEFAULT_DATA,
     DEFAULT_DEMAND,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
     PREPARED_PRESETS,
     WORKER_PROTOCOL_VERSION,
     isWorkerEvidenceMessageV2,
@@ -38,6 +34,7 @@ import {
     setV2OutputOverflowForTests,
     setV2PrepareForTests,
     getV2CheckpointForTests,
+    getV2CheckpointTimelineForTests,
     replaceV2CheckpointForTests,
     workerApi,
 } from './training.worker.ts';
@@ -125,7 +122,12 @@ function createCapturingPort(): {
         messages,
         dispatch(data: unknown): void {
             if (!listener) throw new Error('stream listener was not registered');
-            listener({ data } as MessageEvent<unknown>);
+            listener({
+                data: {
+                    protocolVersion: WORKER_PROTOCOL_VERSION,
+                    ...(data as Record<string, unknown>),
+                },
+            } as MessageEvent<unknown>);
         },
         port,
     };
@@ -157,6 +159,140 @@ describe('training worker scientific-trust V2 boundary', () => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
         vi.useRealTimers();
+    });
+
+    it('exposes no legacy model, checkpoint, arena, or inspection RPCs', () => {
+        const api = workerApi as unknown as Record<string, unknown>;
+        const removedMethods = [
+            'initialize',
+            'updateConfig',
+            'step',
+            'reset',
+            'getCheckpointTimeline',
+            'restoreCheckpoint',
+            'initializeArena',
+            'stepArena',
+            'getTrainPoints',
+            'getTestPoints',
+            'getPredictionTrace',
+            'getBackpropExplanation',
+            'getLossLandscapeProbe',
+        ] as const;
+
+        for (const method of removedMethods) {
+            expect(api, method).not.toHaveProperty(method);
+        }
+    });
+
+    it('rejects stream start before V2 initialization without publishing run zero status', async () => {
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        expect(() => workerApi.getTrainPointsV2()).toThrow('V2 experiment is not initialized');
+        expect(() => workerApi.getTestPointsV2()).toThrow('V2 experiment is not initialized');
+
+        capture.dispatch({
+            type: 'startTraining',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            stepsPerFrame: 1,
+        });
+        await flushMicrotasks();
+
+        expect(capture.messages).toContainEqual(expect.objectContaining({
+            type: 'worker-error',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            generationId: null,
+            code: 'runtime-failure',
+            source: 'runtime',
+        }));
+        expect(capture.messages).not.toContainEqual(expect.objectContaining({
+            type: 'status',
+            runId: 0,
+        }));
+    });
+
+    it('returns objective-aware V2 inspection evidence without mutating model history', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const initialized = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const model = initialized.evidence.latestEvaluation!.model;
+        const historyBefore = workerApi.getMetricHistoryV2();
+        expect(workerApi.getTrainPointsV2()).toHaveLength(
+            initialized.evidence.latestEvaluation!.dataset.trainCount,
+        );
+        expect(workerApi.getTestPointsV2()).toHaveLength(
+            initialized.evidence.latestEvaluation!.dataset.testCount,
+        );
+
+        const trace = await workerApi.getPredictionTraceV2({ source: 'train', index: 0 });
+        expect(trace).toMatchObject({
+            runId: initialized.runId,
+            model,
+            dataset: initialized.evidence.latestEvaluation!.dataset,
+            objectiveKey: fixtures.prepared.identities.objectiveKey,
+            sample: { source: 'train', index: 0 },
+            trace: {
+                regularizationPenalty: initialized.evidence.latestEvaluation!.objective
+                    .regularizationPenalty,
+            },
+        });
+        expect(Number.isFinite(trace.trace.sampleDataLoss)).toBe(true);
+
+        const backprop = await workerApi.getBackpropExplanationV2();
+        expect(backprop).toMatchObject({
+            runId: initialized.runId,
+            model,
+            dataset: initialized.evidence.latestEvaluation!.dataset,
+            objectiveKey: fixtures.prepared.identities.objectiveKey,
+            basis: {
+                kind: 'next-mini-batch',
+                populationCount: initialized.evidence.latestEvaluation!.dataset.trainCount,
+            },
+        });
+        expect(backprop.explanation.objective.totalObjective).toBeCloseTo(
+            backprop.explanation.objective.dataLoss
+                + backprop.explanation.objective.regularizationPenalty,
+            12,
+        );
+        expect(Number.isFinite(backprop.explanation.gradients.totalGradientNorm)).toBe(true);
+
+        const landscape = await workerApi.getObjectiveLandscapeV2({
+            gridSize: 3,
+            maxSamples: 12,
+            radius: 0.1,
+        });
+        expect(landscape).toMatchObject({
+            runId: initialized.runId,
+            model,
+            provenance: {
+                model,
+                dataset: initialized.evidence.latestEvaluation!.dataset,
+                objectiveKey: fixtures.prepared.identities.objectiveKey,
+                basis: {
+                    kind: 'parameter-grid',
+                    sampleCount: 12,
+                    parameterPositions: 9,
+                },
+            },
+            probe: {
+                basis: 'training-objective',
+                gridSize: 3,
+                sampleCount: 12,
+                parameterPositionCount: 9,
+            },
+        });
+        expect(landscape.probe.objectives).toHaveLength(9);
+        expect(Number.isFinite(landscape.probe.centerObjective)).toBe(true);
+        expect(workerApi.getMetricHistoryV2()).toEqual(historyBefore);
+    });
+
+    it('rejects target-free custom traces instead of inventing sample loss', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+
+        await expect(workerApi.getPredictionTraceV2({
+            source: 'custom',
+            x: 0.25,
+            y: -0.5,
+        })).rejects.toThrow(/target-bearing train or test example/i);
     });
 
     it('commits a prepared experiment and returns a validated initial pair', async () => {
@@ -206,8 +342,6 @@ describe('training worker scientific-trust V2 boundary', () => {
             objectiveKey: pair.objectiveKey,
             basis: predictionBasis,
         });
-        expect(result.snapshot.historyPoint).toBeUndefined();
-        expect(Object.prototype.hasOwnProperty.call(result.snapshot, 'historyPoint')).toBe(false);
         expect(isWorkerEvidenceMessageV2(result.evidence)).toBe(true);
         expect(isWorkerToMainMessage(result.evidence)).toBe(true);
     });
@@ -218,7 +352,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         workerApi.setStreamPort(capture.port);
 
         const result = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
-        const timeline = workerApi.getCheckpointTimeline();
+        const timeline = getV2CheckpointTimelineForTests();
 
         expect(result.evidence.latestEvaluation).toMatchObject({
             evaluationId: 1,
@@ -253,7 +387,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             await workerApi.stepExperimentV2(5);
         }
 
-        const timeline = workerApi.getCheckpointTimeline();
+        const timeline = getV2CheckpointTimelineForTests();
         expect(timeline.checkpoints).toHaveLength(8);
         expect(timeline.evictedCount).toBeGreaterThan(0);
         expect(timeline.checkpoints.at(-1)?.step).toBe(45);
@@ -269,7 +403,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         capture.messages.length = 0;
         const historyBefore = workerApi.getMetricHistoryV2();
-        const timelineBefore = workerApi.getCheckpointTimeline();
+        const timelineBefore = getV2CheckpointTimelineForTests();
         const captureSessionState = Network.prototype.captureSessionState;
         vi.spyOn(Network.prototype, 'captureSessionState').mockImplementationOnce(function (
             this: Network,
@@ -290,7 +424,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         })).rejects.toThrow(/dense|own|extra/i);
 
         expect(workerApi.getMetricHistoryV2()).toEqual(historyBefore);
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineBefore);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
         expect(evidenceMessages(capture.messages)).toEqual([]);
 
         const recovered = await workerApi.captureCheckpointV2({
@@ -312,7 +446,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         capture.messages.length = 0;
         const evaluationsBefore = workerApi.getMetricHistoryV2().evaluationHistory;
-        const timelineBefore = workerApi.getCheckpointTimeline();
+        const timelineBefore = getV2CheckpointTimelineForTests();
         vi.spyOn(Network.prototype, 'captureSessionState').mockImplementationOnce(() => {
             throw new Error('periodic capture failed');
         });
@@ -321,7 +455,7 @@ describe('training worker scientific-trust V2 boundary', () => {
 
         expect(workerApi.getMetricHistoryV2().trendHistory).toHaveLength(5);
         expect(workerApi.getMetricHistoryV2().evaluationHistory).toEqual(evaluationsBefore);
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineBefore);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
         expect(evidenceMessages(capture.messages)).toEqual([]);
 
         const recovered = await workerApi.captureCheckpointV2({
@@ -344,7 +478,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         for (let index = 0; index < 4; index++) await workerApi.stepExperimentV2(10);
         await workerApi.stepExperimentV2(5);
         const before = workerApi.getMetricHistoryV2();
-        const timelineBefore = workerApi.getCheckpointTimeline();
+        const timelineBefore = getV2CheckpointTimelineForTests();
         const nextEvaluationId = before.evaluationHistory.at(-1)!.evaluationId + 1;
         capture.messages.length = 0;
         vi.spyOn(Network.prototype, 'captureSessionState').mockImplementationOnce(() => {
@@ -356,7 +490,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         const failed = workerApi.getMetricHistoryV2();
         expect(failed.trendHistory).toHaveLength(before.trendHistory.length + 5);
         expect(failed.evaluationHistory).toEqual(before.evaluationHistory);
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineBefore);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
         expect(evidenceMessages(capture.messages)).toEqual([]);
 
         capture.messages.length = 0;
@@ -425,7 +559,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             'initial step-50 capture failed',
         );
         const historyAfterInitialFailure = workerApi.getMetricHistoryV2();
-        const timelineAfterInitialFailure = workerApi.getCheckpointTimeline();
+        const timelineAfterInitialFailure = getV2CheckpointTimelineForTests();
         capture.messages.length = 0;
         captureStateSpy.mockImplementationOnce(() => {
             throw new Error('retry step-50 capture failed');
@@ -438,7 +572,7 @@ describe('training worker scientific-trust V2 boundary', () => {
 
         expect(trainSpy).not.toHaveBeenCalled();
         expect(workerApi.getMetricHistoryV2()).toEqual(historyAfterInitialFailure);
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineAfterInitialFailure);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineAfterInitialFailure);
         expect(evidenceMessages(capture.messages)).toEqual([]);
 
         const recovered = await workerApi.stepExperimentV2(1);
@@ -458,7 +592,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         for (let index = 0; index < 4; index++) await workerApi.stepExperimentV2(10);
         await workerApi.stepExperimentV2(5);
         const historyBefore = workerApi.getMetricHistoryV2();
-        const timelineBefore = workerApi.getCheckpointTimeline();
+        const timelineBefore = getV2CheckpointTimelineForTests();
         capture.messages.length = 0;
         const prepareCheckpoint = EvaluationRuntime.prototype.prepareCheckpointEvaluation;
         let observedCheckpointCommit = false;
@@ -478,7 +612,7 @@ describe('training worker scientific-trust V2 boundary', () => {
                     expect(workerApi.getMetricHistoryV2().evaluationHistory).toEqual(
                         historyBefore.evaluationHistory,
                     );
-                    expect(workerApi.getCheckpointTimeline()).toEqual(timelineBefore);
+                    expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
                     expect(evidenceMessages(capture.messages)).toEqual([]);
                     return prepared.commit();
                 },
@@ -558,26 +692,26 @@ describe('training worker scientific-trust V2 boundary', () => {
         const malformed = getV2CheckpointForTests(1) as SessionCheckpointV2 & Record<string, unknown>;
         malformed.extra = true;
         replaceV2CheckpointForTests(1, malformed);
-        const timelineBeforeMalformed = workerApi.getCheckpointTimeline();
+        const timelineBeforeMalformed = getV2CheckpointTimelineForTests();
         await expect(workerApi.restoreCheckpointV2({
             type: 'restore-checkpoint',
             protocolVersion: WORKER_PROTOCOL_VERSION,
             requestId: nextRequestId++,
             checkpointId: 1,
         })).rejects.toThrow(/exactly/i);
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineBeforeMalformed);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBeforeMalformed);
 
         const overflowing = structuredClone(baseline);
         overflowing.network.layers.forEach((layer) => layer.weights.fill(Number.MAX_VALUE));
         replaceV2CheckpointForTests(baselineId, overflowing);
-        const timelineBeforeOverflow = workerApi.getCheckpointTimeline();
+        const timelineBeforeOverflow = getV2CheckpointTimelineForTests();
         await expect(workerApi.restoreCheckpointV2({
             type: 'restore-checkpoint',
             protocolVersion: WORKER_PROTOCOL_VERSION,
             requestId: nextRequestId++,
             checkpointId: baselineId,
         })).rejects.toThrow();
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineBeforeOverflow);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBeforeOverflow);
 
         replaceV2CheckpointForTests(baselineId, baseline);
         const evaluateObjective = Network.prototype.evaluateObjective;
@@ -618,7 +752,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         const fixtures = await createScientificTrustFixtures();
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         const historyBefore = workerApi.getMetricHistoryV2();
-        const timelineBefore = workerApi.getCheckpointTimeline();
+        const timelineBefore = getV2CheckpointTimelineForTests();
         const evaluateObjective = Network.prototype.evaluateObjective;
         let mutatedCandidate = false;
         vi.spyOn(Network.prototype, 'evaluateObjective').mockImplementation(function (
@@ -641,7 +775,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         })).rejects.toThrow(/changed during evaluation/i);
         expect(mutatedCandidate).toBe(true);
         expect(workerApi.getMetricHistoryV2()).toEqual(historyBefore);
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineBefore);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
     });
 
     it('rejects finite checkpoint parameters that disagree with captured evaluation values', async () => {
@@ -651,7 +785,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         forged.network.layers[0].weights[0] += 0.5;
         replaceV2CheckpointForTests(1, forged);
         const historyBefore = workerApi.getMetricHistoryV2();
-        const timelineBefore = workerApi.getCheckpointTimeline();
+        const timelineBefore = getV2CheckpointTimelineForTests();
 
         await expect(workerApi.restoreCheckpointV2({
             type: 'restore-checkpoint',
@@ -660,7 +794,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             checkpointId: 1,
         })).rejects.toThrow(/evaluation.*parameters|parameters.*evaluation/i);
         expect(workerApi.getMetricHistoryV2()).toEqual(historyBefore);
-        expect(workerApi.getCheckpointTimeline()).toEqual(timelineBefore);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
     });
 
     it('captures the natural epoch-boundary sentinel and refuses preview without mutation', async () => {
@@ -668,7 +802,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         await workerApi.stepExperimentV2(10);
         const shuffleSpy = vi.spyOn(PRNG.prototype, 'shuffle');
-        const previewSpy = vi.spyOn(Network.prototype, 'explainBackpropStep');
+        const previewSpy = vi.spyOn(Network.prototype, 'explainBackpropStepV2');
 
         const completed = await workerApi.stepExperimentV2(5);
         const checkpointId = completed.checkpointTimeline.liveCheckpointId!;
@@ -679,7 +813,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(boundary.cursor.epoch).toBe(1);
         expect(boundary.cursor.batchStart).toBe(boundary.evaluation.dataset.trainCount);
         expect(shuffleSpy).not.toHaveBeenCalled();
-        expect(() => workerApi.getBackpropExplanation()).toThrow(/epoch shuffle boundary/i);
+        await expect(workerApi.getBackpropExplanationV2()).rejects.toThrow(/epoch shuffle boundary/i);
         expect(previewSpy).not.toHaveBeenCalled();
         expect(shuffleSpy).not.toHaveBeenCalled();
         expect(getV2CheckpointForTests(checkpointId)).toEqual(boundary);
@@ -778,7 +912,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         workerApi.setStreamPort(capture.port);
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 49 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 49 });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
 
@@ -789,8 +923,8 @@ describe('training worker scientific-trust V2 boundary', () => {
             ...Array.from({ length: 9 }, () => 'checkpoint' as const),
         ]);
 
-        capture.dispatch({ type: 'updateSpeed', stepsPerFrame: 1 });
-        capture.dispatch({ type: 'frameAck' });
+        capture.dispatch({ type: 'updateSpeed', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
+        capture.dispatch({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
         await vi.advanceTimersByTimeAsync(20);
 
         history = workerApi.getMetricHistoryV2();
@@ -813,7 +947,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(beforePause.length).toBeLessThanOrEqual(15);
         expect(beforePause.every(isWorkerToMainMessage)).toBe(true);
 
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
         history = workerApi.getMetricHistoryV2();
         const pause = history.evaluationHistory.at(-1)!;
@@ -834,8 +968,6 @@ describe('training worker scientific-trust V2 boundary', () => {
         });
         expect(stepped.evidence.liveSignal?.model)
             .toEqual(stepped.evidence.latestEvaluation?.model);
-        expect(stepped.snapshot.historyPoint).toBeUndefined();
-        expect(Object.prototype.hasOwnProperty.call(stepped.snapshot, 'historyPoint')).toBe(false);
 
         const reset = await workerApi.resetExperimentV2();
         expect(reset.runId).toBe(initial.runId + 1);
@@ -849,8 +981,6 @@ describe('training worker scientific-trust V2 boundary', () => {
                 epoch: 0,
             },
         });
-        expect(reset.snapshot.historyPoint).toBeUndefined();
-        expect(Object.prototype.hasOwnProperty.call(reset.snapshot, 'historyPoint')).toBe(false);
         expect(workerApi.getMetricHistoryV2().trendHistory).toEqual([]);
     });
 
@@ -989,7 +1119,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         setGpuPredictorForTests(gpu.predictor);
         const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         vi.advanceTimersByTime(20);
         await flushMicrotasks();
@@ -1008,7 +1138,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         );
         expect(snapshot?.outputGrid).toBeInstanceOf(Float32Array);
         expect(snapshot?.outputGrid?.some((value) => value === gpu.staleValue)).toBe(false);
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
     });
 
@@ -1029,7 +1159,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         setGpuPredictorForTests(gpu.predictor);
         const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         vi.advanceTimersByTime(20);
         await flushMicrotasks();
@@ -1051,7 +1181,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(snapshot?.neuronGrids).toBeInstanceOf(Float32Array);
         expect(snapshot?.artifacts?.decisionBoundary).toBeDefined();
         expect(snapshot?.artifacts?.neuronGrids).toBeDefined();
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
     });
 
@@ -1072,7 +1202,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         });
         const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         vi.advanceTimersByTime(20);
         await flushMicrotasks();
@@ -1085,7 +1215,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(cpu).toHaveBeenCalledTimes(1);
         const snapshot = snapshotMessages(capture.messages).at(-1);
         expect(snapshot?.artifacts?.decisionBoundary).toBeDefined();
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
     });
 
@@ -1105,7 +1235,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         setGpuPredictorForTests(gpu.predictor);
         const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         vi.advanceTimersByTime(20);
         await flushMicrotasks();
@@ -1122,14 +1252,14 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(cpu).not.toHaveBeenCalled();
         workerApi.setWebGpuEnabled(false);
         workerApi.updateDemand({ ...DEFAULT_DEMAND, gridInterval: 1 });
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
         const [snapshot] = snapshotMessages(capture.messages);
         expect(snapshot?.runId).toBe(reset.runId);
         expect(snapshot?.artifacts?.decisionBoundary?.model.generationId).toBe(reset.runId);
         expect(cpu).toHaveBeenCalledTimes(1);
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
     });
 
@@ -1284,7 +1414,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         try {
             const initialization = workerApi.initializeExperimentV2(withFreshId(fixtures.request));
             await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
-            stream.dispatch({ type: 'stopTraining' });
+            stream.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
             await flushMicrotasks();
             expect(stream.messages).not.toContainEqual(expect.objectContaining({
                 type: 'status',
@@ -1342,7 +1472,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             { kind: 'target', metric: 'trainObjective', threshold: 1_000_000 },
         ]);
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
 
@@ -1374,11 +1504,11 @@ describe('training worker scientific-trust V2 boundary', () => {
             { kind: 'target', metric: 'testDataLoss', threshold: -1 },
         ]);
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 49 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 49 });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
-        capture.dispatch({ type: 'updateSpeed', stepsPerFrame: 1 });
-        capture.dispatch({ type: 'frameAck' });
+        capture.dispatch({ type: 'updateSpeed', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
+        capture.dispatch({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
         await vi.advanceTimersByTimeAsync(20);
 
         const step50Pairs = workerApi.getMetricHistoryV2().evaluationHistory.filter(
@@ -1393,7 +1523,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         ]);
         expect(step50Evidence).toHaveLength(2);
 
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
     });
 
@@ -1421,12 +1551,12 @@ describe('training worker scientific-trust V2 boundary', () => {
             };
         });
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
 
         expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
-        expect(workerApi.getCheckpointTimeline().checkpoints).toEqual(
+        expect(getV2CheckpointTimelineForTests().checkpoints).toEqual(
             expect.arrayContaining([expect.objectContaining({ id: 1, step: 0 })]),
         );
         const emitted = capture.messages.slice(beforeMessages);
@@ -1454,12 +1584,12 @@ describe('training worker scientific-trust V2 boundary', () => {
         const beforeMessages = capture.messages.length;
         setV2OutputOverflowForTests();
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
 
         expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
-        expect(workerApi.getCheckpointTimeline().checkpoints).toEqual(
+        expect(getV2CheckpointTimelineForTests().checkpoints).toEqual(
             expect.arrayContaining([expect.objectContaining({ id: 1, step: 0 })]),
         );
         const emitted = capture.messages.slice(beforeMessages);
@@ -1489,8 +1619,8 @@ describe('training worker scientific-trust V2 boundary', () => {
             throw new Error('unreachable');
         });
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
 
         expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
@@ -1533,7 +1663,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             .rejects.toThrow('terminal divergence');
 
         expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
-        expect(workerApi.getCheckpointTimeline().checkpoints).toEqual(
+        expect(getV2CheckpointTimelineForTests().checkpoints).toEqual(
             expect.arrayContaining([expect.objectContaining({ id: 1, step: 0 })]),
         );
         const emitted = capture.messages.slice(beforeMessages);
@@ -1551,49 +1681,34 @@ describe('training worker scientific-trust V2 boundary', () => {
         }));
     });
 
-    it('rejects non-finite V2 compatibility scalars before posting a snapshot', async () => {
+    it('streams only strict model scalars without invoking the legacy evaluator', async () => {
         vi.useFakeTimers();
         const fixtures = await createScientificTrustFixtures();
         const capture = createCapturingPort();
         workerApi.setStreamPort(capture.port);
+        const legacyEvaluate = vi.spyOn(Network.prototype, 'evaluate');
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
-        workerApi.updateDemand({
-            ...DEFAULT_DEMAND,
-            trainEvalInterval: 1,
-            testEvalInterval: 1,
-        });
-        const original = Network.prototype.evaluate;
-        vi.spyOn(Network.prototype, 'evaluate').mockImplementation(function (
-            this: Network,
-            ...args: Parameters<Network['evaluate']>
-        ) {
-            return { ...original.apply(this, args), loss: Number.NaN };
-        });
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, gridInterval: 1 });
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({
+            type: 'startTraining',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            stepsPerFrame: 1,
+        });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
 
-        expect(capture.messages.some((message) => (
+        const snapshot = capture.messages.find((message): message is WorkerSnapshotMessage => (
             typeof message === 'object'
             && message !== null
             && (message as { type?: unknown }).type === 'snapshot'
-        ))).toBe(false);
-        expect(capture.messages).toContainEqual(expect.objectContaining({
-            type: 'worker-error',
-            source: 'artifact',
-            code: 'artifact-failed',
-            path: '$.snapshot.trainLoss',
-        }));
-        expect(capture.messages).toContainEqual(expect.objectContaining({
-            type: 'status',
-            status: 'paused',
-            pauseReason: 'diverged',
-        }));
+        ));
+        expect(snapshot).toBeDefined();
+        expect(Object.keys(snapshot!.scalars).sort()).toEqual(['epoch', 'gridSize', 'step']);
+        expect(legacyEvaluate).not.toHaveBeenCalled();
         expect(workerApi.getMetricHistoryV2().trendHistory).toHaveLength(1);
-        expect(evidenceMessages(capture.messages).every((message) => (
-            message.liveSignal === undefined || Number.isFinite(message.liveSignal.dataLoss)
-        ))).toBe(true);
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
+        await flushMicrotasks();
     });
 
     it('publishes strict artifact provenance and deterministic bounded layer statistics', async () => {
@@ -1615,7 +1730,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         const grid = vi.spyOn(Network.prototype, 'predictGridInto');
         const statistics = vi.spyOn(Network.prototype, 'computeLayerStatistics');
 
-        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(20);
 
@@ -1628,8 +1743,6 @@ describe('training worker scientific-trust V2 boundary', () => {
         const sampleCount = Math.min(128, populationCount);
         expect(snapshot).toBeDefined();
         expect(snapshot?.protocolVersion).toBe(2);
-        expect(snapshot?.historyPoint).toBeUndefined();
-        expect(Object.prototype.hasOwnProperty.call(snapshot, 'historyPoint')).toBe(false);
         expect(snapshot?.layerStats?.length).toBeGreaterThan(0);
         expect(snapshot?.artifacts?.activationStatistics).toMatchObject({
             model: {
@@ -1681,7 +1794,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             statistics.mock.invocationCallOrder[0],
         );
 
-        capture.dispatch({ type: 'frameAck' });
+        capture.dispatch({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
         await vi.advanceTimersByTimeAsync(20);
         const snapshots = capture.messages.filter((message): message is WorkerSnapshotMessage => (
             typeof message === 'object'
@@ -1693,7 +1806,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(snapshots[1]?.multiclassConfusionMatrix).toBeUndefined();
         expect(snapshots[1]?.artifacts?.confusionMatrix).toBeUndefined();
 
-        capture.dispatch({ type: 'stopTraining' });
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
     });
 
@@ -1723,7 +1836,7 @@ describe('training worker scientific-trust V2 boundary', () => {
                 return { ...result, [field]: result[field] + 1 };
             });
 
-            capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            capture.dispatch({ type: 'startTraining', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
             await flushMicrotasks();
             await vi.advanceTimersByTimeAsync(20);
 
@@ -1762,37 +1875,6 @@ describe('training worker scientific-trust V2 boundary', () => {
             revision: 1,
             step: 1,
         });
-    });
-
-    it('rejects legacy model mutators without changing active V2 provenance', async () => {
-        const fixtures = await createScientificTrustFixtures();
-        const initialized = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
-        const before = workerApi.getMetricHistoryV2();
-
-        expect(() => workerApi.updateConfig(
-            { ...DEFAULT_NETWORK },
-            { ...DEFAULT_TRAINING },
-            { ...DEFAULT_DATA },
-            { ...DEFAULT_FEATURES },
-            false,
-        )).toThrow('unavailable while a V2 experiment is active');
-        expect(() => workerApi.step(1)).toThrow('unavailable while a V2 experiment is active');
-        expect(() => workerApi.reset()).toThrow('unavailable while a V2 experiment is active');
-        expect(() => workerApi.restoreCheckpoint(1))
-            .toThrow('unavailable while a V2 experiment is active');
-
-        expect(workerApi.getMetricHistoryV2()).toEqual(before);
-        expect(workerApi.getCheckpointTimeline().checkpoints).toEqual(
-            expect.arrayContaining([expect.objectContaining({ id: 1, step: 0 })]),
-        );
-        const validStep = await workerApi.stepExperimentV2(1);
-        expect(validStep.runId).toBe(initialized.runId);
-        expect(validStep.evidence.liveSignal?.model).toMatchObject({
-            generationId: initialized.runId,
-            revision: 1,
-            step: 1,
-        });
-        expect(workerApi.getMetricHistoryV2().trendHistory).toHaveLength(1);
     });
 
     it('streams structured current-generation errors without failed evidence', async () => {
@@ -1873,32 +1955,4 @@ describe('training worker scientific-trust V2 boundary', () => {
         }
     });
 
-    it('prevents delayed V2 initialization from overwriting a newer legacy step', async () => {
-        const fixtures = await createScientificTrustFixtures();
-        const legacy = workerApi.initialize(
-            { ...DEFAULT_NETWORK },
-            { ...DEFAULT_TRAINING },
-            { ...DEFAULT_DATA },
-            { ...DEFAULT_FEATURES },
-        );
-        const preparation = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
-        const prepare = vi.fn(() => preparation.promise);
-        setV2PrepareForTests(prepare);
-        const allocationsBefore = getV2AllocationCountForTests();
-
-        try {
-            const pending = workerApi.initializeExperimentV2(withFreshId(fixtures.request));
-            await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
-            const stepped = workerApi.step(1);
-            preparation.resolve({ ok: true, value: fixtures.prepared });
-
-            await expect(pending).rejects.toMatchObject({ code: 'stale-request' });
-            expect(getV2AllocationCountForTests()).toBe(allocationsBefore);
-            expect(stepped.step).toBe(1);
-            expect(() => workerApi.getMetricHistoryV2()).toThrow('V2 experiment is not initialized');
-            expect(legacy.runId).toBeGreaterThan(0);
-        } finally {
-            setV2PrepareForTests();
-        }
-    });
 });

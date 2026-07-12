@@ -17,7 +17,7 @@ function createTrainingMock(): TrainingHook {
 
 describe('TrainingControls', () => {
   beforeEach(() => {
-    useTrainingStore.getState().resetHistory();
+    useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
       status: 'idle',
       snapshot: null,
@@ -115,10 +115,24 @@ describe('TrainingControls', () => {
     act(() => {
       useTrainingStore.setState({
         status: 'running',
-        snapshot: {
-          step: 128,
-          epoch: 4,
-        } as any,
+        evidenceGenerationId: 1,
+        latestLiveSignal: {
+          model: { generationId: 1, revision: 128, step: 128, epoch: 4 },
+          dataset: {
+            generatorVersion: 2,
+            datasetKey: 'test-dataset',
+            trainCount: 1,
+            testCount: 1,
+          },
+          objectiveKey: 'test-objective',
+          basis: {
+            kind: 'mini-batch-ema',
+            alpha: 0.1,
+            latestBatchSize: 1,
+            throughStep: 128,
+          },
+          dataLoss: 0.25,
+        },
       });
     });
 
@@ -162,11 +176,10 @@ describe('TrainingControls', () => {
     const user = userEvent.setup();
     const training = createTrainingMock();
     useTrainingStore.setState({
-      snapshot: { step: 10, epoch: 1 } as any,
       checkpointTimeline: {
         checkpoints: [
-          { id: 1, step: 0, epoch: 0, trainLoss: 0.5, testLoss: 0.6, label: 'Step 0' },
-          { id: 2, step: 10, epoch: 1, trainLoss: 0.3, testLoss: 0.4, label: 'Step 10' },
+          { id: 1, step: 0, epoch: 0, trainDataLoss: 0.5, testDataLoss: 0.6, label: 'Step 0' },
+          { id: 2, step: 10, epoch: 1, trainDataLoss: 0.3, testDataLoss: 0.4, label: 'Step 10' },
         ],
         maxCheckpoints: 8,
         evictedCount: 0,

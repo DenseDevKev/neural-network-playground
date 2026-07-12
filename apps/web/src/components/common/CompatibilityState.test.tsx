@@ -23,9 +23,24 @@ describe('CompatibilityState', () => {
         expect(screen.getByText('#d=xor&n=0.2')).toBeInTheDocument();
         expect(screen.getByRole('list', { name: 'Compatibility issues' }))
             .toHaveTextContent('schemaVersion');
+        expect(screen.getByText('legacy-state')).toBeInTheDocument();
 
         await userEvent.click(screen.getByRole('button', { name: 'Start fresh' }));
         expect(onStartFresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a failed recovery visible as an alert', async () => {
+        render(<CompatibilityState access={{
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'url', rawHash: '#legacy' },
+            issues: [{ code: 'legacy-state', path: '$', message: 'legacy input' }],
+        }} onStartFresh={() => Promise.reject(new Error('A newer incompatible input replaced recovery.'))} />);
+
+        await userEvent.click(screen.getByRole('button', { name: 'Start fresh' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent(
+            'A newer incompatible input replaced recovery.',
+        );
     });
 
     it('identifies the exact rejected file and has no obvious accessibility violations', async () => {

@@ -15,6 +15,11 @@ import {
 import { ConfigPanel } from './ConfigPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 
+function currentPrepared(): PreparedExperimentDocumentV2 | null {
+    const { access } = usePlaygroundStore.getState();
+    return access.status === 'ready' ? access.prepared : null;
+}
+
 function deferred<T>() {
     let resolve!: (value: T) => void;
     let reject!: (reason?: unknown) => void;
@@ -87,7 +92,7 @@ describe('ConfigPanel strict V2 transport', () => {
     });
 
     it('syncs V2 state before copying the resulting current absolute URL', async () => {
-        const prepared = usePlaygroundStore.getState().prepared!;
+        const prepared = currentPrepared()!;
         window.history.replaceState(null, '', '/#stale-legacy-hash');
         const syncToUrl = vi.spyOn(usePlaygroundStore.getState(), 'syncToUrl');
 
@@ -192,7 +197,7 @@ describe('ConfigPanel strict V2 transport', () => {
     });
 
     it('exports the exact prepared V2 document with a V2-specific filename', async () => {
-        const prepared = usePlaygroundStore.getState().prepared!;
+        const prepared = currentPrepared()!;
         render(<ConfigPanel onReset={vi.fn()} />);
 
         await act(async () => {
@@ -219,7 +224,18 @@ describe('ConfigPanel strict V2 transport', () => {
 
     it('shows a structured persistent error and creates no blob without an active V2 document', async () => {
         vi.useFakeTimers();
-        usePlaygroundStore.setState({ prepared: null });
+        usePlaygroundStore.setState({
+            access: {
+                status: 'incompatible',
+                prepared: null,
+                source: { kind: 'url', rawHash: '#invalid' },
+                issues: [{
+                    code: 'invalid-field',
+                    path: '$',
+                    message: 'No compatible version-2 experiment is active',
+                }],
+            },
+        });
         render(<ConfigPanel onReset={vi.fn()} />);
 
         await act(async () => {
@@ -239,7 +255,7 @@ describe('ConfigPanel strict V2 transport', () => {
 
     it('awaits V2 preparation and resets only after the exact import is published', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const target = await requirePrepared(documentWithNoise(before, 17));
         const gate = deferred<void>();
         const originalReplace = usePlaygroundStore.getState().replaceDocument;
@@ -267,13 +283,13 @@ describe('ConfigPanel strict V2 transport', () => {
         gate.resolve();
         expect(await screen.findByRole('status')).toHaveTextContent('Imported');
         expect(onReset).toHaveBeenCalledTimes(1);
-        expect(usePlaygroundStore.getState().prepared?.document).toEqual(target.document);
-        expect(usePlaygroundStore.getState().prepared?.identities).toEqual(target.identities);
+        expect(currentPrepared()?.document).toEqual(target.document);
+        expect(currentPrepared()?.identities).toEqual(target.identities);
     });
 
     it('keeps import publication callbacks active through the StrictMode effect probe', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const target = await requirePrepared(documentWithNoise(before, 18));
         const { container } = render(
             <StrictMode>
@@ -295,7 +311,7 @@ describe('ConfigPanel strict V2 transport', () => {
         ['malformed JSON', '{', '$: invalid experiment JSON'],
         [
             'unversioned V1 runtime config',
-            JSON.stringify(usePlaygroundStore.getState().getConfig()),
+            JSON.stringify({ network: {}, training: {}, data: {}, features: {}, ui: {} }),
             'schemaVersion: unversioned experiment documents are incompatible',
         ],
         [
@@ -334,7 +350,7 @@ describe('ConfigPanel strict V2 transport', () => {
             prepared: null,
             source: { kind: 'file', file },
         });
-        expect(usePlaygroundStore.getState().prepared).toBeNull();
+        expect(currentPrepared()).toBeNull();
         expect(onReset).not.toHaveBeenCalled();
         expect(input.value).toBe('');
     });
@@ -393,7 +409,6 @@ describe('ConfigPanel strict V2 transport', () => {
                 this.onerror?.call(this, new ProgressEvent('error'));
             });
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
         const { container } = render(<ConfigPanel onReset={onReset} />);
         const input = fileInput(container);
         const file = new File(['{}'], 'unreadable.json', {
@@ -441,7 +456,7 @@ describe('ConfigPanel strict V2 transport', () => {
 
     it('retains the exact file and reports preparation issues', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const target = await requirePrepared(documentWithNoise(before, 19));
         vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument').mockResolvedValue({
             ok: false,
@@ -468,13 +483,13 @@ describe('ConfigPanel strict V2 transport', () => {
             prepared: null,
             source: { kind: 'file', file },
         });
-        expect(usePlaygroundStore.getState().prepared).toBeNull();
+        expect(currentPrepared()).toBeNull();
         expect(onReset).not.toHaveBeenCalled();
     });
 
     it('does not reset or claim success for a stale successful import result', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const imported = await requirePrepared(documentWithNoise(before, 21));
         const newer = documentWithNoise(before, 23);
         const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
@@ -493,22 +508,22 @@ describe('ConfigPanel strict V2 transport', () => {
         });
         const newerResult = await originalReplace(newer);
         expect(newerResult.ok).toBe(true);
-        const published = usePlaygroundStore.getState().prepared;
+        const published = currentPrepared();
 
         importResult.resolve({ ok: true, value: imported });
         await act(async () => {
             await importResult.promise;
         });
 
-        expect(usePlaygroundStore.getState().prepared).toBe(published);
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.data.noise).toBe(23);
+        expect(currentPrepared()).toBe(published);
+        expect(currentPrepared()?.document.recipe.data.noise).toBe(23);
         expect(onReset).not.toHaveBeenCalled();
         expect(screen.queryByText('Imported!')).not.toBeInTheDocument();
     });
 
     it('deduplicates a second file selection while the first import is pending', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const first = await requirePrepared(documentWithNoise(before, 25));
         const second = await requirePrepared(documentWithNoise(before, 27));
         const gate = deferred<void>();
@@ -543,14 +558,14 @@ describe('ConfigPanel strict V2 transport', () => {
 
         expect(disabledWhilePending).toBe(true);
         expect(callsAfterSecondSelection).toBe(1);
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.data.noise).toBe(25);
+        expect(currentPrepared()?.document.recipe.data.noise).toBe(25);
         expect(onReset).toHaveBeenCalledTimes(1);
         expect(screen.getByRole('button', { name: /import json/i })).toBeEnabled();
     });
 
     it('does not apply a file whose read finishes after a newer store edit', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const imported = await requirePrepared(documentWithNoise(before, 29));
         const newer = documentWithNoise(before, 31);
         const readers: FileReader[] = [];
@@ -566,7 +581,7 @@ describe('ConfigPanel strict V2 transport', () => {
         ));
         const newerResult = await usePlaygroundStore.getState().replaceDocument(newer);
         expect(newerResult.ok).toBe(true);
-        const published = usePlaygroundStore.getState().prepared;
+        const published = currentPrepared();
 
         const reader = readers[0];
         const onload = reader.onload;
@@ -577,15 +592,15 @@ describe('ConfigPanel strict V2 transport', () => {
             } as unknown as ProgressEvent<FileReader>);
         });
 
-        expect(usePlaygroundStore.getState().prepared).toBe(published);
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.data.noise).toBe(31);
+        expect(currentPrepared()).toBe(published);
+        expect(currentPrepared()?.document.recipe.data.noise).toBe(31);
         expect(onReset).not.toHaveBeenCalled();
         expect(screen.queryByText('Imported!')).not.toBeInTheDocument();
     });
 
     it('does not report an older preparation failure over a newer store edit', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const imported = await requirePrepared(documentWithNoise(before, 33));
         const newer = documentWithNoise(before, 35);
         const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
@@ -604,7 +619,7 @@ describe('ConfigPanel strict V2 transport', () => {
         });
         const newerResult = await originalReplace(newer);
         expect(newerResult.ok).toBe(true);
-        const published = usePlaygroundStore.getState().prepared;
+        const published = currentPrepared();
 
         importResult.resolve({
             ok: false,
@@ -614,14 +629,14 @@ describe('ConfigPanel strict V2 transport', () => {
             await importResult.promise;
         });
 
-        expect(usePlaygroundStore.getState().prepared).toBe(published);
+        expect(currentPrepared()).toBe(published);
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         expect(onReset).not.toHaveBeenCalled();
     });
 
     it('does not report an older preparation rejection over a newer store edit', async () => {
         const onReset = vi.fn();
-        const before = usePlaygroundStore.getState().prepared!;
+        const before = currentPrepared()!;
         const imported = await requirePrepared(documentWithNoise(before, 37));
         const newer = documentWithNoise(before, 39);
         const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
@@ -640,7 +655,7 @@ describe('ConfigPanel strict V2 transport', () => {
         });
         const newerResult = await originalReplace(newer);
         expect(newerResult.ok).toBe(true);
-        const published = usePlaygroundStore.getState().prepared;
+        const published = currentPrepared();
         const observedRejection = importResult.promise.catch(() => undefined);
 
         importResult.reject(new Error('Obsolete rejection'));
@@ -648,7 +663,7 @@ describe('ConfigPanel strict V2 transport', () => {
             await observedRejection;
         });
 
-        expect(usePlaygroundStore.getState().prepared).toBe(published);
+        expect(currentPrepared()).toBe(published);
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         expect(onReset).not.toHaveBeenCalled();
     });

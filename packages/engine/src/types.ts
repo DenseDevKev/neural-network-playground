@@ -416,15 +416,6 @@ export interface ActivationHistogramResult {
     bins: Float32Array;
 }
 
-/** A single training history entry. */
-export interface HistoryPoint {
-    step: number;
-    trainLoss: number;
-    testLoss: number;
-    trainAccuracy?: number;
-    testAccuracy?: number;
-}
-
 /** Per-layer activations captured for one inspected prediction. */
 export interface PredictionTraceLayer {
     layerIndex: number;
@@ -635,13 +626,8 @@ export interface NetworkSnapshot {
     weights: number[][][];
     biases: number[][];
 
-    trainLoss: number;
-    testLoss: number;
     trainMetrics: Metrics;
     testMetrics: Metrics;
-    /** True when test metrics were reused from a previous full evaluation. */
-    testMetricsStale?: boolean;
-
     /** Flattened prediction grid for decision boundary heatmap. */
     outputGrid: ArrayLike<number>;
     gridSize: number; // width/height of the square grid
@@ -658,6 +644,4 @@ export interface NetworkSnapshot {
     /** Compact, demand-gated activation histograms for inspection. */
     activationHistograms?: ActivationHistogramResult;
 
-    /** Legacy chart point. Strict V2 consumers use typed trend/evaluation histories instead. */
-    historyPoint?: HistoryPoint;
 }

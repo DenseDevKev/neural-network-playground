@@ -24,12 +24,8 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { getActiveFeatures } from '@nn-playground/engine';
-import type { ActivationType, DatasetType, LayerStats } from '@nn-playground/engine';
-import {
-    GRID_SIZE,
-    MAX_HIDDEN_LAYERS,
-    writeNormalizedHeatmap,
-} from '@nn-playground/shared';
+import type { ActivationType, DatasetType, FeatureFlags, LayerStats } from '@nn-playground/engine';
+import { MAX_HIDDEN_LAYERS, writeNormalizedHeatmap } from '@nn-playground/shared';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import { extractNeuronGrid, layerBiasOffset } from '../../worker/frameBufferLayout.ts';
 import { getDatasetTopologyHint } from '../../data/datasetInsights.ts';
@@ -63,6 +59,18 @@ const HEATMAP_SIZE = 24;
 const MIN_ZOOM = 0.35;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 1.25;
+const EMPTY_HIDDEN_LAYERS: number[] = [];
+const EMPTY_FEATURES: FeatureFlags = {
+    x: false,
+    y: false,
+    xSquared: false,
+    ySquared: false,
+    xy: false,
+    sinX: false,
+    sinY: false,
+    cosX: false,
+    cosY: false,
+};
 
 interface TooltipData {
     x: number;
@@ -266,13 +274,15 @@ function getLayerStatsHint(layerStats: readonly LayerStats[] | null): string | n
 }
 
 export function NetworkGraphCanvas() {
-    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
-    const outputSize = usePlaygroundStore((s) => s.network.outputSize);
-    const outputActivation = usePlaygroundStore((s) => s.network.outputActivation);
-    const features = usePlaygroundStore((s) => s.features);
-    const activation = usePlaygroundStore((s) => s.network.activation);
-    const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const snapshot = useTrainingStore((s) => s.snapshot);
+    const compiled = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.compiled : null
+    ));
+    const hiddenLayers = compiled?.network.hiddenLayers ?? EMPTY_HIDDEN_LAYERS;
+    const outputSize = compiled?.task.outputSize ?? 1;
+    const outputActivation = compiled?.task.outputActivation ?? 'sigmoid';
+    const features = compiled?.features ?? EMPTY_FEATURES;
+    const activation = compiled?.network.activation ?? 'tanh';
+    const dataset = compiled?.data.dataset ?? 'circle';
     const frameVersion = useTrainingStore((s) => s.frameVersion);
     const layerStatsVersion = useTrainingStore((s) => s.layerStatsVersion);
     const activeLessonId = useLayoutStore((s) => s.activeLessonId);
@@ -381,33 +391,8 @@ export function NetworkGraphCanvas() {
                 layerSizes: fb.weightLayout.layerSizes,
             };
         }
-        if (snapshot?.weights && snapshot.weights.length > 0 && snapshot.biases) {
-            const sizes: number[] = [snapshot.weights[0]?.[0]?.length ?? 0];
-            let total = 0;
-            for (const layer of snapshot.weights) {
-                sizes.push(layer.length);
-                for (const neuron of layer) total += neuron.length;
-            }
-            const w = new Float32Array(total);
-            let off = 0;
-            for (const layer of snapshot.weights) {
-                for (const neuron of layer) {
-                    w.set(neuron, off);
-                    off += neuron.length;
-                }
-            }
-            let btotal = 0;
-            for (const layer of snapshot.biases) btotal += layer.length;
-            const b = new Float32Array(btotal);
-            off = 0;
-            for (const layer of snapshot.biases) {
-                b.set(layer, off);
-                off += layer.length;
-            }
-            return { weights: w, biases: b, layerSizes: sizes };
-        }
         return null;
-    }, [frameVersion, snapshot?.weights, snapshot?.biases]);
+    }, [frameVersion]);
 
     // Per-neuron heatmap source data — same derivation as the SVG renderer.
     // Output: array indexed [hidden1, hidden2, ..., output], one entry per
@@ -423,19 +408,8 @@ export function NetworkGraphCanvas() {
                 gridSize,
             }));
         }
-        if (!snapshot?.neuronGrids) return null;
-        const gridSize = snapshot.gridSize ?? GRID_SIZE;
-        const sng = snapshot.neuronGrids;
-        if (sng instanceof Float32Array) {
-            const count = layers.slice(1).reduce((sum, size) => sum + size, 0);
-            const cells = gridSize * gridSize;
-            return Array.from({ length: count }, (_, idx) => ({
-                grid: extractNeuronGrid(sng, idx, cells),
-                gridSize,
-            }));
-        }
-        return sng.map((grid) => ({ grid, gridSize }));
-    }, [frameVersion, layers, snapshot?.neuronGrids, snapshot?.gridSize]);
+        return null;
+    }, [frameVersion]);
 
     /** Map (layerIdx, nodeIdx) → index into neuronGrids, or null for input. */
     const getNeuronGridIndex = useCallback(
@@ -486,8 +460,8 @@ export function NetworkGraphCanvas() {
 
     const layerStats = useMemo<readonly LayerStats[] | null>(() => {
         void layerStatsVersion;
-        return getFrameBuffer().layerStats ?? snapshot?.layerStats ?? null;
-    }, [layerStatsVersion, snapshot?.layerStats]);
+        return getFrameBuffer().layerStats ?? null;
+    }, [layerStatsVersion]);
     const layerStatsHint = useMemo(() => getLayerStatsHint(layerStats), [layerStats]);
 
     const fitGraphToView = useCallback(() => {

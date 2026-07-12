@@ -8,6 +8,7 @@ import {
     type PlaygroundStore,
 } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 import { NetworkConfigPanel } from './NetworkConfigPanel.tsx';
 
 const originalEditRecipe: PlaygroundStore['editRecipe'] = usePlaygroundStore.getState().editRecipe;
@@ -61,7 +62,7 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         await user.click(screen.getByRole('button', { name: 'Add hidden layer' }));
 
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.document.recipe.model.hiddenLayers)
+            expect(currentPreparedForTest()?.document.recipe.model.hiddenLayers)
                 .toEqual([4, 4, 4]);
         });
         expect(screen.getByRole('status')).toHaveTextContent('Initializing network...');
@@ -75,7 +76,7 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         const input = screen.getByRole('spinbutton', { name: 'Neuron count for layer 1' });
         await user.click(screen.getByRole('button', { name: 'Increase neurons in layer 1' }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.document.recipe.model.hiddenLayers[0])
+            expect(currentPreparedForTest()?.document.recipe.model.hiddenLayers[0])
                 .toBe(5);
         });
 
@@ -83,10 +84,10 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         await user.type(input, '12');
         await user.tab();
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.document.recipe.model.hiddenLayers[0])
+            expect(currentPreparedForTest()?.document.recipe.model.hiddenLayers[0])
                 .toBe(12);
         });
-        const beforeInvalid = usePlaygroundStore.getState().prepared;
+        const beforeInvalid = currentPreparedForTest();
 
         await user.click(input);
         await user.clear(input);
@@ -96,21 +97,21 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'recipe.model.hiddenLayers[0]',
         );
-        expect(usePlaygroundStore.getState().prepared).toBe(beforeInvalid);
+        expect(currentPreparedForTest()).toBe(beforeInvalid);
         expect(input).toHaveValue(99);
     });
 
     it('uses exact hidden activation and initialization variants', async () => {
         const user = userEvent.setup();
         render(<NetworkConfigPanel />);
-        const beforeFingerprint = usePlaygroundStore.getState().prepared?.identities.recipeFingerprint;
+        const beforeFingerprint = currentPreparedForTest()?.identities.recipeFingerprint;
 
         await user.selectOptions(
             screen.getByRole('combobox', { name: 'Hidden activation' }),
             'relu',
         );
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.document.recipe.model.hiddenActivation)
+            expect(currentPreparedForTest()?.document.recipe.model.hiddenActivation)
                 .toBe('relu');
         });
         await user.selectOptions(
@@ -119,10 +120,10 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         );
 
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.document.recipe.model)
+            expect(currentPreparedForTest()?.document.recipe.model)
                 .toMatchObject({ hiddenActivation: 'relu', initialization: 'he' });
         });
-        expect(usePlaygroundStore.getState().prepared?.identities.recipeFingerprint)
+        expect(currentPreparedForTest()?.identities.recipeFingerprint)
             .not.toBe(beforeFingerprint);
         expect(within(screen.getByRole('combobox', { name: 'Hidden activation' }))
             .queryByRole('option', { name: 'Softmax' })).not.toBeInTheDocument();
@@ -131,12 +132,12 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
     it('does not rebuild the runtime when a numeric field is blurred unchanged', async () => {
         const user = userEvent.setup();
         render(<NetworkConfigPanel />);
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
 
         await user.click(screen.getByRole('spinbutton', { name: 'Neuron count for layer 1' }));
         await user.tab();
 
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
     });
 
@@ -150,7 +151,7 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         fireEvent.change(activation, { target: { value: 'relu' } });
 
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.document.recipe.model)
+            expect(currentPreparedForTest()?.document.recipe.model)
                 .toMatchObject({ hiddenLayers: [7, 4], hiddenActivation: 'relu' });
         });
     });
@@ -187,7 +188,7 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
     });
 
     it('retains exact state and reports preparation failures', async () => {
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
         usePlaygroundStore.setState({
             editRecipe: vi.fn(async () => ({
                 ok: false as const,
@@ -206,7 +207,7 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'recipe.model.hiddenLayers: architecture exceeds 2000 trainable parameters',
         );
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
     });
 
     it('keeps network errors retryable', async () => {

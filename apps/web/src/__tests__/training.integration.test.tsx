@@ -11,10 +11,6 @@ import { useLayoutStore } from '../store/useLayoutStore';
 import { resetFrameBuffer } from '../worker/frameBuffer';
 import { switchDataset } from '../store/recipeEdits.ts';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
     GRID_SIZE,
     prepareExperimentDocument,
     type WorkerExperimentRequestV2,
@@ -30,19 +26,9 @@ let fakeStartRenderLoop: ReturnType<typeof vi.fn>;
 let fakeStopRenderLoop: ReturnType<typeof vi.fn>;
 let fakeNewRunTo: ReturnType<typeof vi.fn>;
 
-const fakeSnapshot = {
-    step: 10,
-    epoch: 1,
-    trainLoss: 0.3,
-    testLoss: 0.4,
-    trainMetrics: { loss: 0.3, accuracy: 0.7 },
-    testMetrics: { loss: 0.4, accuracy: 0.6 },
-    weights: [],
-    biases: [],
-    outputGrid: [],
-    gridSize: 40,
-    historyPoint: { step: 10, trainLoss: 0.3, testLoss: 0.4 },
-};
+const INITIAL_ACCESS = usePlaygroundStore.getState().access;
+if (INITIAL_ACCESS.status !== 'ready') throw new Error('missing integration prepared fixture');
+const INITIAL_PREPARED = INITIAL_ACCESS.prepared;
 
 async function fakeStrictResultForRequest(
     request: WorkerExperimentRequestV2,
@@ -108,7 +94,6 @@ async function fakeStrictResultForRequest(
         biases: layerSizes.slice(1).map((fanOut) => Array.from({ length: fanOut }, () => 0)),
         outputGrid: new Float32Array(0),
         gridSize: GRID_SIZE,
-        testMetricsStale: false,
     };
     return {
         snapshot,
@@ -119,8 +104,8 @@ async function fakeStrictResultForRequest(
                 id: 1,
                 step: 0,
                 epoch: 0,
-                trainLoss: trainValues.dataLoss,
-                testLoss: testValues.dataLoss,
+                trainDataLoss: trainValues.dataLoss,
+                testDataLoss: testValues.dataLoss,
                 ...(trainValues.accuracy === undefined
                     ? {}
                     : { trainAccuracy: trainValues.accuracy }),
@@ -174,21 +159,6 @@ const fakeWorkerApi = {
     initializeExperimentV2: vi.fn(),
     resetExperimentV2: vi.fn(),
     stepExperimentV2: vi.fn(),
-    initialize: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 1 }),
-    updateConfig: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 2 }),
-    reset: vi.fn().mockResolvedValue({ snapshot: fakeSnapshot, runId: 3 }),
-    step: vi.fn().mockResolvedValue(fakeSnapshot),
-    restoreCheckpoint: vi.fn().mockResolvedValue({
-        snapshot: fakeSnapshot,
-        runId: 1,
-        timeline: {
-            checkpoints: [],
-            maxCheckpoints: 8,
-            evictedCount: 0,
-            liveCheckpointId: null,
-            restoredCheckpointId: null,
-        },
-    }),
     getCheckpointTimeline: vi.fn().mockResolvedValue({
         checkpoints: [],
         maxCheckpoints: 8,
@@ -196,8 +166,8 @@ const fakeWorkerApi = {
         liveCheckpointId: null,
         restoredCheckpointId: null,
     }),
-    getTrainPoints: vi.fn().mockResolvedValue([]),
-    getTestPoints: vi.fn().mockResolvedValue([]),
+    getTrainPointsV2: vi.fn().mockResolvedValue([]),
+    getTestPointsV2: vi.fn().mockResolvedValue([]),
     updateDemand: vi.fn().mockResolvedValue(undefined),
     setStreamPort: vi.fn().mockResolvedValue(undefined),
 };
@@ -264,17 +234,6 @@ describe('Training integration', () => {
         );
         fakeWorkerApi.resetExperimentV2.mockReset();
         fakeWorkerApi.stepExperimentV2.mockReset();
-        fakeWorkerApi.restoreCheckpoint.mockResolvedValue({
-            snapshot: fakeSnapshot,
-            runId: 1,
-            timeline: {
-                checkpoints: [],
-                maxCheckpoints: 8,
-                evictedCount: 0,
-                liveCheckpointId: null,
-                restoredCheckpointId: null,
-            },
-        });
         fakeWorkerApi.getCheckpointTimeline.mockResolvedValue({
             checkpoints: [],
             maxCheckpoints: 8,
@@ -282,8 +241,8 @@ describe('Training integration', () => {
             liveCheckpointId: null,
             restoredCheckpointId: null,
         });
-        fakeWorkerApi.getTrainPoints.mockResolvedValue([]);
-        fakeWorkerApi.getTestPoints.mockResolvedValue([]);
+        fakeWorkerApi.getTrainPointsV2.mockResolvedValue([]);
+        fakeWorkerApi.getTestPointsV2.mockResolvedValue([]);
 
         resetFrameBuffer();
 
@@ -298,18 +257,14 @@ describe('Training integration', () => {
         });
 
         usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
+            access: { status: 'ready', prepared: INITIAL_PREPARED },
+            preparation: { status: 'ready', requestId: 0, issues: [] },
+            incompatibleSource: null,
         });
 
-        useTrainingStore.getState().resetHistory();
         useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: null,
             frameVersion: 0,
             trainPoints: [],
             testPoints: [],
@@ -321,7 +276,10 @@ describe('Training integration', () => {
             configErrorSource: null,
             configSyncNonce: 0,
             workerError: null,
-            testMetricsStale: false,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
+            trainedRecipeRecordedAt: null,
+            trainedRecipeSource: null,
             checkpointTimeline: {
                 checkpoints: [],
                 maxCheckpoints: 8,
@@ -339,10 +297,9 @@ describe('Training integration', () => {
         await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         expect(fakeWorkerApi.initializeExperimentV2).toHaveBeenCalledTimes(1);
-        expect(fakeWorkerApi.initialize).not.toHaveBeenCalled();
         expect(useTrainingStore.getState().workerError).toBeNull();
         expect(fakeNewRunTo).toHaveBeenCalledWith(1);
-        expect(useTrainingStore.getState().snapshot?.trainLoss).toBe(0.3);
+        expect(useTrainingStore.getState().latestEvaluation?.train.values.dataLoss).toBe(0.3);
     });
 
     it('sends startTraining command when Play is clicked', async () => {
@@ -355,9 +312,11 @@ describe('Training integration', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Play' }));
         });
 
-        expect(fakePostStreamCommand).toHaveBeenCalledWith(
-            expect.objectContaining({ type: 'startTraining' }),
-        );
+        expect(fakePostStreamCommand).toHaveBeenCalledWith({
+            type: 'startTraining',
+            protocolVersion: 2,
+            stepsPerFrame: 5,
+        });
         expect(fakeStartRenderLoop).toHaveBeenCalled();
     });
 
@@ -379,42 +338,86 @@ describe('Training integration', () => {
             fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
         });
 
-        expect(fakePostStreamCommand).toHaveBeenCalledWith(
-            expect.objectContaining({ type: 'stopTraining' }),
-        );
+        expect(fakePostStreamCommand).toHaveBeenCalledWith({
+            type: 'stopTraining',
+            protocolVersion: 2,
+        });
         expect(fakeStopRenderLoop).toHaveBeenCalled();
     });
 
-    it('applies snapshot messages from the worker to the training store', async () => {
+    it('applies streamed V2 evidence and checkpoint metadata to the training store', async () => {
         await act(async () => {
             render(<App />);
         });
         await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
-        const snapshotMsg = {
-            type: 'snapshot' as const,
-            runId: 1,
-            snapshotId: 1,
-            scalars: {
-                step: 20,
-                epoch: 2,
-                trainLoss: 0.25,
-                testLoss: 0.35,
-                trainAccuracy: 0.8,
-                testAccuracy: 0.75,
-                gridSize: 40,
-                testMetricsStale: false,
-            },
-            historyPoint: { step: 20, trainLoss: 0.25, testLoss: 0.35 },
-        };
+        const initial = useTrainingStore.getState().latestEvaluation;
+        if (!initial) throw new Error('expected initial paired evaluation');
+        const model = { generationId: 1, revision: 20, step: 20, epoch: 2 };
 
         await act(async () => {
-            capturedOnSnapshot?.(snapshotMsg);
+            capturedOnSnapshot?.({
+                type: 'evidence',
+                protocolVersion: 2,
+                liveSignal: {
+                    model,
+                    dataset: initial.dataset,
+                    objectiveKey: initial.objectiveKey,
+                    basis: {
+                        kind: 'mini-batch-ema',
+                        alpha: 0.1,
+                        latestBatchSize: 10,
+                        throughStep: 20,
+                    },
+                    dataLoss: 0.25,
+                },
+                latestEvaluation: {
+                    ...initial,
+                    evaluationId: 2,
+                    trigger: 'cadence',
+                    model,
+                    train: {
+                        ...initial.train,
+                        values: { ...initial.train.values, dataLoss: 0.25 },
+                    },
+                    test: {
+                        ...initial.test,
+                        values: { ...initial.test.values, dataLoss: 0.35 },
+                    },
+                    objective: {
+                        regularizationPenalty: 0,
+                        trainTotalObjective: 0.25,
+                    },
+                },
+            });
+            capturedOnSnapshot?.({
+                type: 'snapshot',
+                protocolVersion: 2,
+                runId: 1,
+                snapshotId: 20,
+                model,
+                scalars: { step: 20, epoch: 2, gridSize: GRID_SIZE },
+                checkpointTimeline: {
+                    checkpoints: [{
+                        id: 20,
+                        step: 20,
+                        epoch: 2,
+                        trainDataLoss: 0.25,
+                        testDataLoss: 0.35,
+                        label: 'Step 20',
+                    }],
+                    maxCheckpoints: 8,
+                    evictedCount: 0,
+                    liveCheckpointId: 20,
+                    restoredCheckpointId: null,
+                },
+            });
         });
 
         const state = useTrainingStore.getState();
-        expect(state.snapshot?.trainLoss).toBe(0.25);
-        expect(state.snapshot?.epoch).toBe(2);
+        expect(state.latestLiveSignal?.model).toEqual(model);
+        expect(state.latestEvaluation?.test.values.dataLoss).toBe(0.35);
+        expect(state.checkpointTimeline.liveCheckpointId).toBe(20);
     });
 
     it('routes worker error messages to the error overlay', async () => {
@@ -425,6 +428,7 @@ describe('Training integration', () => {
 
         const errorMsg = {
             type: 'error' as const,
+            protocolVersion: 2 as const,
             runId: 1,
             message: 'Training diverged.',
         };
@@ -462,25 +466,21 @@ describe('Dataset switching scenario', () => {
                 (useTrainingStore.getState().evidenceGenerationId ?? 0) + 1,
             ),
         );
-        fakeWorkerApi.getTrainPoints.mockResolvedValue([]);
-        fakeWorkerApi.getTestPoints.mockResolvedValue([]);
+        fakeWorkerApi.getTrainPointsV2.mockResolvedValue([]);
+        fakeWorkerApi.getTestPointsV2.mockResolvedValue([]);
         fakeWorkerApi.updateDemand.mockResolvedValue(undefined);
 
         resetFrameBuffer();
 
         usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
+            access: { status: 'ready', prepared: INITIAL_PREPARED },
+            preparation: { status: 'ready', requestId: 0, issues: [] },
+            incompatibleSource: null,
         });
 
-        useTrainingStore.getState().resetHistory();
         useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: fakeSnapshot as any,
             frameVersion: 0,
             trainPoints: [],
             testPoints: [],
@@ -492,7 +492,10 @@ describe('Dataset switching scenario', () => {
             configErrorSource: null,
             configSyncNonce: 0,
             workerError: null,
-            testMetricsStale: false,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
+            trainedRecipeRecordedAt: null,
+            trainedRecipeSource: null,
         });
     });
 
@@ -522,7 +525,8 @@ describe('Dataset switching scenario', () => {
             document: { recipe: { task: { dataset: string } } };
         };
         expect(request.document.recipe.task.dataset).toBe('xor');
-        expect(fakeWorkerApi.updateConfig).not.toHaveBeenCalled();
-        expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
+        const access = usePlaygroundStore.getState().access;
+        expect(access.status === 'ready' ? access.prepared.document.recipe.task.dataset : null)
+            .toBe('xor');
     });
 });

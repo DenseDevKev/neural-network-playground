@@ -73,9 +73,15 @@ function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
 export default function App() {
     const access = usePlaygroundStore((state) => state.access);
     const startFresh = usePlaygroundStore((state) => state.startFresh);
+    const recoverWithDefault = useCallback(async () => {
+        const result = await startFresh();
+        if (!result.ok) {
+            throw new Error(result.issues.map((issue) => issue.message).join(' '));
+        }
+    }, [startFresh]);
 
     if (access.status === 'incompatible') {
-        return <CompatibilityState access={access} onStartFresh={startFresh} />;
+        return <CompatibilityState access={access} onStartFresh={recoverWithDefault} />;
     }
 
     return <CompatiblePlayground />;
@@ -321,8 +327,12 @@ function CompatiblePlayground() {
 function StatusBar() {
     const status = useTrainingStore((s) => s.status);
     const view = useLayoutStore((s) => s.view);
-    const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const snapshot = useTrainingStore((s) => s.snapshot);
+    const dataset = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.compiled.data.dataset : 'unavailable'
+    ));
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
+    const step = latestLiveSignal?.model.step ?? latestEvaluation?.model.step ?? 0;
 
     return (
         <div
@@ -338,7 +348,7 @@ function StatusBar() {
             <span>VIEW: <span className="forge-statusbar__accent">{view}</span></span>
             <span>DATA: <span className="forge-statusbar__accent">{dataset}</span></span>
             <span className="forge-statusbar__spacer" />
-            <span>STEP <span className="forge-statusbar__accent">{(snapshot?.step ?? 0).toLocaleString()}</span></span>
+            <span>STEP <span className="forge-statusbar__accent">{step.toLocaleString()}</span></span>
             <span>
                 Inspired by{' '}
                 <a

@@ -14,6 +14,7 @@ import {
     createPlaygroundStore,
     initializePlaygroundStateFromLocation,
     initializePlaygroundStateFromHash,
+    type PlaygroundStoreApi,
 } from './usePlaygroundStore.ts';
 
 type Prepare = (
@@ -65,6 +66,12 @@ function createReadyStore(
         initialIssues: [],
         incompatibleSource: null,
     });
+}
+
+function readyPrepared(store: PlaygroundStoreApi): PreparedExperimentDocumentV2 {
+    const access = store.getState().access;
+    if (access.status !== 'ready') throw new Error('expected ready experiment access');
+    return access.prepared;
 }
 
 function withNoise(
@@ -133,7 +140,7 @@ describe('atomic prepared-document store', () => {
 
         const pending = store.getState().replaceDocument(targetDocument);
         expect(store.getState().preparation).toMatchObject({ status: 'preparing', requestId: 1 });
-        expect(store.getState().prepared).toBe(initial);
+        expect(readyPrepared(store)).toBe(initial);
 
         controlled.resolve(0);
         const result = await pending;
@@ -143,33 +150,25 @@ describe('atomic prepared-document store', () => {
         const readySnapshots = snapshots.filter((state) => state.preparation.status === 'ready');
         expect(readySnapshots).toHaveLength(1);
         const published = readySnapshots[0];
-        expect(published.prepared).toBe(result.value);
-        expect(published.data.noise).toBe(7);
-        expect(published.network).toEqual(result.value.compiled.network);
-        expect(published.ui).toEqual(result.value.document.view);
+        expect(published.access).toEqual({ status: 'ready', prepared: result.value });
         expect(published.incompatibleSource).toBeNull();
     });
 
     it('retains the exact last-successful prepared and projection references after latest failure', async () => {
         const store = createReadyStore();
-        const before = store.getState();
+        const before = readyPrepared(store);
 
         const result = await store.getState().replaceDocument({
-            ...before.prepared!.document,
+            ...before.document,
             recipe: {
-                ...before.prepared!.document.recipe,
-                data: { ...before.prepared!.document.recipe.data, sampleCount: 1 },
+                ...before.document.recipe,
+                data: { ...before.document.recipe.data, sampleCount: 1 },
             },
         });
 
         expect(result.ok).toBe(false);
         const after = store.getState();
-        expect(after.prepared).toBe(before.prepared);
-        expect(after.network).toBe(before.network);
-        expect(after.training).toBe(before.training);
-        expect(after.data).toBe(before.data);
-        expect(after.features).toBe(before.features);
-        expect(after.ui).toBe(before.ui);
+        expect(readyPrepared(store)).toBe(before);
         expect(after.preparation.status).toBe('error');
         expect(after.preparation.issues.length).toBeGreaterThan(0);
     });
@@ -188,7 +187,7 @@ describe('atomic prepared-document store', () => {
 
         expect(newerResult.ok).toBe(true);
         expect(olderResult.ok).toBe(true);
-        expect(store.getState().prepared?.document.recipe.data.noise).toBe(8);
+        expect(readyPrepared(store).document.recipe.data.noise).toBe(8);
         expect(store.getState().preparation).toMatchObject({ status: 'ready', requestId: 2 });
     });
 
@@ -207,16 +206,16 @@ describe('atomic prepared-document store', () => {
 
         controlled.resolve(1);
         expect((await latestFailure).ok).toBe(false);
-        expect(store.getState().prepared).toBe(initial);
+        expect(readyPrepared(store)).toBe(initial);
         controlled.resolve(0);
         expect((await olderSuccess).ok).toBe(true);
-        expect(store.getState().prepared).toBe(initial);
+        expect(readyPrepared(store)).toBe(initial);
         expect(store.getState().preparation).toMatchObject({ status: 'error', requestId: 2 });
 
         const nextEdit = store.getState().editRecipe((recipe) => setLearningRate(recipe, 0.15));
         controlled.resolve(2);
         expect((await nextEdit).ok).toBe(true);
-        expect(store.getState().prepared?.document.recipe.data.noise)
+        expect(readyPrepared(store).document.recipe.data.noise)
             .toBe(initial.document.recipe.data.noise);
     });
 
@@ -235,12 +234,12 @@ describe('atomic prepared-document store', () => {
 
         controlled.resolve(1);
         expect((await newerSuccess).ok).toBe(true);
-        const published = store.getState().prepared;
+        const published = readyPrepared(store);
         controlled.resolve(0);
         expect((await olderFailure).ok).toBe(false);
 
-        expect(store.getState().prepared).toBe(published);
-        expect(store.getState().prepared?.document.recipe.data.noise).toBe(13);
+        expect(readyPrepared(store)).toBe(published);
+        expect(readyPrepared(store).document.recipe.data.noise).toBe(13);
         expect(store.getState().preparation).toMatchObject({ status: 'ready', requestId: 2 });
     });
 
@@ -268,8 +267,8 @@ describe('atomic prepared-document store', () => {
         const edit = store.getState().editRecipe((recipe) => setLearningRate(recipe, 0.2));
         controlled.resolve(2);
         expect((await edit).ok).toBe(true);
-        expect(store.getState().prepared?.document.recipe.data.noise).toBe(11);
-        expect(store.getState().prepared?.document.recipe.training.learningRate).toBe(0.2);
+        expect(readyPrepared(store).document.recipe.data.noise).toBe(11);
+        expect(readyPrepared(store).document.recipe.training.learningRate).toBe(0.2);
     });
 
     it('preserves two rapid orthogonal edit intents even when the first preparation resolves last', async () => {
@@ -284,7 +283,7 @@ describe('atomic prepared-document store', () => {
         controlled.resolve(0);
         expect((await first).ok).toBe(true);
 
-        const recipe = store.getState().prepared!.document.recipe;
+        const recipe = readyPrepared(store).document.recipe;
         expect(recipe.data.noise).toBe(4);
         expect(recipe.training.learningRate).toBe(0.12);
     });
@@ -302,9 +301,9 @@ describe('atomic prepared-document store', () => {
 
         const edited = await store.getState().editRecipe((recipe) => setNoise(recipe, 9));
         expect(edited.ok).toBe(true);
-        expect(store.getState().prepared?.document.recipe.data.sampleCount)
+        expect(readyPrepared(store).document.recipe.data.sampleCount)
             .toBe(initial.document.recipe.data.sampleCount);
-        expect(store.getState().prepared?.document.recipe.data.noise).toBe(9);
+        expect(readyPrepared(store).document.recipe.data.noise).toBe(9);
     });
 
     it('rejects an edit-level issue without incrementing the request ID or preparing', async () => {
@@ -329,7 +328,7 @@ describe('atomic prepared-document store', () => {
 
         const result = await store.getState().applyRecipe(preset('regression-plane'));
         expect(result.ok).toBe(true);
-        const current = store.getState().prepared!;
+        const current = readyPrepared(store);
         expect(current.document.recipe).toEqual(preset('regression-plane').recipe);
         expect(current.document.view).toEqual({ showTestData: true, discretizeOutput: true });
         expect(current.identities.canonicalRecipeKey)
@@ -350,7 +349,7 @@ describe('atomic prepared-document store', () => {
         const result = await store.getState().applyRecipe(forged);
 
         expect(result.ok).toBe(false);
-        expect(store.getState().prepared?.identities.recipeFingerprint)
+        expect(readyPrepared(store).identities.recipeFingerprint)
             .toBe(preset('xor-hidden').prepared.identities.recipeFingerprint);
         expect(prepare).not.toHaveBeenCalled();
     });
@@ -359,7 +358,7 @@ describe('atomic prepared-document store', () => {
         const store = createReadyStore();
         const target = preset('regression-plane');
         const copiedEntry = { ...target };
-        const before = store.getState().prepared;
+        const before = readyPrepared(store);
 
         const result = await store.getState().applyRecipe(copiedEntry);
 
@@ -367,7 +366,7 @@ describe('atomic prepared-document store', () => {
             ok: false,
             issues: [{ path: 'recipe' }],
         });
-        expect(store.getState().prepared).toBe(before);
+        expect(readyPrepared(store)).toBe(before);
     });
 
     it('ends all 49 awaited catalog transitions at the exact destination identity', async () => {
@@ -378,10 +377,10 @@ describe('atomic prepared-document store', () => {
                 expect((await store.getState().applyRecipe(source)).ok).toBe(true);
                 expect((await store.getState().applyRecipe(target)).ok).toBe(true);
                 expect(
-                    store.getState().prepared?.identities.canonicalRecipeKey,
+                    readyPrepared(store).identities.canonicalRecipeKey,
                     `${source.id} -> ${target.id}`,
                 ).toBe(target.prepared.identities.canonicalRecipeKey);
-                expect(store.getState().prepared?.identities.recipeFingerprint)
+                expect(readyPrepared(store).identities.recipeFingerprint)
                     .toBe(target.prepared.identities.recipeFingerprint);
             }
         }
@@ -432,7 +431,7 @@ describe('strict initialization and URL state', () => {
         const store = createPlaygroundStore(initial);
 
         expect(initial.initialPrepared).toBeNull();
-        expect(store.getState().prepared).toBeNull();
+        expect(store.getState().access.prepared).toBeNull();
         expect(store.getState().incompatibleSource).toEqual({ kind: 'url', rawHash: raw });
         expect(store.getState().preparation.status).toBe('error');
         expect(store.getState().preparation.issues.length).toBeGreaterThan(0);
@@ -448,7 +447,7 @@ describe('strict initialization and URL state', () => {
 
         expect(result).toEqual({
             ok: true,
-            value: encodeExperimentUrl(store.getState().prepared!.document),
+            value: encodeExperimentUrl(readyPrepared(store).document),
         });
         expect(window.location.hash).toBe(result.ok ? result.value : '');
     });
@@ -507,6 +506,27 @@ describe('strict initialization and URL state', () => {
         });
     });
 
+    it('does not rewrite the hash when a newer incompatible request wins Start fresh', async () => {
+        const controlled = controlledPreparation();
+        const store = createReadyStore(preset('xor-hidden').prepared, controlled.prepare);
+        window.history.replaceState(null, '', '#legacy-preserved');
+
+        const recovery = store.getState().startFresh();
+        store.getState().markIncompatible(
+            { kind: 'url', rawHash: '#newer-incompatible' },
+            [{ code: 'unsupported-version', path: 'schemaVersion', message: 'newer request won' }],
+        );
+        controlled.resolve(0);
+
+        const result = await recovery;
+        expect(result.ok).toBe(false);
+        expect(window.location.hash).toBe('#legacy-preserved');
+        expect(store.getState().access).toMatchObject({
+            status: 'incompatible',
+            source: { kind: 'url', rawHash: '#newer-incompatible' },
+        });
+    });
+
     it('refuses URL serialization when no compatible experiment is active', async () => {
         const initial = await initializePlaygroundStateFromHash('#legacy');
         const store = createPlaygroundStore(initial);
@@ -522,7 +542,7 @@ describe('strict initialization and URL state', () => {
 describe('V2 dataset regeneration', () => {
     it('uses the prepared dataset contract and every exact generation setting', async () => {
         const store = createReadyStore(preset('three-class-clusters').prepared);
-        const recipe = store.getState().prepared!.document.recipe;
+        const recipe = readyPrepared(store).document.recipe;
 
         store.getState().regenerateData();
 

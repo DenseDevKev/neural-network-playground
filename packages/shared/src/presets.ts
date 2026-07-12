@@ -216,9 +216,6 @@ async function prepareBuiltInCatalog(): Promise<readonly RecipeCatalogEntry[]> {
 
 export const PREPARED_PRESETS: readonly RecipeCatalogEntry[] = await prepareBuiltInCatalog();
 
-/** @deprecated Phase 6C callers must migrate to PREPARED_PRESETS. */
-export const PRESETS = PREPARED_PRESETS;
-
 const RECIPE_BY_REF = new Map(
     PREPARED_PRESETS.map((entry) => [`${entry.id}@${entry.revision}`, entry]),
 );

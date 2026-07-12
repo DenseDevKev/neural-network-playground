@@ -27,7 +27,9 @@ function Fallback({ msg }: { msg: string }) {
 }
 
 export const Sidebar = memo(function Sidebar({ onReset }: SidebarProps) {
-    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
+    const hiddenLayers = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.document.recipe.model.hiddenLayers : []
+    ));
 
     return (
         <aside

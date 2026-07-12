@@ -185,6 +185,45 @@ describe('InspectionPanel V2 evidence', () => {
         expect(screen.getByText('0.1900')).toBeInTheDocument();
         expect(screen.getByText('model penalty')).toBeInTheDocument();
         expect(screen.getByText('0.0300')).toBeInTheDocument();
+        expect(screen.getByText('Trace from training sample 0 · model step 12 · revision 12'))
+            .toBeInTheDocument();
+    });
+
+    it('clears an already-rendered trace when the active model advances', async () => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        workerApi.getPredictionTraceV2.mockResolvedValue({
+            runId: 1,
+            model: MODEL,
+            dataset: DATASET,
+            objectiveKey: 'objective-v2',
+            sample: { source: 'train', index: 0, x: 0.25, y: -0.5, label: 1 },
+            trace: {
+                input: [0.25, -0.5],
+                target: [1],
+                output: [0.82],
+                prediction: 0.82,
+                sampleDataLoss: 0.19,
+                regularizationPenalty: 0.03,
+                layers: [{ layerIndex: 0, preActivations: [1.5], activations: [0.82] }],
+            },
+        });
+
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /trace prediction/i }));
+        expect(await screen.findByText(/Trace from training sample 0/)).toBeInTheDocument();
+
+        await act(async () => {
+            useTrainingStore.setState((state) => ({
+                latestLiveSignal: state.latestLiveSignal
+                    ? { ...state.latestLiveSignal, model: { ...MODEL, revision: 13, step: 13 } }
+                    : null,
+            }));
+        });
+
+        expect(screen.queryByText(/Trace from training sample 0/)).not.toBeInTheDocument();
+        expect(screen.getByText('Trace cleared because the active model changed.'))
+            .toBeInTheDocument();
     });
 
     it('shows the complete objective and gradient breakdown for backprop', async () => {

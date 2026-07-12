@@ -2,17 +2,13 @@
 import type {
     BinaryDatasetId,
     CompiledExperimentConfig,
-    DataConfig,
-    FeatureFlags,
     FeatureId,
     GradientClipSpecV2,
     LearningRateScheduleV2,
-    NetworkConfig,
     OptimizerSpecV2,
     PenaltySpecV2,
     RegressionDatasetId,
     ScalarActivationType,
-    TrainingConfig,
     WeightInitType,
 } from '@nn-playground/engine';
 
@@ -136,19 +132,6 @@ export interface PreparedExperimentDocumentV2 {
     };
 }
 
-export interface UIConfig {
-    showTestData: boolean;
-    discretizeOutput: boolean;
-}
-
-export interface AppConfig {
-    network: NetworkConfig;
-    training: TrainingConfig;
-    data: DataConfig;
-    features: FeatureFlags;
-    ui: UIConfig;
-}
-
 export type RecipeId =
     | 'single-neuron'
     | 'xor-hidden'
@@ -173,9 +156,6 @@ export interface RecipeCatalogEntry {
     readonly recipe: ValidatedStandardExperimentRecipeV2;
     readonly prepared: PreparedExperimentDocumentV2;
 }
-
-/** @deprecated Phase 6C callers must migrate to RecipeCatalogEntry. */
-export type Preset = RecipeCatalogEntry;
 
 export type TrainingStatus = 'idle' | 'running' | 'paused';
 

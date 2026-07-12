@@ -47,7 +47,6 @@ const mockSnapshot: NetworkSnapshot = {
   testMetrics: { loss: 0.12, accuracy: 0.88 },
   outputGrid: [],
   gridSize: 0,
-  historyPoint: { step: 100, trainLoss: 0.1, testLoss: 0.12 },
 };
 
 describe("codeExport", () => {

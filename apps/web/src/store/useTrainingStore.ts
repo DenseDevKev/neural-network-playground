@@ -3,13 +3,8 @@
 // Separated from usePlaygroundStore to prevent sidebar re-renders during training.
 
 import { create } from 'zustand';
+import type { DataPoint } from '@nn-playground/engine';
 import type {
-    NetworkSnapshot,
-    HistoryPoint,
-    DataPoint,
-} from '@nn-playground/engine';
-import type {
-    ArenaModelSummary,
     CheckpointTimeline,
     LiveTrainingSignal,
     PairedEvaluation,
@@ -21,12 +16,8 @@ import type {
 import {
     canonicalizeJson,
     parseWorkerEvidenceMessageV2,
-    type AppConfig,
+    type ValidatedStandardExperimentRecipeV2,
 } from '@nn-playground/shared';
-import {
-    appendHistoryPoint,
-    resetHistoryBuffer,
-} from './historyBuffer.ts';
 import {
     metricHistoryBuffer,
     type PreparedMetricHistoryAppend,
@@ -52,16 +43,15 @@ export interface PreparedTrainingEvidenceAppend {
     readonly publish: boolean;
 }
 
-function cloneAppConfig(config: AppConfig): AppConfig {
-    return structuredClone(config);
+function cloneValidatedRecipe(
+    recipe: ValidatedStandardExperimentRecipeV2,
+): ValidatedStandardExperimentRecipeV2 {
+    return structuredClone(recipe);
 }
 
 export interface TrainingStore {
     // ── Runtime State ──
     status: TrainingStatus;
-    snapshot: NetworkSnapshot | null;
-    /** Monotonic counter — bumped every time `historyBuffer` is mutated. */
-    historyVersion: number;
     /** Worker-authored scientific evidence generation currently accepted by the UI. */
     evidenceGenerationId: number | null;
     latestLiveSignal: LiveTrainingSignal | null;
@@ -77,9 +67,6 @@ export interface TrainingStore {
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
     multiclassBoundaryVersion: number;
-    arenaSummariesVersion: number;
-    /** Bounded scalar summaries only; arena model arrays stay in the worker/frame buffer. */
-    arenaSummaries: ArenaModelSummary[] | null;
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     /** Steps of training to run per animation frame. */
@@ -95,28 +82,20 @@ export interface TrainingStore {
     configSyncNonce: number;
     workerError: string | null;
     pauseReason: PauseReason | null;
-    /** True when the most recent streamed snapshot reused cached test metrics. */
-    testMetricsStale: boolean;
     /** Lightweight checkpoint timeline metadata only; model payloads stay in the worker. */
     checkpointTimeline: CheckpointTimeline;
     /** App-local recipe identity for the snapshot/evidence currently shown in the UI. */
-    trainedRecipeConfig: AppConfig | null;
+    trainedRecipe: ValidatedStandardExperimentRecipeV2 | null;
     trainedRecipeFingerprint: RecipeFingerprint | null;
     trainedRecipeRecordedAt: number | null;
     trainedRecipeSource: TrainedRecipeSource | null;
 
     // ── Actions ──
     setStatus: (s: TrainingStatus) => void;
-    setSnapshot: (snap: NetworkSnapshot) => void;
-    addHistoryPoint: (point: HistoryPoint) => void;
-    applyStreamedSnapshot: (payload: {
-        snapshot: NetworkSnapshot;
-        frameVersion: number;
-        frameVersions?: FrameVersions;
-        testMetricsStale: boolean;
+    applyStreamedFrame: (payload: {
+        frameVersions: FrameVersions;
         checkpointTimeline?: CheckpointTimeline;
     }) => void;
-    resetHistory: () => void;
     /** Validate and atomically publish a strict protocol-V2 evidence message. */
     applyEvidence: (message: unknown) => void;
     /** Preflight a fresh generation without mutating accepted evidence/history. */
@@ -142,11 +121,9 @@ export interface TrainingStore {
     clearWorkerError: () => void;
     setPauseReason: (reason: PauseReason | null) => void;
     clearPauseReason: () => void;
-    setTestMetricsStale: (stale: boolean) => void;
     setCheckpointTimeline: (timeline: CheckpointTimeline) => void;
-    setArenaSummaries: (summaries: ArenaModelSummary[] | null) => void;
     markTrainedRecipe: (
-        config: AppConfig,
+        recipe: ValidatedStandardExperimentRecipeV2,
         source: TrainedRecipeSource,
         recipeFingerprint?: RecipeFingerprint | null,
     ) => void;
@@ -173,8 +150,6 @@ const committedEvidenceAppends = new WeakSet<PreparedTrainingEvidenceAppend>();
 
 export const useTrainingStore = create<TrainingStore>((set, get) => ({
     status: 'idle',
-    snapshot: null,
-    historyVersion: 0,
     evidenceGenerationId: null,
     latestLiveSignal: null,
     latestEvaluation: null,
@@ -188,8 +163,6 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
     confusionMatrixVersion: 0,
     activationHistogramsVersion: 0,
     multiclassBoundaryVersion: 0,
-    arenaSummariesVersion: 0,
-    arenaSummaries: null,
     trainPoints: [],
     testPoints: [],
     stepsPerFrame: 5,
@@ -204,57 +177,28 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
     configSyncNonce: 0,
     workerError: null,
     pauseReason: null,
-    testMetricsStale: false,
     checkpointTimeline: EMPTY_CHECKPOINT_TIMELINE,
-    trainedRecipeConfig: null,
+    trainedRecipe: null,
     trainedRecipeFingerprint: null,
     trainedRecipeRecordedAt: null,
     trainedRecipeSource: null,
 
     setStatus: (status) => set({ status }),
-    setSnapshot: (snapshot) => set({ snapshot }),
-    applyStreamedSnapshot: ({ snapshot, frameVersion, frameVersions, testMetricsStale, checkpointTimeline }) => {
+    applyStreamedFrame: ({ frameVersions, checkpointTimeline }) => {
         set((state) => {
-            const versions = frameVersions ?? {
-                frameVersion,
-                outputGridVersion: state.outputGridVersion,
-                neuronGridsVersion: state.neuronGridsVersion,
-                paramsVersion: state.paramsVersion,
-                layerStatsVersion: state.layerStatsVersion,
-                confusionMatrixVersion: state.confusionMatrixVersion,
-                activationHistogramsVersion: state.activationHistogramsVersion,
-                multiclassBoundaryVersion: state.multiclassBoundaryVersion,
-                arenaSummariesVersion: state.arenaSummariesVersion,
-            };
-
             return {
-                snapshot,
-                frameVersion: versions.frameVersion,
-                outputGridVersion: versions.outputGridVersion,
-                neuronGridsVersion: versions.neuronGridsVersion,
-                paramsVersion: versions.paramsVersion,
-                layerStatsVersion: versions.layerStatsVersion,
-                confusionMatrixVersion: versions.confusionMatrixVersion,
-                activationHistogramsVersion: versions.activationHistogramsVersion,
-                multiclassBoundaryVersion: versions.multiclassBoundaryVersion,
-                arenaSummariesVersion: versions.arenaSummariesVersion,
-                historyVersion: state.historyVersion,
-                testMetricsStale,
+                frameVersion: frameVersions.frameVersion,
+                outputGridVersion: frameVersions.outputGridVersion,
+                neuronGridsVersion: frameVersions.neuronGridsVersion,
+                paramsVersion: frameVersions.paramsVersion,
+                layerStatsVersion: frameVersions.layerStatsVersion,
+                confusionMatrixVersion: frameVersions.confusionMatrixVersion,
+                activationHistogramsVersion: frameVersions.activationHistogramsVersion,
+                multiclassBoundaryVersion: frameVersions.multiclassBoundaryVersion,
                 checkpointTimeline: checkpointTimeline ?? state.checkpointTimeline,
                 workerError: null,
             };
         });
-    },
-    addHistoryPoint: (point) => {
-        // Append to the packed ring buffer and publish the new version.
-        // No array is allocated per frame; chart components pull data
-        // from historyBuffer.readHistory() on their own cadence.
-        const version = appendHistoryPoint(point);
-        set({ historyVersion: version });
-    },
-    resetHistory: () => {
-        const version = resetHistoryBuffer();
-        set({ historyVersion: version });
     },
     applyEvidence: (value) => {
         const prepared = get().prepareEvidenceAppend(value);
@@ -365,7 +309,6 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
         confusionMatrixVersion: versions.confusionMatrixVersion,
         activationHistogramsVersion: versions.activationHistogramsVersion,
         multiclassBoundaryVersion: versions.multiclassBoundaryVersion,
-        arenaSummariesVersion: versions.arenaSummariesVersion,
     }),
     setTrainPoints: (trainPoints) => set({ trainPoints }),
     setTestPoints: (testPoints) => set({ testPoints }),
@@ -420,11 +363,9 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
     clearWorkerError: () => set({ workerError: null }),
     setPauseReason: (pauseReason) => set({ pauseReason }),
     clearPauseReason: () => set({ pauseReason: null }),
-    setTestMetricsStale: (testMetricsStale) => set({ testMetricsStale }),
     setCheckpointTimeline: (checkpointTimeline) => set({ checkpointTimeline }),
-    setArenaSummaries: (arenaSummaries) => set({ arenaSummaries }),
-    markTrainedRecipe: (config, source, recipeFingerprint = null) => set({
-        trainedRecipeConfig: cloneAppConfig(config),
+    markTrainedRecipe: (recipe, source, recipeFingerprint = null) => set({
+        trainedRecipe: cloneValidatedRecipe(recipe),
         trainedRecipeFingerprint: recipeFingerprint,
         trainedRecipeRecordedAt: Date.now(),
         trainedRecipeSource: source,

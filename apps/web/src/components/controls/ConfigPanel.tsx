@@ -79,11 +79,12 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
     }, [reportError]);
 
     const handleExport = useCallback(() => {
-        const prepared = usePlaygroundStore.getState().prepared;
-        if (!prepared) {
+        const access = usePlaygroundStore.getState().access;
+        if (access.status !== 'ready') {
             reportError(NO_ACTIVE_EXPERIMENT);
             return;
         }
+        const prepared = access.prepared;
 
         let url: string | null = null;
         try {
@@ -268,7 +269,8 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                     // exact result currently published by the store may reset UI.
                     if (
                         !mounted.current
-                        || usePlaygroundStore.getState().prepared !== result.value
+                        || usePlaygroundStore.getState().access.status !== 'ready'
+                        || usePlaygroundStore.getState().access.prepared !== result.value
                     ) {
                         return;
                     }
@@ -293,7 +295,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                 input.value = '';
             }
         },
-        [finishImport, onReset, rejectFile, reportError, reportSuccess],
+        [finishImport, onReset, rejectFile, reportSuccess],
     );
 
     return (

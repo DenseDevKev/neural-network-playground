@@ -88,7 +88,8 @@ export async function commitRecipeEdit(
             trainingStore.failConfigChange(formatFailure(result));
             return false;
         }
-        return playground.prepared === result.value;
+        return playground.access.status === 'ready'
+            && playground.access.prepared === result.value;
     } catch (error) {
         if (transactionId === latestRecipeEditTransaction
             && usePlaygroundStore.getState().preparation.requestId === requestId) {

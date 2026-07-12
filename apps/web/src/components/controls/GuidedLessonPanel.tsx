@@ -113,7 +113,9 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                 return;
             }
 
-            if (playground.prepared !== result.value || !mounted.current) return;
+            if (playground.access.status !== 'ready'
+                || playground.access.prepared !== result.value
+                || !mounted.current) return;
             onReset();
             if (!mounted.current) return;
             setActiveStepIndex(0);

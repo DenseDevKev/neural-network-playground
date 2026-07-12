@@ -3,7 +3,6 @@
 // Transport / demand types only — no engine internals.
 
 import type {
-    HistoryPoint,
     LayerStats,
     ConfusionMatrixData,
     MulticlassConfusionMatrixData,
@@ -582,12 +581,6 @@ export interface VisualizationDemand {
     needActivationHistograms: boolean;
     /** Whether to evaluate the confusion matrix on the test set. */
     needConfusionMatrix: boolean;
-    /** How many snapshots between full test-set evaluations. */
-    testEvalInterval: number;
-    /** How many snapshots between full train-set evaluations. Between these,
-     *  the worker reports a running EMA of the per-step batch loss instead
-     *  of the true dataset loss. */
-    trainEvalInterval: number;
     /** How many snapshots between decision-boundary / neuron-grid rebuilds.
      *  Between these, the previously-computed grids are reused. */
     gridInterval: number;
@@ -596,9 +589,8 @@ export interface VisualizationDemand {
 }
 
 /**
- * Sensible defaults — everything visible. Test-eval every 10 snapshots,
- * train-eval every 5, grid every 2. Keeps the common case smooth while
- * letting power users (or explicit UI toggles) dial the cadence down.
+ * Sensible defaults — everything visible, with display-only artifact cadence.
+ * Scientific evaluation cadence is owned by EvaluationRuntime, not the view.
  */
 export const DEFAULT_DEMAND: VisualizationDemand = {
     needDecisionBoundary: true,
@@ -606,8 +598,6 @@ export const DEFAULT_DEMAND: VisualizationDemand = {
     needLayerStats: false,     // InspectionPanel starts collapsed
     needActivationHistograms: false,
     needConfusionMatrix: true,
-    testEvalInterval: 10,
-    trainEvalInterval: 5,
     gridInterval: 2,
     activationHistogramInterval: 5,
 };
@@ -805,54 +795,18 @@ function isOptionalFiniteNumber(value: unknown): value is number | undefined {
     return value === undefined || isFiniteNumber(value);
 }
 
-function isArenaSide(value: unknown): value is ArenaSide {
-    return value === 'A' || value === 'B';
-}
-
-function isArenaStatus(value: unknown): value is ArenaModelSummary['status'] {
-    return value === 'idle' || value === 'running' || value === 'paused';
-}
-
-function isArenaModelSummary(value: unknown): value is ArenaModelSummary {
-    if (!isRecord(value)) return false;
-    return (
-        isArenaSide(value['side']) &&
-        typeof value['label'] === 'string' &&
-        value['label'].length > 0 &&
-        isArenaStatus(value['status']) &&
-        (
-            !('pauseReason' in value) ||
-            value['pauseReason'] === null ||
-            isPauseReason(value['pauseReason'])
-        ) &&
-        isNonNegativeInteger(value['step']) &&
-        isNonNegativeInteger(value['epoch']) &&
-        isFiniteNumber(value['trainLoss']) &&
-        isFiniteNumber(value['testLoss']) &&
-        isOptionalFiniteNumber(value['trainAccuracy']) &&
-        isOptionalFiniteNumber(value['testAccuracy'])
-    );
-}
-
-function isArenaModelSummaryList(value: unknown): value is ArenaModelSummary[] {
-    if (!Array.isArray(value) || value.length !== 2) return false;
-    if (!value.every(isArenaModelSummary)) return false;
-    const sides = value.map((summary) => summary.side).sort().join('');
-    return sides === 'AB';
-}
-
 function isCheckpointSummary(value: unknown): value is CheckpointSummary {
     if (!hasExactOwnKeys(
         value,
-        ['id', 'step', 'epoch', 'trainLoss', 'testLoss', 'label'],
+        ['id', 'step', 'epoch', 'trainDataLoss', 'testDataLoss', 'label'],
         ['trainAccuracy', 'testAccuracy'],
     )) return false;
     return (
         isPositiveInteger(value['id']) &&
         isNonNegativeInteger(value['step']) &&
         isNonNegativeInteger(value['epoch']) &&
-        isFiniteNumber(value['trainLoss']) &&
-        isFiniteNumber(value['testLoss']) &&
+        isFiniteNumber(value['trainDataLoss']) &&
+        isFiniteNumber(value['testDataLoss']) &&
         isOptionalFiniteNumber(value['trainAccuracy']) &&
         (value['trainAccuracy'] === undefined || (value['trainAccuracy'] >= 0 && value['trainAccuracy'] <= 1)) &&
         isOptionalFiniteNumber(value['testAccuracy']) &&
@@ -924,40 +878,53 @@ export function isCheckpointTimelineV2(value: unknown): value is CheckpointTimel
 }
 
 function hasMalformedCheckpointTimelinePayload(m: Record<string, unknown>): boolean {
-    if (m['protocolVersion'] === WORKER_PROTOCOL_VERSION) {
-        return !isCheckpointTimelineV2(m['checkpointTimeline']);
-    }
-    return 'checkpointTimeline' in m && !isCheckpointTimelineV2(m['checkpointTimeline']);
+    return !isCheckpointTimelineV2(m['checkpointTimeline']);
 }
 
 function hasValidSnapshotArtifactProvenance(m: Record<string, unknown>): boolean {
-    const protocolVersion = m['protocolVersion'];
-    if (protocolVersion === undefined) {
-        // Legacy snapshots do not make scientific artifact claims.
-        return m['artifacts'] === undefined;
+    if (!hasExactOwnKeys(m, [
+        'type',
+        'protocolVersion',
+        'runId',
+        'snapshotId',
+        'model',
+        'scalars',
+        'weights',
+        'biases',
+        'weightLayout',
+        'checkpointTimeline',
+    ], [
+        'outputGrid',
+        'neuronGrids',
+        'neuronGridLayout',
+        'layerStats',
+        'layerStatsGradientRevision',
+        'activationHistogramBins',
+        'activationHistogramLayout',
+        'activationHistogramVersion',
+        'multiclassClassGrid',
+        'multiclassConfidenceGrid',
+        'multiclassBoundaryLayout',
+        'multiclassBoundaryVersion',
+        'artifacts',
+        'confusionMatrix',
+        'confusionMatrixEvaluationId',
+        'confusionMatrixVersion',
+        'multiclassConfusionMatrix',
+        'multiclassConfusionMatrixVersion',
+        'sharedSeq',
+    ])) return false;
+    if (m['type'] !== 'snapshot' || m['protocolVersion'] !== WORKER_PROTOCOL_VERSION) {
+        return false;
     }
-    if (protocolVersion !== WORKER_PROTOCOL_VERSION) return false;
-    if (Object.prototype.hasOwnProperty.call(m, 'historyPoint')) return false;
     if (!isRequestId(m['runId'])) return false;
     if (!isNonNegativeInteger(m['snapshotId'])) return false;
 
     const scalars = m['scalars'];
-    if (!isRecord(scalars)
+    if (!hasExactOwnKeys(scalars, ['step', 'epoch', 'gridSize'])
         || !isNonNegativeInteger(scalars['step'])
         || !isNonNegativeInteger(scalars['epoch'])
-        || !isFiniteNumber(scalars['trainLoss'])
-        || !isFiniteNumber(scalars['testLoss'])
-        || !isOptionalFiniteNumber(scalars['trainAccuracy'])
-        || !isOptionalFiniteNumber(scalars['testAccuracy'])
-        || (scalars['trainAccuracy'] !== undefined
-            && (scalars['trainAccuracy'] < 0 || scalars['trainAccuracy'] > 1))
-        || (scalars['testAccuracy'] !== undefined
-            && (scalars['testAccuracy'] < 0 || scalars['testAccuracy'] > 1))
-        || !isPositiveInteger(scalars['gridSize'])
-        || (
-            scalars['testMetricsStale'] !== undefined
-            && !isBoolean(scalars['testMetricsStale'])
-        )) {
+        || !isPositiveInteger(scalars['gridSize'])) {
         return false;
     }
     const frameModel = m['model'];
@@ -1199,7 +1166,15 @@ function hasValidSnapshotArtifactProvenance(m: Record<string, unknown>): boolean
 }
 
 export function normalizeVisualizationDemand(value: unknown): VisualizationDemand | null {
-    if (!isRecord(value)) return null;
+    if (!hasExactOwnKeys(value, [
+        'needDecisionBoundary',
+        'needNeuronGrids',
+        'needLayerStats',
+        'needActivationHistograms',
+        'needConfusionMatrix',
+        'gridInterval',
+        'activationHistogramInterval',
+    ])) return null;
 
     const {
         needDecisionBoundary,
@@ -1207,8 +1182,6 @@ export function normalizeVisualizationDemand(value: unknown): VisualizationDeman
         needLayerStats,
         needActivationHistograms,
         needConfusionMatrix,
-        testEvalInterval,
-        trainEvalInterval,
         gridInterval,
         activationHistogramInterval,
     } = value;
@@ -1219,8 +1192,6 @@ export function normalizeVisualizationDemand(value: unknown): VisualizationDeman
         !isBoolean(needLayerStats) ||
         !isBoolean(needActivationHistograms) ||
         !isBoolean(needConfusionMatrix) ||
-        !isPositiveInteger(testEvalInterval) ||
-        !isPositiveInteger(trainEvalInterval) ||
         !isPositiveInteger(gridInterval) ||
         !isPositiveInteger(activationHistogramInterval)
     ) {
@@ -1233,8 +1204,6 @@ export function normalizeVisualizationDemand(value: unknown): VisualizationDeman
         needLayerStats,
         needActivationHistograms,
         needConfusionMatrix,
-        testEvalInterval,
-        trainEvalInterval,
         gridInterval,
         activationHistogramInterval,
     };
@@ -1248,17 +1217,7 @@ export function normalizeVisualizationDemand(value: unknown): VisualizationDeman
 export interface SnapshotScalars {
     step: number;
     epoch: number;
-    trainLoss: number;
-    testLoss: number;
-    trainAccuracy?: number;
-    testAccuracy?: number;
     gridSize: number;
-    /**
-     * True when the test metrics in this snapshot were reused from a previous
-     * evaluation (i.e. `testEvalInterval` throttled a fresh run). UIs can dim
-     * the test-loss display to hint at the cached value.
-     */
-    testMetricsStale?: boolean;
 }
 
 interface WorkerSnapshotMessageBase {
@@ -1307,49 +1266,10 @@ interface WorkerSnapshotMessageBase {
 }
 
 /** Strict scientific-trust frame with mandatory current-model and checkpoint metadata. */
-export interface StrictWorkerSnapshotMessage extends WorkerSnapshotMessageBase {
+export interface WorkerSnapshotMessage extends WorkerSnapshotMessageBase {
     protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     model: ModelRevision;
-    historyPoint?: never;
     checkpointTimeline: CheckpointTimeline;
-}
-
-/** Legacy frame; strict model identity is unavailable and timeline metadata is optional. */
-export interface LegacyWorkerSnapshotMessage extends WorkerSnapshotMessageBase {
-    protocolVersion?: undefined;
-    model?: undefined;
-    historyPoint?: HistoryPoint;
-    checkpointTimeline?: CheckpointTimeline;
-}
-
-/** Full snapshot message posted from the worker. */
-export type WorkerSnapshotMessage =
-    | StrictWorkerSnapshotMessage
-    | LegacyWorkerSnapshotMessage;
-
-export type ArenaSide = 'A' | 'B';
-
-export interface ArenaModelSummary {
-    side: ArenaSide;
-    label: string;
-    status: 'idle' | 'running' | 'paused';
-    pauseReason?: PauseReason | null;
-    step: number;
-    epoch: number;
-    trainLoss: number;
-    testLoss: number;
-    trainAccuracy?: number;
-    testAccuracy?: number;
-}
-
-export interface ArenaScalarSnapshot {
-    runId: number;
-    snapshotId: number;
-    summaries: ArenaModelSummary[];
-}
-
-export interface WorkerArenaSnapshotMessage extends ArenaScalarSnapshot {
-    type: 'arenaSnapshot';
 }
 
 export interface ActivationHistogramLayout {
@@ -1361,8 +1281,8 @@ export interface CheckpointSummary {
     id: number;
     step: number;
     epoch: number;
-    trainLoss: number;
-    testLoss: number;
+    trainDataLoss: number;
+    testDataLoss: number;
     trainAccuracy?: number;
     testAccuracy?: number;
     label: string;
@@ -1378,6 +1298,7 @@ export interface CheckpointTimeline {
 
 export interface WorkerStatusMessage {
     type: 'status';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     runId: number;
     status: 'idle' | 'running' | 'paused';
     pauseReason?: PauseReason | null;
@@ -1385,6 +1306,7 @@ export interface WorkerStatusMessage {
 
 export interface WorkerErrorMessage {
     type: 'error';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     runId: number;
     message: string;
 }
@@ -1406,6 +1328,7 @@ export interface WorkerErrorMessage {
  */
 export interface WorkerSharedBuffersMessage {
     type: 'sharedBuffers';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     runId: number;
     /** SAB for [seqStart, seqEnd, flags] control words. */
     control: SharedArrayBuffer;
@@ -1419,7 +1342,6 @@ export interface WorkerSharedBuffersMessage {
 
 export type WorkerToMainMessage =
     | WorkerSnapshotMessage
-    | WorkerArenaSnapshotMessage
     | WorkerStatusMessage
     | WorkerErrorMessage
     | WorkerSharedBuffersMessage
@@ -1431,20 +1353,24 @@ export type WorkerToMainMessage =
 
 export interface StartTrainingCommand {
     type: 'startTraining';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     stepsPerFrame: number;
 }
 
 export interface StopTrainingCommand {
     type: 'stopTraining';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
 }
 
 export interface UpdateDemandCommand {
     type: 'updateDemand';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     demand: VisualizationDemand;
 }
 
 export interface UpdateSpeedCommand {
     type: 'updateSpeed';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     stepsPerFrame: number;
 }
 
@@ -1457,6 +1383,7 @@ export interface UpdateSpeedCommand {
  */
 export interface FrameAckCommand {
     type: 'frameAck';
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
 }
 
 export type MainToWorkerCommand =
@@ -1476,9 +1403,6 @@ export type MainToWorkerCommand =
  * does not recurse into `layerStats` arrays to avoid per-frame overhead.
  */
 export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
-    // Keep the legacy high-frequency snapshot path shallow. The strict V2
-    // parser takes a defensive deep snapshot, so only invoke it after the
-    // discriminator proves this is a V2 message.
     if (isRecord(x)
         && (x['type'] === 'evidence' || x['type'] === 'worker-error')) {
         return isWorkerToMainMessageV2(x);
@@ -1486,7 +1410,9 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
     if (!isRecord(x)) return false;
     const m = x as Record<string, unknown>;
     if (typeof m['type'] !== 'string') return false;
-    if (typeof m['runId'] !== 'number') return false;
+    if (m['protocolVersion'] !== WORKER_PROTOCOL_VERSION || !isRequestId(m['runId'])) {
+        return false;
+    }
     switch (m['type']) {
         case 'snapshot':
             return (
@@ -1499,13 +1425,13 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 !hasMalformedMulticlassConfusionMatrixPayload(m) &&
                 !hasMalformedCheckpointTimelinePayload(m)
             );
-        case 'arenaSnapshot':
-            return (
-                typeof m['snapshotId'] === 'number' &&
-                isArenaModelSummaryList(m['summaries'])
-            );
         case 'status':
             return (
+                hasExactOwnKeys(
+                    m,
+                    ['type', 'protocolVersion', 'runId', 'status'],
+                    ['pauseReason'],
+                ) &&
                 (
                     m['status'] === 'idle' ||
                     m['status'] === 'running' ||
@@ -1518,7 +1444,10 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 )
             );
         case 'error':
-            return typeof m['message'] === 'string';
+            return hasExactOwnKeys(
+                m,
+                ['type', 'protocolVersion', 'runId', 'message'],
+            ) && isBoundedString(m['message'], 4_096);
         case 'sharedBuffers':
             // SharedArrayBuffer is a distinct global constructor; fall back to
             // a truthy-object check in environments that don't expose it
@@ -1526,6 +1455,16 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
             // this message from such hosts, so accepting the fallback there
             // only matters for symmetry.
             return (
+                hasExactOwnKeys(m, [
+                    'type',
+                    'protocolVersion',
+                    'runId',
+                    'control',
+                    'outputGrid',
+                    'neuronGrids',
+                    'gridSize',
+                    'neuronGridLayout',
+                ]) &&
                 typeof m['gridSize'] === 'number' &&
                 m['control'] !== null &&
                 typeof m['control'] === 'object' &&
@@ -1546,18 +1485,29 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
 export function isMainToWorkerCommand(x: unknown): x is MainToWorkerCommand {
     if (!isRecord(x)) return false;
     const m = x as Record<string, unknown>;
-    if (typeof m['type'] !== 'string') return false;
+    if (typeof m['type'] !== 'string' || m['protocolVersion'] !== WORKER_PROTOCOL_VERSION) {
+        return false;
+    }
     switch (m['type']) {
         case 'startTraining':
-            return typeof m['stepsPerFrame'] === 'number';
+            return hasExactOwnKeys(
+                m,
+                ['type', 'protocolVersion', 'stepsPerFrame'],
+            ) && isPositiveInteger(m['stepsPerFrame']);
         case 'stopTraining':
-            return true;
+            return hasExactOwnKeys(m, ['type', 'protocolVersion']);
         case 'updateDemand':
-            return normalizeVisualizationDemand(m['demand']) !== null;
+            return hasExactOwnKeys(
+                m,
+                ['type', 'protocolVersion', 'demand'],
+            ) && normalizeVisualizationDemand(m['demand']) !== null;
         case 'updateSpeed':
-            return typeof m['stepsPerFrame'] === 'number';
+            return hasExactOwnKeys(
+                m,
+                ['type', 'protocolVersion', 'stepsPerFrame'],
+            ) && isPositiveInteger(m['stepsPerFrame']);
         case 'frameAck':
-            return true;
+            return hasExactOwnKeys(m, ['type', 'protocolVersion']);
         default:
             return false;
     }

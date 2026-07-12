@@ -1,7 +1,13 @@
 // ── Code Export Generators ──
 // Generate code representations of the current network for learning purposes.
 
-import type { NetworkConfig, TrainingConfig, FeatureFlags, NetworkSnapshot } from '@nn-playground/engine';
+import type { NetworkConfig, TrainingConfig, FeatureFlags } from '@nn-playground/engine';
+
+export interface ExportedModelParameters {
+    readonly step: number;
+    readonly weights: readonly (readonly (readonly number[])[])[];
+    readonly biases: readonly (readonly number[])[];
+}
 
 /**
  * Names of feature transforms for code generation.
@@ -61,7 +67,7 @@ export function generatePseudocode(
     config: NetworkConfig,
     training: TrainingConfig,
     features: FeatureFlags,
-    snapshot: NetworkSnapshot | null,
+    snapshot: ExportedModelParameters | null,
 ): string {
     const feats = getFeatureList(features);
     const layers = [config.inputSize, ...config.hiddenLayers, config.outputSize];
@@ -143,7 +149,7 @@ export function generateNumPy(
     config: NetworkConfig,
     _training: TrainingConfig,
     features: FeatureFlags,
-    snapshot: NetworkSnapshot | null,
+    snapshot: ExportedModelParameters | null,
 ): string {
     const feats = getFeatureList(features);
     const layers = [config.inputSize, ...config.hiddenLayers, config.outputSize];
@@ -202,7 +208,7 @@ export function generateTFJS(
     config: NetworkConfig,
     training: TrainingConfig,
     features: FeatureFlags,
-    snapshot: NetworkSnapshot | null,
+    snapshot: ExportedModelParameters | null,
 ): string {
     const feats = getFeatureList(features);
     const layers = [config.inputSize, ...config.hiddenLayers, config.outputSize];

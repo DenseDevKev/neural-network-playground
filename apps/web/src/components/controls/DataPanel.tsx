@@ -45,7 +45,9 @@ function problemLabel(kind: 'binary-classification' | 'multiclass-classification
 }
 
 export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
-    const recipe = usePlaygroundStore((state) => state.prepared?.document.recipe ?? null);
+    const recipe = usePlaygroundStore((state) => state.access.status === 'ready'
+        ? state.access.prepared.document.recipe
+        : null);
     const isLoading = useTrainingStore((state) => state.dataConfigLoading);
     const trainCount = useTrainingStore((state) => state.trainPoints.length);
     const testCount = useTrainingStore((state) => state.testPoints.length);

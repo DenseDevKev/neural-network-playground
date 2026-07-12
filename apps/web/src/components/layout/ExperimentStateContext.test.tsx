@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-    type AppConfig,
+    PREPARED_PRESETS,
     type LiveTrainingSignal,
     type PairedEvaluation,
+    type PreparedExperimentDocumentV2,
 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -19,19 +16,25 @@ import {
     TopologyStateBadge,
 } from './ExperimentStateContext.tsx';
 
-function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-    return {
-        data: overrides.data ?? { ...DEFAULT_DATA },
-        features: overrides.features ?? { ...DEFAULT_FEATURES },
-        network: overrides.network ?? {
-            ...DEFAULT_NETWORK,
-            inputSize: 2,
-            hiddenLayers: [...DEFAULT_NETWORK.hiddenLayers],
-            seed: DEFAULT_DATA.seed,
-        },
-        training: overrides.training ?? { ...DEFAULT_TRAINING },
-        ui: overrides.ui ?? { showTestData: false, discretizeOutput: false },
-    };
+function prepared(id = 'xor-hidden'): PreparedExperimentDocumentV2 {
+    const match = PREPARED_PRESETS.find((entry) => entry.id === id)?.prepared;
+    if (!match) throw new Error(`missing preset ${id}`);
+    return match;
+}
+
+function installCurrent(next = prepared()) {
+    usePlaygroundStore.setState({
+        access: { status: 'ready', prepared: next },
+        preparation: { status: 'ready', requestId: 0, issues: [] },
+    });
+}
+
+function installTrained(next = prepared()) {
+    useTrainingStore.getState().markTrainedRecipe(
+        next.document.recipe,
+        'initialize',
+        next.identities.recipeFingerprint,
+    );
 }
 
 function live(step: number): LiveTrainingSignal {
@@ -65,11 +68,11 @@ function evaluation(step: number): PairedEvaluation {
 
 describe('ExperimentStateContext', () => {
     beforeEach(() => {
-        usePlaygroundStore.setState(makeConfig());
+        installCurrent();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: null,
-            trainedRecipeConfig: null,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
             trainedRecipeRecordedAt: null,
             trainedRecipeSource: null,
             pendingConfigSource: null,
@@ -107,17 +110,9 @@ describe('ExperimentStateContext', () => {
     });
 
     it('labels topology and evidence as drifted when current recipe changes after training', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
+        installTrained();
         useTrainingStore.setState({ latestLiveSignal: live(24) });
-        usePlaygroundStore.setState({
-            ...makeConfig(),
-            network: {
-                ...DEFAULT_NETWORK,
-                inputSize: 2,
-                hiddenLayers: [8],
-                seed: DEFAULT_DATA.seed,
-            },
-        });
+        installCurrent(prepared('regression-plane'));
 
         render(
             <>
@@ -188,7 +183,7 @@ describe('ExperimentStateContext', () => {
     });
 
     it('states exact evaluation age instead of a global stale-metrics claim', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
+        installTrained();
         useLayoutStore.setState({
             view: 'run',
             activeEvidenceView: 'confusion',
@@ -216,17 +211,9 @@ describe('ExperimentStateContext', () => {
     });
 
     it('labels mixed draft and snapshot state in the diagnostic cockpit', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
+        installTrained();
         useTrainingStore.setState({ latestLiveSignal: live(24) });
-        usePlaygroundStore.setState({
-            ...makeConfig(),
-            network: {
-                ...DEFAULT_NETWORK,
-                inputSize: 2,
-                hiddenLayers: [8],
-                seed: DEFAULT_DATA.seed,
-            },
-        });
+        installCurrent(prepared('regression-plane'));
 
         render(<DiagnosticCockpitStrip />);
 

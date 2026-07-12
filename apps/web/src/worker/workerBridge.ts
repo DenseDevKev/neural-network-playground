@@ -19,6 +19,7 @@ import {
     isWorkerToMainMessage,
     parseArtifactProvenance,
     parseWorkerToMainMessageV2,
+    WORKER_PROTOCOL_VERSION,
 } from '@nn-playground/shared';
 import {
     updateFrameBuffer,
@@ -108,7 +109,7 @@ let _onSnapshot: SnapshotCallback | null = null;
 // path as worker-emitted errors.
 function emitWorkerError(message: string): void {
     if (_onSnapshot) {
-        _onSnapshot({ type: 'error', runId: _currentRunId, message });
+        _onSnapshot({ type: 'error', protocolVersion: 2, runId: _currentRunId, message });
     }
 }
 
@@ -123,7 +124,7 @@ function deepFreezeArtifact<T>(value: T): Readonly<T> {
 function snapshotWithFrozenArtifactProvenance(
     message: WorkerSnapshotMessage,
 ): WorkerSnapshotMessage {
-    if (message.protocolVersion !== 2 || message.artifacts === undefined) return message;
+    if (message.artifacts === undefined) return message;
     const parsed: Partial<Record<keyof WorkerArtifactProvenanceV2, ArtifactProvenance>> = {};
     for (const key of Object.keys(message.artifacts) as Array<keyof WorkerArtifactProvenanceV2>) {
         const provenance = message.artifacts[key];
@@ -214,7 +215,7 @@ function handleWorkerMessage(msg: unknown): void {
     }
 
     // Structured errors always surface, even if their originating generation
-    // has already been replaced, matching the legacy error behavior below.
+    // has already been replaced.
     if (msg.type === 'worker-error') {
         const error = parseWorkerToMainMessageV2(msg);
         if (error.type !== 'worker-error') {
@@ -231,14 +232,15 @@ function handleWorkerMessage(msg: unknown): void {
 
     if (msg.type === 'snapshot') {
         const snapshot = snapshotWithFrozenArtifactProvenance(msg);
-        if (snapshot.runId === _currentRunId
-            && snapshot.protocolVersion === 2
-            && _minimumSnapshotRevision > 0) {
+        if (snapshot.runId === _currentRunId && _minimumSnapshotRevision > 0) {
             if (snapshot.model === undefined
                 || snapshot.model.generationId !== snapshot.runId
                 || !Number.isSafeInteger(snapshot.model.revision)
                 || snapshot.model.revision < 0) {
-                if (_streamPort) _streamPort.postMessage({ type: 'frameAck' });
+                if (_streamPort) _streamPort.postMessage({
+                    type: 'frameAck',
+                    protocolVersion: WORKER_PROTOCOL_VERSION,
+                });
                 emitWorkerError('Received strict snapshot without a valid current model revision');
                 return;
             }
@@ -246,7 +248,10 @@ function handleWorkerMessage(msg: unknown): void {
                 // Comlink replies and stream-port messages use independent
                 // channels. A pre-restore frame can therefore arrive after
                 // the restore RPC; acknowledge it without making it visible.
-                if (_streamPort) _streamPort.postMessage({ type: 'frameAck' });
+                if (_streamPort) _streamPort.postMessage({
+                    type: 'frameAck',
+                    protocolVersion: WORKER_PROTOCOL_VERSION,
+                });
                 return;
             }
         }
@@ -314,11 +319,9 @@ function buildSnapshotFramePatch(
         );
         const strictFlags = FLAG_OUTPUT_GRID
             | (msg.artifacts?.neuronGrids === undefined ? 0 : FLAG_NEURON_GRIDS);
-        const matchesStrictEnvelope = msg.protocolVersion !== 2 || (
-            result !== null
+        const matchesStrictEnvelope = result !== null
             && result.seq === msg.sharedSeq
-            && result.flags === strictFlags
-        );
+            && result.flags === strictFlags;
         if (result && matchesStrictEnvelope) {
             if ((result.flags & FLAG_OUTPUT_GRID) !== 0) {
                 patch.outputGrid = sharedOutputReadBuf;
@@ -337,7 +340,7 @@ function buildSnapshotFramePatch(
         // update this frame — the UI will pick up the next consistent
         // publish. No inline fallback available (data isn't on the msg).
     } else {
-        // Legacy postMessage path — grids arrived inline.
+        // Transferable postMessage path — grids arrived inline.
         if (msg.outputGrid !== undefined) {
             patch.outputGrid = msg.outputGrid.length > 0 ? msg.outputGrid : null;
             patch.gridSize = msg.outputGrid.length > 0 ? msg.scalars.gridSize : 0;
@@ -345,11 +348,7 @@ function buildSnapshotFramePatch(
                 patch.multiclassClassGrid = null;
                 patch.multiclassConfidenceGrid = null;
                 patch.multiclassBoundaryLayout = null;
-            } else if (
-                msg.protocolVersion === 2
-                && !hasMulticlassBoundaryPayload
-                && msg.outputGrid.length === 0
-            ) {
+            } else if (!hasMulticlassBoundaryPayload && msg.outputGrid.length === 0) {
                 patch.multiclassClassGrid = null;
                 patch.multiclassConfidenceGrid = null;
                 patch.multiclassBoundaryLayout = null;
@@ -392,14 +391,10 @@ function buildSnapshotFramePatch(
     if (msg.confusionMatrix !== undefined) {
         patch.confusionMatrix = msg.confusionMatrix;
         patch.multiclassConfusionMatrix = null;
-    } else if (msg.protocolVersion !== 2 && msg.scalars.testMetricsStale === false) {
-        patch.confusionMatrix = null;
     }
     if (msg.multiclassConfusionMatrix !== undefined) {
         patch.multiclassConfusionMatrix = msg.multiclassConfusionMatrix;
         patch.confusionMatrix = null;
-    } else if (msg.protocolVersion !== 2 && msg.scalars.testMetricsStale === false) {
-        patch.multiclassConfusionMatrix = null;
     }
     attachStrictArtifactProvenance(msg, patch);
     return patch;
@@ -430,7 +425,6 @@ function attachStrictArtifactProvenance(
     msg: WorkerSnapshotMessage,
     patch: FrameBufferPatch,
 ): void {
-    if (msg.protocolVersion !== 2) return;
     const artifacts = msg.artifacts;
 
     const boundaryMutated = patchHasOwn(patch, 'outputGrid')
@@ -503,9 +497,7 @@ function rafLoop(): void {
                 _sharedNeuronReadBuf,
                 _sharedNeuronGridLayout,
             );
-            updateFrameBuffer(patch, msg.protocolVersion === 2
-                ? { requireArtifactProvenance: true }
-                : undefined);
+            updateFrameBuffer(patch, { requireArtifactProvenance: true });
             rotateCommittedSharedReadBuffers(patch);
         }
 
@@ -515,7 +507,10 @@ function rafLoop(): void {
         // Ack snapshots to release the worker's back-pressure gate. Status/
         // error messages bypass the gate, so they don't need an ack.
         if (msg.type === 'snapshot' && _streamPort) {
-            _streamPort.postMessage({ type: 'frameAck' });
+            _streamPort.postMessage({
+                type: 'frameAck',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+            });
         }
     }
 
@@ -552,14 +547,15 @@ export function stopRenderLoop(): void {
                 _sharedNeuronReadBuf,
                 _sharedNeuronGridLayout,
             );
-            updateFrameBuffer(patch, msg.protocolVersion === 2
-                ? { requireArtifactProvenance: true }
-                : undefined);
+            updateFrameBuffer(patch, { requireArtifactProvenance: true });
             rotateCommittedSharedReadBuffers(patch);
         }
         _onSnapshot(msg);
         if (msg.type === 'snapshot' && _streamPort) {
-            _streamPort.postMessage({ type: 'frameAck' });
+            _streamPort.postMessage({
+                type: 'frameAck',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+            });
         }
     }
 }
@@ -623,7 +619,10 @@ export function discardPendingSnapshot(
         return false;
     }
     _pendingSnapshot = null;
-    if (_streamPort) _streamPort.postMessage({ type: 'frameAck' });
+    if (_streamPort) _streamPort.postMessage({
+        type: 'frameAck',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+    });
     return true;
 }
 

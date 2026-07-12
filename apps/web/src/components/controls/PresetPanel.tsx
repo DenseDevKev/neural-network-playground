@@ -23,7 +23,9 @@ function formatPreparationIssues(issues: readonly ExperimentSchemaIssue[]): stri
 
 export const PresetPanel = memo(function PresetPanel({ onReset, onApplied }: PresetPanelProps) {
     const applyRecipe = usePlaygroundStore((s) => s.applyRecipe);
-    const prepared = usePlaygroundStore((s) => s.prepared);
+    const prepared = usePlaygroundStore((s) => s.access.status === 'ready'
+        ? s.access.prepared
+        : null);
     const isLoading = useTrainingStore((s) => s.presetConfigLoading);
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
@@ -40,8 +42,10 @@ export const PresetPanel = memo(function PresetPanel({ onReset, onApplied }: Pre
     const handleSelect = useCallback(
         async (entry: RecipeCatalogEntry) => {
             if (pendingSelection.current) return;
-            const currentKey = usePlaygroundStore.getState()
-                .prepared?.identities.canonicalRecipeKey;
+            const currentAccess = usePlaygroundStore.getState().access;
+            const currentKey = currentAccess.status === 'ready'
+                ? currentAccess.prepared.identities.canonicalRecipeKey
+                : undefined;
             if (currentKey === entry.prepared.identities.canonicalRecipeKey) return;
 
             pendingSelection.current = true;
@@ -60,7 +64,9 @@ export const PresetPanel = memo(function PresetPanel({ onReset, onApplied }: Pre
                     return;
                 }
 
-                if (playground.prepared !== result.value || !mounted.current) return;
+                if (playground.access.status !== 'ready'
+                    || playground.access.prepared !== result.value
+                    || !mounted.current) return;
                 onReset();
                 if (mounted.current) onApplied?.();
             } catch (error) {

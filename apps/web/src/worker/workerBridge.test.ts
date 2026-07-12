@@ -89,6 +89,7 @@ import type {
     WorkerSnapshotMessage,
     WorkerToMainMessage,
 } from '@nn-playground/shared';
+import { WORKER_PROTOCOL_VERSION } from '@nn-playground/shared';
 import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.ts';
 
 let artifactDataset: DatasetRevision;
@@ -173,7 +174,12 @@ describe('workerBridge error paths', () => {
 
         // Stale error (runId=5 < _currentRunId=10) must surface
         listener({
-            data: { type: 'error', runId: 5, message: 'stale error' },
+            data: {
+                type: 'error',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+                runId: 5,
+                message: 'stale error',
+            },
         } as MessageEvent);
 
         expect(receivedMessages.some((m) => m.type === 'error')).toBe(true);
@@ -244,7 +250,7 @@ function getRegisteredStreamListener(): (event: MessageEvent) => void {
     return listenerCall[1] as (event: MessageEvent) => void;
 }
 
-function makeSnapshotMessage(
+function makeSnapshotPayload(
     snapshotId: number,
     overrides: Partial<WorkerSnapshotMessage> = {},
 ): WorkerSnapshotMessage {
@@ -255,10 +261,6 @@ function makeSnapshotMessage(
         scalars: {
             step: snapshotId * 10,
             epoch: snapshotId,
-            trainLoss: 0.4,
-            testLoss: 0.5,
-            trainAccuracy: 0.7,
-            testAccuracy: 0.6,
             gridSize: 2,
         },
         outputGrid: new Float32Array([0.1, 0.2, 0.3, 0.4]),
@@ -285,15 +287,8 @@ function makeSnapshotMessage(
             ],
         },
         activationHistogramVersion: 1,
-        historyPoint: {
-            step: snapshotId * 10,
-            trainLoss: 0.4,
-            testLoss: 0.5,
-            trainAccuracy: 0.7,
-            testAccuracy: 0.6,
-        },
         ...overrides,
-    };
+    } as WorkerSnapshotMessage;
 }
 
 function artifactProvenance(
@@ -317,29 +312,11 @@ function makeStrictSnapshotMessage(
     snapshotId: number,
     overrides: Partial<WorkerSnapshotMessage> = {},
 ): WorkerSnapshotMessage {
-    const { historyPoint: _legacyHistoryPoint, ...legacy } = makeSnapshotMessage(snapshotId);
-    const artifacts: WorkerArtifactProvenanceV2 = {
-        decisionBoundary: artifactProvenance(snapshotId, {
-            kind: 'prediction-grid',
-            pointCount: 4,
-            domain: [-1, 1, -1, 1],
-        }),
-        neuronGrids: artifactProvenance(snapshotId, {
-            kind: 'prediction-grid',
-            pointCount: 4,
-            domain: [-1, 1, -1, 1],
-        }),
-        activationHistogram: artifactProvenance(snapshotId, {
-            kind: 'bounded-sample',
-            split: 'train',
-            sampleCount: Math.min(128, artifactDataset.trainCount),
-            populationCount: artifactDataset.trainCount,
-        }),
-    };
+    const base = makeSnapshotPayload(snapshotId);
     const histogramSampleCount = Math.min(128, artifactDataset.trainCount);
-    return {
-        ...legacy,
-        protocolVersion: 2,
+    const message: WorkerSnapshotMessage = {
+        ...base,
+        protocolVersion: WORKER_PROTOCOL_VERSION,
         model: {
             generationId: 1,
             revision: snapshotId,
@@ -371,22 +348,65 @@ function makeStrictSnapshotMessage(
             liveCheckpointId: null,
             restoredCheckpointId: null,
         },
-        artifacts,
         ...overrides,
-    } as WorkerSnapshotMessage;
-}
-
-function withTestMetricsStale(
-    msg: WorkerSnapshotMessage,
-    testMetricsStale: boolean,
-): WorkerSnapshotMessage {
-    return {
-        ...msg,
-        scalars: {
-            ...msg.scalars,
-            testMetricsStale,
-        },
     };
+    if (Object.prototype.hasOwnProperty.call(overrides, 'runId')
+        && !Object.prototype.hasOwnProperty.call(overrides, 'model')) {
+        message.model = { ...message.model, generationId: message.runId };
+    }
+    const currentProvenance = (basis: ArtifactBasis): ArtifactProvenance => {
+        const provenance = artifactProvenance(snapshotId, basis);
+        return {
+            ...provenance,
+            model: { ...provenance.model, generationId: message.runId },
+        };
+    };
+    if (!Object.prototype.hasOwnProperty.call(overrides, 'artifacts')) {
+        const artifacts: WorkerArtifactProvenanceV2 = {};
+        if ((message.outputGrid?.length ?? 0) > 0
+            || message.multiclassClassGrid !== undefined
+            || message.sharedSeq !== undefined) {
+            artifacts.decisionBoundary = currentProvenance({
+                kind: 'prediction-grid',
+                pointCount: 4,
+                domain: [-1, 1, -1, 1],
+            });
+        }
+        if ((message.neuronGrids?.length ?? 0) > 0
+            || (message.sharedSeq !== undefined && message.neuronGridLayout !== undefined)) {
+            artifacts.neuronGrids = currentProvenance({
+                kind: 'prediction-grid',
+                pointCount: 4,
+                domain: [-1, 1, -1, 1],
+            });
+        }
+        if (message.activationHistogramBins !== undefined) {
+            artifacts.activationHistogram = currentProvenance({
+                kind: 'bounded-sample',
+                split: 'train',
+                sampleCount: histogramSampleCount,
+                populationCount: artifactDataset.trainCount,
+            });
+        }
+        if (message.confusionMatrix !== undefined
+            || message.multiclassConfusionMatrix !== undefined) {
+            artifacts.confusionMatrix = currentProvenance({
+                kind: 'full-split',
+                split: 'test',
+                sampleCount: artifactDataset.testCount,
+                populationCount: artifactDataset.testCount,
+            });
+            if (!Object.prototype.hasOwnProperty.call(overrides, 'confusionMatrixEvaluationId')) {
+                message.confusionMatrixEvaluationId = snapshotId;
+            }
+            if (message.confusionMatrix !== undefined
+                && !Object.prototype.hasOwnProperty.call(overrides, 'confusionMatrixVersion')) {
+                message.confusionMatrixVersion = snapshotId;
+            }
+        }
+        message.artifacts = artifacts;
+    }
+    return message;
 }
 
 describe('workerBridge streamed snapshots', () => {
@@ -446,7 +466,7 @@ describe('workerBridge streamed snapshots', () => {
         const startVersion = getFrameBuffer().version;
 
         startRenderLoop();
-        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
         runNextAnimationFrame();
 
         const frame = getFrameBuffer();
@@ -455,12 +475,14 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
         expect(frame.weights).toEqual(new Float32Array([0.5, -0.25]));
         expect(frame.biases).toEqual(new Float32Array([0.1]));
-        expect(frame.activationHistogramBins).toEqual(new Float32Array([1, 2]));
+        expect(frame.activationHistogramBins).toEqual(Float32Array.from([
+            128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]));
         expect(frame.activationHistogramLayout?.layers).toHaveLength(1);
         expect(receivedMessages).toHaveLength(1);
         expect(receivedMessages[0].msg.type).toBe('snapshot');
         expect(receivedMessages[0].frameVersion).toBe(frame.version);
-        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
     });
 
     it('discards and acknowledges a queued same-run snapshot before restore publication', () => {
@@ -468,16 +490,16 @@ describe('workerBridge streamed snapshots', () => {
         const startVersion = getFrameBuffer().version;
 
         startRenderLoop();
-        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
         expect(discardPendingSnapshot(1)).toBe(true);
         runNextAnimationFrame();
 
         expect(getFrameBuffer().version).toBe(startVersion);
         expect(receivedMessages).toEqual([]);
-        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
 
         // Discard is not a run reset: the consumed snapshot ID remains fenced.
-        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
         runNextAnimationFrame();
         expect(receivedMessages).toEqual([]);
     });
@@ -493,7 +515,7 @@ describe('workerBridge streamed snapshots', () => {
 
         expect(getFrameBuffer().version).toBe(startVersion);
         expect(receivedMessages).toEqual([]);
-        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
 
         listener({ data: makeStrictSnapshotMessage(5) } as MessageEvent);
         runNextAnimationFrame();
@@ -754,7 +776,7 @@ describe('workerBridge streamed snapshots', () => {
         );
         listener({
             data: {
-                type: 'sharedBuffers',
+                type: 'sharedBuffers', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 1,
                 control: sharedViews.controlSAB,
                 outputGrid: sharedViews.outputGridSAB,
@@ -806,7 +828,7 @@ describe('workerBridge streamed snapshots', () => {
         );
         listener({
             data: {
-                type: 'sharedBuffers',
+                type: 'sharedBuffers', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 1,
                 control: sharedViews.controlSAB,
                 outputGrid: sharedViews.outputGridSAB,
@@ -870,7 +892,7 @@ describe('workerBridge streamed snapshots', () => {
         );
         listener({
             data: {
-                type: 'sharedBuffers',
+                type: 'sharedBuffers', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 1,
                 control: sharedViews.controlSAB,
                 outputGrid: sharedViews.outputGridSAB,
@@ -933,7 +955,7 @@ describe('workerBridge streamed snapshots', () => {
         );
         listener({
             data: {
-                type: 'sharedBuffers',
+                type: 'sharedBuffers', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 1,
                 control: sharedViews.controlSAB,
                 outputGrid: sharedViews.outputGridSAB,
@@ -986,13 +1008,13 @@ describe('workerBridge streamed snapshots', () => {
         const listener = getRegisteredStreamListener();
 
         startRenderLoop();
-        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
         runNextAnimationFrame();
         expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
         expect(getFrameBuffer().neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
 
         listener({
-            data: makeSnapshotMessage(2, {
+            data: makeStrictSnapshotMessage(2, {
                 outputGrid: new Float32Array(0),
                 neuronGrids: new Float32Array(0),
                 neuronGridLayout: undefined,
@@ -1011,12 +1033,12 @@ describe('workerBridge streamed snapshots', () => {
         const listener = getRegisteredStreamListener();
 
         startRenderLoop();
-        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
         runNextAnimationFrame();
         expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
 
         listener({
-            data: makeSnapshotMessage(2, {
+            data: makeStrictSnapshotMessage(2, {
                 outputGrid: new Float32Array(0),
                 neuronGrids: new Float32Array(0),
                 neuronGridLayout: undefined,
@@ -1048,13 +1070,13 @@ describe('workerBridge streamed snapshots', () => {
         const listener = getRegisteredStreamListener();
 
         startRenderLoop();
-        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
         runNextAnimationFrame();
         expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
         expect(getFrameBuffer().neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
 
         listener({
-            data: makeSnapshotMessage(2, {
+            data: makeStrictSnapshotMessage(2, {
                 outputGrid: undefined,
                 neuronGrids: undefined,
                 neuronGridLayout: undefined,
@@ -1082,7 +1104,7 @@ describe('workerBridge streamed snapshots', () => {
 
         startRenderLoop();
         listener({
-            data: makeSnapshotMessage(1, {
+            data: makeStrictSnapshotMessage(1, {
                 outputGrid: new Float32Array(0),
                 neuronGrids: new Float32Array(0),
                 neuronGridLayout: undefined,
@@ -1100,9 +1122,9 @@ describe('workerBridge streamed snapshots', () => {
         const initialMulticlassVersion = getFrameBuffer().multiclassBoundaryVersion;
 
         listener({
-            data: makeSnapshotMessage(2, {
-                outputGrid: new Float32Array(0),
-                neuronGrids: new Float32Array(0),
+            data: makeStrictSnapshotMessage(2, {
+                outputGrid: undefined,
+                neuronGrids: undefined,
                 neuronGridLayout: undefined,
                 multiclassClassGrid: undefined,
                 multiclassConfidenceGrid: undefined,
@@ -1116,9 +1138,10 @@ describe('workerBridge streamed snapshots', () => {
         expect(getFrameBuffer().multiclassBoundaryVersion).toBe(initialMulticlassVersion);
 
         listener({
-            data: makeSnapshotMessage(3, {
+            data: makeStrictSnapshotMessage(3, {
                 outputGrid: new Float32Array([0.2, 0.3, 0.4, 0.5]),
                 neuronGrids: undefined,
+                neuronGridLayout: undefined,
                 multiclassClassGrid: undefined,
                 multiclassConfidenceGrid: undefined,
                 multiclassBoundaryLayout: undefined,
@@ -1135,18 +1158,18 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.multiclassBoundaryVersion).toBe(initialMulticlassVersion + 1);
     });
 
-    it('clears cached confusion matrix only when fresh streamed metrics omit it', () => {
+    it('retains the last paired confusion artifact when a cadence frame omits it', () => {
         const listener = getRegisteredStreamListener();
         const confusionMatrix = {
-            tp: 8,
-            tn: 7,
-            fp: 2,
-            fn: 1,
+            tp: 80,
+            tn: 60,
+            fp: 5,
+            fn: 5,
         };
 
         startRenderLoop();
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(1, { confusionMatrix }), false),
+            data: makeStrictSnapshotMessage(1, { confusionMatrix }),
         } as MessageEvent);
         runNextAnimationFrame();
 
@@ -1155,55 +1178,45 @@ describe('workerBridge streamed snapshots', () => {
         expect(afterInitial.confusionMatrix).toBe(confusionMatrix);
 
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(2, {
+            data: makeStrictSnapshotMessage(2, {
                 confusionMatrix: undefined,
-            }), true),
+            }),
         } as MessageEvent);
         runNextAnimationFrame();
 
-        const afterStale = getFrameBuffer();
-        expect(afterStale.confusionMatrix).toBe(confusionMatrix);
-        expect(afterStale.confusionMatrixVersion).toBe(initialConfusionVersion);
+        const afterOmission = getFrameBuffer();
+        expect(afterOmission.confusionMatrix).toBe(confusionMatrix);
+        expect(afterOmission.confusionMatrixVersion).toBe(initialConfusionVersion);
 
-        listener({
-            data: withTestMetricsStale(makeSnapshotMessage(3, {
-                confusionMatrix: undefined,
-            }), false),
-        } as MessageEvent);
-        runNextAnimationFrame();
-
-        const afterFresh = getFrameBuffer();
-        expect(afterFresh.confusionMatrix).toBeNull();
-        expect(afterFresh.confusionMatrixVersion).toBe(initialConfusionVersion + 1);
     });
 
-    it('stores fresh multiclass confusion matrices, clears binary confusion, and respects stale omissions', () => {
+    it('stores paired multiclass confusion, clears binary confusion, and retains cadence omissions', () => {
         const listener = getRegisteredStreamListener();
         const binaryConfusionMatrix = {
-            tp: 8,
-            tn: 7,
-            fp: 2,
-            fn: 1,
+            tp: 80,
+            tn: 60,
+            fp: 5,
+            fn: 5,
         };
         const multiclassConfusionMatrix = {
             classCount: 3 as const,
             classLabels: [0, 1, 2] as const,
-            counts: [3, 1, 0, 0, 4, 1, 1, 0, 5] as const,
+            counts: [40, 5, 5, 5, 40, 5, 5, 5, 40] as const,
         };
 
         startRenderLoop();
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(1, { confusionMatrix: binaryConfusionMatrix }), false),
+            data: makeStrictSnapshotMessage(1, { confusionMatrix: binaryConfusionMatrix }),
         } as MessageEvent);
         runNextAnimationFrame();
         expect(getFrameBuffer().confusionMatrix).toBe(binaryConfusionMatrix);
 
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(2, {
+            data: makeStrictSnapshotMessage(2, {
                 confusionMatrix: undefined,
                 multiclassConfusionMatrix,
                 multiclassConfusionMatrixVersion: 1,
-            }), false),
+            }),
         } as MessageEvent);
         runNextAnimationFrame();
 
@@ -1214,31 +1227,17 @@ describe('workerBridge streamed snapshots', () => {
         expect(initialMulticlassConfusionVersion).toBeGreaterThan(0);
 
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(3, {
+            data: makeStrictSnapshotMessage(3, {
                 multiclassConfusionMatrix: undefined,
                 multiclassConfusionMatrixVersion: undefined,
-            }), true),
+            }),
         } as MessageEvent);
         runNextAnimationFrame();
 
-        const afterStale = getFrameBuffer();
-        expect(afterStale.multiclassConfusionMatrix).toBe(multiclassConfusionMatrix);
-        expect(afterStale.multiclassConfusionMatrixVersion).toBe(initialMulticlassConfusionVersion);
+        const afterOmission = getFrameBuffer();
+        expect(afterOmission.multiclassConfusionMatrix).toBe(multiclassConfusionMatrix);
+        expect(afterOmission.multiclassConfusionMatrixVersion).toBe(initialMulticlassConfusionVersion);
 
-        listener({
-            data: withTestMetricsStale(makeSnapshotMessage(4, {
-                confusionMatrix: undefined,
-                multiclassConfusionMatrix: undefined,
-                multiclassConfusionMatrixVersion: undefined,
-            }), false),
-        } as MessageEvent);
-        runNextAnimationFrame();
-
-        const afterFreshOmission = getFrameBuffer();
-        expect(afterFreshOmission.multiclassConfusionMatrix).toBeNull();
-        expect(afterFreshOmission.multiclassConfusionMatrixVersion).toBe(
-            initialMulticlassConfusionVersion + 1,
-        );
     });
 
     it('fresh binary confusion snapshots clear cached multiclass confusion matrices', () => {
@@ -1246,28 +1245,28 @@ describe('workerBridge streamed snapshots', () => {
         const multiclassConfusionMatrix = {
             classCount: 3 as const,
             classLabels: [0, 1, 2] as const,
-            counts: [3, 1, 0, 0, 4, 1, 1, 0, 5] as const,
+            counts: [40, 5, 5, 5, 40, 5, 5, 5, 40] as const,
         };
         const binaryConfusionMatrix = {
-            tp: 6,
-            tn: 5,
-            fp: 1,
-            fn: 2,
+            tp: 70,
+            tn: 70,
+            fp: 5,
+            fn: 5,
         };
 
         startRenderLoop();
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(1, {
+            data: makeStrictSnapshotMessage(1, {
                 multiclassConfusionMatrix,
                 multiclassConfusionMatrixVersion: 1,
-            }), false),
+            }),
         } as MessageEvent);
         runNextAnimationFrame();
         const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
         expect(getFrameBuffer().multiclassConfusionMatrix).toBe(multiclassConfusionMatrix);
 
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(2, { confusionMatrix: binaryConfusionMatrix }), false),
+            data: makeStrictSnapshotMessage(2, { confusionMatrix: binaryConfusionMatrix }),
         } as MessageEvent);
         runNextAnimationFrame();
 
@@ -1288,7 +1287,7 @@ describe('workerBridge streamed snapshots', () => {
 
         startRenderLoop();
         listener({
-            data: withTestMetricsStale(makeSnapshotMessage(1, {
+            data: makeStrictSnapshotMessage(1, {
                 confusionMatrix: {
                     tp: 1,
                     tn: 1,
@@ -1297,7 +1296,7 @@ describe('workerBridge streamed snapshots', () => {
                 },
                 multiclassConfusionMatrix,
                 multiclassConfusionMatrixVersion: 1,
-            }), false),
+            }),
         } as MessageEvent);
 
         expect(receivedMessages.at(-1)?.msg.type).toBe('error');
@@ -1307,14 +1306,14 @@ describe('workerBridge streamed snapshots', () => {
     });
 
     it('closes the stream port on termination and drops later stream commands', () => {
-        postStreamCommand({ type: 'stopTraining' });
-        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'stopTraining' });
+        postStreamCommand({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
 
         terminateWorker();
         expect(fakePort1.close).toHaveBeenCalledTimes(1);
         fakePort1.postMessage.mockClear();
 
-        postStreamCommand({ type: 'stopTraining' });
+        postStreamCommand({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         expect(fakePort1.postMessage).not.toHaveBeenCalled();
     });
 
@@ -1330,7 +1329,7 @@ describe('workerBridge streamed snapshots', () => {
 
         listener({
             data: {
-                type: 'sharedBuffers',
+                type: 'sharedBuffers', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 1,
                 control: sharedViews.controlSAB,
                 outputGrid: sharedViews.outputGridSAB,
@@ -1342,7 +1341,7 @@ describe('workerBridge streamed snapshots', () => {
 
         startRenderLoop();
         listener({
-            data: makeSnapshotMessage(1, {
+            data: makeStrictSnapshotMessage(1, {
                 outputGrid: undefined,
                 neuronGrids: undefined,
                 sharedSeq,
@@ -1354,7 +1353,7 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.outputGrid).toEqual(new Float32Array([0.8, 0.7, 0.6, 0.5]));
         expect(frame.neuronGrids).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
         expect(frame.neuronGridLayout).toEqual({ count: 1, gridSize: 2 });
-        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
     });
 
     it('does not let stale shared buffers install or satisfy a later snapshot', () => {
@@ -1371,7 +1370,7 @@ describe('workerBridge streamed snapshots', () => {
         resetFrameBuffer();
         listener({
             data: {
-                type: 'sharedBuffers',
+                type: 'sharedBuffers', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 1,
                 control: staleViews.controlSAB,
                 outputGrid: staleViews.outputGridSAB,
@@ -1383,7 +1382,7 @@ describe('workerBridge streamed snapshots', () => {
 
         startRenderLoop();
         listener({
-            data: makeSnapshotMessage(1, {
+            data: makeStrictSnapshotMessage(1, {
                 runId: 2,
                 outputGrid: undefined,
                 neuronGrids: undefined,
@@ -1406,7 +1405,7 @@ describe('workerBridge streamed snapshots', () => {
 
         listener({
             data: {
-                type: 'sharedBuffers',
+                type: 'sharedBuffers', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 2,
                 control: currentViews.controlSAB,
                 outputGrid: currentViews.outputGridSAB,
@@ -1416,7 +1415,7 @@ describe('workerBridge streamed snapshots', () => {
             },
         } as MessageEvent);
         listener({
-            data: makeSnapshotMessage(2, {
+            data: makeStrictSnapshotMessage(2, {
                 runId: 2,
                 outputGrid: undefined,
                 neuronGrids: undefined,
@@ -1435,12 +1434,12 @@ describe('workerBridge streamed snapshots', () => {
 
         startRenderLoop();
         listener({
-            data: makeSnapshotMessage(2, {
+            data: makeStrictSnapshotMessage(2, {
                 outputGrid: new Float32Array([2, 2, 2, 2]),
             }),
         } as MessageEvent);
         listener({
-            data: makeSnapshotMessage(1, {
+            data: makeStrictSnapshotMessage(1, {
                 outputGrid: new Float32Array([1, 1, 1, 1]),
             }),
         } as MessageEvent);
@@ -1468,13 +1467,13 @@ describe('workerBridge streamed snapshots', () => {
 
         startRenderLoop();
         listener({
-            data: makeSnapshotMessage(3, {
+            data: makeStrictSnapshotMessage(3, {
                 outputGrid: new Float32Array([3, 3, 3, 3]),
             }),
         } as MessageEvent);
         listener({
             data: {
-                type: 'status',
+                type: 'status', protocolVersion: WORKER_PROTOCOL_VERSION,
                 runId: 1,
                 status: 'paused',
                 pauseReason: 'diverged',
@@ -1485,6 +1484,6 @@ describe('workerBridge streamed snapshots', () => {
         expect((receivedMessages[0].msg as { type: 'status'; pauseReason?: string }).pauseReason).toBe('diverged');
         expect((receivedMessages[1].msg as WorkerSnapshotMessage).snapshotId).toBe(3);
         expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([3, 3, 3, 3]));
-        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
     });
 });

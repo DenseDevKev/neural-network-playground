@@ -31,7 +31,7 @@ describe('UI integration flows', () => {
             .replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
         expect(restored.ok).toBe(true);
 
-        useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: {
@@ -45,7 +45,6 @@ describe('UI integration flows', () => {
                 biases: [],
                 outputGrid: [],
                 gridSize: 40,
-                historyPoint: { step: 0, trainLoss: 0.5, testLoss: 0.6 },
             } as any,
             trainPoints: [],
             testPoints: [],
@@ -71,7 +70,8 @@ describe('UI integration flows', () => {
         await user.click(presetButton);
 
         await waitFor(() => expect(onReset).toHaveBeenCalledTimes(1));
-        expect(usePlaygroundStore.getState().prepared?.compiled.task.dataset).toBe('xor');
+        const { access } = usePlaygroundStore.getState();
+        expect(access.status === 'ready' ? access.prepared.compiled.task.dataset : null).toBe('xor');
         expect(presetButton).toHaveClass('preset-card--selected');
     });
 

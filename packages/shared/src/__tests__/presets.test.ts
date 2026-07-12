@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import * as presets from '../presets.js';
 import {
     PREPARED_PRESETS,
-    PRESETS,
     resolveRecipe,
 } from '../index.js';
 import type {
-    Preset,
     RecipeCatalogEntry,
     RecipeRef,
     StandardExperimentRecipeV2,
@@ -192,6 +191,10 @@ function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
 }
 
 describe('prepared recipe catalog', () => {
+    it('does not expose the removed PRESETS compatibility alias', () => {
+        expect(presets).not.toHaveProperty('PRESETS');
+    });
+
     it('exposes exactly the seven revision-1 recipes in canonical order', () => {
         expect(PREPARED_PRESETS.map(({ id, revision }) => ({ id, revision })))
             .toEqual(EXPECTED_REFS);
@@ -239,13 +242,9 @@ describe('prepared recipe catalog', () => {
 
     it('does not expose the legacy partial config shape', () => {
         type CatalogHasConfig = 'config' extends keyof RecipeCatalogEntry ? true : false;
-        type CompatibilityAliasHasConfig = 'config' extends keyof Preset ? true : false;
         const catalogHasConfig: CatalogHasConfig = false;
-        const compatibilityAliasHasConfig: CompatibilityAliasHasConfig = false;
 
         expect(catalogHasConfig).toBe(false);
-        expect(compatibilityAliasHasConfig).toBe(false);
-        expect(PRESETS).toBe(PREPARED_PRESETS);
         for (const entry of PREPARED_PRESETS) {
             expect(entry).not.toHaveProperty('config');
         }

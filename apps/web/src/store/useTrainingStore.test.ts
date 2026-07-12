@@ -1,14 +1,8 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTrainingStore } from './useTrainingStore.ts';
-import { readHistory } from './historyBuffer.ts';
 import { metricHistoryBuffer } from './metricHistoryBuffer.ts';
-import type { NetworkSnapshot } from '@nn-playground/engine';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-    type AppConfig,
+    PREPARED_PRESETS,
     type WorkerEvidenceMessageV2,
 } from '@nn-playground/shared';
 import {
@@ -22,48 +16,17 @@ beforeAll(async () => {
     fixtures = await createScientificTrustFixtures();
 });
 
-function makeSnapshot(step: number): NetworkSnapshot {
-    return {
-        step,
-        epoch: 0,
-        weights: [],
-        biases: [],
-        trainLoss: 0.5,
-        testLoss: 0.6,
-        trainMetrics: { loss: 0.5 },
-        testMetrics: { loss: 0.6 },
-        outputGrid: [],
-        gridSize: 40,
-        historyPoint: { step, trainLoss: 0.5, testLoss: 0.6 },
-    };
-}
+const RECIPE = PREPARED_PRESETS.find((entry) => entry.id === 'xor-hidden')!.prepared;
 
-function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-    return {
-        data: overrides.data ?? { ...DEFAULT_DATA },
-        features: overrides.features ?? { ...DEFAULT_FEATURES },
-        network: overrides.network ?? {
-            ...DEFAULT_NETWORK,
-            inputSize: 2,
-            hiddenLayers: [...DEFAULT_NETWORK.hiddenLayers],
-            seed: DEFAULT_DATA.seed,
-        },
-        training: overrides.training ?? { ...DEFAULT_TRAINING },
-        ui: overrides.ui ?? { showTestData: false, discretizeOutput: false },
-    };
-}
-
-describe('useTrainingStore streamed snapshots', () => {
+describe('useTrainingStore strict V2 frames', () => {
     beforeEach(() => {
-        useTrainingStore.getState().resetHistory();
         useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
-            snapshot: null,
-            trainedRecipeConfig: null,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
             trainedRecipeRecordedAt: null,
             trainedRecipeSource: null,
             frameVersion: 0,
-            testMetricsStale: false,
             workerError: 'previous error',
             dataConfigLoading: false,
             networkConfigLoading: false,
@@ -78,33 +41,37 @@ describe('useTrainingStore streamed snapshots', () => {
         });
     });
 
-    it('applies snapshot, frame version, and stale flag without inventing legacy history', () => {
+    it('publishes strict frame versions without manufacturing scalar evidence', () => {
         let publications = 0;
         const unsubscribe = useTrainingStore.subscribe(() => {
             publications++;
         });
 
-        useTrainingStore.getState().applyStreamedSnapshot({
-            snapshot: makeSnapshot(3),
-            frameVersion: 7,
-            testMetricsStale: true,
+        useTrainingStore.getState().applyStreamedFrame({
+            frameVersions: {
+                frameVersion: 7,
+                outputGridVersion: 1,
+                neuronGridsVersion: 2,
+                paramsVersion: 3,
+                layerStatsVersion: 4,
+                confusionMatrixVersion: 5,
+                activationHistogramsVersion: 6,
+                multiclassBoundaryVersion: 7,
+            },
         });
 
         unsubscribe();
 
         const state = useTrainingStore.getState();
         expect(publications).toBe(1);
-        expect(state.snapshot?.step).toBe(3);
         expect(state.frameVersion).toBe(7);
-        expect(state.testMetricsStale).toBe(true);
+        expect(state.latestLiveSignal).toBeNull();
+        expect(state.latestEvaluation).toBeNull();
         expect(state.workerError).toBeNull();
-        expect(readHistory().count).toBe(0);
     });
 
     it('publishes the multiclass boundary frame version from streamed frame versions', () => {
-        useTrainingStore.getState().applyStreamedSnapshot({
-            snapshot: makeSnapshot(4),
-            frameVersion: 9,
+        useTrainingStore.getState().applyStreamedFrame({
             frameVersions: {
                 frameVersion: 9,
                 outputGridVersion: 1,
@@ -114,9 +81,7 @@ describe('useTrainingStore streamed snapshots', () => {
                 confusionMatrixVersion: 5,
                 activationHistogramsVersion: 6,
                 multiclassBoundaryVersion: 7,
-                arenaSummariesVersion: 8,
             },
-            testMetricsStale: false,
         });
 
         expect(useTrainingStore.getState().multiclassBoundaryVersion).toBe(7);
@@ -143,30 +108,29 @@ describe('useTrainingStore streamed snapshots', () => {
         expect(useTrainingStore.getState().configError).toBeNull();
     });
 
-    it('records the config that produced the trained snapshot', () => {
-        const config = makeConfig({
-            data: { ...DEFAULT_DATA, dataset: 'xor' },
-            training: { ...DEFAULT_TRAINING, learningRate: 0.1 },
-        });
-
-        useTrainingStore.getState().markTrainedRecipe(config, 'config-sync');
+    it('records the exact recipe and fingerprint that produced evidence', () => {
+        useTrainingStore.getState().markTrainedRecipe(
+            RECIPE.document.recipe,
+            'config-sync',
+            RECIPE.identities.recipeFingerprint,
+        );
 
         const state = useTrainingStore.getState();
-        expect(state.trainedRecipeConfig?.data.dataset).toBe('xor');
-        expect(state.trainedRecipeConfig?.training.learningRate).toBe(0.1);
+        expect(state.trainedRecipe).toEqual(RECIPE.document.recipe);
+        expect(state.trainedRecipeFingerprint).toBe(RECIPE.identities.recipeFingerprint);
         expect(state.trainedRecipeRecordedAt).toEqual(expect.any(Number));
         expect(state.trainedRecipeSource).toBe('config-sync');
     });
 
     it('keeps trained recipe metadata separate from later current recipe mutation', () => {
-        const config = makeConfig();
+        const recipe = structuredClone(RECIPE.document.recipe);
+        useTrainingStore.getState().markTrainedRecipe(recipe, 'initialize');
+        (recipe.training as { learningRate: number }).learningRate = 0.3;
+        (recipe.model.hiddenLayers as number[]).push(12);
 
-        useTrainingStore.getState().markTrainedRecipe(config, 'initialize');
-        config.training.learningRate = 0.3;
-        config.network.hiddenLayers.push(12);
-
-        expect(useTrainingStore.getState().trainedRecipeConfig?.training.learningRate).toBe(DEFAULT_TRAINING.learningRate);
-        expect(useTrainingStore.getState().trainedRecipeConfig?.network.hiddenLayers).toEqual([4, 4]);
+        expect(useTrainingStore.getState().trainedRecipe?.training.learningRate)
+            .toBe(RECIPE.document.recipe.training.learningRate);
+        expect(useTrainingStore.getState().trainedRecipe?.model.hiddenLayers).toEqual([4, 4]);
     });
 });
 

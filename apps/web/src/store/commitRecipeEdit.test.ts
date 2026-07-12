@@ -11,6 +11,7 @@ import {
     type StoreRecipeEditResult,
 } from './usePlaygroundStore.ts';
 import { useTrainingStore } from './useTrainingStore.ts';
+import { currentPreparedForTest } from '../test/playgroundStoreTestUtils.ts';
 
 const originalEditRecipe = usePlaygroundStore.getState().editRecipe;
 
@@ -43,7 +44,7 @@ describe('commitRecipeEdit', () => {
         );
 
         expect(published).toBe(true);
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.data.noise).toBe(17);
+        expect(currentPreparedForTest()?.document.recipe.data.noise).toBe(17);
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: 'data',
             dataConfigLoading: true,
@@ -56,7 +57,7 @@ describe('commitRecipeEdit', () => {
             (recipe) => setFeatureIds(recipe, ['x']),
         );
         expect(oneFeature.ok).toBe(true);
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
 
         const published = await commitRecipeEdit(
             'features',
@@ -64,7 +65,7 @@ describe('commitRecipeEdit', () => {
         );
 
         expect(published).toBe(false);
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: null,
             featuresConfigLoading: false,
@@ -74,7 +75,7 @@ describe('commitRecipeEdit', () => {
     });
 
     it('formats schema preparation issues and retains the current experiment', async () => {
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
         usePlaygroundStore.setState({
             editRecipe: vi.fn(async () => ({
                 ok: false as const,
@@ -92,7 +93,7 @@ describe('commitRecipeEdit', () => {
         );
 
         expect(published).toBe(false);
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
         expect(useTrainingStore.getState()).toMatchObject({
             configErrorSource: 'training',
             configError: 'recipe.training.batchSize: batch size must not exceed the training population',
@@ -119,7 +120,7 @@ describe('commitRecipeEdit', () => {
         });
 
         expect(await pendingCommit).toBe(false);
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.data.noise).toBe(11);
+        expect(currentPreparedForTest()?.document.recipe.data.noise).toBe(11);
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: 'network',
             networkConfigLoading: true,

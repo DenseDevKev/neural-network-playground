@@ -16,6 +16,7 @@ import {
     useExperimentMemoryStore,
 } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 
 const workerApi = vi.hoisted(() => ({
     captureRunArtifact: vi.fn(),
@@ -102,7 +103,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     });
 
     it('asks the worker to author the record from metadata only and persists its artifact', async () => {
-        const prepared = usePlaygroundStore.getState().prepared!;
+        const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: {
             id: string;
             createdAt: string;
@@ -127,7 +128,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     });
 
     it('retries persistence with the captured record instead of recapturing scientific state', async () => {
-        const prepared = usePlaygroundStore.getState().prepared!;
+        const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
             makeRecord(prepared, metadata.id, 'Retry me')
         ));
@@ -150,7 +151,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     });
 
     it('blocks recapture and keeps retry or discard available after error dismissal', async () => {
-        const prepared = usePlaygroundStore.getState().prepared!;
+        const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
             makeRecord(prepared, metadata.id, 'Pending exact artifact')
         ));

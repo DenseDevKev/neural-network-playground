@@ -8,6 +8,7 @@ import {
 import { DataPanel } from './DataPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 
 async function restoreDocument(document: ExperimentDocumentV2 = DEFAULT_EXPERIMENT_DOCUMENT) {
     const restored = await usePlaygroundStore.getState().replaceDocument(document);
@@ -15,11 +16,11 @@ async function restoreDocument(document: ExperimentDocumentV2 = DEFAULT_EXPERIME
 }
 
 function recipe() {
-    return usePlaygroundStore.getState().prepared!.document.recipe;
+    return currentPreparedForTest()!.document.recipe;
 }
 
 function resetTrainingTransaction() {
-    useTrainingStore.getState().resetHistory();
+    useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
         status: 'idle',
         snapshot: null,
@@ -87,7 +88,7 @@ describe('DataPanel V2 recipe controls', () => {
         expect(recipe().objective.dataLoss).toEqual({
             kind: 'categorical-cross-entropy-with-logits',
         });
-        expect(usePlaygroundStore.getState().prepared?.compiled.task).toMatchObject({
+        expect(currentPreparedForTest()?.compiled.task).toMatchObject({
             outputSize: 3,
             outputActivation: 'softmax',
         });
@@ -98,7 +99,7 @@ describe('DataPanel V2 recipe controls', () => {
             dataset: 'reg-plane',
         }));
         expect(recipe().objective.dataLoss).toEqual({ kind: 'mean-squared-error' });
-        expect(usePlaygroundStore.getState().prepared?.compiled.task).toMatchObject({
+        expect(currentPreparedForTest()?.compiled.task).toMatchObject({
             outputSize: 1,
             outputActivation: 'linear',
         });
@@ -111,7 +112,7 @@ describe('DataPanel V2 recipe controls', () => {
         expect(recipe().objective.dataLoss).toEqual({
             kind: 'binary-cross-entropy-with-logits',
         });
-        expect(usePlaygroundStore.getState().prepared?.compiled.task).toMatchObject({
+        expect(currentPreparedForTest()?.compiled.task).toMatchObject({
             outputSize: 1,
             outputActivation: 'sigmoid',
         });
@@ -119,7 +120,7 @@ describe('DataPanel V2 recipe controls', () => {
 
     it('publishes exact sample, split, noise, and seed edits with a new fingerprint', async () => {
         const user = userEvent.setup();
-        const beforeFingerprint = usePlaygroundStore.getState().prepared!.identities.recipeFingerprint;
+        const beforeFingerprint = currentPreparedForTest()!.identities.recipeFingerprint;
         render(<DataPanel onReset={vi.fn()} />);
 
         await user.click(screen.getByRole('button', { name: '600 samples' }));
@@ -143,7 +144,7 @@ describe('DataPanel V2 recipe controls', () => {
             noise: 18,
             seed: 43,
         }));
-        expect(usePlaygroundStore.getState().prepared!.identities.recipeFingerprint)
+        expect(currentPreparedForTest()!.identities.recipeFingerprint)
             .not.toBe(beforeFingerprint);
         expect(useTrainingStore.getState().pendingConfigSource).toBe('data');
     });
@@ -175,7 +176,7 @@ describe('DataPanel V2 recipe controls', () => {
             },
         };
         await restoreDocument(document);
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
         const user = userEvent.setup();
         render(<DataPanel onReset={vi.fn()} />);
 
@@ -184,7 +185,7 @@ describe('DataPanel V2 recipe controls', () => {
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
             'recipe.data.sampleCount: batch size 100 exceeds training population 50',
         ));
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
         expect(recipe().data.sampleCount).toBe(300);
     });
 
@@ -200,7 +201,7 @@ describe('DataPanel V2 recipe controls', () => {
             },
         };
         await restoreDocument(document);
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
         const user = userEvent.setup();
         render(<DataPanel onReset={vi.fn()} />);
 
@@ -209,7 +210,7 @@ describe('DataPanel V2 recipe controls', () => {
         await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
             'recipe.data.seed: cannot reshuffle seed 4294967295 beyond the uint32 maximum',
         ));
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
     });
 
     it('keeps loading, retry, split-count, tooltip, and explicit reset behavior accessible', async () => {

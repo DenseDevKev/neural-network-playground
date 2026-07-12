@@ -1,26 +1,19 @@
 import { memo, useMemo } from 'react';
-import type { AppConfig } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getRecipeDrift, summarizeRecipe } from '../../store/recipeIdentity.ts';
 import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 
-function useCurrentRecipeConfig(): AppConfig {
-    const data = usePlaygroundStore((s) => s.data);
-    const features = usePlaygroundStore((s) => s.features);
-    const network = usePlaygroundStore((s) => s.network);
-    const training = usePlaygroundStore((s) => s.training);
-    const ui = usePlaygroundStore((s) => s.ui);
-
-    return useMemo(() => ({ data, features, network, training, ui }), [data, features, network, training, ui]);
-}
-
 export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
-    const currentConfig = useCurrentRecipeConfig();
-    const trainedRecipeConfig = useTrainingStore((s) => s.trainedRecipeConfig);
+    const currentRecipe = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.document.recipe : null
+    ));
+    const trainedRecipe = useTrainingStore((s) => s.trainedRecipe);
     const trainedRecipeFingerprint = useTrainingStore((s) => s.trainedRecipeFingerprint);
     const currentRecipeFingerprint = usePlaygroundStore(
-        (s) => s.prepared?.identities.recipeFingerprint ?? null,
+        (s) => s.access.status === 'ready'
+            ? s.access.prepared.identities.recipeFingerprint
+            : null,
     );
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
@@ -29,18 +22,21 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
         latestLiveSignal,
         latestEvaluation,
     }), [latestEvaluation, latestLiveSignal]);
-    const summary = useMemo(() => summarizeRecipe(currentConfig), [currentConfig]);
+    const summary = useMemo(
+        () => currentRecipe === null ? null : summarizeRecipe(currentRecipe),
+        [currentRecipe],
+    );
     const drift = useMemo(
         () => getRecipeDrift(
-            trainedRecipeConfig,
-            currentConfig,
+            trainedRecipe,
+            currentRecipe,
             3,
             trainedRecipeFingerprint === null ? undefined : {
                 trainedRecipeFingerprint,
                 currentRecipeFingerprint,
             },
         ),
-        [trainedRecipeConfig, currentConfig, trainedRecipeFingerprint, currentRecipeFingerprint],
+        [trainedRecipe, currentRecipe, trainedRecipeFingerprint, currentRecipeFingerprint],
     );
     const showsAgedEvaluation = !drift.hasDrift
         && evidence.evaluationAgeSteps !== null
@@ -68,6 +64,8 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
         drift.hasDrift ? 'forge-context-pill--drift' : '',
         showsAgedEvaluation ? 'forge-context-pill--stale' : '',
     ].filter(Boolean).join(' ');
+
+    if (!summary) return null;
 
     return (
         <section className="forge-context-card forge-recipe-card" role="region" aria-label="Recipe summary">

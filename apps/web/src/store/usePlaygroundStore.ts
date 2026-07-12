@@ -2,9 +2,6 @@ import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import {
     generateDatasetV2,
     type DataSplit,
-    type FeatureFlags,
-    type NetworkConfig,
-    type TrainingConfig,
 } from '@nn-playground/engine';
 import {
     DEFAULT_DEMAND,
@@ -14,19 +11,16 @@ import {
     prepareExperimentDocument,
     resolveRecipe,
     validateExperimentDocument,
-    type AppConfig,
     type ExperimentDocumentV2,
     type ExperimentSchemaIssue,
     type PreparedExperimentDocumentV2,
     type RecipeCatalogEntry,
     type SchemaResult,
-    type UIConfig,
     type ValidatedExperimentDocumentV2,
     type ValidatedStandardExperimentRecipeV2,
     type VisualizationDemand,
 } from '@nn-playground/shared';
 import type { RecipeEditIssue, RecipeEditResult } from './recipeEdits.ts';
-import { projectPreparedExperiment } from './legacyProjection.ts';
 
 export interface FeaturesUI {
     canvasNetworkGraph: boolean;
@@ -70,22 +64,12 @@ export interface PlaygroundStoreInitialization {
     initialPrepared: PreparedExperimentDocumentV2 | null;
     initialIssues: readonly ExperimentSchemaIssue[];
     incompatibleSource: IncompatibleSource | null;
-    fallbackPrepared?: PreparedExperimentDocumentV2;
 }
 
 export interface PlaygroundStore {
     access: ExperimentAccessState;
-    prepared: PreparedExperimentDocumentV2 | null;
     preparation: PreparationState;
     incompatibleSource: IncompatibleSource | null;
-
-    // Temporary one-way compatibility projection. These fields are published
-    // in the same transaction as `prepared` and are never canonical inputs.
-    network: NetworkConfig;
-    training: TrainingConfig;
-    data: AppConfig['data'];
-    features: FeatureFlags;
-    ui: UIConfig;
 
     featuresUI: FeaturesUI;
     demand: VisualizationDemand;
@@ -115,7 +99,6 @@ export interface PlaygroundStore {
 
     setDemand(demand: VisualizationDemand): void;
     regenerateData(): void;
-    getConfig(): AppConfig;
 }
 
 export type PlaygroundStoreApi = UseBoundStore<StoreApi<PlaygroundStore>>;
@@ -194,23 +177,10 @@ export function initializePlaygroundStateFromLocation(
     );
 }
 
-const defaultPreparation = await prepareExperimentDocument(DEFAULT_EXPERIMENT_DOCUMENT);
-if (!defaultPreparation.ok) {
-    const detail = defaultPreparation.issues
-        .map((issue) => `${issue.path}: ${issue.message}`)
-        .join('; ');
-    throw new Error(`Unable to prepare the default experiment: ${detail}`);
-}
-const DEFAULT_PREPARED = defaultPreparation.value;
-
 export function createPlaygroundStore(
     initialization: PlaygroundStoreInitialization,
 ): PlaygroundStoreApi {
     const prepare = initialization.prepare ?? prepareExperimentDocument;
-    const fallbackPrepared = initialization.fallbackPrepared ?? DEFAULT_PREPARED;
-    const initialProjection = projectPreparedExperiment(
-        initialization.initialPrepared ?? fallbackPrepared,
-    );
     const initialAccess: ExperimentAccessState = initialization.initialPrepared
         ? { status: 'ready', prepared: initialization.initialPrepared }
         : {
@@ -243,7 +213,6 @@ export function createPlaygroundStore(
                     source,
                     issues: boundedIssues,
                 },
-                prepared: null,
                 preparation: { status: 'error', requestId, issues: boundedIssues },
                 incompatibleSource: source,
             });
@@ -277,7 +246,6 @@ export function createPlaygroundStore(
                             source: failureSource,
                             issues: result.issues,
                         },
-                        prepared: null,
                         preparation: { status: 'error', requestId, issues: result.issues },
                         incompatibleSource: failureSource,
                     });
@@ -290,17 +258,10 @@ export function createPlaygroundStore(
                 return result;
             }
 
-            const projection = projectPreparedExperiment(result.value);
             lastSuccessfulPrepared = result.value;
             latestCandidateDocument = result.value.document;
             set({
                 access: { status: 'ready', prepared: result.value },
-                prepared: result.value,
-                network: projection.network,
-                training: projection.training,
-                data: projection.data,
-                features: projection.features,
-                ui: projection.ui,
                 preparation: { status: 'ready', requestId, issues: [] },
                 incompatibleSource: null,
             });
@@ -353,16 +314,10 @@ export function createPlaygroundStore(
 
         return {
             access: initialAccess,
-            prepared: initialization.initialPrepared,
             preparation: initialization.initialPrepared
                 ? { status: 'ready', requestId: 0, issues: [] }
                 : { status: 'error', requestId: 0, issues: initialization.initialIssues },
             incompatibleSource: initialization.incompatibleSource,
-            network: initialProjection.network,
-            training: initialProjection.training,
-            data: initialProjection.data,
-            features: initialProjection.features,
-            ui: initialProjection.ui,
             featuresUI: { ...DEFAULT_FEATURES_UI },
             demand: { ...DEFAULT_DEMAND },
             dataset: null,
@@ -373,6 +328,17 @@ export function createPlaygroundStore(
             startFresh: async () => {
                 const result = await replace(DEFAULT_EXPERIMENT_DOCUMENT);
                 if (result.ok) {
+                    const access = get().access;
+                    if (access.status !== 'ready' || access.prepared !== result.value) {
+                        return {
+                            ok: false,
+                            issues: [{
+                                code: 'invalid-field',
+                                path: '$',
+                                message: 'Start fresh was superseded by a newer experiment request.',
+                            }],
+                        };
+                    }
                     const hash = encodeExperimentUrl(result.value.document);
                     window.history.replaceState(null, '', hash);
                 }
@@ -401,8 +367,9 @@ export function createPlaygroundStore(
 
             setDemand: (demand) => set({ demand }),
             regenerateData: () => {
-                const prepared = get().prepared;
-                if (!prepared) return;
+                const access = get().access;
+                if (access.status !== 'ready') return;
+                const prepared = access.prepared;
                 const recipe = prepared.document.recipe;
                 const dataset = generateDatasetV2({
                     dataset: recipe.task.dataset,
@@ -412,19 +379,6 @@ export function createPlaygroundStore(
                     seed: recipe.data.seed,
                 });
                 set({ dataset });
-            },
-            getConfig: () => {
-                const state = get();
-                if (!state.prepared) {
-                    throw new Error('No compatible version-2 experiment is active.');
-                }
-                return {
-                    network: state.network,
-                    training: state.training,
-                    data: state.data,
-                    features: state.features,
-                    ui: state.ui,
-                };
             },
         };
     });
@@ -436,5 +390,4 @@ const productionInitialization = typeof window === 'undefined'
 
 export const usePlaygroundStore = createPlaygroundStore({
     ...productionInitialization,
-    fallbackPrepared: DEFAULT_PREPARED,
 });

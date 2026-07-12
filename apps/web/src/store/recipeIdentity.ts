@@ -1,9 +1,9 @@
 import type {
-    AppConfig,
     PreparedExperimentDocumentV2,
     RecipeFingerprint,
+    ValidatedStandardExperimentRecipeV2,
 } from '@nn-playground/shared';
-import type { FeatureFlags } from '@nn-playground/engine';
+import type { FeatureId } from '@nn-playground/engine';
 
 export type RecipeDriftGroup = 'data' | 'features' | 'network' | 'training';
 
@@ -48,7 +48,7 @@ const GROUP_LABELS: Record<RecipeDriftGroup, string> = {
     training: 'Training',
 };
 
-const FEATURE_LABELS: Record<keyof FeatureFlags, string> = {
+const FEATURE_LABELS: Record<FeatureId, string> = {
     x: 'x',
     y: 'y',
     xSquared: 'x^2',
@@ -74,16 +74,10 @@ const DATASET_LABELS: Record<string, string> = {
     'reg-gauss': 'Regression gaussian',
 };
 
-const OPTIMIZER_LABELS: Record<string, string> = {
-    sgd: 'SGD',
-    sgdMomentum: 'SGD + momentum',
-    adam: 'Adam',
-};
-
-const LOSS_LABELS: Record<string, string> = {
-    mse: 'MSE',
-    crossEntropy: 'cross entropy',
-    categoricalCrossEntropy: 'categorical cross entropy',
+const LOSS_LABELS: Record<ValidatedStandardExperimentRecipeV2['objective']['dataLoss']['kind'], string> = {
+    'binary-cross-entropy-with-logits': 'binary cross entropy',
+    'categorical-cross-entropy-with-logits': 'categorical cross entropy',
+    'mean-squared-error': 'mean squared error',
     huber: 'Huber',
 };
 
@@ -105,17 +99,29 @@ function formatValue(value: unknown): string {
     return String(value);
 }
 
-function activeFeatureLabel(features: FeatureFlags): string {
-    const enabled = (Object.keys(FEATURE_LABELS) as (keyof FeatureFlags)[])
-        .filter((key) => features[key])
-        .map((key) => FEATURE_LABELS[key]);
-    return enabled.length > 0 ? enabled.join(', ') : 'none';
+function activeFeatureLabel(featureIds: readonly FeatureId[]): string {
+    return featureIds.length > 0
+        ? featureIds.map((featureId) => FEATURE_LABELS[featureId]).join(', ')
+        : 'none';
 }
 
-function activeFeatureCount(features: FeatureFlags): number {
-    return (Object.keys(FEATURE_LABELS) as (keyof FeatureFlags)[])
-        .filter((key) => features[key])
-        .length;
+function taskLabel(recipe: ValidatedStandardExperimentRecipeV2): string {
+    return recipe.task.kind === 'regression' ? 'regression' : 'classification';
+}
+
+function outputSize(recipe: ValidatedStandardExperimentRecipeV2): number {
+    return recipe.task.kind === 'multiclass-classification' ? 3 : 1;
+}
+
+function optimizerLabel(recipe: ValidatedStandardExperimentRecipeV2): string {
+    switch (recipe.training.optimizer.kind) {
+        case 'sgd':
+            return 'SGD';
+        case 'sgd-momentum':
+            return 'SGD + momentum';
+        case 'adam':
+            return 'Adam';
+    }
 }
 
 function addItem(
@@ -149,29 +155,28 @@ export function isSameCanonicalRecipe(
         && left.identities.canonicalRecipeKey === right.identities.canonicalRecipeKey;
 }
 
-export function summarizeRecipe(config: AppConfig): RecipeSummary {
-    const hidden = formatValue(config.network.hiddenLayers);
-    const datasetName = DATASET_LABELS[config.data.dataset] ?? config.data.dataset;
-    const optimizer = OPTIMIZER_LABELS[config.training.optimizer] ?? config.training.optimizer;
-    const loss = LOSS_LABELS[config.training.lossType] ?? config.training.lossType;
+export function summarizeRecipe(recipe: ValidatedStandardExperimentRecipeV2): RecipeSummary {
+    const hidden = formatValue(recipe.model.hiddenLayers);
+    const datasetName = DATASET_LABELS[recipe.task.dataset] ?? recipe.task.dataset;
+    const loss = LOSS_LABELS[recipe.objective.dataLoss.kind];
 
     return {
-        dataset: `${datasetName} ${config.data.problemType}`,
-        architecture: `${config.network.inputSize} -> ${hidden} -> ${config.network.outputSize}, ${config.network.activation}`,
-        training: `${optimizer}, lr ${formatValue(config.training.learningRate)}`,
-        lossAndBatch: `${loss}, batch ${formatValue(config.training.batchSize)}`,
-        features: activeFeatureLabel(config.features),
-        featureCount: `${activeFeatureCount(config.features)} features`,
+        dataset: `${datasetName} ${taskLabel(recipe)}`,
+        architecture: `${recipe.inputs.featureIds.length} -> ${hidden} -> ${outputSize(recipe)}, ${recipe.model.hiddenActivation}`,
+        training: `${optimizerLabel(recipe)}, lr ${formatValue(recipe.training.learningRate)}`,
+        lossAndBatch: `${loss}, batch ${formatValue(recipe.training.batchSize)}`,
+        features: activeFeatureLabel(recipe.inputs.featureIds),
+        featureCount: `${recipe.inputs.featureIds.length} features`,
     };
 }
 
 export function getRecipeDrift(
-    trainedConfig: AppConfig | null,
-    currentConfig: AppConfig,
+    trainedRecipe: ValidatedStandardExperimentRecipeV2 | null,
+    currentRecipe: ValidatedStandardExperimentRecipeV2 | null,
     visibleLimit = 3,
     identity?: RecipeIdentityComparison,
 ): RecipeDriftState {
-    if (!trainedConfig || (identity && identity.trainedRecipeFingerprint === null)) {
+    if (!trainedRecipe || (identity && identity.trainedRecipeFingerprint === null)) {
         return {
             hasTrainedRecipe: false,
             hasDrift: false,
@@ -185,49 +190,43 @@ export function getRecipeDrift(
     }
 
     const items: RecipeDriftItem[] = [];
+    if (currentRecipe) {
+        addItem(items, 'data', 'dataset', 'Dataset', trainedRecipe.task.dataset, currentRecipe.task.dataset);
+        addItem(items, 'data', 'problemType', 'Problem type', taskLabel(trainedRecipe), taskLabel(currentRecipe));
+        addItem(items, 'data', 'sampleCount', 'Sample count', trainedRecipe.data.sampleCount, currentRecipe.data.sampleCount);
+        addItem(items, 'data', 'noise', 'Noise', trainedRecipe.data.noise, currentRecipe.data.noise);
+        addItem(items, 'data', 'trainFraction', 'Train split', trainedRecipe.data.trainFraction, currentRecipe.data.trainFraction);
+        addItem(items, 'data', 'seed', 'Data seed', trainedRecipe.data.seed, currentRecipe.data.seed);
 
-    addItem(items, 'data', 'dataset', 'Dataset', trainedConfig.data.dataset, currentConfig.data.dataset);
-    addItem(items, 'data', 'problemType', 'Problem type', trainedConfig.data.problemType, currentConfig.data.problemType);
-    addItem(items, 'data', 'numSamples', 'Sample count', trainedConfig.data.numSamples, currentConfig.data.numSamples);
-    addItem(items, 'data', 'noise', 'Noise', trainedConfig.data.noise, currentConfig.data.noise);
-    addItem(items, 'data', 'trainTestRatio', 'Train split', trainedConfig.data.trainTestRatio, currentConfig.data.trainTestRatio);
-    addItem(items, 'data', 'seed', 'Data seed', trainedConfig.data.seed, currentConfig.data.seed);
+        addItem(
+            items,
+            'features',
+            'featureIds',
+            'Active features',
+            activeFeatureLabel(trainedRecipe.inputs.featureIds),
+            activeFeatureLabel(currentRecipe.inputs.featureIds),
+        );
 
-    addItem(
-        items,
-        'features',
-        'activeFeatures',
-        'Active features',
-        activeFeatureLabel(trainedConfig.features),
-        activeFeatureLabel(currentConfig.features),
-    );
+        addItem(items, 'network', 'inputSize', 'Input size', trainedRecipe.inputs.featureIds.length, currentRecipe.inputs.featureIds.length);
+        addItem(items, 'network', 'hiddenLayers', 'Hidden layers', trainedRecipe.model.hiddenLayers, currentRecipe.model.hiddenLayers);
+        addItem(items, 'network', 'outputSize', 'Output size', outputSize(trainedRecipe), outputSize(currentRecipe));
+        addItem(items, 'network', 'hiddenActivation', 'Hidden activation', trainedRecipe.model.hiddenActivation, currentRecipe.model.hiddenActivation);
+        addItem(items, 'network', 'initialization', 'Weight init', trainedRecipe.model.initialization, currentRecipe.model.initialization);
+        addItem(items, 'network', 'seed', 'Weight seed', trainedRecipe.model.seed, currentRecipe.model.seed);
 
-    addItem(items, 'network', 'inputSize', 'Input size', trainedConfig.network.inputSize, currentConfig.network.inputSize);
-    addItem(items, 'network', 'hiddenLayers', 'Hidden layers', trainedConfig.network.hiddenLayers, currentConfig.network.hiddenLayers);
-    addItem(items, 'network', 'outputSize', 'Output size', trainedConfig.network.outputSize, currentConfig.network.outputSize);
-    addItem(items, 'network', 'activation', 'Hidden activation', trainedConfig.network.activation, currentConfig.network.activation);
-    addItem(items, 'network', 'outputActivation', 'Output activation', trainedConfig.network.outputActivation, currentConfig.network.outputActivation);
-    addItem(items, 'network', 'weightInit', 'Weight init', trainedConfig.network.weightInit, currentConfig.network.weightInit);
-    addItem(items, 'network', 'seed', 'Weight seed', trainedConfig.network.seed, currentConfig.network.seed);
-
-    addItem(items, 'training', 'learningRate', 'Learning rate', trainedConfig.training.learningRate, currentConfig.training.learningRate);
-    addItem(items, 'training', 'batchSize', 'Batch size', trainedConfig.training.batchSize, currentConfig.training.batchSize);
-    addItem(items, 'training', 'lossType', 'Loss', trainedConfig.training.lossType, currentConfig.training.lossType);
-    addItem(items, 'training', 'optimizer', 'Optimizer', trainedConfig.training.optimizer, currentConfig.training.optimizer);
-    addItem(items, 'training', 'momentum', 'Momentum', trainedConfig.training.momentum, currentConfig.training.momentum);
-    addItem(items, 'training', 'regularization', 'Regularization', trainedConfig.training.regularization, currentConfig.training.regularization);
-    addItem(items, 'training', 'regularizationRate', 'Regularization rate', trainedConfig.training.regularizationRate, currentConfig.training.regularizationRate);
-    addItem(items, 'training', 'gradientClip', 'Gradient clip', trainedConfig.training.gradientClip, currentConfig.training.gradientClip);
-    addItem(items, 'training', 'adamBeta1', 'Adam beta 1', trainedConfig.training.adamBeta1, currentConfig.training.adamBeta1);
-    addItem(items, 'training', 'adamBeta2', 'Adam beta 2', trainedConfig.training.adamBeta2, currentConfig.training.adamBeta2);
-    addItem(items, 'training', 'adamEps', 'Adam epsilon', trainedConfig.training.adamEps, currentConfig.training.adamEps);
-    addItem(items, 'training', 'huberDelta', 'Huber delta', trainedConfig.training.huberDelta, currentConfig.training.huberDelta);
-    addItem(items, 'training', 'lrSchedule', 'LR schedule', trainedConfig.training.lrSchedule, currentConfig.training.lrSchedule);
+        addItem(items, 'training', 'learningRate', 'Learning rate', trainedRecipe.training.learningRate, currentRecipe.training.learningRate);
+        addItem(items, 'training', 'batchSize', 'Batch size', trainedRecipe.training.batchSize, currentRecipe.training.batchSize);
+        addItem(items, 'training', 'dataLoss', 'Loss', trainedRecipe.objective.dataLoss, currentRecipe.objective.dataLoss);
+        addItem(items, 'training', 'optimizer', 'Optimizer', trainedRecipe.training.optimizer, currentRecipe.training.optimizer);
+        addItem(items, 'training', 'penalty', 'Regularization', trainedRecipe.objective.penalty, currentRecipe.objective.penalty);
+        addItem(items, 'training', 'gradientClipping', 'Gradient clipping', trainedRecipe.training.gradientClipping, currentRecipe.training.gradientClipping);
+        addItem(items, 'training', 'schedule', 'Learning-rate schedule', trainedRecipe.training.schedule, currentRecipe.training.schedule);
+    }
 
     const hasDrift = identity
         ? identity.currentRecipeFingerprint === null
             || identity.trainedRecipeFingerprint !== identity.currentRecipeFingerprint
-        : items.length > 0;
+        : currentRecipe === null || items.length > 0;
     const visibleIdentityItems = hasDrift ? items : [];
     const groupLabels = [...new Set(visibleIdentityItems.map((item) => item.groupLabel))];
 

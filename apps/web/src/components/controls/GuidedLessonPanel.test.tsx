@@ -16,6 +16,7 @@ import {
     usePlaygroundStore,
     type PlaygroundStore,
 } from '../../store/usePlaygroundStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 import { setNoise } from '../../store/recipeEdits.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -122,10 +123,10 @@ describe('GuidedLessonPanel', () => {
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
 
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
-        expect(usePlaygroundStore.getState().prepared?.identities.recipeFingerprint)
+        expect(currentPreparedForTest()?.identities.recipeFingerprint)
             .toBe(target.prepared.identities.recipeFingerprint);
         expect(onReset).toHaveBeenCalledTimes(1);
         expect(onHighlightChange).toHaveBeenLastCalledWith('data');
@@ -185,9 +186,9 @@ describe('GuidedLessonPanel', () => {
         await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), regression.id);
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.compiled.task.kind).toBe('regression');
+            expect(currentPreparedForTest()?.compiled.task.kind).toBe('regression');
         });
-        expect(usePlaygroundStore.getState().prepared?.compiled.task).toMatchObject({
+        expect(currentPreparedForTest()?.compiled.task).toMatchObject({
             dataset: 'reg-plane',
             outputSize: 1,
             outputActivation: 'linear',
@@ -201,10 +202,10 @@ describe('GuidedLessonPanel', () => {
         await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), multiclass.id);
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.compiled.task.kind)
+            expect(currentPreparedForTest()?.compiled.task.kind)
                 .toBe('multiclass-classification');
         });
-        expect(usePlaygroundStore.getState().prepared?.compiled.task).toMatchObject({
+        expect(currentPreparedForTest()?.compiled.task).toMatchObject({
             dataset: 'three-class-clusters',
             outputSize: 3,
             outputActivation: 'softmax',
@@ -248,13 +249,13 @@ describe('GuidedLessonPanel', () => {
 
                 await waitFor(() => {
                     expect(
-                        usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey,
+                        currentPreparedForTest()?.identities.canonicalRecipeKey,
                         `${source.id}@${source.revision} -> ${lesson.id} (${target.id}@${target.revision})`,
                     ).toBe(target.prepared.identities.canonicalRecipeKey);
                 });
-                expect(usePlaygroundStore.getState().prepared?.identities.recipeFingerprint)
+                expect(currentPreparedForTest()?.identities.recipeFingerprint)
                     .toBe(target.prepared.identities.recipeFingerprint);
-                expect(usePlaygroundStore.getState().prepared?.document.view).toEqual({
+                expect(currentPreparedForTest()?.document.view).toEqual({
                     showTestData: true,
                     discretizeOutput: true,
                 });
@@ -342,7 +343,7 @@ describe('GuidedLessonPanel', () => {
         );
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
         let newerEdit!: Awaited<ReturnType<PlaygroundStore['editRecipe']>>;
@@ -386,7 +387,7 @@ describe('GuidedLessonPanel', () => {
         );
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
         await act(async () => {
@@ -452,7 +453,7 @@ describe('GuidedLessonPanel', () => {
         );
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
         await waitFor(() => {
-            expect(usePlaygroundStore.getState().prepared?.identities.canonicalRecipeKey)
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
         });
         unmount();
@@ -502,7 +503,7 @@ describe('GuidedLessonPanel', () => {
         const user = userEvent.setup();
         const onReset = vi.fn();
         const onHighlightChange = vi.fn();
-        const priorPrepared = usePlaygroundStore.getState().prepared;
+        const priorPrepared = currentPreparedForTest();
         usePlaygroundStore.setState({
             applyRecipe: vi.fn(async () => ({
                 ok: false as const,
@@ -523,7 +524,7 @@ describe('GuidedLessonPanel', () => {
 
         const alert = await screen.findByRole('alert');
         expect(alert).toHaveTextContent('Deliberate failure');
-        expect(usePlaygroundStore.getState().prepared).toBe(priorPrepared);
+        expect(currentPreparedForTest()).toBe(priorPrepared);
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: null,
             presetConfigLoading: false,

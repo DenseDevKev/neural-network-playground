@@ -12,6 +12,7 @@ import {
     type PlaygroundStore,
 } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 import { HyperparamPanel } from './HyperparamPanel.tsx';
 
 const originalEditRecipe: PlaygroundStore['editRecipe'] = usePlaygroundStore.getState().editRecipe;
@@ -80,25 +81,25 @@ describe('HyperparamPanel canonical V2 controls', () => {
         const schedule = screen.getByRole('combobox', { name: 'LR schedule' });
 
         await user.selectOptions(schedule, 'step');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.schedule)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.schedule)
             .toEqual({ kind: 'step', interval: 100, gamma: 0.5 }));
         await editNumber('Step schedule interval', '250');
         await editNumber('Step schedule gamma', '0.75');
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.training.schedule)
+        expect(currentPreparedForTest()?.document.recipe.training.schedule)
             .toEqual({ kind: 'step', interval: 250, gamma: 0.75 });
 
         await user.selectOptions(schedule, 'cosine');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.schedule)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.schedule)
             .toEqual({ kind: 'cosine', totalSteps: 1000, minimumRate: 0 }));
         expect(screen.queryByRole('spinbutton', { name: 'Step schedule interval' }))
             .not.toBeInTheDocument();
         await editNumber('Cosine total steps', '2000');
         await editNumber('Cosine minimum learning rate', '0.001');
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.training.schedule)
+        expect(currentPreparedForTest()?.document.recipe.training.schedule)
             .toEqual({ kind: 'cosine', totalSteps: 2000, minimumRate: 0.001 });
 
         await user.selectOptions(schedule, 'constant');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.schedule)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.schedule)
             .toEqual({ kind: 'constant' }));
     });
 
@@ -108,23 +109,23 @@ describe('HyperparamPanel canonical V2 controls', () => {
         const optimizer = screen.getByRole('combobox', { name: 'Optimizer' });
 
         await user.selectOptions(optimizer, 'sgd-momentum');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.optimizer)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.optimizer)
             .toEqual({ kind: 'sgd-momentum', momentum: 0.9 }));
         await editNumber('Momentum', '0.8');
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.training.optimizer)
+        expect(currentPreparedForTest()?.document.recipe.training.optimizer)
             .toEqual({ kind: 'sgd-momentum', momentum: 0.8 });
 
         await user.selectOptions(optimizer, 'adam');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.optimizer)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.optimizer)
             .toEqual({ kind: 'adam', beta1: 0.9, beta2: 0.999, epsilon: 1e-8 }));
         await editNumber('Adam beta 1', '0.85');
         await editNumber('Adam beta 2', '0.99');
         await editNumber('Adam epsilon', '0.0000001');
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.training.optimizer)
+        expect(currentPreparedForTest()?.document.recipe.training.optimizer)
             .toEqual({ kind: 'adam', beta1: 0.85, beta2: 0.99, epsilon: 1e-7 });
 
         await user.selectOptions(optimizer, 'sgd');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.optimizer)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.optimizer)
             .toEqual({ kind: 'sgd' }));
     });
 
@@ -136,7 +137,7 @@ describe('HyperparamPanel canonical V2 controls', () => {
             screen.getByRole('combobox', { name: 'Gradient clipping' }),
             'global-norm',
         );
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.gradientClipping)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.gradientClipping)
             .toEqual({
                 kind: 'global-norm',
                 maximumNorm: 1,
@@ -146,12 +147,12 @@ describe('HyperparamPanel canonical V2 controls', () => {
         await editNumber('Maximum gradient norm', '2');
 
         await user.selectOptions(screen.getByRole('combobox', { name: 'Penalty' }), 'l1');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.objective.penalty)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.objective.penalty)
             .toEqual({ kind: 'l1', coefficient: 0.001, applyTo: 'weights' }));
         expect(screen.getByText('weights only')).toBeInTheDocument();
         await editNumber('Penalty coefficient', '0.03');
         await user.selectOptions(screen.getByRole('combobox', { name: 'Penalty' }), 'l2');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.objective.penalty)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.objective.penalty)
             .toEqual({ kind: 'l2', coefficient: 0.001, applyTo: 'weights' }));
 
         await user.selectOptions(
@@ -160,7 +161,7 @@ describe('HyperparamPanel canonical V2 controls', () => {
         );
         await user.selectOptions(screen.getByRole('combobox', { name: 'Penalty' }), 'none');
         await waitFor(() => {
-            const recipe = usePlaygroundStore.getState().prepared?.document.recipe;
+            const recipe = currentPreparedForTest()?.document.recipe;
             expect(recipe?.training.gradientClipping).toEqual({ kind: 'none' });
             expect(recipe?.objective.penalty).toEqual({ kind: 'none' });
         });
@@ -207,14 +208,14 @@ describe('HyperparamPanel canonical V2 controls', () => {
             .toBeInTheDocument();
         expect(within(loss).getByRole('option', { name: 'Huber' })).toBeInTheDocument();
         await user.selectOptions(loss, 'huber');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.objective.dataLoss)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.objective.dataLoss)
             .toEqual({ kind: 'huber', delta: 1 }));
         await editNumber('Huber delta', '2.25');
-        expect(usePlaygroundStore.getState().prepared?.document.recipe.objective.dataLoss)
+        expect(currentPreparedForTest()?.document.recipe.objective.dataLoss)
             .toEqual({ kind: 'huber', delta: 2.25 });
 
         await user.selectOptions(loss, 'mean-squared-error');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.objective.dataLoss)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.objective.dataLoss)
             .toEqual({ kind: 'mean-squared-error' }));
         expect(screen.queryByRole('spinbutton', { name: 'Huber delta' }))
             .not.toBeInTheDocument();
@@ -223,13 +224,13 @@ describe('HyperparamPanel canonical V2 controls', () => {
     it('commits exact learning-rate and batch values and changes the fingerprint', async () => {
         const user = userEvent.setup();
         render(<HyperparamPanel />);
-        const firstFingerprint = usePlaygroundStore.getState().prepared?.identities.recipeFingerprint;
+        const firstFingerprint = currentPreparedForTest()?.identities.recipeFingerprint;
 
         await user.selectOptions(screen.getByRole('combobox', { name: 'Learning rate' }), '0.1');
         await user.selectOptions(screen.getByRole('combobox', { name: 'Batch size' }), '32');
 
         await waitFor(() => {
-            const prepared = usePlaygroundStore.getState().prepared;
+            const prepared = currentPreparedForTest();
             expect(prepared?.document.recipe.training).toMatchObject({
                 learningRate: 0.1,
                 batchSize: 32,
@@ -276,16 +277,16 @@ describe('HyperparamPanel canonical V2 controls', () => {
         const user = userEvent.setup();
         render(<HyperparamPanel />);
         await user.selectOptions(screen.getByRole('combobox', { name: 'LR schedule' }), 'step');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.schedule.kind)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.schedule.kind)
             .toBe('step'));
-        const beforeInvalid = usePlaygroundStore.getState().prepared;
+        const beforeInvalid = currentPreparedForTest();
 
         await editNumber('Step schedule interval', '0');
 
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'recipe.training.schedule.interval',
         );
-        expect(usePlaygroundStore.getState().prepared).toBe(beforeInvalid);
+        expect(currentPreparedForTest()).toBe(beforeInvalid);
         expect(screen.getByRole('spinbutton', { name: 'Step schedule interval' }))
             .toHaveValue(0);
     });
@@ -294,14 +295,14 @@ describe('HyperparamPanel canonical V2 controls', () => {
         const user = userEvent.setup();
         render(<HyperparamPanel />);
         await user.selectOptions(screen.getByRole('combobox', { name: 'LR schedule' }), 'step');
-        await waitFor(() => expect(usePlaygroundStore.getState().prepared?.document.recipe.training.schedule.kind)
+        await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.schedule.kind)
             .toBe('step'));
         act(() => useTrainingStore.getState().finishConfigChange());
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
 
         fireEvent.blur(screen.getByRole('spinbutton', { name: 'Step schedule interval' }));
 
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
     });
 
@@ -315,7 +316,7 @@ describe('HyperparamPanel canonical V2 controls', () => {
         fireEvent.change(learningRate, { target: { value: '0.3' } });
 
         await waitFor(() => {
-            const training = usePlaygroundStore.getState().prepared?.document.recipe.training;
+            const training = currentPreparedForTest()?.document.recipe.training;
             expect(training?.learningRate).toBe(0.3);
             expect(training?.optimizer).toEqual({
                 kind: 'adam',
@@ -327,7 +328,7 @@ describe('HyperparamPanel canonical V2 controls', () => {
     });
 
     it('keeps preparation failures persistent and retryable', async () => {
-        const before = usePlaygroundStore.getState().prepared;
+        const before = currentPreparedForTest();
         usePlaygroundStore.setState({
             editRecipe: vi.fn(async () => ({
                 ok: false as const,
@@ -346,7 +347,7 @@ describe('HyperparamPanel canonical V2 controls', () => {
         expect(await screen.findByRole('alert')).toHaveTextContent(
             'recipe.training.learningRate: learning rate failed external validation',
         );
-        expect(usePlaygroundStore.getState().prepared).toBe(before);
+        expect(currentPreparedForTest()).toBe(before);
         await user.click(screen.getByRole('button', { name: 'Retry' }));
         expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);

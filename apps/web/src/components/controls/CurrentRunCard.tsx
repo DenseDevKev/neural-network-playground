@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import type { AppConfig, PauseReason, TrainingStatus } from '@nn-playground/shared';
+import type { PauseReason, TrainingStatus } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
 import { getRecipeDrift } from '../../store/recipeIdentity.ts';
@@ -52,16 +52,6 @@ function pauseReasonCopy(reason: PauseReason | null): string {
         default:
             return 'Paused and ready to resume.';
     }
-}
-
-function useCurrentRecipeConfig(): AppConfig {
-    const data = usePlaygroundStore((s) => s.data);
-    const features = usePlaygroundStore((s) => s.features);
-    const network = usePlaygroundStore((s) => s.network);
-    const training = usePlaygroundStore((s) => s.training);
-    const ui = usePlaygroundStore((s) => s.ui);
-
-    return useMemo(() => ({ data, features, network, training, ui }), [data, features, network, training, ui]);
 }
 
 function getRunStateCopy(args: {
@@ -158,13 +148,16 @@ function getRunStateCopy(args: {
 }
 
 export const CurrentRunCard = memo(function CurrentRunCard() {
-    const currentConfig = useCurrentRecipeConfig();
+    const currentRecipe = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.document.recipe : null
+    ));
     const status = useTrainingStore((s) => s.status);
-    const snapshot = useTrainingStore((s) => s.snapshot);
-    const trainedRecipeConfig = useTrainingStore((s) => s.trainedRecipeConfig);
+    const trainedRecipe = useTrainingStore((s) => s.trainedRecipe);
     const trainedRecipeFingerprint = useTrainingStore((s) => s.trainedRecipeFingerprint);
     const currentRecipeFingerprint = usePlaygroundStore(
-        (s) => s.prepared?.identities.recipeFingerprint ?? null,
+        (s) => s.access.status === 'ready'
+            ? s.access.prepared.identities.recipeFingerprint
+            : null,
     );
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const workerError = useTrainingStore((s) => s.workerError);
@@ -179,24 +172,24 @@ export const CurrentRunCard = memo(function CurrentRunCard() {
 
     const drift = useMemo(
         () => getRecipeDrift(
-            trainedRecipeConfig,
-            currentConfig,
+            trainedRecipe,
+            currentRecipe,
             3,
             trainedRecipeFingerprint === null ? undefined : {
                 trainedRecipeFingerprint,
                 currentRecipeFingerprint,
             },
         ),
-        [trainedRecipeConfig, currentConfig, trainedRecipeFingerprint, currentRecipeFingerprint],
+        [trainedRecipe, currentRecipe, trainedRecipeFingerprint, currentRecipeFingerprint],
     );
     const state = getRunStateCopy({
         status,
-        step: evidence.currentModel?.step ?? snapshot?.step ?? null,
+        step: evidence.currentModel?.step ?? null,
         pendingConfigSource,
         workerError,
         configError,
         pauseReason,
-        hasModelEvidence: evidence.currentModel !== null || snapshot !== null,
+        hasModelEvidence: evidence.currentModel !== null,
         hasFullEvaluation: evidence.fullEvaluation !== null,
         evaluationAgeSteps: evidence.evaluationAgeSteps,
         hasDrift: drift.hasDrift,

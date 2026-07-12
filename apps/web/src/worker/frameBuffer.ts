@@ -12,7 +12,6 @@ import type {
 import type {
     ArtifactProvenance,
     ActivationHistogramLayout,
-    ArenaModelSummary,
     MulticlassBoundaryLayout,
 } from '@nn-playground/shared';
 
@@ -25,7 +24,6 @@ export interface FrameVersions {
     confusionMatrixVersion: number;
     activationHistogramsVersion: number;
     multiclassBoundaryVersion: number;
-    arenaSummariesVersion: number;
 }
 
 export interface FrameBuffer {
@@ -65,10 +63,7 @@ export interface FrameBuffer {
     confusionMatrixProvenance: ArtifactProvenance | null;
     confusionMatrixEvaluationId: number | null;
 
-    // Scalar-only live arena summaries. Heavy per-model arrays stay out of React state.
-    arenaSummaries: ArenaModelSummary[] | null;
-
-    // Version counters — `version` is the legacy broad frame version.
+    // Version counters — `version` is the broad frame version.
     version: number;
     outputGridVersion: number;
     neuronGridsVersion: number;
@@ -78,7 +73,6 @@ export interface FrameBuffer {
     activationHistogramsVersion: number;
     multiclassBoundaryVersion: number;
     multiclassConfusionMatrixVersion: number;
-    arenaSummariesVersion: number;
 }
 
 let _buffer: FrameBuffer = {
@@ -104,7 +98,6 @@ let _buffer: FrameBuffer = {
     multiclassConfusionMatrix: null,
     confusionMatrixProvenance: null,
     confusionMatrixEvaluationId: null,
-    arenaSummaries: null,
     version: 0,
     outputGridVersion: 0,
     neuronGridsVersion: 0,
@@ -114,7 +107,6 @@ let _buffer: FrameBuffer = {
     activationHistogramsVersion: 0,
     multiclassBoundaryVersion: 0,
     multiclassConfusionMatrixVersion: 0,
-    arenaSummariesVersion: 0,
 };
 
 /** Get a readonly view of the current frame buffer. */
@@ -138,7 +130,6 @@ export function getFrameVersions(): FrameVersions {
         confusionMatrixVersion: _buffer.confusionMatrixVersion,
         activationHistogramsVersion: _buffer.activationHistogramsVersion,
         multiclassBoundaryVersion: _buffer.multiclassBoundaryVersion,
-        arenaSummariesVersion: _buffer.arenaSummariesVersion,
     };
 }
 
@@ -153,7 +144,6 @@ export type FrameBufferPatch = Partial<Omit<
     | 'activationHistogramsVersion'
     | 'multiclassBoundaryVersion'
     | 'multiclassConfusionMatrixVersion'
-    | 'arenaSummariesVersion'
 >>;
 
 function hasOwn(patch: FrameBufferPatch, key: keyof FrameBufferPatch): boolean {
@@ -448,7 +438,6 @@ export function updateFrameBuffer(
             hasOwn(patch, 'multiclassBoundaryLayout') &&
             patch.multiclassBoundaryLayout !== _buffer.multiclassBoundaryLayout
         );
-    const arenaSummariesChanged = hasOwn(patch, 'arenaSummaries');
     const anyDomainChanged =
         outputGridChanged ||
         neuronGridsChanged ||
@@ -457,8 +446,7 @@ export function updateFrameBuffer(
         confusionMatrixChanged ||
         multiclassConfusionMatrixChanged ||
         activationHistogramsChanged ||
-        multiclassBoundaryChanged ||
-        arenaSummariesChanged;
+        multiclassBoundaryChanged;
 
     _buffer = {
         ..._buffer,
@@ -475,7 +463,6 @@ export function updateFrameBuffer(
             _buffer.activationHistogramsVersion + (activationHistogramsChanged ? 1 : 0),
         multiclassBoundaryVersion:
             _buffer.multiclassBoundaryVersion + (multiclassBoundaryChanged ? 1 : 0),
-        arenaSummariesVersion: _buffer.arenaSummariesVersion + (arenaSummariesChanged ? 1 : 0),
     };
     return _buffer.version;
 }
@@ -505,7 +492,6 @@ export function resetFrameBuffer(): void {
         multiclassConfusionMatrix: null,
         confusionMatrixProvenance: null,
         confusionMatrixEvaluationId: null,
-        arenaSummaries: null,
         version: _buffer.version + 1,
         outputGridVersion: _buffer.outputGridVersion + 1,
         neuronGridsVersion: _buffer.neuronGridsVersion + 1,
@@ -515,6 +501,5 @@ export function resetFrameBuffer(): void {
         multiclassConfusionMatrixVersion: _buffer.multiclassConfusionMatrixVersion + 1,
         activationHistogramsVersion: _buffer.activationHistogramsVersion + 1,
         multiclassBoundaryVersion: _buffer.multiclassBoundaryVersion + 1,
-        arenaSummariesVersion: _buffer.arenaSummariesVersion + 1,
     };
 }

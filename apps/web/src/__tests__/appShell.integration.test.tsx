@@ -1,17 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { NetworkSnapshot } from '@nn-playground/engine';
 import App from '../App.tsx';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
-import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-} from '@nn-playground/shared';
+import type { LiveTrainingSignal, PairedEvaluation } from '@nn-playground/shared';
 
 const trainingMock = {
     play: vi.fn(),
@@ -20,6 +14,10 @@ const trainingMock = {
     reset: vi.fn(),
     restoreCheckpoint: vi.fn(),
 };
+
+const INITIAL_ACCESS = usePlaygroundStore.getState().access;
+if (INITIAL_ACCESS.status !== 'ready') throw new Error('missing app-shell prepared fixture');
+const INITIAL_PREPARED = INITIAL_ACCESS.prepared;
 
 vi.mock('../hooks/useTraining.ts', () => ({
     useTraining: () => trainingMock,
@@ -95,20 +93,44 @@ function mockMatchMedia(matches = false) {
     });
 }
 
-function makeSnapshot(overrides: Partial<NetworkSnapshot> = {}): NetworkSnapshot {
+function makeLiveSignal(step = 20): LiveTrainingSignal {
     return {
-        step: 20,
-        epoch: 2,
-        weights: [],
-        biases: [],
-        trainLoss: 0.2,
-        testLoss: 0.6,
-        trainMetrics: { loss: 0.2, accuracy: 0.8 },
-        testMetrics: { loss: 0.6, accuracy: 0.7 },
-        outputGrid: [],
-        gridSize: 40,
-        historyPoint: { step: 20, trainLoss: 0.2, testLoss: 0.6 },
-        ...overrides,
+        model: { generationId: 7, revision: step, step, epoch: 2 },
+        dataset: {
+            generatorVersion: 2,
+            datasetKey: INITIAL_PREPARED.identities.datasetKey,
+            trainCount: 210,
+            testCount: 90,
+        },
+        objectiveKey: INITIAL_PREPARED.identities.objectiveKey,
+        basis: {
+            kind: 'mini-batch-ema',
+            alpha: 0.1,
+            latestBatchSize: 10,
+            throughStep: step,
+        },
+        dataLoss: 0.4,
+    };
+}
+
+function makeEvaluation(step = 20): PairedEvaluation {
+    const model = { generationId: 7, revision: step, step, epoch: 2 };
+    const dataset = makeLiveSignal(step).dataset;
+    return {
+        evaluationId: 4,
+        trigger: 'cadence',
+        model,
+        dataset,
+        objectiveKey: INITIAL_PREPARED.identities.objectiveKey,
+        train: {
+            basis: { kind: 'full-split', split: 'train', sampleCount: 210, populationCount: 210 },
+            values: { dataLoss: 0.2, accuracy: 0.8 },
+        },
+        test: {
+            basis: { kind: 'full-split', split: 'test', sampleCount: 90, populationCount: 90 },
+            values: { dataLoss: 0.6, accuracy: 0.7 },
+        },
+        objective: { regularizationPenalty: 0.01, trainTotalObjective: 0.21 },
     };
 }
 
@@ -121,25 +143,19 @@ describe('App shell integration', () => {
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();
         trainingMock.reset.mockReset();
+        trainingMock.restoreCheckpoint.mockReset();
 
         usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: {
-                ...DEFAULT_NETWORK,
-                inputSize: 2,
-                hiddenLayers: [...DEFAULT_NETWORK.hiddenLayers],
-                outputSize: 1,
-                seed: DEFAULT_DATA.seed,
-            },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
+            access: { status: 'ready', prepared: INITIAL_PREPARED },
+            preparation: { status: 'ready', requestId: 0, issues: [] },
+            incompatibleSource: null,
         });
 
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: null,
-            trainedRecipeConfig: null,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
             trainedRecipeRecordedAt: null,
             trainedRecipeSource: null,
             trainPoints: [],
@@ -150,7 +166,7 @@ describe('App shell integration', () => {
             configError: null,
             configErrorSource: null,
             workerError: null,
-            testMetricsStale: false,
+            pauseReason: null,
         });
 
         useLayoutStore.setState({
@@ -254,7 +270,8 @@ describe('App shell integration', () => {
     it('uses explanation action cards to focus Build recipe sections and Run evidence', async () => {
         const user = userEvent.setup();
         useTrainingStore.setState({
-            snapshot: makeSnapshot(),
+            latestLiveSignal: makeLiveSignal(),
+            latestEvaluation: makeEvaluation(),
             pauseReason: 'diverged',
         });
         render(<App />);
