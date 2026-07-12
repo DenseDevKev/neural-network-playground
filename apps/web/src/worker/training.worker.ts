@@ -647,6 +647,9 @@ let createWebGPUGridPredictorForRuntime = (
     args: ConstructorParameters<typeof WebGPUGridPredictor>[0],
 ): WebGPUGridPredictor => new WebGPUGridPredictor(args);
 export const MAX_MANUAL_V2_STEP_ITERATIONS = 10;
+const clonePredictionTraceBoundary = typeof globalThis.structuredClone === 'function'
+    ? globalThis.structuredClone.bind(globalThis)
+    : null;
 
 function enqueueV2Mutation<T>(operation: () => T | Promise<T>): Promise<T> {
     const result = v2MutationTail.then(operation, operation);
@@ -2412,20 +2415,34 @@ function parsePredictionTraceRequest(request: unknown): PredictionTraceRequest {
         || ownKeys.some((key) => typeof key !== 'string' || !expectedKeys.has(key))) {
         throw new TypeError('prediction trace request must contain exactly index and source');
     }
-    const descriptors = new Map<string, PropertyDescriptor>();
     for (const key of expectedKeys) {
         const descriptor = Object.getOwnPropertyDescriptor(request, key);
         if (descriptor === undefined || !('value' in descriptor) || !descriptor.enumerable) {
             throw new TypeError(`prediction trace request ${key} must be an enumerable data property`);
         }
-        descriptors.set(key, descriptor);
     }
 
-    const source = descriptors.get('source')!.value as unknown;
+    if (clonePredictionTraceBoundary === null) {
+        throw new TypeError('prediction trace requests cannot be authenticated in this environment');
+    }
+    let snapshot: unknown;
+    try {
+        snapshot = clonePredictionTraceBoundary(request);
+    } catch {
+        throw new TypeError('prediction trace request must be an authentic cloneable plain record');
+    }
+    if (typeof snapshot !== 'object' || snapshot === null || Array.isArray(snapshot)) {
+        throw new TypeError('prediction trace request snapshot must be a plain record');
+    }
+    const snapshotPrototype = Object.getPrototypeOf(snapshot);
+    if (snapshotPrototype !== Object.prototype && snapshotPrototype !== null) {
+        throw new TypeError('prediction trace request snapshot must have a plain record prototype');
+    }
+    const source = (snapshot as Record<string, unknown>)['source'];
     if (source !== 'train' && source !== 'test') {
         throw new TypeError('prediction trace request source must be train or test');
     }
-    const index = descriptors.get('index')!.value as unknown;
+    const index = (snapshot as Record<string, unknown>)['index'];
     if (!Number.isSafeInteger(index) || (index as number) < 0) {
         throw new RangeError('prediction trace request index must be a non-negative safe integer');
     }

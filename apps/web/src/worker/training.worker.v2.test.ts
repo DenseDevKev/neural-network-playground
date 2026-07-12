@@ -332,6 +332,17 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(sourceRead).toBe(false);
     });
 
+    it('rejects transparent Proxy prediction-trace requests before tracing the dataset', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const getTrace = workerApi.getPredictionTraceV2 as (request: unknown) => Promise<unknown>;
+        const traceSpy = vi.spyOn(Network.prototype, 'tracePredictionV2');
+        const request = new Proxy({ source: 'train', index: 0 }, {});
+
+        await expect(getTrace(request)).rejects.toThrow(TypeError);
+        expect(traceSpy).not.toHaveBeenCalled();
+    });
+
     it('preserves exact train and test prediction traces', async () => {
         const fixtures = await createScientificTrustFixtures();
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
