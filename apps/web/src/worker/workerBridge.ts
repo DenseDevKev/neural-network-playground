@@ -124,7 +124,8 @@ function deepFreezeArtifact<T>(value: T): Readonly<T> {
 function snapshotWithFrozenArtifactProvenance(
     message: WorkerSnapshotMessage,
 ): WorkerSnapshotMessage {
-    if (message.artifacts === undefined) return message;
+    const model = Object.freeze({ ...message.model });
+    if (message.artifacts === undefined) return { ...message, model };
     const parsed: Partial<Record<keyof WorkerArtifactProvenanceV2, ArtifactProvenance>> = {};
     for (const key of Object.keys(message.artifacts) as Array<keyof WorkerArtifactProvenanceV2>) {
         const provenance = message.artifacts[key];
@@ -134,6 +135,7 @@ function snapshotWithFrozenArtifactProvenance(
     }
     return {
         ...message,
+        model,
         artifacts: Object.freeze(parsed) as WorkerArtifactProvenanceV2,
     };
 }
@@ -381,6 +383,13 @@ function buildSnapshotFramePatch(
     if (msg.weights !== undefined) patch.weights = msg.weights;
     if (msg.biases !== undefined) patch.biases = msg.biases;
     if (msg.weightLayout !== undefined) patch.weightLayout = msg.weightLayout;
+    if (msg.weights !== undefined || msg.biases !== undefined || msg.weightLayout !== undefined) {
+        patch.parameterProvenance = {
+            model: msg.model,
+            recipeFingerprint: msg.recipeFingerprint,
+        };
+        Object.freeze(patch.parameterProvenance);
+    }
     if (msg.layerStats !== undefined) patch.layerStats = msg.layerStats;
     if (msg.activationHistogramBins !== undefined) {
         patch.activationHistogramBins = msg.activationHistogramBins;

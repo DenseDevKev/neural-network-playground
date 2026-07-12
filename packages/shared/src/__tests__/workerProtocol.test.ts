@@ -44,6 +44,7 @@ function validStrictSnapshot() {
         runId: 1,
         snapshotId: 1,
         model: { generationId: 1, revision: 2, step: 2, epoch: 0 },
+        recipeFingerprint: `r2.1.${'A'.repeat(43)}`,
         scalars: { step: 2, epoch: 0, gridSize: 2 },
         outputGrid: new Float32Array([0.1, 0.2, 0.3, 0.4]),
         weights: new Float32Array([0.1, 0.2]),
@@ -204,8 +205,10 @@ describe('strict V2 streaming protocol', () => {
         const valid = validStrictSnapshot();
         const { model: _model, ...withoutModel } = valid;
         const { checkpointTimeline: _timeline, ...withoutTimeline } = valid;
+        const { recipeFingerprint: _fingerprint, ...withoutFingerprint } = valid;
         expect(isWorkerToMainMessage(withoutModel)).toBe(false);
         expect(isWorkerToMainMessage(withoutTimeline)).toBe(false);
+        expect(isWorkerToMainMessage(withoutFingerprint)).toBe(false);
         expect(isWorkerToMainMessage({
             ...valid,
             model: { ...valid.model, step: 1 },

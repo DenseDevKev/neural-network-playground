@@ -323,6 +323,7 @@ function makeStrictSnapshotMessage(
             step: snapshotId * 10,
             epoch: snapshotId,
         },
+        recipeFingerprint: `r2.1.${'A'.repeat(43)}`,
         activationHistogramBins: Float32Array.from([
             histogramSampleCount,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -475,6 +476,10 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.neuronGrids).toEqual(new Float32Array([0.4, 0.3, 0.2, 0.1]));
         expect(frame.weights).toEqual(new Float32Array([0.5, -0.25]));
         expect(frame.biases).toEqual(new Float32Array([0.1]));
+        expect(frame.parameterProvenance).toEqual({
+            model: makeStrictSnapshotMessage(1).model,
+            recipeFingerprint: makeStrictSnapshotMessage(1).recipeFingerprint,
+        });
         expect(frame.activationHistogramBins).toEqual(Float32Array.from([
             128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]));
@@ -566,6 +571,21 @@ describe('workerBridge streamed snapshots', () => {
         );
         expect(frame.layerStatsProvenance).toEqual(activationStatistics);
         expect(frame.layerStatsGradientRevision).toBe(1);
+    });
+
+    it('stores immutable parameter provenance isolated from later message mutation', () => {
+        const listener = getRegisteredStreamListener();
+        const message = makeStrictSnapshotMessage(1);
+
+        startRenderLoop();
+        listener({ data: message } as MessageEvent);
+        runNextAnimationFrame();
+
+        const stored = getFrameBuffer().parameterProvenance!;
+        (message.model as { revision: number }).revision = 99;
+        expect(stored.model.revision).toBe(1);
+        expect(Object.isFrozen(stored)).toBe(true);
+        expect(Object.isFrozen(stored.model)).toBe(true);
     });
 
     it('rejects an entire strict frame when any artifact payload lacks provenance', () => {

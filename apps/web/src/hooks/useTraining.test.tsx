@@ -375,7 +375,6 @@ function resetStores(): void {
     usePlaygroundStore.setState({
         access: { status: 'ready', prepared: INITIAL_PREPARED },
         preparation: { status: 'ready', requestId: 0, issues: [] },
-        incompatibleSource: null,
         featuresUI: { canvasNetworkGraph: true, webgpuGrid: true },
         demand: { ...DEFAULT_DEMAND },
     });
@@ -534,7 +533,6 @@ describe('useTraining', () => {
                     message: 'legacy URL',
                 }],
             },
-            incompatibleSource: { kind: 'url', rawHash: '#d=xor' },
         });
 
         renderHook(() => useTraining());

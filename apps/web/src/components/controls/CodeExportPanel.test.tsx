@@ -14,6 +14,7 @@ import {
     prepareExperimentDocument,
     type ExperimentDocumentV2,
     type PreparedExperimentDocumentV2,
+    type ModelRevision,
 } from '@nn-playground/shared';
 
 const fakeSnapshot = {
@@ -43,6 +44,19 @@ function installPrepared(prepared: PreparedExperimentDocumentV2) {
     usePlaygroundStore.setState({
         access: { status: 'ready', prepared },
         prepared,
+    });
+}
+
+function installParameters(
+    prepared: PreparedExperimentDocumentV2,
+    model: ModelRevision = { generationId: 1, revision: 5, step: 5, epoch: 0 },
+    recipeFingerprint = prepared.identities.recipeFingerprint,
+) {
+    updateFrameBuffer({
+        weights: new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]),
+        biases: new Float32Array([0.1, 0.2, 0.3]),
+        weightLayout: { layerSizes: [2, 2, 1] },
+        parameterProvenance: { model, recipeFingerprint },
     });
 }
 
@@ -99,12 +113,8 @@ describe('CodeExportPanel', () => {
         } as any);
 
         // Seed the frame buffer with weights
-        const weights = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
-        const biases = new Float32Array([0.1, 0.2, 0.3]);
+        installParameters(prepared);
         updateFrameBuffer({
-            weights,
-            biases,
-            weightLayout: { layerSizes: [2, 2, 1] },
             outputGrid: null,
             gridSize: 40,
             neuronGrids: null,
@@ -169,6 +179,35 @@ describe('CodeExportPanel', () => {
         expect(document.querySelector('.code-export__code')?.textContent).not.toContain(
             '# Trained weights',
         );
+    });
+
+    it('labels parameters with their own revision when newer evidence arrives first', () => {
+        useTrainingStore.setState({
+            latestLiveSignal: {
+                ...useTrainingStore.getState().latestLiveSignal!,
+                model: { generationId: 1, revision: 6, step: 6, epoch: 0 },
+            },
+        });
+
+        render(<CodeExportPanel />);
+
+        const code = document.querySelector('.code-export__code')?.textContent ?? '';
+        expect(code).toContain('# Trained weights (step 5)');
+        expect(code).not.toContain('# Trained weights (step 6)');
+    });
+
+    it.each([
+        ['generation', { generationId: 2, revision: 5, step: 5, epoch: 0 }, null],
+        ['fingerprint', { generationId: 1, revision: 5, step: 5, epoch: 0 }, `r2.1.${'Z'.repeat(43)}`],
+    ] as const)('suppresses parameters on a %s mismatch', (_kind, model, fingerprint) => {
+        const prepared = usePlaygroundStore.getState().access;
+        if (prepared.status !== 'ready') throw new Error('expected prepared experiment');
+        installParameters(prepared.prepared, model, fingerprint ?? prepared.prepared.identities.recipeFingerprint);
+
+        render(<CodeExportPanel />);
+
+        expect(document.querySelector('.code-export__code')?.textContent)
+            .not.toContain('# Trained weights');
     });
 
     it('switches to NumPy tab and shows numpy code', async () => {

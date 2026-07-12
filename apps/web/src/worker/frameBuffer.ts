@@ -12,8 +12,15 @@ import type {
 import type {
     ArtifactProvenance,
     ActivationHistogramLayout,
+    ModelRevision,
     MulticlassBoundaryLayout,
+    RecipeFingerprint,
 } from '@nn-playground/shared';
+
+export interface ParameterProvenance {
+    readonly model: ModelRevision;
+    readonly recipeFingerprint: RecipeFingerprint;
+}
 
 export interface FrameVersions {
     frameVersion: number;
@@ -41,6 +48,7 @@ export interface FrameBuffer {
     weights: Float32Array | null;
     biases: Float32Array | null;
     weightLayout: { layerSizes: number[] } | null;
+    parameterProvenance: ParameterProvenance | null;
 
     // Layer statistics (small enough to keep here)
     layerStats: LayerStats[] | null;
@@ -85,6 +93,7 @@ let _buffer: FrameBuffer = {
     weights: null,
     biases: null,
     weightLayout: null,
+    parameterProvenance: null,
     layerStats: null,
     layerStatsProvenance: null,
     layerStatsGradientRevision: null,
@@ -173,12 +182,36 @@ function assertArtifactPair(
 function assertStrictArtifactPairs(patch: FrameBufferPatch): void {
     const paramsMutated = hasOwn(patch, 'weights')
         || hasOwn(patch, 'biases')
-        || hasOwn(patch, 'weightLayout');
+        || hasOwn(patch, 'weightLayout')
+        || hasOwn(patch, 'parameterProvenance');
     if (paramsMutated && (
         !hasOwn(patch, 'weights')
         || !hasOwn(patch, 'biases')
         || !hasOwn(patch, 'weightLayout')
-    )) throw new Error('parameter strict transaction must replace the complete domain');
+        || !hasOwn(patch, 'parameterProvenance')
+    )) throw new Error('parameter provenance and bytes must update atomically');
+    if (paramsMutated) {
+        const parametersPresent = patch.weights !== null
+            || patch.biases !== null
+            || patch.weightLayout !== null
+            || patch.parameterProvenance !== null;
+        const provenance = patch.parameterProvenance;
+        if (parametersPresent && (
+            patch.weights === null
+            || patch.biases === null
+            || patch.weightLayout === null
+            || provenance == null
+            || !Number.isSafeInteger(provenance.model.generationId)
+            || provenance.model.generationId < 1
+            || !Number.isSafeInteger(provenance.model.revision)
+            || provenance.model.revision < 0
+            || !Number.isSafeInteger(provenance.model.step)
+            || provenance.model.step < 0
+            || !Number.isSafeInteger(provenance.model.epoch)
+            || provenance.model.epoch < 0
+            || !/^r2\.1\.[A-Za-z0-9_-]{43}$/u.test(provenance.recipeFingerprint)
+        )) throw new Error('parameter provenance is invalid or incomplete');
+    }
     const boundaryMutated = hasOwn(patch, 'outputGrid')
         || hasOwn(patch, 'gridSize')
         || hasOwn(patch, 'multiclassClassGrid')
@@ -402,7 +435,10 @@ export function updateFrameBuffer(
     const neuronGridsChanged =
         hasOwn(patch, 'neuronGrids') || hasOwn(patch, 'neuronGridLayout');
     const paramsChanged =
-        hasOwn(patch, 'weights') || hasOwn(patch, 'biases') || hasOwn(patch, 'weightLayout');
+        hasOwn(patch, 'weights')
+        || hasOwn(patch, 'biases')
+        || hasOwn(patch, 'weightLayout')
+        || hasOwn(patch, 'parameterProvenance');
     const layerStatsChanged = hasOwn(patch, 'layerStats')
         || hasOwn(patch, 'layerStatsGradientRevision')
         || hasOwn(patch, 'layerStatsProvenance');
@@ -479,6 +515,7 @@ export function resetFrameBuffer(): void {
         weights: null,
         biases: null,
         weightLayout: null,
+        parameterProvenance: null,
         layerStats: null,
         layerStatsProvenance: null,
         layerStatsGradientRevision: null,

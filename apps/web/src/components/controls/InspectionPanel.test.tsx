@@ -5,6 +5,8 @@ import { InspectionPanel } from './InspectionPanel.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameVersions, resetFrameBuffer, updateFrameBuffer } from '../../worker/frameBuffer.ts';
+import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
+import type { PredictionTraceResponseV2 } from '../../worker/training.worker.ts';
 
 const workerApi = vi.hoisted(() => ({
     getPredictionTraceV2: vi.fn(),
@@ -105,6 +107,17 @@ function landscapeResponse() {
             summary: 'Training-objective surface found best objective 0.4000.',
         },
     } as const;
+}
+
+function advanceActiveModel(revision = 13) {
+    useTrainingStore.setState((state) => ({
+        latestLiveSignal: state.latestLiveSignal
+            ? {
+                ...state.latestLiveSignal,
+                model: { ...MODEL, revision, step: revision },
+            }
+            : null,
+    }));
 }
 
 describe('InspectionPanel V2 evidence', () => {
@@ -226,6 +239,23 @@ describe('InspectionPanel V2 evidence', () => {
             .toBeInTheDocument();
     });
 
+    it('clears rendered backprop and landscape artifacts when the active model advances', async () => {
+        installCurrentEvidence();
+        workerApi.getBackpropExplanationV2.mockResolvedValue(backpropResponse());
+        workerApi.getObjectiveLandscapeV2.mockResolvedValue(landscapeResponse());
+        render(<InspectionPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+        fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
+        expect(await screen.findByText(/Preview from step 12/i)).toBeInTheDocument();
+        expect(await screen.findByText('Training objective on a parameter grid')).toBeInTheDocument();
+
+        await act(async () => advanceActiveModel());
+
+        expect(screen.queryByText(/Preview from step 12/i)).not.toBeInTheDocument();
+        expect(screen.queryByText('Training objective on a parameter grid')).not.toBeInTheDocument();
+    });
+
     it('shows the complete objective and gradient breakdown for backprop', async () => {
         installCurrentEvidence();
         workerApi.getBackpropExplanationV2.mockResolvedValue(backpropResponse());
@@ -271,9 +301,123 @@ describe('InspectionPanel V2 evidence', () => {
         expect(screen.queryByText(/Preview from step 12/i)).not.toBeInTheDocument();
     });
 
+    it('binds a diagnostic response to the model that originated the request', async () => {
+        installCurrentEvidence();
+        let resolve!: (value: ReturnType<typeof backpropResponse>) => void;
+        workerApi.getBackpropExplanationV2.mockReturnValue(new Promise((next) => { resolve = next; }));
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+
+        await act(async () => {
+            advanceActiveModel();
+            resolve({
+                ...backpropResponse(),
+                model: { ...MODEL, revision: 13, step: 13 },
+            });
+        });
+
+        expect(screen.queryByText(/Preview from step 13/i)).not.toBeInTheDocument();
+    });
+
+    it('drops a stale prediction trace completion after the active model advances', async () => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        let resolve!: (value: PredictionTraceResponseV2) => void;
+        workerApi.getPredictionTraceV2.mockReturnValue(new Promise((next) => { resolve = next; }));
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /trace prediction/i }));
+
+        await act(async () => {
+            advanceActiveModel();
+            resolve({
+                runId: 1,
+                model: MODEL,
+                dataset: DATASET,
+                objectiveKey: 'objective-v2',
+                sample: { source: 'train', index: 0, x: 0.25, y: -0.5, label: 1 },
+                trace: {
+                    input: [0.25, -0.5],
+                    target: [1],
+                    output: [0.82],
+                    prediction: 0.82,
+                    sampleDataLoss: 0.19,
+                    regularizationPenalty: 0.03,
+                    layers: [{ layerIndex: 0, preActivations: [1.5], activations: [0.82] }],
+                },
+            });
+        });
+
+        expect(screen.queryByText(/Trace from training sample 0/i)).not.toBeInTheDocument();
+    });
+
+    it('drops a stale landscape completion after the active model advances', async () => {
+        installCurrentEvidence();
+        let resolve!: (value: ReturnType<typeof landscapeResponse>) => void;
+        workerApi.getObjectiveLandscapeV2.mockReturnValue(new Promise((next) => { resolve = next; }));
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
+
+        await act(async () => {
+            advanceActiveModel();
+            resolve(landscapeResponse());
+        });
+
+        expect(screen.queryByText('Training objective on a parameter grid')).not.toBeInTheDocument();
+    });
+
+    it.each([
+        ['prediction trace', 'getPredictionTraceV2', /trace prediction/i, /Trace failed:/i],
+        ['backprop', 'getBackpropExplanationV2', /preview backprop/i, /Backprop preview failed:/i],
+        ['landscape', 'getObjectiveLandscapeV2', /probe loss surface/i, /Loss landscape probe failed:/i],
+    ] as const)('drops a stale %s failure after the active model advances', async (
+        _label,
+        method,
+        buttonName,
+        failureText,
+    ) => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        let reject!: (reason: Error) => void;
+        workerApi[method].mockReturnValue(new Promise((_resolve, nextReject) => {
+            reject = nextReject;
+        }));
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: buttonName }));
+
+        await act(async () => {
+            advanceActiveModel();
+            reject(new Error('stale diagnostic failure'));
+            await Promise.resolve();
+        });
+
+        expect(screen.queryByText(failureText)).not.toBeInTheDocument();
+    });
+
+    it('uses the scientific selector when a newer evaluation supersedes the live signal', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        installCurrentEvidence();
+        useTrainingStore.setState((state) => ({
+            latestLiveSignal: state.latestLiveSignal,
+            latestEvaluation: {
+                ...fixtures.evaluation,
+                model: { ...MODEL, revision: 13, step: 13 },
+            },
+        }));
+        workerApi.getBackpropExplanationV2.mockResolvedValue({
+            ...backpropResponse(),
+            model: { ...MODEL, revision: 13, step: 13 },
+        });
+        render(<InspectionPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+
+        expect(await screen.findByText(/Preview from step 13/i)).toBeInTheDocument();
+    });
+
     it('keeps trace unavailable without a target-bearing sample', () => {
         installCurrentEvidence();
         render(<InspectionPanel />);
         expect(screen.getByRole('button', { name: /trace prediction/i })).toBeDisabled();
+        expect(screen.getByRole('combobox', { name: 'Sample' })).not.toHaveTextContent('Custom');
     });
 });

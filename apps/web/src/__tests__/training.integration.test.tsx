@@ -259,7 +259,6 @@ describe('Training integration', () => {
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: INITIAL_PREPARED },
             preparation: { status: 'ready', requestId: 0, issues: [] },
-            incompatibleSource: null,
         });
 
         useTrainingStore.getState().resetEvidence();
@@ -475,7 +474,6 @@ describe('Dataset switching scenario', () => {
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: INITIAL_PREPARED },
             preparation: { status: 'ready', requestId: 0, issues: [] },
-            incompatibleSource: null,
         });
 
         useTrainingStore.getState().resetEvidence();

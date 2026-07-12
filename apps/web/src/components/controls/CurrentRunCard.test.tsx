@@ -15,7 +15,6 @@ function installCurrent(next = prepared()) {
     usePlaygroundStore.setState({
         access: { status: 'ready', prepared: next },
         preparation: { status: 'ready', requestId: 0, issues: [] },
-        incompatibleSource: null,
     });
 }
 

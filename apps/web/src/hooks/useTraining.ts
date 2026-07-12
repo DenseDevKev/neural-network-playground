@@ -506,7 +506,8 @@ function buildStrictV2FramePatch(
     ),
 ): FrameBufferPatch {
     const { snapshot } = result;
-    preflightStrictV2Result(result, expectedPrepared, expectedTrigger);
+    const evidence = preflightStrictV2Result(result, expectedPrepared, expectedTrigger);
+    const parameterModel = evidence.latestEvaluation!.model;
     const currentFrame = getFrameBuffer();
     const { buffer: weights, layerSizes } = flattenWeights(snapshot.weights);
     const biases = flattenBiases(snapshot.biases);
@@ -514,6 +515,10 @@ function buildStrictV2FramePatch(
         weights,
         biases,
         weightLayout: { layerSizes },
+        parameterProvenance: {
+            model: parameterModel,
+            recipeFingerprint: result.identities.recipeFingerprint,
+        },
     };
 
     const hasScalarBoundary = snapshot.outputGrid.length > 0;

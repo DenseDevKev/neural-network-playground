@@ -228,14 +228,11 @@ interface V2RuntimeCheckpoint {
     checkpoint: SessionCheckpointV2;
 }
 
-export type PredictionTraceSampleSource = 'train' | 'test' | 'custom';
+export type PredictionTraceSampleSource = 'train' | 'test';
 
 export interface PredictionTraceRequest {
     source: PredictionTraceSampleSource;
-    index?: number;
-    x?: number;
-    y?: number;
-    label?: number;
+    index: number;
 }
 
 export interface PredictionTraceResponseV2 {
@@ -2049,6 +2046,7 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
             step: state.network.getStep(),
             epoch: state.epoch,
         },
+        recipeFingerprint: state.prepared!.identities.recipeFingerprint,
         checkpointTimeline: buildCheckpointTimeline(),
     };
 
@@ -2400,46 +2398,26 @@ function handleStreamCommand(cmd: unknown): void {
     }
 }
 
-function requireFiniteTraceValue(value: number | undefined, name: string): number {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-        throw new RangeError(`${name} must be finite`);
-    }
-    return value;
-}
-
 function resolveTraceSample(request: PredictionTraceRequest): {
     source: PredictionTraceSampleSource;
-    index?: number;
+    index: number;
     x: number;
     y: number;
-    label?: number;
+    label: number;
 } {
-    if (request.source === 'train' || request.source === 'test') {
-        const points = request.source === 'train' ? state.trainPoints : state.testPoints;
-        const index = request.index ?? 0;
-        if (!Number.isInteger(index) || index < 0 || index >= points.length) {
-            throw new RangeError(`${request.source} sample index is out of range`);
-        }
-        const point = points[index];
-        return {
-            source: request.source,
-            index,
-            x: point.x,
-            y: point.y,
-            label: point.label,
-        };
+    const points = request.source === 'train' ? state.trainPoints : state.testPoints;
+    const { index } = request;
+    if (!Number.isInteger(index) || index < 0 || index >= points.length) {
+        throw new RangeError(`${request.source} sample index is out of range`);
     }
-
-    if (request.source === 'custom') {
-        const x = requireFiniteTraceValue(request.x, 'x');
-        const y = requireFiniteTraceValue(request.y, 'y');
-        const label = request.label === undefined
-            ? undefined
-            : requireFiniteTraceValue(request.label, 'label');
-        return { source: 'custom', x, y, label };
-    }
-
-    throw new RangeError('trace source must be train, test, or custom');
+    const point = points[index];
+    return {
+        source: request.source,
+        index,
+        x: point.x,
+        y: point.y,
+        label: point.label,
+    };
 }
 
 function resolveBackpropPreviewBatch(): { inputs: number[][]; targets: number[][] } {
@@ -2981,11 +2959,6 @@ export const workerApi = {
         return enqueueV2Mutation(() => {
             const { network, compiled, runtime } = requireV2Runtime();
             const sample = resolveTraceSample(request);
-            if (sample.source === 'custom' || sample.index === undefined || sample.label === undefined) {
-                throw new Error(
-                    'Objective-aware prediction traces require a target-bearing train or test example.',
-                );
-            }
             const input = transformPoint(sample.x, sample.y, state.activeFeatures);
             const target = encodeTargetLabel(sample.label, compiled.network.outputSize);
             return {

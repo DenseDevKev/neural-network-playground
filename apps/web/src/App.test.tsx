@@ -105,7 +105,6 @@ describe('App accessibility shell', () => {
             access: { status: 'ready', prepared: prepared.value },
             prepared: prepared.value,
             preparation: { status: 'ready', requestId: 0, issues: [] },
-            incompatibleSource: null,
         });
 
         useTrainingStore.setState({

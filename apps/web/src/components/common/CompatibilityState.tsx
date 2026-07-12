@@ -12,6 +12,12 @@ export function CompatibilityState({ access, onStartFresh }: CompatibilityStateP
     const sourceTitle = access.source.kind === 'url'
         ? 'Original URL fragment'
         : 'Original import file';
+    const stoppedCopy = access.source.kind === 'url'
+        ? 'Training is stopped while this URL remains incompatible.'
+        : 'Training is stopped while this file remains incompatible.';
+    const recoveryCopy = access.source.kind === 'url'
+        ? 'Start fresh installs the default version-2 experiment and replaces the incompatible URL only after validation succeeds.'
+        : 'Start fresh installs the default version-2 experiment only after validation succeeds.';
 
     const startFresh = async () => {
         if (isStarting) return;
@@ -38,7 +44,7 @@ export function CompatibilityState({ access, onStartFresh }: CompatibilityStateP
                 <h1 id="compatibility-state-title">Experiment is incompatible</h1>
                 <p>
                     This input was preserved exactly and was not loaded or repaired.
-                    Training has not started.
+                    {' '}{stoppedCopy}
                 </p>
                 <dl>
                     <div>
@@ -75,8 +81,7 @@ export function CompatibilityState({ access, onStartFresh }: CompatibilityStateP
                     {isStarting ? 'Starting fresh…' : 'Start fresh'}
                 </button>
                 <p>
-                    Start fresh installs the default version-2 experiment and replaces
-                    the incompatible URL only after validation succeeds.
+                    {recoveryCopy}
                 </p>
             </section>
         </main>

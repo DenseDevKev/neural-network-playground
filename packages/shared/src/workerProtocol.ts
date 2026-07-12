@@ -26,6 +26,7 @@ import { isPauseReason } from './types.js';
 import type {
     ExperimentDocumentV2,
     PauseReason,
+    RecipeFingerprint,
     ValidatedExperimentDocumentV2,
 } from './types.js';
 
@@ -892,6 +893,7 @@ function hasValidSnapshotArtifactProvenance(m: Record<string, unknown>): boolean
         'weights',
         'biases',
         'weightLayout',
+        'recipeFingerprint',
         'checkpointTimeline',
     ], [
         'outputGrid',
@@ -977,6 +979,7 @@ function hasValidSnapshotArtifactProvenance(m: Record<string, unknown>): boolean
         || m['biases'].some((value) => !Number.isFinite(value))) {
         return false;
     }
+    if (!isFingerprint(m['recipeFingerprint'], 'r2.1.')) return false;
     const layerSizes = m['weightLayout']['layerSizes'] as number[];
     const expectedWeights = layerSizes.slice(0, -1).reduce(
         (sum, size, index) => sum + size * layerSizes[index + 1],
@@ -1269,6 +1272,7 @@ interface WorkerSnapshotMessageBase {
 export interface WorkerSnapshotMessage extends WorkerSnapshotMessageBase {
     protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     model: ModelRevision;
+    recipeFingerprint: RecipeFingerprint;
     checkpointTimeline: CheckpointTimeline;
 }
 

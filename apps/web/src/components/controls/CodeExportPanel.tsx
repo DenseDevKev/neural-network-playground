@@ -94,7 +94,16 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         }
 
         const frameBuffer = getFrameBuffer();
-        if (frameBuffer.weights && frameBuffer.biases && frameBuffer.weightLayout) {
+        const parameterProvenance = frameBuffer.parameterProvenance;
+        if (frameBuffer.weights
+            && frameBuffer.biases
+            && frameBuffer.weightLayout
+            && parameterProvenance
+            && parameterProvenance.recipeFingerprint
+                === prepared.identities.recipeFingerprint
+            && parameterProvenance.recipeFingerprint === trainedRecipeFingerprint
+            && parameterProvenance.model.generationId
+                === evidence.currentModel.generationId) {
             const expectedLayerSizes = [
                 prepared.compiled.network.inputSize,
                 ...prepared.compiled.network.hiddenLayers,
@@ -107,7 +116,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
                 return null;
             }
             return {
-                step: evidence.currentModel.step,
+                step: parameterProvenance.model.step,
                 weights: unflattenWeights(frameBuffer.weights, frameBuffer.weightLayout.layerSizes),
                 biases: unflattenBiases(frameBuffer.biases, frameBuffer.weightLayout.layerSizes),
             };

@@ -56,6 +56,9 @@ describe('CompatibilityState', () => {
 
         expect(screen.getByText('legacy-experiment.json')).toBeInTheDocument();
         expect(screen.getByText(`${file.size} bytes`)).toBeInTheDocument();
+        expect(screen.getByText(/Training is stopped while this file remains incompatible/i))
+            .toBeInTheDocument();
+        expect(screen.queryByText(/replaces the incompatible URL/i)).not.toBeInTheDocument();
         expect((await axe(container)).violations).toHaveLength(0);
     });
 });

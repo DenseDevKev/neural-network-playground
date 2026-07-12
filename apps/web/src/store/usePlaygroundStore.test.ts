@@ -62,9 +62,7 @@ function createReadyStore(
 ) {
     return createPlaygroundStore({
         prepare,
-        initialPrepared,
-        initialIssues: [],
-        incompatibleSource: null,
+        access: { status: 'ready', prepared: initialPrepared },
     });
 }
 
@@ -151,7 +149,7 @@ describe('atomic prepared-document store', () => {
         expect(readySnapshots).toHaveLength(1);
         const published = readySnapshots[0];
         expect(published.access).toEqual({ status: 'ready', prepared: result.value });
-        expect(published.incompatibleSource).toBeNull();
+        expect(published).not.toHaveProperty('incompatibleSource');
     });
 
     it('retains the exact last-successful prepared and projection references after latest failure', async () => {
@@ -395,9 +393,12 @@ describe('strict initialization and URL state', () => {
 
         const initial = await initializePlaygroundStateFromLocation(window.location);
 
-        expect(initial.initialPrepared).toBeNull();
-        expect(initial.incompatibleSource).toEqual({ kind: 'url', rawHash: '#' });
-        expect(initial.initialIssues).toEqual(expect.arrayContaining([
+        expect(initial.access).toEqual(expect.objectContaining({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'url', rawHash: '#' },
+        }));
+        expect(initial.access.status === 'incompatible' ? initial.access.issues : []).toEqual(expect.arrayContaining([
             expect.objectContaining({ code: 'legacy-state' }),
         ]));
     });
@@ -405,9 +406,9 @@ describe('strict initialization and URL state', () => {
     it('prepares the V2 default only for an exactly empty hash', async () => {
         const initial = await initializePlaygroundStateFromHash('');
 
-        expect(initial.initialPrepared?.document).toEqual(DEFAULT_EXPERIMENT_DOCUMENT);
-        expect(initial.incompatibleSource).toBeNull();
-        expect(initial.initialIssues).toEqual([]);
+        expect(initial.access.status).toBe('ready');
+        expect(initial.access.status === 'ready' ? initial.access.prepared.document : null)
+            .toEqual(DEFAULT_EXPERIMENT_DOCUMENT);
     });
 
     it('prepares an exact strict V2 URL', async () => {
@@ -416,9 +417,10 @@ describe('strict initialization and URL state', () => {
             encodeExperimentUrl(target.document),
         );
 
-        expect(initial.initialPrepared?.identities.recipeFingerprint)
+        expect(initial.access.status === 'ready'
+            ? initial.access.prepared.identities.recipeFingerprint
+            : null)
             .toBe(target.identities.recipeFingerprint);
-        expect(initial.incompatibleSource).toBeNull();
     });
 
     it.each([
@@ -430,11 +432,18 @@ describe('strict initialization and URL state', () => {
         const initial = await initializePlaygroundStateFromHash(raw);
         const store = createPlaygroundStore(initial);
 
-        expect(initial.initialPrepared).toBeNull();
-        expect(store.getState().access.prepared).toBeNull();
-        expect(store.getState().incompatibleSource).toEqual({ kind: 'url', rawHash: raw });
+        expect(initial.access.status).toBe('incompatible');
+        expect(store.getState().access).toMatchObject({
+            status: 'incompatible',
+            prepared: null,
+            source: { kind: 'url', rawHash: raw },
+        });
+        expect(store.getState()).not.toHaveProperty('incompatibleSource');
         expect(store.getState().preparation.status).toBe('error');
-        expect(store.getState().preparation.issues.length).toBeGreaterThan(0);
+        expect(store.getState().preparation.issues).toEqual([]);
+        expect(store.getState().access.status === 'incompatible'
+            ? store.getState().access.issues.length
+            : 0).toBeGreaterThan(0);
         expect((await store.getState().applyRecipe(preset('xor-hidden'))).ok).toBe(false);
     });
 
@@ -504,6 +513,57 @@ describe('strict initialization and URL state', () => {
             source: { kind: 'file', file },
             issues,
         });
+        expect(store.getState()).not.toHaveProperty('incompatibleSource');
+        expect(store.getState().preparation).toMatchObject({ status: 'error', issues: [] });
+    });
+
+    it('keeps internal edit failures only in preparation while access stays ready', async () => {
+        const store = createReadyStore();
+        const before = readyPrepared(store);
+
+        const result = await store.getState().replaceDocument({
+            ...before.document,
+            recipe: {
+                ...before.document.recipe,
+                data: { ...before.document.recipe.data, sampleCount: 1 },
+            },
+        });
+
+        expect(result.ok).toBe(false);
+        expect(store.getState().access).toEqual({ status: 'ready', prepared: before });
+        expect(store.getState().preparation.issues.length).toBeGreaterThan(0);
+        expect(store.getState()).not.toHaveProperty('incompatibleSource');
+    });
+
+    it('does not let a stale failed file replacement contradict a newer ready access state', async () => {
+        const initial = preset('xor-hidden').prepared;
+        const controlled = controlledPreparation();
+        const store = createReadyStore(initial, controlled.prepare);
+        const file = new File(['legacy'], 'legacy.json', { type: 'application/json' });
+        const stale = store.getState().replaceImportedDocument({ schemaVersion: 1 }, file);
+        const current = store.getState().replaceDocument(withNoise(initial, 8));
+
+        controlled.resolve(1);
+        expect((await current).ok).toBe(true);
+        controlled.resolve(0);
+        expect((await stale).ok).toBe(false);
+
+        expect(store.getState().access.status).toBe('ready');
+        expect(readyPrepared(store).document.recipe.data.noise).toBe(8);
+        expect(store.getState()).not.toHaveProperty('incompatibleSource');
+    });
+
+    it('Start fresh replaces incompatible access and rewrites the preserved URL only on success', async () => {
+        const initial = await initializePlaygroundStateFromHash('#legacy');
+        const store = createPlaygroundStore(initial);
+        window.history.replaceState(null, '', '#legacy');
+
+        const result = await store.getState().startFresh();
+
+        expect(result.ok).toBe(true);
+        expect(store.getState().access.status).toBe('ready');
+        expect(window.location.hash).toBe(encodeExperimentUrl(DEFAULT_EXPERIMENT_DOCUMENT));
+        expect(store.getState()).not.toHaveProperty('incompatibleSource');
     });
 
     it('does not rewrite the hash when a newer incompatible request wins Start fresh', async () => {

@@ -38,10 +38,43 @@ function provenance(
 }
 
 const strict = { requireArtifactProvenance: true } as const;
+const parameterProvenance = {
+    model: { generationId: 1, revision: 7, step: 70, epoch: 3 },
+    recipeFingerprint: `r2.1.${'A'.repeat(43)}`,
+} as const;
 
 describe('frame buffer artifact provenance', () => {
     beforeEach(() => {
         resetFrameBuffer();
+    });
+
+    it('stores parameter bytes and their exact model provenance atomically', () => {
+        const weights = new Float32Array([0.1, 0.2]);
+        const biases = new Float32Array([0.3]);
+
+        updateFrameBuffer({
+            weights,
+            biases,
+            weightLayout: { layerSizes: [2, 1] },
+            parameterProvenance,
+        }, strict);
+
+        expect(getFrameBuffer()).toMatchObject({
+            weights,
+            biases,
+            parameterProvenance,
+        });
+    });
+
+    it('rejects parameter bytes without exact model provenance atomically', () => {
+        const before = getFrameBuffer();
+
+        expect(() => updateFrameBuffer({
+            weights: new Float32Array([0.1, 0.2]),
+            biases: new Float32Array([0.3]),
+            weightLayout: { layerSizes: [2, 1] },
+        }, strict)).toThrow('parameter provenance');
+        expect(getFrameBuffer()).toBe(before);
     });
 
     it('rejects strict payload/provenance mismatches without changing any frame state', () => {

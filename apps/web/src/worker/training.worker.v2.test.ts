@@ -284,17 +284,6 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(workerApi.getMetricHistoryV2()).toEqual(historyBefore);
     });
 
-    it('rejects target-free custom traces instead of inventing sample loss', async () => {
-        const fixtures = await createScientificTrustFixtures();
-        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
-
-        await expect(workerApi.getPredictionTraceV2({
-            source: 'custom',
-            x: 0.25,
-            y: -0.5,
-        })).rejects.toThrow(/target-bearing train or test example/i);
-    });
-
     it('commits a prepared experiment and returns a validated initial pair', async () => {
         const fixtures = await createScientificTrustFixtures();
         workerApi.updateDemand(DEFAULT_DEMAND);

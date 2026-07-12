@@ -49,8 +49,6 @@ export type ExperimentAccessState =
         readonly issues: readonly ExperimentSchemaIssue[];
     };
 
-export type IncompatibleSource = ExperimentInputSource;
-
 export type StoreRecipeEditResult =
     | SchemaResult<PreparedExperimentDocumentV2>
     | { ok: false; issue: RecipeEditIssue };
@@ -61,15 +59,12 @@ type PrepareExperiment = (
 
 export interface PlaygroundStoreInitialization {
     prepare?: PrepareExperiment;
-    initialPrepared: PreparedExperimentDocumentV2 | null;
-    initialIssues: readonly ExperimentSchemaIssue[];
-    incompatibleSource: IncompatibleSource | null;
+    access: ExperimentAccessState;
 }
 
 export interface PlaygroundStore {
     access: ExperimentAccessState;
     preparation: PreparationState;
-    incompatibleSource: IncompatibleSource | null;
 
     featuresUI: FeaturesUI;
     demand: VisualizationDemand;
@@ -135,9 +130,12 @@ export async function initializePlaygroundStateFromHash(
     if (!decoded.ok) {
         return {
             prepare,
-            initialPrepared: null,
-            initialIssues: decoded.issues,
-            incompatibleSource: { kind: 'url', rawHash },
+            access: {
+                status: 'incompatible',
+                prepared: null,
+                source: { kind: 'url', rawHash },
+                issues: decoded.issues,
+            },
         };
     }
 
@@ -145,16 +143,17 @@ export async function initializePlaygroundStateFromHash(
     if (!prepared.ok) {
         return {
             prepare,
-            initialPrepared: null,
-            initialIssues: prepared.issues,
-            incompatibleSource: rawHash === '' ? null : { kind: 'url', rawHash },
+            access: {
+                status: 'incompatible',
+                prepared: null,
+                source: { kind: 'url', rawHash },
+                issues: prepared.issues,
+            },
         };
     }
     return {
         prepare,
-        initialPrepared: prepared.value,
-        initialIssues: [],
-        incompatibleSource: null,
+        access: { status: 'ready', prepared: prepared.value },
     };
 }
 
@@ -181,22 +180,14 @@ export function createPlaygroundStore(
     initialization: PlaygroundStoreInitialization,
 ): PlaygroundStoreApi {
     const prepare = initialization.prepare ?? prepareExperimentDocument;
-    const initialAccess: ExperimentAccessState = initialization.initialPrepared
-        ? { status: 'ready', prepared: initialization.initialPrepared }
-        : {
-            status: 'incompatible',
-            prepared: null,
-            source: initialization.incompatibleSource
-                ?? { kind: 'url', rawHash: '' },
-            issues: initialization.initialIssues.length > 0
-                ? initialization.initialIssues
-                : NO_ACTIVE_DOCUMENT,
-        };
+    const initialAccess = initialization.access;
 
     let nextRequestId = 0;
     let latestCandidateDocument: ValidatedExperimentDocumentV2 | null =
-        initialization.initialPrepared?.document ?? null;
-    let lastSuccessfulPrepared = initialization.initialPrepared;
+        initialAccess.status === 'ready' ? initialAccess.prepared.document : null;
+    let lastSuccessfulPrepared = initialAccess.status === 'ready'
+        ? initialAccess.prepared
+        : null;
 
     return create<PlaygroundStore>((set, get) => {
         const markIncompatible = (
@@ -213,8 +204,7 @@ export function createPlaygroundStore(
                     source,
                     issues: boundedIssues,
                 },
-                preparation: { status: 'error', requestId, issues: boundedIssues },
-                incompatibleSource: source,
+                preparation: { status: 'error', requestId, issues: [] },
             });
         };
 
@@ -246,8 +236,7 @@ export function createPlaygroundStore(
                             source: failureSource,
                             issues: result.issues,
                         },
-                        preparation: { status: 'error', requestId, issues: result.issues },
-                        incompatibleSource: failureSource,
+                        preparation: { status: 'error', requestId, issues: [] },
                     });
                 } else {
                     latestCandidateDocument = lastSuccessfulPrepared?.document ?? null;
@@ -263,7 +252,6 @@ export function createPlaygroundStore(
             set({
                 access: { status: 'ready', prepared: result.value },
                 preparation: { status: 'ready', requestId, issues: [] },
-                incompatibleSource: null,
             });
             return result;
         };
@@ -314,10 +302,9 @@ export function createPlaygroundStore(
 
         return {
             access: initialAccess,
-            preparation: initialization.initialPrepared
+            preparation: initialAccess.status === 'ready'
                 ? { status: 'ready', requestId: 0, issues: [] }
-                : { status: 'error', requestId: 0, issues: initialization.initialIssues },
-            incompatibleSource: initialization.incompatibleSource,
+                : { status: 'error', requestId: 0, issues: [] },
             featuresUI: { ...DEFAULT_FEATURES_UI },
             demand: { ...DEFAULT_DEMAND },
             dataset: null,

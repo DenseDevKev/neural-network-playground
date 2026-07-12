@@ -6,12 +6,32 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import { getWorkerApi } from '../../worker/workerBridge.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
+import type { ModelRevision } from '@nn-playground/shared';
 import type {
     BackpropExplanationResponseV2,
     ObjectiveLandscapeResponseV2,
     PredictionTraceResponseV2,
     PredictionTraceSampleSource,
 } from '../../worker/training.worker.ts';
+
+function sameModelRevision(
+    left: ModelRevision | null,
+    right: ModelRevision | null,
+): boolean {
+    return left !== null
+        && right !== null
+        && left.generationId === right.generationId
+        && left.revision === right.revision;
+}
+
+function activeModelRevision(): ModelRevision | null {
+    const state = useTrainingStore.getState();
+    return selectScientificEvidence({
+        latestLiveSignal: state.latestLiveSignal,
+        latestEvaluation: state.latestEvaluation,
+    }).currentModel;
+}
 
 function formatPercent(count: number, total: number): string {
     return total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '0.0%';
@@ -60,41 +80,49 @@ export const InspectionPanel = memo(function InspectionPanel() {
     const [selectedHistogramLayer, setSelectedHistogramLayer] = useState(0);
     const [traceSource, setTraceSource] = useState<PredictionTraceSampleSource>('train');
     const [sampleIndex, setSampleIndex] = useState(0);
-    const [customX, setCustomX] = useState(0);
-    const [customY, setCustomY] = useState(0);
     const [traceResult, setTraceResult] = useState<PredictionTraceResponseV2 | null>(null);
     const [traceError, setTraceError] = useState<string | null>(null);
     const [traceLoading, setTraceLoading] = useState(false);
     const [backpropResult, setBackpropResult] = useState<BackpropExplanationResponseV2 | null>(null);
     const [backpropError, setBackpropError] = useState<string | null>(null);
     const [backpropLoading, setBackpropLoading] = useState(false);
-    const backpropRequestInFlightRef = useRef(false);
     const [lossLandscapeResult, setLossLandscapeResult] = useState<ObjectiveLandscapeResponseV2 | null>(null);
     const [lossLandscapeError, setLossLandscapeError] = useState<string | null>(null);
     const [lossLandscapeLoading, setLossLandscapeLoading] = useState(false);
-    const lossLandscapeRequestInFlightRef = useRef(false);
+    const traceRequestRef = useRef(0);
+    const backpropRequestRef = useRef(0);
+    const lossLandscapeRequestRef = useRef(0);
+    const traceResultRef = useRef<PredictionTraceResponseV2 | null>(null);
     const latestLiveSignal = useTrainingStore((state) => state.latestLiveSignal);
     const latestEvaluation = useTrainingStore((state) => state.latestEvaluation);
-    const currentModel = latestLiveSignal?.model ?? latestEvaluation?.model ?? null;
+    const evidence = useMemo(() => selectScientificEvidence({
+        latestLiveSignal,
+        latestEvaluation,
+    }), [latestEvaluation, latestLiveSignal]);
+    const currentModel = evidence.currentModel;
+    const currentModelKey = currentModel === null
+        ? 'none'
+        : `${currentModel.generationId}:${currentModel.revision}`;
+    const previousModelKeyRef = useRef(currentModelKey);
 
     useEffect(() => {
-        if (!traceResult) return;
-        if (currentModel
-            && currentModel.generationId === traceResult.model.generationId
-            && currentModel.revision === traceResult.model.revision) {
-            return;
-        }
+        if (previousModelKeyRef.current === currentModelKey) return;
+        previousModelKeyRef.current = currentModelKey;
+        traceRequestRef.current++;
+        backpropRequestRef.current++;
+        lossLandscapeRequestRef.current++;
+        const hadTrace = traceResultRef.current !== null;
+        traceResultRef.current = null;
         setTraceResult(null);
-        setTraceError('Trace cleared because the active model changed.');
-    }, [currentModel, traceResult]);
-
-    const responseIsCurrent = (responseModel: PredictionTraceResponseV2['model']) => {
-        const state = useTrainingStore.getState();
-        const active = state.latestLiveSignal?.model ?? state.latestEvaluation?.model ?? null;
-        return active !== null
-            && active.generationId === responseModel.generationId
-            && active.revision === responseModel.revision;
-    };
+        setTraceError(hadTrace ? 'Trace cleared because the active model changed.' : null);
+        setTraceLoading(false);
+        setBackpropResult(null);
+        setBackpropError(null);
+        setBackpropLoading(false);
+        setLossLandscapeResult(null);
+        setLossLandscapeError(null);
+        setLossLandscapeLoading(false);
+    }, [currentModelKey]);
 
     useEffect(() => {
         const enableInspectionDemand = (enabled: boolean) => {
@@ -187,13 +215,13 @@ export const InspectionPanel = memo(function InspectionPanel() {
         : 'Activation histograms are not available yet.';
 
     const selectedPoints = traceSource === 'test' ? testPoints : trainPoints;
-    const selectedSample = traceSource === 'custom'
-        ? null
-        : selectedPoints[Math.min(sampleIndex, Math.max(0, selectedPoints.length - 1))];
-    const canTrace = traceSource !== 'custom' && selectedSample !== undefined && currentModel !== null;
+    const selectedSample = selectedPoints[Math.min(sampleIndex, Math.max(0, selectedPoints.length - 1))];
+    const canTrace = selectedSample !== undefined && currentModel !== null;
 
     const handleTrace = async () => {
         if (!canTrace || traceLoading) return;
+        const requestModel = currentModel;
+        const requestId = ++traceRequestRef.current;
         setTraceLoading(true);
         setTraceError(null);
         try {
@@ -201,48 +229,71 @@ export const InspectionPanel = memo(function InspectionPanel() {
                 source: traceSource,
                 index: Math.min(sampleIndex, selectedPoints.length - 1),
             });
-            if (responseIsCurrent(response.model)) setTraceResult(response);
+            if (traceRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())
+                && sameModelRevision(requestModel, response.model)) {
+                traceResultRef.current = response;
+                setTraceResult(response);
+            }
         } catch (err) {
-            setTraceResult(null);
-            setTraceError(err instanceof Error ? err.message : String(err));
+            if (traceRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())) {
+                traceResultRef.current = null;
+                setTraceResult(null);
+                setTraceError(err instanceof Error ? err.message : String(err));
+            }
         } finally {
-            setTraceLoading(false);
+            if (traceRequestRef.current === requestId) setTraceLoading(false);
         }
     };
 
     const handleBackpropPreview = async () => {
-        if (backpropRequestInFlightRef.current) return;
-        backpropRequestInFlightRef.current = true;
+        if (backpropLoading || currentModel === null) return;
+        const requestModel = currentModel;
+        const requestId = ++backpropRequestRef.current;
         setBackpropLoading(true);
         setBackpropError(null);
         setBackpropResult(null);
         try {
             const response = await getWorkerApi().getBackpropExplanationV2();
-            if (responseIsCurrent(response.model)) setBackpropResult(response);
+            if (backpropRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())
+                && sameModelRevision(requestModel, response.model)) {
+                setBackpropResult(response);
+            }
         } catch (err) {
-            setBackpropResult(null);
-            setBackpropError(err instanceof Error ? err.message : String(err));
+            if (backpropRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())) {
+                setBackpropResult(null);
+                setBackpropError(err instanceof Error ? err.message : String(err));
+            }
         } finally {
-            backpropRequestInFlightRef.current = false;
-            setBackpropLoading(false);
+            if (backpropRequestRef.current === requestId) setBackpropLoading(false);
         }
     };
 
     const handleLossLandscapeProbe = async () => {
-        if (lossLandscapeRequestInFlightRef.current) return;
-        lossLandscapeRequestInFlightRef.current = true;
+        if (lossLandscapeLoading || currentModel === null) return;
+        const requestModel = currentModel;
+        const requestId = ++lossLandscapeRequestRef.current;
         setLossLandscapeLoading(true);
         setLossLandscapeError(null);
         setLossLandscapeResult(null);
         try {
             const response = await getWorkerApi().getObjectiveLandscapeV2();
-            if (responseIsCurrent(response.model)) setLossLandscapeResult(response);
+            if (lossLandscapeRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())
+                && sameModelRevision(requestModel, response.model)) {
+                setLossLandscapeResult(response);
+            }
         } catch (err) {
-            setLossLandscapeResult(null);
-            setLossLandscapeError(err instanceof Error ? err.message : String(err));
+            if (lossLandscapeRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())) {
+                setLossLandscapeResult(null);
+                setLossLandscapeError(err instanceof Error ? err.message : String(err));
+            }
         } finally {
-            lossLandscapeRequestInFlightRef.current = false;
-            setLossLandscapeLoading(false);
+            if (lossLandscapeRequestRef.current === requestId) setLossLandscapeLoading(false);
         }
     };
 
@@ -381,58 +432,38 @@ export const InspectionPanel = memo(function InspectionPanel() {
                         className="select"
                         value={traceSource}
                         onChange={(event) => {
+                            traceRequestRef.current++;
+                            traceResultRef.current = null;
                             setTraceSource(event.currentTarget.value as PredictionTraceSampleSource);
                             setTraceResult(null);
                             setTraceError(null);
+                            setTraceLoading(false);
                         }}
                     >
                         <option value="train">Training</option>
                         <option value="test">Test</option>
-                        <option value="custom">Custom</option>
                     </select>
                 </div>
-                {traceSource === 'custom' ? (
-                    <>
-                        <div className="control-row">
-                            <label htmlFor="trace-x">x</label>
-                            <input
-                                id="trace-x"
-                                className="input"
-                                type="number"
-                                step="0.1"
-                                value={customX}
-                                onChange={(event) => setCustomX(Number(event.currentTarget.value))}
-                            />
-                        </div>
-                        <div className="control-row">
-                            <label htmlFor="trace-y">y</label>
-                            <input
-                                id="trace-y"
-                                className="input"
-                                type="number"
-                                step="0.1"
-                                value={customY}
-                                onChange={(event) => setCustomY(Number(event.currentTarget.value))}
-                            />
-                        </div>
-                    </>
-                ) : (
-                    <div className="control-row">
-                        <label htmlFor="trace-index">Index</label>
-                        <input
-                            id="trace-index"
-                            className="input"
-                            type="number"
-                            min={0}
-                            max={Math.max(0, selectedPoints.length - 1)}
-                            value={sampleIndex}
-                            onChange={(event) => {
-                                const next = Number(event.currentTarget.value);
-                                setSampleIndex(Number.isFinite(next) ? Math.max(0, Math.trunc(next)) : 0);
-                            }}
-                        />
-                    </div>
-                )}
+                <div className="control-row">
+                    <label htmlFor="trace-index">Index</label>
+                    <input
+                        id="trace-index"
+                        className="input"
+                        type="number"
+                        min={0}
+                        max={Math.max(0, selectedPoints.length - 1)}
+                        value={sampleIndex}
+                        onChange={(event) => {
+                            const next = Number(event.currentTarget.value);
+                            traceRequestRef.current++;
+                            traceResultRef.current = null;
+                            setTraceResult(null);
+                            setTraceError(null);
+                            setTraceLoading(false);
+                            setSampleIndex(Number.isFinite(next) ? Math.max(0, Math.trunc(next)) : 0);
+                        }}
+                    />
+                </div>
 
                 {!canTrace ? (
                     <div className="inspection__empty">
