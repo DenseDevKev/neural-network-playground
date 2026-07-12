@@ -149,6 +149,35 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         expect(useExperimentMemoryStore.getState().persistenceError).toBeNull();
     });
 
+    it('blocks recapture and keeps retry or discard available after error dismissal', async () => {
+        const prepared = usePlaygroundStore.getState().prepared!;
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
+            makeRecord(prepared, metadata.id, 'Pending exact artifact')
+        ));
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        });
+
+        render(<RunHistoryPanel />);
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        await screen.findByText(/quota/i);
+        expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('button', { name: 'Save current run' })).toBeDisabled();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Dismiss error' }));
+        expect(screen.queryByText(/quota/i)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Retry saving' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Discard pending save' })).toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1);
+
+        setItem.mockRestore();
+        await userEvent.click(screen.getByRole('button', { name: 'Discard pending save' }));
+        expect(screen.queryByRole('button', { name: 'Retry saving' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save current run' })).toBeEnabled();
+    });
+
     it('applies a saved recipe through a fresh version-2 document', async () => {
         const prepared = preset('xor-hidden');
         await act(async () => {

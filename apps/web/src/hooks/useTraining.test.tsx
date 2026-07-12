@@ -623,6 +623,34 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().workerError).toBeNull();
     });
 
+    it('starts a fresh generation when a saved recipe path replaces even an identical document', async () => {
+        renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(1));
+        const before = usePlaygroundStore.getState().prepared!;
+
+        await act(async () => {
+            const applied = await usePlaygroundStore.getState().replaceDocument({
+                kind: 'nn-playground-experiment',
+                schemaVersion: 2,
+                recipe: before.document.recipe,
+                view: before.document.view,
+            });
+            expect(applied.ok).toBe(true);
+        });
+
+        await waitFor(() => expect(bridge.workerApi.initializeExperimentV2).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
+        const appliedPrepared = usePlaygroundStore.getState().prepared!;
+        const request = (
+            bridge.workerApi.initializeExperimentV2.mock.calls[1]![0]
+        ) as unknown as WorkerExperimentRequestV2;
+        expect(appliedPrepared).not.toBe(before);
+        expect(request.document).toBe(appliedPrepared.document);
+        expect(request.claimedIdentities).toBe(appliedPrepared.identities);
+        expect(bridge.newRunTo).toHaveBeenLastCalledWith(2);
+        expect(useTrainingStore.getState().trainedRecipeSource).toBe('config-sync');
+    });
+
     it('hydrates fresh worker snapshots in the existing store update order', async () => {
         const callOrder: string[] = [];
         const original = useTrainingStore.getState();

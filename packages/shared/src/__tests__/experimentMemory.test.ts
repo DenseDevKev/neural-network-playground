@@ -40,11 +40,15 @@ function modelAt(revision: number, generationId = 7): ModelRevision {
 }
 
 function datasetFor(prepared: PreparedExperimentDocumentV2): DatasetRevision {
+    const sampleCount = prepared.document.recipe.data.sampleCount;
+    const trainCount = Math.floor(
+        sampleCount * prepared.document.recipe.data.trainFraction,
+    );
     return {
         generatorVersion: 2,
         datasetKey: prepared.identities.datasetKey,
-        trainCount: 100,
-        testCount: 100,
+        trainCount,
+        testCount: sampleCount - trainCount,
     };
 }
 
@@ -62,11 +66,21 @@ function evaluationAt(
         dataset,
         objectiveKey: prepared.identities.objectiveKey,
         train: {
-            basis: { kind: 'full-split', split: 'train', sampleCount: 100, populationCount: 100 },
+            basis: {
+                kind: 'full-split',
+                split: 'train',
+                sampleCount: dataset.trainCount,
+                populationCount: dataset.trainCount,
+            },
             values: { dataLoss: 0.4 },
         },
         test: {
-            basis: { kind: 'full-split', split: 'test', sampleCount: 100, populationCount: 100 },
+            basis: {
+                kind: 'full-split',
+                split: 'test',
+                sampleCount: dataset.testCount,
+                populationCount: dataset.testCount,
+            },
             values: { dataLoss: 0.5 },
         },
         objective: { regularizationPenalty: 0.1, trainTotalObjective: 0.5 },
@@ -162,25 +176,35 @@ describe('version-2 experiment memory contracts', () => {
         expect(compactEvenly([0, 1, 2], 3)).toEqual([0, 1, 2]);
     });
 
-    it('enforces exact 512 trend and 256 evaluation history caps', async () => {
+    it('accepts exactly 512 trends and 256 evaluations and rejects one over either cap', async () => {
         const prepared = await preparedDefault();
-        const final = evaluationAt(prepared, 257, 1024, 'save');
+        const final = evaluationAt(prepared, EXPERIMENT_MEMORY_MAX_EVALUATIONS, 1024, 'save');
+        const exactSnapshot = {
+            model: final.model,
+            evaluation: final,
+            trendHistory: Array.from({ length: EXPERIMENT_MEMORY_MAX_TRENDS }, (_, index) => (
+                trendAt(prepared, index * 2)
+            )),
+            evaluationHistory: Array.from(
+                { length: EXPERIMENT_MEMORY_MAX_EVALUATIONS },
+                (_, index) => index === EXPERIMENT_MEMORY_MAX_EVALUATIONS - 1
+                    ? final
+                    : evaluationAt(prepared, index + 1, index * 4),
+            ),
+        };
+        await expect(validateExperimentRunRecordV2(await makeRecord({
+            snapshot: exactSnapshot,
+        }))).resolves.toMatchObject({ ok: true });
+
         const result = await validateExperimentRunRecordV2(await makeRecord({
             snapshot: {
-                model: final.model,
-                evaluation: final,
-                trendHistory: Array.from({ length: EXPERIMENT_MEMORY_MAX_TRENDS + 1 }, (_, index) => (
-                    trendAt(prepared, index)
-                )),
-                evaluationHistory: Array.from(
-                    { length: EXPERIMENT_MEMORY_MAX_EVALUATIONS + 1 },
-                    (_, index) => evaluationAt(
-                        prepared,
-                        index + 1,
-                        index * 4,
-                        index === EXPERIMENT_MEMORY_MAX_EVALUATIONS ? 'save' : 'cadence',
-                    ),
-                ),
+                ...exactSnapshot,
+                trendHistory: [...exactSnapshot.trendHistory, trendAt(prepared, 1023)],
+                evaluationHistory: [
+                    ...exactSnapshot.evaluationHistory.slice(0, -1),
+                    evaluationAt(prepared, EXPERIMENT_MEMORY_MAX_EVALUATIONS, 1020),
+                    final,
+                ],
             },
         }));
 
@@ -191,6 +215,105 @@ describe('version-2 experiment memory contracts', () => {
                 'snapshot.evaluationHistory',
             ]));
         }
+    });
+
+    it('binds final, history, and full-split population counts to the recipe split', async () => {
+        const record = await makeRecord();
+        const wrongFinal = {
+            ...record.snapshot.evaluation,
+            dataset: {
+                ...record.snapshot.evaluation.dataset,
+                trainCount: record.snapshot.evaluation.dataset.trainCount - 1,
+                testCount: record.snapshot.evaluation.dataset.testCount + 1,
+            },
+            train: {
+                ...record.snapshot.evaluation.train,
+                basis: {
+                    ...record.snapshot.evaluation.train.basis,
+                    sampleCount: record.snapshot.evaluation.dataset.trainCount - 1,
+                    populationCount: record.snapshot.evaluation.dataset.trainCount - 1,
+                },
+            },
+            test: {
+                ...record.snapshot.evaluation.test,
+                basis: {
+                    ...record.snapshot.evaluation.test.basis,
+                    sampleCount: record.snapshot.evaluation.dataset.testCount + 1,
+                    populationCount: record.snapshot.evaluation.dataset.testCount + 1,
+                },
+            },
+        };
+        const finalCount = await validateExperimentRunRecordV2({
+            ...record,
+            snapshot: {
+                ...record.snapshot,
+                evaluation: wrongFinal,
+                model: wrongFinal.model,
+                evaluationHistory: [record.snapshot.evaluationHistory[0], wrongFinal],
+            },
+        });
+        expect(finalCount.ok).toBe(false);
+        if (!finalCount.ok) expect(finalCount.issues.some(
+            (entry) => entry.path === 'snapshot.evaluation.dataset.trainCount',
+        )).toBe(true);
+
+        const historical = record.snapshot.evaluationHistory[0];
+        const wrongHistory = {
+            ...historical,
+            dataset: {
+                ...historical.dataset,
+                trainCount: historical.dataset.trainCount - 1,
+                testCount: historical.dataset.testCount + 1,
+            },
+            train: {
+                ...historical.train,
+                basis: {
+                    ...historical.train.basis,
+                    sampleCount: historical.dataset.trainCount - 1,
+                    populationCount: historical.dataset.trainCount - 1,
+                },
+            },
+            test: {
+                ...historical.test,
+                basis: {
+                    ...historical.test.basis,
+                    sampleCount: historical.dataset.testCount + 1,
+                    populationCount: historical.dataset.testCount + 1,
+                },
+            },
+        };
+        const historyCount = await validateExperimentRunRecordV2({
+            ...record,
+            snapshot: {
+                ...record.snapshot,
+                evaluationHistory: [wrongHistory, record.snapshot.evaluation],
+            },
+        });
+        expect(historyCount.ok).toBe(false);
+        if (!historyCount.ok) expect(historyCount.issues.some(
+            (entry) => entry.path === 'snapshot.evaluationHistory[0].dataset.trainCount',
+        )).toBe(true);
+
+        const wrongPopulation = await validateExperimentRunRecordV2({
+            ...record,
+            snapshot: {
+                ...record.snapshot,
+                evaluation: {
+                    ...record.snapshot.evaluation,
+                    train: {
+                        ...record.snapshot.evaluation.train,
+                        basis: {
+                            ...record.snapshot.evaluation.train.basis,
+                            populationCount: record.snapshot.evaluation.dataset.trainCount - 1,
+                        },
+                    },
+                },
+            },
+        });
+        expect(wrongPopulation.ok).toBe(false);
+        if (!wrongPopulation.ok) expect(wrongPopulation.issues.some(
+            (entry) => entry.path.includes('snapshot.evaluation'),
+        )).toBe(true);
     });
 
     it('rejects duplicate evaluation IDs and requires the final save pair', async () => {
@@ -301,12 +424,97 @@ describe('version-2 experiment memory contracts', () => {
         })).resolves.toMatchObject({ ok: true });
     });
 
-    it('enforces the 512 KiB record and 4 MiB envelope UTF-8 byte budgets', async () => {
-        const record = await makeRecord();
-        const oversizedRecord = {
-            ...record,
-            padding: 'x'.repeat(EXPERIMENT_MEMORY_MAX_RECORD_BYTES),
+    it('accepts the largest closed-schema record and rejects a raw 512 KiB + 1 record', async () => {
+        const prepared = await preparedDefault();
+        const dataset = datasetFor(prepared);
+        const maxInteger = Number.MAX_SAFE_INTEGER;
+        const largeModelAt = (offset: number): ModelRevision => ({
+            generationId: maxInteger,
+            revision: maxInteger - offset,
+            step: maxInteger - offset,
+            epoch: maxInteger - offset,
+        });
+        const largeValues = (count: number) => ({
+            dataLoss: Number.MAX_VALUE,
+            accuracy: 1,
+            confusionMatrix: {
+                classCount: 3 as const,
+                classLabels: [0, 1, 2] as const,
+                counts: [count, 0, 0, 0, 0, 0, 0, 0, 0] as const,
+            },
+        });
+        const largeEvaluationAt = (index: number): EvaluationPoint => {
+            const trainValues = largeValues(dataset.trainCount);
+            return {
+                evaluationId: maxInteger - (EXPERIMENT_MEMORY_MAX_EVALUATIONS - 1 - index),
+                trigger: index === EXPERIMENT_MEMORY_MAX_EVALUATIONS - 1 ? 'save' : 'cadence',
+                model: largeModelAt(EXPERIMENT_MEMORY_MAX_EVALUATIONS - 1 - index),
+                dataset,
+                objectiveKey: prepared.identities.objectiveKey,
+                train: {
+                    basis: {
+                        kind: 'full-split',
+                        split: 'train',
+                        sampleCount: dataset.trainCount,
+                        populationCount: dataset.trainCount,
+                    },
+                    values: trainValues,
+                },
+                test: {
+                    basis: {
+                        kind: 'full-split',
+                        split: 'test',
+                        sampleCount: dataset.testCount,
+                        populationCount: dataset.testCount,
+                    },
+                    values: largeValues(dataset.testCount),
+                },
+                objective: {
+                    regularizationPenalty: 0,
+                    trainTotalObjective: trainValues.dataLoss,
+                },
+            };
         };
+        const final = largeEvaluationAt(EXPERIMENT_MEMORY_MAX_EVALUATIONS - 1);
+        const largestLegal = await makeRecord({
+            title: '🧠'.repeat(EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS),
+            snapshot: {
+                model: final.model,
+                evaluation: final,
+                trendHistory: Array.from({ length: EXPERIMENT_MEMORY_MAX_TRENDS }, (_, index) => (
+                    {
+                        model: largeModelAt(EXPERIMENT_MEMORY_MAX_TRENDS - 1 - index),
+                        dataset,
+                        objectiveKey: prepared.identities.objectiveKey,
+                        basis: {
+                            kind: 'mini-batch-ema' as const,
+                            alpha: Number.MIN_VALUE,
+                            latestBatchSize: dataset.trainCount,
+                            throughStep: maxInteger - (EXPERIMENT_MEMORY_MAX_TRENDS - 1 - index),
+                        },
+                        dataLoss: Number.MAX_VALUE,
+                    }
+                )),
+                evaluationHistory: Array.from(
+                    { length: EXPERIMENT_MEMORY_MAX_EVALUATIONS },
+                    (_, index) => largeEvaluationAt(index),
+                ),
+            },
+        });
+        const legalJson = JSON.stringify(largestLegal);
+        const legalBytes = new TextEncoder().encode(legalJson).byteLength;
+        // The closed schema cannot reach 512 KiB without an unknown padding
+        // field; this maximum-cardinality fixture is still over 400 KiB.
+        expect(legalBytes).toBeGreaterThan(400_000);
+        expect(legalBytes).toBeLessThan(EXPERIMENT_MEMORY_MAX_RECORD_BYTES);
+        await expect(validateExperimentRunRecordV2(largestLegal)).resolves.toMatchObject({ ok: true });
+
+        const emptyPaddingBytes = new TextEncoder().encode(JSON.stringify({ padding: '' })).byteLength;
+        const oversizedRecord = {
+            padding: 'x'.repeat(EXPERIMENT_MEMORY_MAX_RECORD_BYTES + 1 - emptyPaddingBytes),
+        };
+        expect(new TextEncoder().encode(JSON.stringify(oversizedRecord)).byteLength)
+            .toBe(EXPERIMENT_MEMORY_MAX_RECORD_BYTES + 1);
         const parsedRecord = await parseExperimentMemoryEnvelopeV2(JSON.stringify({
             kind: EXPERIMENT_MEMORY_ENVELOPE_KIND,
             schemaVersion: 2,
@@ -314,14 +522,26 @@ describe('version-2 experiment memory contracts', () => {
         }));
         expect(parsedRecord.records).toEqual([]);
         expect(parsedRecord.rejectedRecords[0]?.issues[0]?.code).toBe('resource-limit');
+    });
 
-        const parsedEnvelope = await parseExperimentMemoryEnvelopeV2(JSON.stringify({
+    it('accepts an exact 4 MiB raw envelope and rejects one additional UTF-8 byte', async () => {
+        const envelopeWithPadding = (paddingLength: number) => JSON.stringify({
             kind: EXPERIMENT_MEMORY_ENVELOPE_KIND,
             schemaVersion: 2,
-            records: [{ padding: '🧠'.repeat(EXPERIMENT_MEMORY_MAX_ENVELOPE_BYTES / 2) }],
-        }));
-        expect(parsedEnvelope.records).toEqual([]);
-        expect(parsedEnvelope.envelopeIssues[0]?.code).toBe('resource-limit');
+            records: ['x'.repeat(paddingLength)],
+        });
+        const emptyBytes = new TextEncoder().encode(envelopeWithPadding(0)).byteLength;
+        const exact = envelopeWithPadding(EXPERIMENT_MEMORY_MAX_ENVELOPE_BYTES - emptyBytes);
+        expect(new TextEncoder().encode(exact).byteLength).toBe(EXPERIMENT_MEMORY_MAX_ENVELOPE_BYTES);
+        const accepted = await parseExperimentMemoryEnvelopeV2(exact);
+        expect(accepted.envelopeIssues).toEqual([]);
+        expect(accepted.rejectedRecords).toHaveLength(1);
+
+        const over = envelopeWithPadding(EXPERIMENT_MEMORY_MAX_ENVELOPE_BYTES + 1 - emptyBytes);
+        expect(new TextEncoder().encode(over).byteLength).toBe(EXPERIMENT_MEMORY_MAX_ENVELOPE_BYTES + 1);
+        const rejected = await parseExperimentMemoryEnvelopeV2(over);
+        expect(rejected.records).toEqual([]);
+        expect(rejected.envelopeIssues[0]?.code).toBe('resource-limit');
     });
 
     it('returns a valid sibling beside a structured rejected raw record', async () => {

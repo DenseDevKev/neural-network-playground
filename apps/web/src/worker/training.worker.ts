@@ -55,6 +55,8 @@ import {
     parseCaptureRunArtifactRequestV2,
     validateExperimentRunRecordV2,
     compactEvenly,
+    EXPERIMENT_MEMORY_MAX_EVALUATIONS,
+    EXPERIMENT_MEMORY_MAX_TRENDS,
     WORKER_PROTOCOL_VERSION,
 } from '@nn-playground/shared';
 import type {
@@ -720,6 +722,7 @@ interface V2RuntimeBuild {
 
 let experimentRequestGate = new ExperimentRequestGate();
 let v2MutationSequence = 0;
+let v2MutationTail: Promise<void> = Promise.resolve();
 let v2AllocationCount = 0;
 let runtimeStopConditions: readonly StopCondition[] = DEFAULT_RUNTIME_STOP_CONDITIONS;
 let detectWebGPUForRuntime: typeof detectWebGPU = detectWebGPU;
@@ -727,6 +730,12 @@ let createWebGPUGridPredictorForRuntime = (
     args: ConstructorParameters<typeof WebGPUGridPredictor>[0],
 ): WebGPUGridPredictor => new WebGPUGridPredictor(args);
 export const MAX_MANUAL_V2_STEP_ITERATIONS = 10;
+
+function enqueueV2Mutation<T>(operation: () => T | Promise<T>): Promise<T> {
+    const result = v2MutationTail.then(operation, operation);
+    v2MutationTail = result.then(() => undefined, () => undefined);
+    return result;
+}
 
 /** Narrow diagnostic seam: forged/stale-boundary tests assert allocation never starts. */
 export function getV2AllocationCountForTests(): number {
@@ -2602,7 +2611,14 @@ function scheduleNextTick(): void {
     if (state.trainLoopTimer !== null || !state.running) return;
     state.trainLoopTimer = setTimeout(() => {
         state.trainLoopTimer = null;
-        if (state.running) trainTick();
+        if (!state.running) return;
+        if (state.prepared) {
+            // Timer-driven V2 batches share the same scientific mutation lane
+            // as RPC capture/reset/step so an awaited capture stays exclusive.
+            void enqueueV2Mutation(() => trainTick());
+        } else {
+            trainTick();
+        }
     }, TRAIN_TICK_INTERVAL_MS);
 }
 
@@ -2805,6 +2821,26 @@ function applyDemand(demand: VisualizationDemand): void {
 
 // ── MessageChannel command handler ──
 
+function reportStreamCommandFailure(error: unknown): void {
+    if (state.prepared) {
+        if (error instanceof TerminalDivergenceError) {
+            postTerminalDivergenceV2(error, 'evaluation', 'evaluation-failed');
+        } else {
+            postRuntimeErrorV2(error, 'runtime');
+        }
+    } else {
+        postError(`Command handling error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+function runOrQueueV2StreamMutation(operation: () => void): void {
+    if (state.prepared) {
+        void enqueueV2Mutation(operation).catch(reportStreamCommandFailure);
+    } else {
+        operation();
+    }
+}
+
 function handleStreamCommand(cmd: unknown): void {
     try {
         if (!isMainToWorkerCommand(cmd)) {
@@ -2815,17 +2851,21 @@ function handleStreamCommand(cmd: unknown): void {
         }
         switch (cmd.type) {
             case 'startTraining':
-                state.stepsPerFrame = normalizeTrainingSpeed(cmd.stepsPerFrame);
-                startInternalLoop();
-                postStatus('running');
+                runOrQueueV2StreamMutation(() => {
+                    state.stepsPerFrame = normalizeTrainingSpeed(cmd.stepsPerFrame);
+                    startInternalLoop();
+                    postStatus('running');
+                });
                 break;
 
             case 'stopTraining':
             {
-                const wasRunning = state.running;
-                stopInternalLoop();
-                if (state.prepared && wasRunning) forceAndPublishEvaluationV2('pause');
-                postStatus('paused');
+                runOrQueueV2StreamMutation(() => {
+                    const wasRunning = state.running;
+                    stopInternalLoop();
+                    if (state.prepared && wasRunning) forceAndPublishEvaluationV2('pause');
+                    postStatus('paused');
+                });
                 break;
             }
 
@@ -2844,14 +2884,7 @@ function handleStreamCommand(cmd: unknown): void {
                 break;
         }
     } catch (err) {
-        if (state.prepared) {
-            if (err instanceof TerminalDivergenceError) {
-                postTerminalDivergenceV2(err, 'evaluation', 'evaluation-failed');
-            } else {
-                postRuntimeErrorV2(err, 'runtime');
-            }
-        }
-        else postError(`Command handling error: ${err instanceof Error ? err.message : String(err)}`);
+        reportStreamCommandFailure(err);
     }
 }
 
@@ -2952,116 +2985,174 @@ function serializeLossLandscapeProbe(probe: LossLandscapeProbe): SerializableLos
 
 // ── Comlink API ──
 
+async function initializeExperimentV2Now(
+    request: unknown,
+): Promise<WorkerExperimentResultV2> {
+    try {
+        let actionToken: number | null = null;
+        let acceptedRequestId: number | null = null;
+        const transaction = await experimentRequestGate.run(
+            request,
+            (prepared) => {
+                if (actionToken === null || actionToken !== v2MutationSequence) {
+                    throw new ExperimentTransactionError(
+                        'stale-request',
+                        '$.requestId',
+                        `Request ${acceptedRequestId ?? 'unknown'} was superseded by a newer V2 action.`,
+                        acceptedRequestId,
+                    );
+                }
+                return commitV2Runtime(prepared);
+            },
+            (acceptedRequest) => {
+                acceptedRequestId = acceptedRequest.requestId;
+                actionToken = beginV2Mutation();
+            },
+        );
+        return transaction.value;
+    } catch (error) {
+        postTransactionErrorV2(error);
+        throw error;
+    }
+}
+
+function stepExperimentV2Now(iterations: number): WorkerExperimentResultV2 {
+    try {
+        if (!Number.isSafeInteger(iterations)
+            || iterations < 1
+            || iterations > MAX_MANUAL_V2_STEP_ITERATIONS) {
+            throw new RangeError(
+                `V2 step iterations must be a safe integer from 1 to ${MAX_MANUAL_V2_STEP_ITERATIONS}`,
+            );
+        }
+        requireV2Runtime();
+        let latestLive: LiveTrainingSignal | undefined;
+        for (let index = 0; index < iterations; index++) {
+            latestLive = trainOneStepV2()?.liveSignal ?? latestLive;
+        }
+        const evaluation = forceAndPublishEvaluationV2('manual-step', false);
+        const evidence = makeEvidenceV2(latestLive, evaluation);
+        postEvidenceV2(evidence);
+        const snapshot = computeSnapshot();
+        return {
+            snapshot,
+            runId: state.runId,
+            evidence,
+            identities: state.prepared!.identities,
+            ...directSnapshotArtifactBundle(snapshot),
+        };
+    } catch (error) {
+        if (error instanceof TerminalDivergenceError) {
+            postTerminalDivergenceForPhase(error, 'training');
+        } else {
+            postRuntimeErrorV2(error, 'training');
+        }
+        throw error;
+    }
+}
+
+function resetExperimentV2Now(): WorkerExperimentResultV2 {
+    try {
+        const { prepared } = requireV2Runtime();
+        beginV2Mutation();
+        return commitV2Runtime(prepared);
+    } catch (error) {
+        postRuntimeErrorV2(error, 'runtime');
+        throw error;
+    }
+}
+
+function forceEvaluationV2Now(trigger: ForcedEvaluationTriggerV2): {
+    readonly runId: number;
+    readonly evidence: WorkerEvidenceMessageV2;
+} {
+    try {
+        const allowed = new Set<ForcedEvaluationTriggerV2>([
+            'manual-step',
+            'pause',
+            'checkpoint',
+            'save',
+            'stop-condition',
+            'restore',
+        ]);
+        if (!allowed.has(trigger)) {
+            throw new TypeError('Unsupported forced V2 evaluation trigger');
+        }
+        const evaluation = forceAndPublishEvaluationV2(trigger);
+        return {
+            runId: state.runId,
+            evidence: makeEvidenceV2(undefined, evaluation),
+        };
+    } catch (error) {
+        if (error instanceof TerminalDivergenceError) {
+            postTerminalDivergenceV2(error, 'evaluation', 'evaluation-failed');
+        } else {
+            postRuntimeErrorV2(error, 'evaluation', 'evaluation-failed');
+        }
+        throw error;
+    }
+}
+
+async function captureRunArtifactNow(
+    metadata: CaptureRunArtifactRequestV2,
+): Promise<ExperimentRunRecordV2> {
+    try {
+        const { prepared, history } = requireV2Runtime();
+        const evaluation = forceAndPublishEvaluationV2('save');
+        const capturedHistory = history.read();
+        const candidate: ExperimentRunRecordV2 = {
+            kind: 'nn-playground-run',
+            schemaVersion: 2,
+            ...metadata,
+            recipe: prepared.document.recipe,
+            recipeFingerprint: prepared.identities.recipeFingerprint,
+            snapshot: {
+                model: evaluation.model,
+                evaluation,
+                trendHistory: compactEvenly(
+                    capturedHistory.trendHistory,
+                    EXPERIMENT_MEMORY_MAX_TRENDS,
+                ),
+                evaluationHistory: compactEvenly(
+                    capturedHistory.evaluationHistory,
+                    EXPERIMENT_MEMORY_MAX_EVALUATIONS,
+                ),
+            },
+        };
+        const validated = await validateExperimentRunRecordV2(candidate);
+        if (!validated.ok) {
+            throw new TypeError(validated.issues.map(
+                (entry) => `${entry.path}: ${entry.message}`,
+            ).join('; '));
+        }
+        return validated.value;
+    } catch (error) {
+        postRuntimeErrorV2(error, 'persistence', 'capture-failed');
+        throw error;
+    }
+}
+
 export const workerApi = {
     /** Strict application boundary: validate, re-prepare, verify identities, then commit. */
-    async initializeExperimentV2(request: unknown): Promise<WorkerExperimentResultV2> {
-        try {
-            let actionToken: number | null = null;
-            let acceptedRequestId: number | null = null;
-            const transaction = await experimentRequestGate.run(
-                request,
-                (prepared) => {
-                    if (actionToken === null || actionToken !== v2MutationSequence) {
-                        throw new ExperimentTransactionError(
-                            'stale-request',
-                            '$.requestId',
-                            `Request ${acceptedRequestId ?? 'unknown'} was superseded by a newer V2 action.`,
-                            acceptedRequestId,
-                        );
-                    }
-                    return commitV2Runtime(prepared);
-                },
-                (acceptedRequest) => {
-                    acceptedRequestId = acceptedRequest.requestId;
-                    actionToken = beginV2Mutation();
-                },
-            );
-            return transaction.value;
-        } catch (error) {
-            postTransactionErrorV2(error);
-            throw error;
-        }
+    initializeExperimentV2(request: unknown): Promise<WorkerExperimentResultV2> {
+        return enqueueV2Mutation(() => initializeExperimentV2Now(request));
     },
 
     /** Manual stepping always finishes with a current same-revision pair. */
-    stepExperimentV2(iterations: number = 1): WorkerExperimentResultV2 {
-        try {
-            if (!Number.isSafeInteger(iterations)
-                || iterations < 1
-                || iterations > MAX_MANUAL_V2_STEP_ITERATIONS) {
-                throw new RangeError(
-                    `V2 step iterations must be a safe integer from 1 to ${MAX_MANUAL_V2_STEP_ITERATIONS}`,
-                );
-            }
-            requireV2Runtime();
-            let latestLive: LiveTrainingSignal | undefined;
-            for (let index = 0; index < iterations; index++) {
-                latestLive = trainOneStepV2()?.liveSignal ?? latestLive;
-            }
-            const evaluation = forceAndPublishEvaluationV2('manual-step', false);
-            const evidence = makeEvidenceV2(latestLive, evaluation);
-            // Replace the evaluation-only force message with a richer direct/manual
-            // update for consumers that invoke this RPC without a running frame.
-            postEvidenceV2(evidence);
-            const snapshot = computeSnapshot();
-            return {
-                snapshot,
-                runId: state.runId,
-                evidence,
-                identities: state.prepared!.identities,
-                ...directSnapshotArtifactBundle(snapshot),
-            };
-        } catch (error) {
-            if (error instanceof TerminalDivergenceError) {
-                postTerminalDivergenceForPhase(error, 'training');
-            } else {
-                postRuntimeErrorV2(error, 'training');
-            }
-            throw error;
-        }
+    stepExperimentV2(iterations: number = 1): Promise<WorkerExperimentResultV2> {
+        return enqueueV2Mutation(() => stepExperimentV2Now(iterations));
     },
 
     /** Rebuild the exact current prepared document as a fresh generation. */
-    resetExperimentV2(): WorkerExperimentResultV2 {
-        try {
-            const { prepared } = requireV2Runtime();
-            beginV2Mutation();
-            return commitV2Runtime(prepared);
-        } catch (error) {
-            postRuntimeErrorV2(error, 'runtime');
-            throw error;
-        }
+    resetExperimentV2(): Promise<WorkerExperimentResultV2> {
+        return enqueueV2Mutation(resetExperimentV2Now);
     },
 
-    forceEvaluationV2(trigger: ForcedEvaluationTriggerV2): {
+    forceEvaluationV2(trigger: ForcedEvaluationTriggerV2): Promise<{
         readonly runId: number;
         readonly evidence: WorkerEvidenceMessageV2;
-    } {
-        try {
-            const allowed = new Set<ForcedEvaluationTriggerV2>([
-                'manual-step',
-                'pause',
-                'checkpoint',
-                'save',
-                'stop-condition',
-                'restore',
-            ]);
-            if (!allowed.has(trigger)) {
-                throw new TypeError('Unsupported forced V2 evaluation trigger');
-            }
-            const evaluation = forceAndPublishEvaluationV2(trigger);
-            return {
-                runId: state.runId,
-                evidence: makeEvidenceV2(undefined, evaluation),
-            };
-        } catch (error) {
-            if (error instanceof TerminalDivergenceError) {
-                postTerminalDivergenceV2(error, 'evaluation', 'evaluation-failed');
-            } else {
-                postRuntimeErrorV2(error, 'evaluation', 'evaluation-failed');
-            }
-            throw error;
-        }
+    }> {
+        return enqueueV2Mutation(() => forceEvaluationV2Now(trigger));
     },
 
     /**
@@ -3069,36 +3160,15 @@ export const workerApi = {
      * Every mutable read completes before asynchronous fingerprint validation
      * yields, so a later command cannot be mixed into this saved artifact.
      */
-    async captureRunArtifact(request: unknown): Promise<ExperimentRunRecordV2> {
+    captureRunArtifact(request: unknown): Promise<ExperimentRunRecordV2> {
+        let metadata: CaptureRunArtifactRequestV2;
         try {
-            const metadata: CaptureRunArtifactRequestV2 = parseCaptureRunArtifactRequestV2(request);
-            const { prepared, history } = requireV2Runtime();
-            const evaluation = forceAndPublishEvaluationV2('save');
-            const capturedHistory = history.read();
-            const candidate: ExperimentRunRecordV2 = {
-                kind: 'nn-playground-run',
-                schemaVersion: 2,
-                ...metadata,
-                recipe: prepared.document.recipe,
-                recipeFingerprint: prepared.identities.recipeFingerprint,
-                snapshot: {
-                    model: evaluation.model,
-                    evaluation,
-                    trendHistory: compactEvenly(capturedHistory.trendHistory, 512),
-                    evaluationHistory: compactEvenly(capturedHistory.evaluationHistory, 256),
-                },
-            };
-            const validated = await validateExperimentRunRecordV2(candidate);
-            if (!validated.ok) {
-                throw new TypeError(validated.issues.map(
-                    (entry) => `${entry.path}: ${entry.message}`,
-                ).join('; '));
-            }
-            return validated.value;
+            metadata = parseCaptureRunArtifactRequestV2(request);
         } catch (error) {
             postRuntimeErrorV2(error, 'persistence', 'capture-failed');
-            throw error;
+            return Promise.reject(error);
         }
+        return enqueueV2Mutation(() => captureRunArtifactNow(metadata));
     },
 
     getMetricHistoryV2(): RuntimeMetricHistorySnapshot {

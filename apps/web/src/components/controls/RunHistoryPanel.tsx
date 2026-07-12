@@ -117,6 +117,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const saveRecord = useExperimentMemoryStore((state) => state.saveRecord);
     const retryPersistence = useExperimentMemoryStore((state) => state.retryPersistence);
     const dismissPersistenceError = useExperimentMemoryStore((state) => state.dismissPersistenceError);
+    const discardPendingSave = useExperimentMemoryStore((state) => state.discardPendingSave);
     const removeRecord = useExperimentMemoryStore((state) => state.removeRecord);
     const dismissLegacyNotice = useExperimentMemoryStore((state) => state.dismissLegacyNotice);
     const deleteLegacyStorage = useExperimentMemoryStore((state) => state.deleteLegacyStorage);
@@ -126,7 +127,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const [actionError, setActionError] = useState<string | null>(null);
 
     const saveCurrentRun = useCallback(async () => {
-        if (saving) return;
+        if (saving || pendingSave !== null) return;
         setSaving(true);
         setActionError(null);
         try {
@@ -142,7 +143,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
         } finally {
             setSaving(false);
         }
-    }, [saveRecord, saving]);
+    }, [pendingSave, saveRecord, saving]);
 
     const applySavedRecipe = useCallback(async (record: ExperimentRunRecordV2) => {
         setActionError(null);
@@ -172,15 +173,24 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                 className="btn btn--ghost btn--sm"
                 style={{ width: '100%' }}
                 onClick={() => { void saveCurrentRun(); }}
-                disabled={saving || hydrationStatus !== 'ready' || prepared === null}
+                disabled={saving
+                    || pendingSave !== null
+                    || hydrationStatus !== 'ready'
+                    || prepared === null}
             >
                 {saving ? 'Saving…' : 'Save current run'}
             </button>
 
             {actionError && <div className="inspection__empty" role="alert" style={{ marginTop: 8 }}>{actionError}</div>}
-            {persistenceError && (
-                <div className="inspection__layer" role="alert" style={{ marginTop: 8 }}>
-                    <div className="inspection__empty">{persistenceError.message}</div>
+            {(persistenceError || pendingSave) && (
+                <div
+                    className="inspection__layer"
+                    {...(persistenceError ? { role: 'alert' as const } : { role: 'status' as const })}
+                    style={{ marginTop: 8 }}
+                >
+                    {persistenceError && (
+                        <div className="inspection__empty">{persistenceError.message}</div>
+                    )}
                     <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                         {pendingSave && (
                             <button
@@ -191,13 +201,24 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                                 Retry saving
                             </button>
                         )}
-                        <button
-                            type="button"
-                            className="btn btn--ghost btn--sm"
-                            onClick={dismissPersistenceError}
-                        >
-                            Dismiss error
-                        </button>
+                        {pendingSave && (
+                            <button
+                                type="button"
+                                className="btn btn--ghost btn--sm"
+                                onClick={() => { void discardPendingSave(); }}
+                            >
+                                Discard pending save
+                            </button>
+                        )}
+                        {persistenceError && (
+                            <button
+                                type="button"
+                                className="btn btn--ghost btn--sm"
+                                onClick={dismissPersistenceError}
+                            >
+                                Dismiss error
+                            </button>
+                        )}
                     </div>
                 </div>
             )}

@@ -117,13 +117,148 @@ describe('version-2 experiment memory store', () => {
         expect(await store.getState().saveRecord(record)).toBe(false);
         expect(store.getState().records).toEqual([]);
         expect(store.getState().persistenceError?.message).toMatch(/quota/i);
-        expect(store.getState().pendingSave).toBe(record);
+        expect(store.getState().pendingSave).toEqual(record);
+        expect(store.getState().pendingSave).not.toBe(record);
 
         setItem.mockRestore();
         expect(await store.getState().retryPersistence()).toBe(true);
         expect(store.getState().records[0]).toEqual(record);
         expect(store.getState().pendingSave).toBeNull();
         expect(store.getState().persistenceError).toBeNull();
+    });
+
+    it('retains the exact failed artifact across space-freeing record mutations', async () => {
+        const rejected = { schemaVersion: 1, id: 'rejected-record' };
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify({
+            kind: EXPERIMENT_MEMORY_ENVELOPE_KIND,
+            schemaVersion: 2,
+            records: [await makeRecord(0), await makeRecord(1), rejected],
+        }));
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const failed = await makeRecord(2, { title: 'Exact retry artifact' });
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        });
+
+        expect(await store.getState().saveRecord(failed)).toBe(false);
+        const retained = store.getState().pendingSave;
+        expect(retained).toEqual(failed);
+        expect(retained).not.toBe(failed);
+        setItem.mockRestore();
+
+        expect(await store.getState().renameRecord(IDS[0], 'Renamed')).toBe(true);
+        expect(store.getState().pendingSave).toBe(retained);
+        expect(await store.getState().removeRecord(IDS[1])).toBe(true);
+        expect(store.getState().pendingSave).toBe(retained);
+        const sourceIndex = store.getState().rejectedRecords[0]!.sourceIndex;
+        expect(await store.getState().deleteRejectedRecord(sourceIndex)).toBe(true);
+        expect(store.getState().pendingSave).toBe(retained);
+        expect(await store.getState().clearRecords()).toBe(true);
+        expect(store.getState().pendingSave).toBe(retained);
+
+        expect(await store.getState().retryPersistence()).toBe(true);
+        expect(store.getState().records).toEqual([retained]);
+        expect(store.getState().pendingSave).toBeNull();
+    });
+
+    it('serializes an overlapping cleanup after failure without losing either update', async () => {
+        const existing = await makeRecord(0);
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify({
+            kind: EXPERIMENT_MEMORY_ENVELOPE_KIND,
+            schemaVersion: 2,
+            records: [existing],
+        }));
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const failed = await makeRecord(1, { title: 'Pending while cleanup runs' });
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const originalSetItem = prototype.setItem;
+        const setItem = vi.spyOn(prototype, 'setItem')
+            .mockImplementationOnce(() => {
+                throw new DOMException('Quota exceeded', 'QuotaExceededError');
+            })
+            .mockImplementation(function (this: Storage, key: string, value: string) {
+                return originalSetItem.call(this, key, value);
+            });
+
+        const saving = store.getState().saveRecord(failed);
+        const renaming = store.getState().renameRecord(IDS[0], 'Freed-space survivor');
+        expect(await saving).toBe(false);
+        expect(await renaming).toBe(true);
+
+        const pending = store.getState().pendingSave;
+        expect(pending).toEqual(failed);
+        expect(store.getState().records[0]?.title).toBe('Freed-space survivor');
+        expect(store.getState().persistenceError?.message).toMatch(/quota/i);
+        setItem.mockRestore();
+
+        expect(await store.getState().retryPersistence()).toBe(true);
+        expect(store.getState().records.map((record) => record.title)).toEqual([
+            'Pending while cleanup runs',
+            'Freed-space survivor',
+        ]);
+    });
+
+    it('rejects a new save while an exact retry artifact is pending', async () => {
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const first = await makeRecord(0);
+        const second = await makeRecord(1);
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        });
+        expect(await store.getState().saveRecord(first)).toBe(false);
+        const retained = store.getState().pendingSave;
+        setItem.mockRestore();
+
+        expect(await store.getState().saveRecord(second)).toBe(false);
+        expect(store.getState().pendingSave).toBe(retained);
+        expect(store.getState().records).toEqual([]);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBeNull();
+    });
+
+    it('snapshots caller-owned records before retaining retry bytes', async () => {
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const record = await makeRecord(0, { title: 'Before mutation' });
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        });
+
+        const saving = store.getState().saveRecord(record);
+        (record as { title?: string }).title = 'Mutated by caller';
+        expect(await saving).toBe(false);
+        expect(store.getState().pendingSave?.title).toBe('Before mutation');
+
+        setItem.mockRestore();
+        expect(await store.getState().retryPersistence()).toBe(true);
+        expect(store.getState().records[0]?.title).toBe('Before mutation');
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY))
+            .not.toContain('Mutated by caller');
+    });
+
+    it('keeps retry and explicit discard available after dismissing the error', async () => {
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const record = await makeRecord();
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        });
+        expect(await store.getState().saveRecord(record)).toBe(false);
+        setItem.mockRestore();
+
+        store.getState().dismissPersistenceError();
+        expect(store.getState().persistenceError).toBeNull();
+        expect(store.getState().pendingSave).not.toBeNull();
+
+        await store.getState().discardPendingSave();
+        expect(store.getState().pendingSave).toBeNull();
+        expect(await store.getState().retryPersistence()).toBe(false);
     });
 
     it('does not clear a failed save or its error during later hydration', async () => {
@@ -140,7 +275,7 @@ describe('version-2 experiment memory store', () => {
 
         await store.getState().hydrate();
 
-        expect(store.getState().pendingSave).toBe(record);
+        expect(store.getState().pendingSave).toEqual(record);
         expect(store.getState().persistenceError).toBe(error);
     });
 

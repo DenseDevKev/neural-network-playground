@@ -145,6 +145,31 @@ function sameEvaluation(left: PairedEvaluation, right: PairedEvaluation): boolea
     return canonicalizeJson(left) === canonicalizeJson(right);
 }
 
+function validateEvaluationSplitCounts(
+    evaluation: PairedEvaluation,
+    path: string,
+    expectedTrainCount: number,
+    expectedTestCount: number,
+    issues: ExperimentMemoryIssue[],
+): void {
+    const checks: ReadonlyArray<readonly [number, number, string]> = [
+        [evaluation.dataset.trainCount, expectedTrainCount, `${path}.dataset.trainCount`],
+        [evaluation.dataset.testCount, expectedTestCount, `${path}.dataset.testCount`],
+        [evaluation.train.basis.sampleCount, expectedTrainCount, `${path}.train.basis.sampleCount`],
+        [evaluation.train.basis.populationCount, expectedTrainCount, `${path}.train.basis.populationCount`],
+        [evaluation.test.basis.sampleCount, expectedTestCount, `${path}.test.basis.sampleCount`],
+        [evaluation.test.basis.populationCount, expectedTestCount, `${path}.test.basis.populationCount`],
+    ];
+    for (const [actual, expected, issuePath] of checks) {
+        if (actual !== expected) {
+            issues.push(invalid(
+                issuePath,
+                `Saved split count ${actual} must equal the recipe-derived count ${expected}.`,
+            ));
+        }
+    }
+}
+
 function parseRecordShape(snapshot: unknown): {
     record: Record<string, unknown> | null;
     issues: ExperimentMemoryIssue[];
@@ -447,6 +472,30 @@ export async function validateExperimentRunRecordV2(
                     'Trend history cannot be newer than the saved evaluation.',
                 ));
             }
+        }
+    }
+
+    if (documentResult.ok && evaluation) {
+        const validatedRecipe = documentResult.value.recipe;
+        const expectedTrainCount = Math.floor(
+            validatedRecipe.data.sampleCount * validatedRecipe.data.trainFraction,
+        );
+        const expectedTestCount = validatedRecipe.data.sampleCount - expectedTrainCount;
+        validateEvaluationSplitCounts(
+            evaluation,
+            'snapshot.evaluation',
+            expectedTrainCount,
+            expectedTestCount,
+            issues,
+        );
+        for (let index = 0; index < evaluationHistory.length; index++) {
+            validateEvaluationSplitCounts(
+                evaluationHistory[index],
+                `snapshot.evaluationHistory[${index}]`,
+                expectedTrainCount,
+                expectedTestCount,
+                issues,
+            );
         }
     }
 

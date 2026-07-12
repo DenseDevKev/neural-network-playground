@@ -3,6 +3,7 @@ import { createStore } from 'zustand/vanilla';
 import {
     parseExperimentMemoryEnvelopeV2,
     serializeExperimentMemoryEnvelopeV2,
+    validateExperimentRunRecordV2,
 } from '@nn-playground/shared';
 import type {
     ExperimentMemoryIssue,
@@ -26,6 +27,7 @@ export interface ExperimentMemoryStore {
     saveRecord: (record: ExperimentRunRecordV2) => Promise<boolean>;
     retryPersistence: () => Promise<boolean>;
     dismissPersistenceError: () => void;
+    discardPendingSave: () => Promise<void>;
     renameRecord: (id: string, title: string, now?: () => Date) => Promise<boolean>;
     removeRecord: (id: string) => Promise<boolean>;
     clearRecords: () => Promise<boolean>;
@@ -69,7 +71,8 @@ export function createExperimentMemoryStore() {
         const persistCandidate = async (
             records: readonly ExperimentRunRecordV2[],
             rejectedRecords: readonly RejectedExperimentRunRecordV2[],
-            pendingSave: ExperimentRunRecordV2 | null,
+            pendingSaveOnFailure: ExperimentRunRecordV2 | null,
+            pendingSaveOnSuccess: ExperimentRunRecordV2 | null,
         ): Promise<boolean> => {
             const serialized = await serializeExperimentMemoryEnvelopeV2(
                 records,
@@ -78,7 +81,7 @@ export function createExperimentMemoryStore() {
             if (!serialized.ok) {
                 set({
                     persistenceError: firstIssue(serialized.issues, 'Experiment memory validation failed.'),
-                    pendingSave,
+                    pendingSave: pendingSaveOnFailure,
                 });
                 return false;
             }
@@ -90,7 +93,7 @@ export function createExperimentMemoryStore() {
                         verified.envelopeIssues,
                         'Serialized experiment memory could not be verified.',
                     ),
-                    pendingSave,
+                    pendingSave: pendingSaveOnFailure,
                 });
                 return false;
             }
@@ -98,16 +101,18 @@ export function createExperimentMemoryStore() {
             try {
                 window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, serialized.value);
             } catch (error) {
-                set({ persistenceError: storageIssue(error), pendingSave });
+                set({ persistenceError: storageIssue(error), pendingSave: pendingSaveOnFailure });
                 return false;
             }
 
-            set({
+            set((previous) => ({
                 records: verified.records,
                 rejectedRecords: verified.rejectedRecords,
-                persistenceError: null,
-                pendingSave: null,
-            });
+                persistenceError: pendingSaveOnSuccess === null
+                    ? null
+                    : previous.persistenceError,
+                pendingSave: pendingSaveOnSuccess,
+            }));
             return true;
         };
 
@@ -172,14 +177,39 @@ export function createExperimentMemoryStore() {
                 });
             }),
 
-            saveRecord: (record) => enqueue(async () => {
-                const state = get();
-                const candidate = [
-                    record,
-                    ...state.records.filter((existing) => existing.id !== record.id),
-                ];
-                return persistCandidate(candidate, state.rejectedRecords, record);
-            }),
+            saveRecord: (record) => {
+                if (get().pendingSave !== null) {
+                    return Promise.resolve(false);
+                }
+                // Validation takes its defensive JSON snapshot synchronously,
+                // before this call returns control to caller-owned code.
+                const validation = validateExperimentRunRecordV2(record);
+                return enqueue(async () => {
+                    const validated = await validation;
+                    if (!validated.ok) {
+                        set({
+                            persistenceError: firstIssue(
+                                validated.issues,
+                                'Experiment memory validation failed.',
+                            ),
+                        });
+                        return false;
+                    }
+                    const artifact = validated.value;
+                    const state = get();
+                    if (state.pendingSave !== null) return false;
+                    const candidate = [
+                        artifact,
+                        ...state.records.filter((existing) => existing.id !== artifact.id),
+                    ];
+                    return persistCandidate(
+                        candidate,
+                        state.rejectedRecords,
+                        artifact,
+                        null,
+                    );
+                });
+            },
 
             retryPersistence: () => enqueue(async () => {
                 const state = get();
@@ -188,10 +218,19 @@ export function createExperimentMemoryStore() {
                     state.pendingSave,
                     ...state.records.filter((existing) => existing.id !== state.pendingSave?.id),
                 ];
-                return persistCandidate(candidate, state.rejectedRecords, state.pendingSave);
+                return persistCandidate(
+                    candidate,
+                    state.rejectedRecords,
+                    state.pendingSave,
+                    null,
+                );
             }),
 
             dismissPersistenceError: () => set({ persistenceError: null }),
+
+            discardPendingSave: () => enqueue(async () => {
+                set({ pendingSave: null, persistenceError: null });
+            }),
 
             renameRecord: (id, title, now = () => new Date()) => enqueue(async () => {
                 const state = get();
@@ -205,7 +244,12 @@ export function createExperimentMemoryStore() {
                 };
                 if (!trimmed) delete (renamed as { title?: string }).title;
                 const candidate = state.records.map((entry) => entry.id === id ? renamed : entry);
-                return persistCandidate(candidate, state.rejectedRecords, null);
+                return persistCandidate(
+                    candidate,
+                    state.rejectedRecords,
+                    state.pendingSave,
+                    state.pendingSave,
+                );
             }),
 
             removeRecord: (id) => enqueue(async () => {
@@ -213,15 +257,20 @@ export function createExperimentMemoryStore() {
                 return persistCandidate(
                     state.records.filter((record) => record.id !== id),
                     state.rejectedRecords,
-                    null,
+                    state.pendingSave,
+                    state.pendingSave,
                 );
             }),
 
-            clearRecords: () => enqueue(async () => persistCandidate(
-                [],
-                get().rejectedRecords,
-                null,
-            )),
+            clearRecords: () => enqueue(async () => {
+                const state = get();
+                return persistCandidate(
+                    [],
+                    state.rejectedRecords,
+                    state.pendingSave,
+                    state.pendingSave,
+                );
+            }),
 
             deleteRejectedRecord: (sourceIndex) => enqueue(async () => {
                 const state = get();
@@ -229,7 +278,12 @@ export function createExperimentMemoryStore() {
                     (record) => record.sourceIndex !== sourceIndex,
                 );
                 if (candidate.length === state.rejectedRecords.length) return false;
-                return persistCandidate(state.records, candidate, null);
+                return persistCandidate(
+                    state.records,
+                    candidate,
+                    state.pendingSave,
+                    state.pendingSave,
+                );
             }),
 
             dismissLegacyNotice: () => set({ legacyNoticeDismissed: true }),
