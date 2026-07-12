@@ -44,6 +44,16 @@ export interface PreparedRestoreEvaluation {
     commit(): PairedEvaluation;
 }
 
+export interface PreparedCheckpointEvaluation {
+    readonly evaluation: PairedEvaluation;
+    commit(): PairedEvaluation;
+}
+
+export interface PreparedCadenceEvaluation {
+    readonly evaluation: PairedEvaluation;
+    commit(): PairedEvaluation;
+}
+
 export type ForcedEvaluationTrigger = Exclude<EvaluationTrigger, 'cadence'>;
 
 /** A non-finite scientific value is terminal and must never be published. */
@@ -223,6 +233,10 @@ export class EvaluationRuntime {
     }
 
     takeCadenceEvaluation(): PairedEvaluation | undefined {
+        return this.prepareCadenceEvaluation()?.commit();
+    }
+
+    prepareCadenceEvaluation(): PreparedCadenceEvaluation | undefined {
         if (this.pendingCadenceStep === null) return undefined;
         const model = this.readCurrentModel();
         const latestModel = this._latestLiveSignal?.model;
@@ -231,7 +245,30 @@ export class EvaluationRuntime {
             || !sameModel(model, latestModel)) {
             throw new Error('cadence evaluation model must equal the due live-signal revision');
         }
-        return this.publishEvaluation('cadence', model);
+        const expectedEvaluationId = this.nextEvaluationId;
+        const expectedCurrentModel = this.currentModel;
+        const expectedCadenceStep = this.pendingCadenceStep;
+        const evaluation = this.evaluateCandidate('cadence', model, {
+            getCurrentModel: this.getCurrentModel,
+            evaluateTrain: this.evaluateTrain,
+            evaluateTest: this.evaluateTest,
+            evaluateRegularizationPenalty: this.evaluateRegularizationPenalty,
+        });
+        let committed = false;
+        return Object.freeze({
+            evaluation,
+            commit: (): PairedEvaluation => {
+                if (committed) return evaluation;
+                if (this.nextEvaluationId !== expectedEvaluationId
+                    || !sameModel(this.currentModel, expectedCurrentModel)
+                    || this.pendingCadenceStep !== expectedCadenceStep) {
+                    throw new Error('prepared cadence evaluation is stale');
+                }
+                this.commitEvaluation(evaluation);
+                committed = true;
+                return evaluation;
+            },
+        });
     }
 
     forceEvaluation(
@@ -288,6 +325,57 @@ export class EvaluationRuntime {
         });
     }
 
+    /**
+     * Evaluate the current live model for checkpoint capture without changing
+     * runtime evidence. The returned commit performs no scientific recomputation.
+     */
+    prepareCheckpointEvaluation(
+        afterCadence?: PreparedCadenceEvaluation,
+    ): PreparedCheckpointEvaluation {
+        const model = this.readCurrentModel();
+        if (!sameModel(model, this.currentModel)) {
+            throw new RangeError(
+                'checkpoint model must equal the last observed model',
+            );
+        }
+        const expectedEvaluationId = this.nextEvaluationId;
+        const expectedCurrentModel = this.currentModel;
+        if (afterCadence !== undefined && (
+            afterCadence.evaluation.trigger !== 'cadence'
+            || afterCadence.evaluation.evaluationId !== expectedEvaluationId
+            || !sameModel(afterCadence.evaluation.model, model)
+        )) {
+            throw new Error('prepared cadence evaluation cannot precede this checkpoint');
+        }
+        const checkpointEvaluationId = expectedEvaluationId
+            + (afterCadence === undefined ? 0 : 1);
+        if (!Number.isSafeInteger(checkpointEvaluationId)) {
+            throw new RangeError('checkpoint evaluation ID exhausted its safe integer range');
+        }
+        const evaluation = this.evaluateCandidate('checkpoint', model, {
+            getCurrentModel: this.getCurrentModel,
+            evaluateTrain: this.evaluateTrain,
+            evaluateTest: this.evaluateTest,
+            evaluateRegularizationPenalty: this.evaluateRegularizationPenalty,
+        }, checkpointEvaluationId);
+        let committed = false;
+        return Object.freeze({
+            evaluation,
+            commit: (): PairedEvaluation => {
+                if (committed) return evaluation;
+                if (this.nextEvaluationId !== checkpointEvaluationId
+                    || !sameModel(this.currentModel, expectedCurrentModel)
+                    || (afterCadence !== undefined
+                        && this._latestEvaluation !== afterCadence.evaluation)) {
+                    throw new Error('prepared checkpoint evaluation is stale');
+                }
+                this.commitEvaluation(evaluation);
+                committed = true;
+                return evaluation;
+            },
+        });
+    }
+
     private publishEvaluation(
         trigger: EvaluationTrigger,
         model: ModelRevision,
@@ -312,6 +400,7 @@ export class EvaluationRuntime {
             | 'evaluateTest'
             | 'evaluateRegularizationPenalty'
         >,
+        evaluationId: number = this.nextEvaluationId,
     ): PairedEvaluation {
         const frozenModel = this.validateAndFreezeModel(model);
         const trainValues = computation.evaluateTrain(frozenModel);
@@ -332,7 +421,7 @@ export class EvaluationRuntime {
             '$.evaluation.objective.trainTotalObjective',
         );
         const candidate = parsePairedEvaluation({
-            evaluationId: this.nextEvaluationId,
+            evaluationId,
             trigger,
             model: frozenModel,
             dataset: this.dataset,

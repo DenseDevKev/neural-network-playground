@@ -120,6 +120,7 @@ import { projectPreparedExperiment } from '../store/legacyProjection.ts';
 import {
     EvaluationRuntime,
     TerminalDivergenceError,
+    type PreparedCadenceEvaluation,
 } from './evaluationRuntime.ts';
 import {
     RuntimeMetricHistory,
@@ -733,7 +734,7 @@ function checkpointValidationContext() {
     };
 }
 
-function appendV2Checkpoint(evaluation: PairedEvaluation): V2RuntimeCheckpoint {
+function prepareV2CheckpointEntry(evaluation: PairedEvaluation): V2RuntimeCheckpoint {
     const { prepared, compiled, datasetRevision, network } = state;
     if (!prepared || !compiled || !datasetRevision || !network) {
         throw new Error('V2 experiment is not initialized');
@@ -777,7 +778,10 @@ function appendV2Checkpoint(evaluation: PairedEvaluation): V2RuntimeCheckpoint {
     };
     const entry: V2RuntimeCheckpoint = { kind: 'v2', summary, checkpoint: validated };
 
-    // The ring changes only after the entire envelope has validated and cloned.
+    return entry;
+}
+
+function commitV2CheckpointEntry(entry: V2RuntimeCheckpoint): void {
     state.nextCheckpointId++;
     state.checkpoints.push(entry);
     while (state.checkpoints.length > CHECKPOINT_MAX_COUNT) {
@@ -787,13 +791,47 @@ function appendV2Checkpoint(evaluation: PairedEvaluation): V2RuntimeCheckpoint {
             state.restoredCheckpointId = null;
         }
     }
+}
+
+function appendV2Checkpoint(evaluation: PairedEvaluation): V2RuntimeCheckpoint {
+    const entry = prepareV2CheckpointEntry(evaluation);
+    // The ring changes only after the entire envelope has validated and cloned.
+    commitV2CheckpointEntry(entry);
     return entry;
 }
 
 function forceAndCaptureCheckpointV2(): PairedEvaluation {
-    const evaluation = forceAndPublishEvaluationV2('checkpoint');
-    appendV2Checkpoint(evaluation);
+    const { runtime, history } = requireV2Runtime();
+    const preparedEvaluation = runtime.prepareCheckpointEvaluation();
+    const entry = prepareV2CheckpointEntry(preparedEvaluation.evaluation);
+    const evidence = makeEvidenceV2(undefined, preparedEvaluation.evaluation);
+
+    beginV2Mutation();
+    const evaluation = preparedEvaluation.commit();
+    history.appendEvaluation(evaluation);
+    commitV2CheckpointEntry(entry);
+    postEvidenceV2(evidence);
     return evaluation;
+}
+
+function captureCheckpointAfterCadenceV2(
+    preparedCadence: PreparedCadenceEvaluation,
+): { cadenceEvaluation: PairedEvaluation; checkpointEvaluation: PairedEvaluation } {
+    const { runtime, history } = requireV2Runtime();
+    const preparedCheckpoint = runtime.prepareCheckpointEvaluation(preparedCadence);
+    const entry = prepareV2CheckpointEntry(preparedCheckpoint.evaluation);
+    const cadenceEvidence = makeEvidenceV2(undefined, preparedCadence.evaluation);
+    const checkpointEvidence = makeEvidenceV2(undefined, preparedCheckpoint.evaluation);
+
+    beginV2Mutation();
+    const cadenceEvaluation = preparedCadence.commit();
+    const checkpointEvaluation = preparedCheckpoint.commit();
+    history.appendEvaluation(cadenceEvaluation);
+    history.appendEvaluation(checkpointEvaluation);
+    commitV2CheckpointEntry(entry);
+    postEvidenceV2(cadenceEvidence);
+    postEvidenceV2(checkpointEvidence);
+    return { cadenceEvaluation, checkpointEvaluation };
 }
 
 /** Narrow module-only seam for validating worker-private checkpoint transactions. */
@@ -2607,17 +2645,10 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         if (Object.keys(produced).length > 0) artifacts = produced;
     }
 
-    const message: WorkerSnapshotMessage = {
+    const messageBase = {
         type: 'snapshot',
-        protocolVersion: state.prepared ? WORKER_PROTOCOL_VERSION : undefined,
         runId: state.runId,
         snapshotId: ++state.snapshotId,
-        model: state.prepared && state.network ? {
-            generationId: state.runId,
-            revision: state.network.getRevision(),
-            step: state.network.getStep(),
-            epoch: state.epoch,
-        } : undefined,
         scalars: {
             step: snap.step,
             epoch: snap.epoch,
@@ -2645,16 +2676,35 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         multiclassConfidenceGrid,
         multiclassBoundaryLayout,
         multiclassBoundaryVersion,
-        ...(historyPoint === undefined ? {} : { historyPoint }),
         artifacts,
         confusionMatrix,
         confusionMatrixEvaluationId,
         confusionMatrixVersion: state.confusionMatrixVersion,
         multiclassConfusionMatrix,
         multiclassConfusionMatrixVersion,
-        checkpointTimeline: buildCheckpointTimeline(),
         sharedSeq,
-    };
+    } as const;
+    let message: WorkerSnapshotMessage;
+    if (state.prepared) {
+        if (!state.network) throw new Error('strict snapshot requires an active network');
+        message = {
+            ...messageBase,
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            model: {
+                generationId: state.runId,
+                revision: state.network.getRevision(),
+                step: state.network.getStep(),
+                epoch: state.epoch,
+            },
+            checkpointTimeline: buildCheckpointTimeline(),
+        };
+    } else {
+        message = {
+            ...messageBase,
+            ...(historyPoint === undefined ? {} : { historyPoint }),
+            checkpointTimeline: buildCheckpointTimeline(),
+        };
+    }
 
     workerPerfMeasure('perf:worker:snapshotPack', 'perf:worker:snapshotPack:start');
     return { message, transferables };
@@ -2741,10 +2791,9 @@ function trainOneStepV2(): {
     if (sampleCount === 0) return undefined;
 
     if (state.batchStart === sampleCount) {
-        // A restored boundary sentinel represents the just-completed epoch.
-        // Future shuffle PRNG state is intentionally not checkpointed.
-        state.epoch++;
-        epochRef.value = state.epoch;
+        // The boundary sentinel already records the completed epoch. Future
+        // shuffle PRNG state is intentionally not checkpointed, so normalize
+        // only when the next batch is actually requested.
         state.batchStart = 0;
         state.shufflePrng?.shuffle(state.shuffledIndices);
     }
@@ -2769,8 +2818,6 @@ function trainOneStepV2(): {
     if (state.batchStart === sampleCount) {
         state.epoch++;
         epochRef.value = state.epoch;
-        state.batchStart = 0;
-        state.shufflePrng?.shuffle(state.shuffledIndices);
     }
     const liveSignal = runtime.recordBatch({
         model: {
@@ -2786,14 +2833,22 @@ function trainOneStepV2(): {
     state.lossEma = liveSignal.dataLoss;
     state.gridStale = true;
 
-    const cadenceEvaluation = runtime.takeCadenceEvaluation();
-    if (cadenceEvaluation !== undefined) {
-        history.appendEvaluation(cadenceEvaluation);
-        // Cadence evidence is never coalesced into a latest-wins visual frame.
-        postEvidenceV2(makeEvidenceV2(undefined, cadenceEvaluation));
-    }
-    if (result.step > 0 && result.step % CHECKPOINT_STEP_INTERVAL === 0) {
-        forceAndCaptureCheckpointV2();
+    const checkpointDue = result.step > 0
+        && result.step % CHECKPOINT_STEP_INTERVAL === 0;
+    const preparedCadence = runtime.prepareCadenceEvaluation();
+    let cadenceEvaluation: PairedEvaluation | undefined;
+    if (checkpointDue && preparedCadence !== undefined) {
+        cadenceEvaluation = captureCheckpointAfterCadenceV2(
+            preparedCadence,
+        ).cadenceEvaluation;
+    } else {
+        cadenceEvaluation = preparedCadence?.commit();
+        if (cadenceEvaluation !== undefined) {
+            history.appendEvaluation(cadenceEvaluation);
+            // Cadence evidence is never coalesced into a latest-wins visual frame.
+            postEvidenceV2(makeEvidenceV2(undefined, cadenceEvaluation));
+        }
+        if (checkpointDue) forceAndCaptureCheckpointV2();
     }
     return cadenceEvaluation === undefined
         ? { liveSignal }

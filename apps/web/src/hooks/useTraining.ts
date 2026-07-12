@@ -1150,9 +1150,11 @@ export function useTraining(): TrainingHook {
                 reportWorkerError(error.message, 'The training worker failed.');
             } else if (msg.type === 'snapshot') {
                 try {
-                    const checkpointTimeline = msg.checkpointTimeline === undefined
-                        ? undefined
-                        : parseCheckpointTimelineV2(msg.checkpointTimeline);
+                    const checkpointTimeline = msg.protocolVersion === WORKER_PROTOCOL_VERSION
+                        ? parseCheckpointTimelineV2(msg.checkpointTimeline)
+                        : msg.checkpointTimeline === undefined
+                            ? undefined
+                            : parseCheckpointTimelineV2(msg.checkpointTimeline);
                     const snapshot = createStreamSnapshot(msg, ts.snapshot);
                     const frameVersions = getFrameVersions();
                     ts.applyStreamedSnapshot({

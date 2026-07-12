@@ -77,6 +77,13 @@ function validStrictSnapshot() {
                 populationCount: 200,
             }),
         },
+        checkpointTimeline: {
+            checkpoints: [],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: null,
+            restoredCheckpointId: null,
+        },
     } as const;
 }
 
@@ -198,6 +205,19 @@ describe('isMainToWorkerCommand', () => {
 describe('isWorkerToMainMessage', () => {
     it('accepts a strict snapshot whose artifact payloads have matching provenance', () => {
         expect(isWorkerToMainMessage(validStrictSnapshot())).toBe(true);
+    });
+
+    it('rejects a strict snapshot with missing or malformed checkpoint timeline metadata', () => {
+        const valid = validStrictSnapshot();
+        const { checkpointTimeline: _timeline, ...missing } = valid;
+        expect(isWorkerToMainMessage(missing)).toBe(false);
+        expect(isWorkerToMainMessage({
+            ...valid,
+            checkpointTimeline: {
+                ...valid.checkpointTimeline,
+                maxCheckpoints: 7,
+            },
+        })).toBe(false);
     });
 
     it('accepts legacy snapshot payloads without artifact provenance', () => {

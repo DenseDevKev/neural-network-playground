@@ -205,6 +205,60 @@ describe('EvaluationRuntime', () => {
         expect(fixture.runtime.latestLiveSignal).toBeUndefined();
     });
 
+    it('prepares a same-model checkpoint pair without mutation and commits without recomputation', () => {
+        const fixture = createRuntime();
+        const initial = fixture.runtime.forceEvaluation('initial');
+        const live = recordAt(fixture, 1, 4, 0.5);
+        const callsBeforePreparation = fixture.calls.length;
+
+        const prepared = fixture.runtime.prepareCheckpointEvaluation();
+
+        expect(prepared.evaluation).toMatchObject({
+            evaluationId: 2,
+            trigger: 'checkpoint',
+            model: modelAt(1),
+        });
+        expect(fixture.calls).toHaveLength(callsBeforePreparation + 3);
+        expect(fixture.runtime.latestEvaluation).toBe(initial);
+        expect(fixture.runtime.latestLiveSignal).toBe(live);
+
+        expect(prepared.commit()).toBe(prepared.evaluation);
+        expect(fixture.calls).toHaveLength(callsBeforePreparation + 3);
+        expect(fixture.runtime.latestEvaluation).toBe(prepared.evaluation);
+        expect(fixture.runtime.latestLiveSignal).toBe(live);
+    });
+
+    it('prepares cadence and its following checkpoint before committing either pair', () => {
+        const fixture = createRuntime();
+        const initial = fixture.runtime.forceEvaluation('initial');
+        const live = recordAt(fixture, 50, 4, 0.5);
+        const callsBeforePreparation = fixture.calls.length;
+
+        const cadence = fixture.runtime.prepareCadenceEvaluation();
+        if (cadence === undefined) throw new Error('step 50 must prepare cadence');
+        const checkpoint = fixture.runtime.prepareCheckpointEvaluation(cadence);
+
+        expect(cadence.evaluation).toMatchObject({
+            evaluationId: 2,
+            trigger: 'cadence',
+            model: modelAt(50),
+        });
+        expect(checkpoint.evaluation).toMatchObject({
+            evaluationId: 3,
+            trigger: 'checkpoint',
+            model: modelAt(50),
+        });
+        expect(fixture.calls).toHaveLength(callsBeforePreparation + 6);
+        expect(fixture.runtime.latestEvaluation).toBe(initial);
+        expect(fixture.runtime.latestLiveSignal).toBe(live);
+
+        expect(cadence.commit()).toBe(cadence.evaluation);
+        expect(checkpoint.commit()).toBe(checkpoint.evaluation);
+        expect(fixture.calls).toHaveLength(callsBeforePreparation + 6);
+        expect(fixture.runtime.latestEvaluation).toBe(checkpoint.evaluation);
+        expect(fixture.runtime.latestLiveSignal).toBe(live);
+    });
+
     it('rejects non-finite batch data before replacing the latest published signal', () => {
         const fixture = createRuntime();
         const { runtime, modelState } = fixture;

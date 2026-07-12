@@ -139,15 +139,66 @@ interface TypedArrayBudget {
 }
 
 const TYPED_ARRAY_PROTOTYPE = Object.getPrototypeOf(Float64Array.prototype) as object;
-const GET_TYPED_ARRAY_TAG = Object.getOwnPropertyDescriptor(
+type TypedArrayIntrinsicGetter = (this: unknown) => unknown;
+
+function intrinsicGetter(
+    prototype: object,
+    property: PropertyKey,
+    name: string,
+): TypedArrayIntrinsicGetter {
+    const getter = Object.getOwnPropertyDescriptor(prototype, property)?.get;
+    if (typeof getter !== 'function') {
+        throw new Error(`missing intrinsic ${name} getter`);
+    }
+    return getter;
+}
+
+const GET_TYPED_ARRAY_TAG = intrinsicGetter(
     TYPED_ARRAY_PROTOTYPE,
     Symbol.toStringTag,
-)?.get;
+    'TypedArray tag',
+);
+const GET_TYPED_ARRAY_BUFFER = intrinsicGetter(
+    TYPED_ARRAY_PROTOTYPE,
+    'buffer',
+    'TypedArray buffer',
+);
+const GET_TYPED_ARRAY_BYTE_OFFSET = intrinsicGetter(
+    TYPED_ARRAY_PROTOTYPE,
+    'byteOffset',
+    'TypedArray byteOffset',
+);
+const GET_TYPED_ARRAY_BYTE_LENGTH = intrinsicGetter(
+    TYPED_ARRAY_PROTOTYPE,
+    'byteLength',
+    'TypedArray byteLength',
+);
+const GET_TYPED_ARRAY_LENGTH = intrinsicGetter(
+    TYPED_ARRAY_PROTOTYPE,
+    'length',
+    'TypedArray length',
+);
+const TYPED_ARRAY_SET = Object.getOwnPropertyDescriptor(
+    TYPED_ARRAY_PROTOTYPE,
+    'set',
+)?.value;
+if (typeof TYPED_ARRAY_SET !== 'function') {
+    throw new Error('missing intrinsic TypedArray set operation');
+}
+const GET_ARRAY_BUFFER_BYTE_LENGTH = intrinsicGetter(
+    ArrayBuffer.prototype,
+    'byteLength',
+    'ArrayBuffer byteLength',
+);
+const GET_SHARED_ARRAY_BUFFER_BYTE_LENGTH = typeof SharedArrayBuffer === 'undefined'
+    ? undefined
+    : intrinsicGetter(
+        SharedArrayBuffer.prototype,
+        'byteLength',
+        'SharedArrayBuffer byteLength',
+    );
 
 function typedArrayTag(value: unknown): string | undefined {
-    if (typeof GET_TYPED_ARRAY_TAG !== 'function') {
-        throw new Error('missing intrinsic TypedArray brand getter');
-    }
     try {
         return Reflect.apply(GET_TYPED_ARRAY_TAG, value, []) as string | undefined;
     } catch {
@@ -155,34 +206,85 @@ function typedArrayTag(value: unknown): string | undefined {
     }
 }
 
+function arrayBufferByteLength(backing: unknown, path: string): number {
+    try {
+        return Reflect.apply(GET_ARRAY_BUFFER_BYTE_LENGTH, backing, []) as number;
+    } catch {
+        // A SharedArrayBuffer has a distinct internal brand and getter.
+    }
+    if (GET_SHARED_ARRAY_BUFFER_BYTE_LENGTH !== undefined) {
+        let isShared = false;
+        try {
+            Reflect.apply(GET_SHARED_ARRAY_BUFFER_BYTE_LENGTH, backing, []);
+            isShared = true;
+        } catch {
+            // Not a SharedArrayBuffer either.
+        }
+        if (isShared) return fail(path, 'must not use SharedArrayBuffer backing');
+    }
+    return fail(path, 'must use a valid ArrayBuffer backing');
+}
+
+type SupportedTypedArray = Float64Array | Uint32Array;
+
+interface InspectedView<T extends SupportedTypedArray> {
+    readonly view: T;
+    readonly length: number;
+}
+
+function cloneView<T extends SupportedTypedArray>(
+    view: T,
+    constructor: typeof Float64Array | typeof Uint32Array,
+    length: number,
+): T {
+    const clone = new constructor(length) as T;
+    Reflect.apply(TYPED_ARRAY_SET, clone, [view]);
+    return clone;
+}
+
 function inspectView(
     value: unknown,
     constructor: typeof Float64Array | typeof Uint32Array,
     path: string,
     budget: TypedArrayBudget,
-): Float64Array | Uint32Array {
+): InspectedView<Float64Array> | InspectedView<Uint32Array> {
     if (!ArrayBuffer.isView(value) || typedArrayTag(value) !== constructor.name) {
         return fail(path, `must be a ${constructor.name}`);
     }
-    const view = value as Float64Array | Uint32Array;
-    if (Object.prototype.toString.call(view.buffer) === '[object SharedArrayBuffer]') {
-        return fail(path, 'must not use SharedArrayBuffer backing');
+    const view = value as SupportedTypedArray;
+    let backing: ArrayBufferLike;
+    let byteOffset: number;
+    let byteLength: number;
+    let length: number;
+    try {
+        backing = Reflect.apply(GET_TYPED_ARRAY_BUFFER, view, []) as ArrayBufferLike;
+        byteOffset = Reflect.apply(GET_TYPED_ARRAY_BYTE_OFFSET, view, []) as number;
+        byteLength = Reflect.apply(GET_TYPED_ARRAY_BYTE_LENGTH, view, []) as number;
+        length = Reflect.apply(GET_TYPED_ARRAY_LENGTH, view, []) as number;
+    } catch {
+        return fail(path, `must be a compatible ${constructor.name}`);
     }
-    if (view.byteOffset !== 0 || view.byteLength !== view.buffer.byteLength) {
+    const backingByteLength = arrayBufferByteLength(backing, path);
+    if (byteOffset !== 0 || byteLength !== backingByteLength) {
         return fail(path, 'must use a tight full-backing view, not a subview');
     }
-    if (budget.seen.has(view.buffer)) {
+    const ownKeys = Reflect.ownKeys(view);
+    if (ownKeys.length !== length
+        || ownKeys.some((key, index) => key !== String(index))) {
+        return fail(path, 'must contain exactly its dense numeric indices as own keys');
+    }
+    if (budget.seen.has(backing)) {
         return fail(path, 'must not repeat or alias a typed-array backing buffer');
     }
-    budget.seen.add(view.buffer);
-    budget.used += view.byteLength;
+    budget.seen.add(backing);
+    budget.used += byteLength;
     if (budget.used > SESSION_CHECKPOINT_MAX_TYPED_ARRAY_BYTES) {
         return fail(
             path,
             `typed-array payload must not exceed ${SESSION_CHECKPOINT_MAX_TYPED_ARRAY_BYTES} bytes`,
         );
     }
-    return view;
+    return { view, length } as InspectedView<Float64Array> | InspectedView<Uint32Array>;
 }
 
 function inspectFloat64List(
@@ -194,11 +296,16 @@ function inspectFloat64List(
     const list = denseArray(value, path, lengths.length);
     const clones: Float64Array[] = [];
     for (let index = 0; index < lengths.length; index++) {
-        const view = inspectView(list[index], Float64Array, `${path}[${index}]`, budget);
-        if (view.length !== lengths[index]) {
+        const inspected = inspectView(
+            list[index],
+            Float64Array,
+            `${path}[${index}]`,
+            budget,
+        ) as InspectedView<Float64Array>;
+        if (inspected.length !== lengths[index]) {
             fail(`${path}[${index}]`, `must contain ${lengths[index]} elements`);
         }
-        clones.push(Float64Array.from(view));
+        clones.push(cloneView(inspected.view, Float64Array, inspected.length));
     }
     return clones;
 }
@@ -236,8 +343,18 @@ function inspectNetworkAndOptimizer(
         if (layer['outputSize'] !== outputSize) fail(`${path}.outputSize`, `must equal ${outputSize}`);
         const weightLength = inputSize * outputSize;
         if (!Number.isSafeInteger(weightLength)) fail(path, 'parameter count exceeds safe range');
-        const weights = inspectView(layer['weights'], Float64Array, `${path}.weights`, budget);
-        const biases = inspectView(layer['biases'], Float64Array, `${path}.biases`, budget);
+        const weights = inspectView(
+            layer['weights'],
+            Float64Array,
+            `${path}.weights`,
+            budget,
+        ) as InspectedView<Float64Array>;
+        const biases = inspectView(
+            layer['biases'],
+            Float64Array,
+            `${path}.biases`,
+            budget,
+        ) as InspectedView<Float64Array>;
         if (weights.length !== weightLength) {
             fail(`${path}.weights`, `must contain ${weightLength} elements`);
         }
@@ -249,8 +366,8 @@ function inspectNetworkAndOptimizer(
         clonedLayers.push({
             inputSize,
             outputSize,
-            weights: Float64Array.from(weights),
-            biases: Float64Array.from(biases),
+            weights: cloneView(weights.view, Float64Array, weights.length),
+            biases: cloneView(biases.view, Float64Array, biases.length),
         });
     }
 
@@ -366,13 +483,13 @@ function parseCursor(
         Uint32Array,
         'checkpoint.cursor.shuffledIndices',
         budget,
-    );
+    ) as InspectedView<Uint32Array>;
     if (indices.length !== trainCount) {
         fail('checkpoint.cursor.shuffledIndices', `must contain ${trainCount} entries`);
     }
     const seen = new Uint8Array(trainCount);
     for (let index = 0; index < indices.length; index++) {
-        const sampleIndex = indices[index];
+        const sampleIndex = indices.view[index];
         if (sampleIndex >= trainCount) {
             fail(`checkpoint.cursor.shuffledIndices[${index}]`, `must be below ${trainCount}`);
         }
@@ -381,7 +498,11 @@ function parseCursor(
         }
         seen[sampleIndex] = 1;
     }
-    return { epoch, batchStart, shuffledIndices: new Uint32Array(indices) };
+    return {
+        epoch,
+        batchStart,
+        shuffledIndices: cloneView(indices.view, Uint32Array, indices.length),
+    };
 }
 
 /** Validate a complete V2 checkpoint and return a fully detached clone. */

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
+import { describe, expect, it, vi } from 'vitest';
 import {
     SESSION_CHECKPOINT_MAX_TYPED_ARRAY_BYTES,
     validateSessionCheckpointV2,
@@ -289,6 +290,89 @@ describe('validateSessionCheckpointV2', () => {
         const value = checkpoint();
         value.network.layers[0].weights = new Float64Array(new SharedArrayBuffer(6 * 8));
         expect(() => validateSessionCheckpointV2(value, context())).toThrow(/shared/i);
+    });
+
+    it('rejects SharedArrayBuffer backing even when its toStringTag is forged', () => {
+        if (typeof SharedArrayBuffer === 'undefined') return;
+        const value = checkpoint();
+        const backing = new SharedArrayBuffer(6 * 8);
+        Object.defineProperty(backing, Symbol.toStringTag, {
+            configurable: true,
+            value: 'ArrayBuffer',
+        });
+        value.network.layers[0].weights = new Float64Array(backing);
+
+        expect(() => validateSessionCheckpointV2(value, context())).toThrow(/shared/i);
+    });
+
+    it.each([
+        ['buffer', new ArrayBuffer(6 * 8)],
+        ['byteOffset', 0],
+        ['byteLength', 6 * 8],
+        ['length', 6],
+    ] as const)('rejects a typed array with an own %s accessor', (property, result) => {
+        const value = checkpoint();
+        const get = vi.fn(() => result);
+        Object.defineProperty(value.network.layers[0].weights, property, {
+            configurable: true,
+            get,
+        });
+
+        expect(() => validateSessionCheckpointV2(value, context())).toThrow(/dense|own|extra/i);
+        expect(get).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['named', (weights: Float64Array & { note?: string }) => { weights.note = 'unexpected'; }],
+        ['symbol', (weights: Float64Array) => {
+            Object.defineProperty(weights, Symbol('unexpected'), {
+                configurable: true,
+                value: true,
+            });
+        }],
+    ] as const)('rejects an extra %s own key on a typed array', (_kind, mutate) => {
+        const value = checkpoint();
+        mutate(value.network.layers[0].weights);
+
+        expect(() => validateSessionCheckpointV2(value, context())).toThrow(/dense|own|extra/i);
+    });
+
+    it('accepts valid typed arrays created in another realm', () => {
+        const value = checkpoint();
+        value.network.layers[0].weights = runInNewContext(
+            'new Float64Array([1, 2, 3, 4, 5, 6])',
+        ) as Float64Array;
+        value.cursor.shuffledIndices = runInNewContext(
+            'new Uint32Array([2, 0, 3, 1])',
+        ) as Uint32Array;
+
+        const parsed = validateSessionCheckpointV2(value, context());
+        expect(parsed.network.layers[0].weights).toEqual(
+            new Float64Array([1, 2, 3, 4, 5, 6]),
+        );
+        expect(parsed.cursor.shuffledIndices).toEqual(new Uint32Array([2, 0, 3, 1]));
+    });
+
+    it('clones valid views without consulting a replaceable iterator', () => {
+        const descriptor = Object.getOwnPropertyDescriptor(
+            Float64Array.prototype,
+            Symbol.iterator,
+        );
+        Object.defineProperty(Float64Array.prototype, Symbol.iterator, {
+            configurable: true,
+            value: () => {
+                throw new Error('replaceable iterator must not be used');
+            },
+        });
+        try {
+            expect(() => validateSessionCheckpointV2(checkpoint(), context())).not.toThrow();
+        } finally {
+            if (descriptor === undefined) {
+                Reflect.deleteProperty(Float64Array.prototype, Symbol.iterator);
+            } else {
+                Object.defineProperty(Float64Array.prototype, Symbol.iterator, descriptor);
+            }
+        }
     });
 
     it('accepts exactly 256 KiB of typed arrays and rejects the next element', () => {

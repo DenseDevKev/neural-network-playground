@@ -364,6 +364,13 @@ function makeStrictSnapshotMessage(
                 saturatedCount: 0,
             }],
         },
+        checkpointTimeline: {
+            checkpoints: [],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: null,
+            restoredCheckpointId: null,
+        },
         artifacts,
         ...overrides,
     } as WorkerSnapshotMessage;
@@ -558,6 +565,32 @@ describe('workerBridge streamed snapshots', () => {
         expect(receivedMessages.at(-1)?.msg.type).toBe('error');
         expect(getFrameBuffer()).toBe(before);
     });
+
+    it.each(['missing', 'malformed'] as const)(
+        'rejects a strict frame with %s checkpoint metadata before frame mutation',
+        (kind) => {
+            const listener = getRegisteredStreamListener();
+            const before = getFrameBuffer();
+            const valid = makeStrictSnapshotMessage(1);
+            const message: unknown = kind === 'missing'
+                ? (({ checkpointTimeline: _timeline, ...rest }) => rest)(valid)
+                : {
+                    ...valid,
+                    checkpointTimeline: {
+                        ...valid.checkpointTimeline!,
+                        maxCheckpoints: 7,
+                    },
+                };
+
+            startRenderLoop();
+            listener({ data: message } as MessageEvent);
+            runNextAnimationFrame();
+
+            expect(getFrameBuffer()).toBe(before);
+            expect(receivedMessages).toHaveLength(1);
+            expect(receivedMessages[0].msg).toMatchObject({ type: 'error' });
+        },
+    );
 
     it('rejects strict provenance without the corresponding artifact payload', () => {
         const listener = getRegisteredStreamListener();

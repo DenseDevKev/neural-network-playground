@@ -924,6 +924,9 @@ export function isCheckpointTimelineV2(value: unknown): value is CheckpointTimel
 }
 
 function hasMalformedCheckpointTimelinePayload(m: Record<string, unknown>): boolean {
+    if (m['protocolVersion'] === WORKER_PROTOCOL_VERSION) {
+        return !isCheckpointTimelineV2(m['checkpointTimeline']);
+    }
     return 'checkpointTimeline' in m && !isCheckpointTimelineV2(m['checkpointTimeline']);
 }
 
@@ -1258,15 +1261,10 @@ export interface SnapshotScalars {
     testMetricsStale?: boolean;
 }
 
-/** Full snapshot message posted from the worker. */
-export interface WorkerSnapshotMessage {
+interface WorkerSnapshotMessageBase {
     type: 'snapshot';
-    /** Present only on strict scientific-trust snapshots. */
-    protocolVersion?: typeof WORKER_PROTOCOL_VERSION;
     runId: number;
     snapshotId: number;
-    /** Exact current model identity for strict V2 frame artifacts. */
-    model?: ModelRevision;
     scalars: SnapshotScalars;
 
     // Heavy payloads — presence depends on demand flags
@@ -1287,8 +1285,6 @@ export interface WorkerSnapshotMessage {
     multiclassBoundaryLayout?: MulticlassBoundaryLayout;
     multiclassBoundaryVersion?: number;
 
-    /** Legacy-only chart publication; strict snapshots publish typed evidence instead. */
-    historyPoint?: HistoryPoint;
     /** Per-artifact identity and basis for every strict heavy artifact payload. */
     artifacts?: WorkerArtifactProvenanceV2;
     confusionMatrix?: ConfusionMatrixData;
@@ -1297,8 +1293,6 @@ export interface WorkerSnapshotMessage {
     confusionMatrixVersion?: number;
     multiclassConfusionMatrix?: MulticlassConfusionMatrixData;
     multiclassConfusionMatrixVersion?: number;
-    checkpointTimeline?: CheckpointTimeline;
-
     /**
      * When the worker is publishing heavy buffers (outputGrid, neuronGrids,
      * weights, biases) via the shared-memory fast path, the corresponding
@@ -1311,6 +1305,27 @@ export interface WorkerSnapshotMessage {
      */
     sharedSeq?: number;
 }
+
+/** Strict scientific-trust frame with mandatory current-model and checkpoint metadata. */
+export interface StrictWorkerSnapshotMessage extends WorkerSnapshotMessageBase {
+    protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    model: ModelRevision;
+    historyPoint?: never;
+    checkpointTimeline: CheckpointTimeline;
+}
+
+/** Legacy frame; strict model identity is unavailable and timeline metadata is optional. */
+export interface LegacyWorkerSnapshotMessage extends WorkerSnapshotMessageBase {
+    protocolVersion?: undefined;
+    model?: undefined;
+    historyPoint?: HistoryPoint;
+    checkpointTimeline?: CheckpointTimeline;
+}
+
+/** Full snapshot message posted from the worker. */
+export type WorkerSnapshotMessage =
+    | StrictWorkerSnapshotMessage
+    | LegacyWorkerSnapshotMessage;
 
 export type ArenaSide = 'A' | 'B';
 

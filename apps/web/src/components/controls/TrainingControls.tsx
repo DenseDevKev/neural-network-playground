@@ -1,5 +1,5 @@
 // ── Training Controls ──
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useState } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
@@ -16,6 +16,7 @@ const SPEED_OPTIONS: { value: number; label: string }[] = [
     { value: 25, label: '25' },
     { value: 50, label: '50' },
 ];
+const RESTORE_GUARANTEE = 'Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.';
 
 export const TrainingControls = memo(function TrainingControls({ training }: Props) {
     const status = useTrainingStore((s) => s.status);
@@ -25,6 +26,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
     const pauseReason = useTrainingStore((s) => s.pauseReason);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const checkpointTimeline = useTrainingStore((s) => s.checkpointTimeline);
+    const restoreGuaranteeId = useId();
     const isRunning = status === 'running';
     const lifecycle = getTrainingLifecycleUi({ status, pauseReason, pendingConfigSource });
     const blockConfigAction = lifecycle.isBlocked;
@@ -166,7 +168,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                                 <span>Restore in-session parameters and optimizer state</span>
                                 <br />
                                 <span>
-                                    Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.
+                                    {RESTORE_GUARANTEE}
                                 </span>
                             </span>
                         )}
@@ -176,11 +178,15 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                             className="btn btn--ghost btn--control training-bar__timeline-restore"
                             onClick={() => void training.restoreCheckpoint(selectedCheckpoint.id)}
                             aria-label={`Restore checkpoint ${selectedCheckpoint.label}`}
+                            aria-describedby={restoreGuaranteeId}
                             disabled={checkpointControlsDisabled}
                         >
                             Restore
                         </button>
                     </Tooltip>
+                    <span id={restoreGuaranteeId} className="sr-only">
+                        {RESTORE_GUARANTEE}
+                    </span>
                 </div>
             )}
 

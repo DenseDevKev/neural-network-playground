@@ -1352,6 +1352,13 @@ describe('useTraining', () => {
                 gridSize: GRID_SIZE,
                 testMetricsStale: true,
             },
+            checkpointTimeline: {
+                checkpoints: [],
+                maxCheckpoints: 8,
+                evictedCount: 0,
+                liveCheckpointId: null,
+                restoredCheckpointId: null,
+            },
             confusionMatrix: { tp: 10, tn: 20, fp: 30, fn: 40 },
             confusionMatrixEvaluationId: evaluation.evaluationId,
             confusionMatrixVersion: 1,
@@ -1375,6 +1382,57 @@ describe('useTraining', () => {
         expect(strictSnapshot.neuronGrids).toBeUndefined();
         expect(strictSnapshot.layerStats).toBeUndefined();
     });
+
+    it.each(['missing', 'malformed'] as const)(
+        'rejects strict streamed snapshots with %s checkpoint metadata before store mutation',
+        async (kind) => {
+            renderHook(() => useTraining());
+            await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+            const before = useTrainingStore.getState();
+            const valid = {
+                type: 'snapshot',
+                protocolVersion: 2,
+                runId: 1,
+                snapshotId: 2,
+                model: { generationId: 1, revision: 1, step: 1, epoch: 0 },
+                scalars: {
+                    step: 1,
+                    epoch: 0,
+                    trainLoss: 0.2,
+                    testLoss: 0.3,
+                    gridSize: GRID_SIZE,
+                    testMetricsStale: true,
+                },
+                checkpointTimeline: {
+                    checkpoints: [],
+                    maxCheckpoints: 8,
+                    evictedCount: 0,
+                    liveCheckpointId: null,
+                    restoredCheckpointId: null,
+                },
+            } as const;
+            const message = kind === 'missing'
+                ? (({ checkpointTimeline: _timeline, ...rest }) => rest)(valid)
+                : {
+                    ...valid,
+                    checkpointTimeline: {
+                        ...valid.checkpointTimeline,
+                        maxCheckpoints: 7,
+                    },
+                };
+
+            act(() => getStreamHandler()(message as WorkerToMainMessage));
+
+            const after = useTrainingStore.getState();
+            expect(after.snapshot).toBe(before.snapshot);
+            expect(after.checkpointTimeline).toBe(before.checkpointTimeline);
+            expect(after.testMetricsStale).toBe(before.testMetricsStale);
+            expect(after.frameVersion).toBe(before.frameVersion);
+            expect(after.outputGridVersion).toBe(before.outputGridVersion);
+            expect(after.paramsVersion).toBe(before.paramsVersion);
+            expect(after.workerError).toMatch(/checkpoint|metadata/i);
+        },
+    );
 
     it('does not mark config-sync internal stops as manual pauses', async () => {
         const { result } = renderHook(() => useTraining());
