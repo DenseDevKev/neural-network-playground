@@ -2639,12 +2639,20 @@ export class Network {
         state: unknown,
         expectedOptimizer: OptimizerSpecV2,
         trainingStep: number,
+        restoredRevision?: number,
     ): void {
         if (!Number.isFinite(trainingStep)) {
             throw new NonFiniteNumericalError('trainingStep', trainingStep);
         }
         if (!Number.isInteger(trainingStep) || trainingStep < 0) {
             throw new RangeError('trainingStep must be a non-negative integer');
+        }
+        const nextRevision = restoredRevision ?? this.currentRevision + 1;
+        if (!Number.isFinite(nextRevision)) {
+            throw new NonFiniteNumericalError('restoredRevision', nextRevision);
+        }
+        if (!Number.isSafeInteger(nextRevision) || nextRevision <= this.currentRevision) {
+            throw new RangeError('restoredRevision must be a safe integer newer than the current revision');
         }
 
         const validated = validateNetworkSessionStateV2(
@@ -2701,7 +2709,7 @@ export class Network {
         this.activeOptimizer = nextActiveOptimizer;
         this.optimizerStep = nextOptimizerStep;
         this.currentStep = trainingStep;
-        this.currentRevision++;
+        this.currentRevision = nextRevision;
     }
 
     createCheckpoint(): NetworkCheckpoint {

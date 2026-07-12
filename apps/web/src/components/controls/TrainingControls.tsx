@@ -160,15 +160,27 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                             train {selectedCheckpoint.trainLoss.toFixed(3)} / test {selectedCheckpoint.testLoss.toFixed(3)}
                         </span>
                     </span>
-                    <button
-                        type="button"
-                        className="btn btn--ghost btn--control training-bar__timeline-restore"
-                        onClick={() => void training.restoreCheckpoint(selectedCheckpoint.id)}
-                        aria-label={`Restore checkpoint ${selectedCheckpoint.label}`}
-                        disabled={checkpointControlsDisabled}
+                    <Tooltip
+                        content={(
+                            <span>
+                                <span>Restore in-session parameters and optimizer state</span>
+                                <br />
+                                <span>
+                                    Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.
+                                </span>
+                            </span>
+                        )}
                     >
-                        Restore
-                    </button>
+                        <button
+                            type="button"
+                            className="btn btn--ghost btn--control training-bar__timeline-restore"
+                            onClick={() => void training.restoreCheckpoint(selectedCheckpoint.id)}
+                            aria-label={`Restore checkpoint ${selectedCheckpoint.label}`}
+                            disabled={checkpointControlsDisabled}
+                        >
+                            Restore
+                        </button>
+                    </Tooltip>
                 </div>
             )}
 

@@ -25,6 +25,15 @@ export {
     normalizeAppConfig,
 } from './serialization.js';
 export {
+    SESSION_CHECKPOINT_MAX_TYPED_ARRAY_BYTES,
+    validateSessionCheckpointV2,
+} from './sessionCheckpoint.js';
+export type {
+    SessionCheckpointV2,
+    SessionOptimizerStateV2,
+    SessionCheckpointValidationContext,
+} from './sessionCheckpoint.js';
+export {
     EXPERIMENT_MEMORY_SCHEMA_VERSION,
     EXPERIMENT_MEMORY_RECORD_KIND,
     EXPERIMENT_MEMORY_ENVELOPE_KIND,
@@ -115,6 +124,7 @@ export {
     DEFAULT_DEMAND,
     WORKER_PROTOCOL_VERSION,
     isCaptureCheckpointRequestV2,
+    isRestoreCheckpointRequestV2,
     isCaptureRunArtifactRequestV2,
     isCaptureRunRequestV2,
     isForceEvaluationRequestV2,
@@ -125,6 +135,7 @@ export {
     isWorkerExperimentRequestV2,
     isWorkerProtocolErrorMessageV2,
     parseMainToWorkerRequestV2,
+    parseCheckpointTimelineV2,
     parseCaptureRunArtifactRequestV2,
     parseWorkerProtocolErrorMessageV2,
     parseWorkerToMainMessageV2,
@@ -132,6 +143,7 @@ export {
     parseWorkerExperimentRequestV2,
     isMainToWorkerCommand,
     normalizeVisualizationDemand,
+    isCheckpointTimelineV2,
 } from './workerProtocol.js';
 export { structuralEqual } from './structural.js';
 export { canonicalizeJson } from './canonicalJson.js';
@@ -164,6 +176,7 @@ export type {
     CaptureRunRequestV2,
     CaptureRunArtifactRequestV2,
     CaptureCheckpointRequestV2,
+    RestoreCheckpointRequestV2,
     MainToWorkerRequestV2,
     WorkerArtifactProvenanceV2,
     WorkerEvidenceMessageV2,

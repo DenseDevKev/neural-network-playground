@@ -18,6 +18,7 @@ import {
     stopRenderLoop,
     onSnapshot,
     newRunTo,
+    discardPendingSnapshot,
     terminateWorker,
 } from '../worker/workerBridge.ts';
 import {
@@ -61,6 +62,7 @@ import {
     WORKER_PROTOCOL_VERSION,
     parseArtifactProvenance,
     parseWorkerEvidenceMessageV2,
+    parseCheckpointTimelineV2,
 } from '@nn-playground/shared';
 import type { WorkerExperimentResultV2 } from '../worker/training.worker.ts';
 
@@ -141,75 +143,6 @@ function getTotalNeuronCount(layerSizes: number[]): number {
         total += layerSizes[i];
     }
     return total;
-}
-
-function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
-    const outputGrid = snapshot.outputGrid.length > 0
-        ? (snapshot.outputGrid instanceof Float32Array ? snapshot.outputGrid : new Float32Array(snapshot.outputGrid))
-        : null;
-    const { buffer: weights, layerSizes } = flattenWeights(snapshot.weights);
-    const biases = flattenBiases(snapshot.biases);
-
-    let neuronGrids: Float32Array | null = null;
-    let neuronGridLayout: { count: number; gridSize: number } | null = null;
-    if (snapshot.neuronGrids && snapshot.neuronGrids.length > 0) {
-        if (snapshot.neuronGrids instanceof Float32Array) {
-            neuronGrids = snapshot.neuronGrids;
-            neuronGridLayout = {
-                count: getTotalNeuronCount(layerSizes),
-                gridSize: snapshot.gridSize,
-            };
-        } else {
-            const flattened = flattenNeuronGrids(snapshot.neuronGrids, snapshot.gridSize);
-            neuronGrids = flattened.buffer;
-            neuronGridLayout = flattened.layout;
-        }
-    }
-    const framePatch: Parameters<typeof updateFrameBuffer>[0] = {
-        outputGrid,
-        gridSize: snapshot.gridSize,
-        neuronGrids,
-        neuronGridLayout,
-        weights,
-        biases,
-        weightLayout: { layerSizes },
-        layerStats: snapshot.layerStats ?? null,
-        confusionMatrix: snapshot.testMetrics.confusionMatrix ?? null,
-    };
-    const currentFrame = getFrameBuffer();
-    if (snapshot.multiclassBoundary) {
-        framePatch.multiclassClassGrid = snapshot.multiclassBoundary.classGrid;
-        framePatch.multiclassConfidenceGrid = snapshot.multiclassBoundary.confidenceGrid;
-        framePatch.multiclassBoundaryLayout = {
-            gridSize: snapshot.multiclassBoundary.gridSize,
-            classCount: 3,
-            classLabels: [0, 1, 2],
-        };
-    } else if (
-        (
-            currentFrame.multiclassClassGrid !== null ||
-            currentFrame.multiclassConfidenceGrid !== null ||
-            currentFrame.multiclassBoundaryLayout !== null
-        )
-    ) {
-        framePatch.multiclassClassGrid = null;
-        framePatch.multiclassConfidenceGrid = null;
-        framePatch.multiclassBoundaryLayout = null;
-    }
-    if (currentFrame.multiclassConfusionMatrix !== null) {
-        framePatch.multiclassConfusionMatrix = null;
-    }
-
-    if (snapshot.activationHistograms) {
-        framePatch.activationHistogramBins = snapshot.activationHistograms.bins;
-        framePatch.activationHistogramLayout = {
-            binCount: snapshot.activationHistograms.layers[0]?.binCount ?? 0,
-            layers: snapshot.activationHistograms.layers,
-        };
-    }
-
-    updateFrameBuffer(framePatch);
-    return getFrameVersions();
 }
 
 function deepFreezeDirectArtifact<T>(value: T): Readonly<T> {
@@ -338,7 +271,7 @@ function validateEvidenceAgainstPrepared(
 function preflightStrictV2Result(
     result: WorkerExperimentResultV2,
     expectedPrepared: PreparedExperimentDocumentV2,
-    freshGeneration: boolean,
+    expectedTrigger: 'initial' | 'manual-step' | 'checkpoint' | 'restore',
 ): WorkerEvidenceMessageV2 {
     const { snapshot } = result;
     const evidence = validateEvidenceAgainstPrepared(result.evidence, expectedPrepared);
@@ -381,7 +314,8 @@ function preflightStrictV2Result(
         || evaluation.dataset.testCount !== expectedTestCount) {
         throw new Error('direct V2 result requires an exact current evidence pair');
     }
-    if (freshGeneration && (
+    const checkpointTimeline = parseCheckpointTimelineV2(result.checkpointTimeline);
+    if (expectedTrigger === 'initial' && (
         evaluation.evaluationId !== 1
         || evaluation.trigger !== 'initial'
         || evaluation.model.revision !== 0
@@ -391,8 +325,19 @@ function preflightStrictV2Result(
     )) {
         throw new Error('fresh direct V2 result requires the initial revision-zero evaluation');
     }
-    if (!freshGeneration && evaluation.trigger !== 'manual-step') {
-        throw new Error('manual direct V2 result requires a manual-step evaluation');
+    if (expectedTrigger !== 'initial' && evaluation.trigger !== expectedTrigger) {
+        throw new Error(`direct V2 result requires a ${expectedTrigger} evaluation`);
+    }
+    if (expectedTrigger === 'restore' && evidence.liveSignal !== undefined) {
+        throw new Error('restore direct V2 result cannot retain a live training signal');
+    }
+    if (expectedTrigger === 'initial' && (
+        checkpointTimeline.checkpoints.length !== 1
+        || checkpointTimeline.checkpoints[0]?.step !== 0
+        || checkpointTimeline.liveCheckpointId !== checkpointTimeline.checkpoints[0]?.id
+        || checkpointTimeline.restoredCheckpointId !== null
+    )) {
+        throw new Error('fresh direct V2 result requires one initial checkpoint summary');
     }
     const validateTaskSide = (
         side: PairedEvaluation['train'] | PairedEvaluation['test'],
@@ -598,9 +543,12 @@ function buildStrictV2FramePatch(
     result: WorkerExperimentResultV2,
     replaceAbsentArtifacts: boolean,
     expectedPrepared: PreparedExperimentDocumentV2,
+    expectedTrigger: 'initial' | 'manual-step' | 'checkpoint' | 'restore' = (
+        replaceAbsentArtifacts ? 'initial' : 'manual-step'
+    ),
 ): FrameBufferPatch {
     const { snapshot } = result;
-    preflightStrictV2Result(result, expectedPrepared, replaceAbsentArtifacts);
+    preflightStrictV2Result(result, expectedPrepared, expectedTrigger);
     const currentFrame = getFrameBuffer();
     const { buffer: weights, layerSizes } = flattenWeights(snapshot.weights);
     const biases = flattenBiases(snapshot.biases);
@@ -816,12 +764,6 @@ function buildStrictV2FramePatch(
     return patch;
 }
 
-function snapshotForReactState(snapshot: NetworkSnapshot): NetworkSnapshot {
-    if (!snapshot.activationHistograms) return snapshot;
-    const { activationHistograms: _activationHistograms, ...rest } = snapshot;
-    return rest;
-}
-
 function strictSnapshotForReactState(result: WorkerExperimentResultV2): NetworkSnapshot {
     const { snapshot } = result;
     const evaluation = result.evidence.latestEvaluation;
@@ -851,12 +793,6 @@ function strictSnapshotForReactState(result: WorkerExperimentResultV2): NetworkS
             accuracy: evaluation.test.values.accuracy,
         },
     };
-}
-
-function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot): void {
-    ts.setSnapshot(snapshotForReactState(snapshot));
-    ts.setTestMetricsStale(snapshot.testMetricsStale === true);
-    ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
 }
 
 function applyFreshV2SnapshotToStore(
@@ -1061,7 +997,7 @@ export function useTraining(): TrainingHook {
         const frameVersions = getFrameVersions();
         applyFreshV2SnapshotToStore(ts, result, frameVersions);
         activePreparedRef.current = owner;
-        ts.setCheckpointTimeline(EMPTY_CHECKPOINT_TIMELINE);
+        ts.setCheckpointTimeline(parseCheckpointTimelineV2(result.checkpointTimeline));
         ts.clearWorkerError();
         ts.clearPauseReason();
     }, []);
@@ -1213,14 +1149,22 @@ export function useTraining(): TrainingHook {
                 if (error.generationId !== ts.evidenceGenerationId) return;
                 reportWorkerError(error.message, 'The training worker failed.');
             } else if (msg.type === 'snapshot') {
-                const snapshot = createStreamSnapshot(msg, ts.snapshot);
-                const frameVersions = getFrameVersions();
-                ts.applyStreamedSnapshot({
-                    snapshot,
-                    frameVersion: frameVersions.frameVersion,
-                    frameVersions,
-                    testMetricsStale: msg.scalars.testMetricsStale === true,
-                });
+                try {
+                    const checkpointTimeline = msg.checkpointTimeline === undefined
+                        ? undefined
+                        : parseCheckpointTimelineV2(msg.checkpointTimeline);
+                    const snapshot = createStreamSnapshot(msg, ts.snapshot);
+                    const frameVersions = getFrameVersions();
+                    ts.applyStreamedSnapshot({
+                        snapshot,
+                        frameVersion: frameVersions.frameVersion,
+                        frameVersions,
+                        testMetricsStale: msg.scalars.testMetricsStale === true,
+                        checkpointTimeline,
+                    });
+                } catch (error) {
+                    reportWorkerError(error, 'Received invalid checkpoint metadata from the worker.');
+                }
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused') {
                     const resolveMutationPause = mutationPauseResolveRef.current;
@@ -1526,6 +1470,7 @@ export function useTraining(): TrainingHook {
             ts.setTestMetricsStale(false);
             ts.setFrameVersions(frameVersions);
             if (preparedEvidence !== null) ts.commitEvidenceAppend(preparedEvidence);
+            ts.setCheckpointTimeline(parseCheckpointTimelineV2(result.checkpointTimeline));
         } catch (error) {
             reportWorkerError(error, 'Failed to run a training step.');
         } finally {
@@ -1568,6 +1513,7 @@ export function useTraining(): TrainingHook {
             if (usePlaygroundStore.getState().prepared !== resetPrepared) return;
             ts.setTrainPoints(trainPts);
             ts.setTestPoints(testPts);
+            initializedRef.current = true;
             finishConfigSyncIfCurrent(seq);
         } catch (error) {
             if (!isCurrentConfigSync(seq)) return;
@@ -1577,48 +1523,81 @@ export function useTraining(): TrainingHook {
     }, [beginConfigSync, finishConfigSyncIfCurrent, initializeWorker, isCurrentConfigSync, pauseForMutation, publishCommittedV2Run, reportWorkerError]);
 
     const restoreCheckpoint = useCallback(async (id: number) => {
-        // A prepared document means this hook owns a strict V2 runtime. Until
-        // Task 10 adds versioned checkpoint RPCs, never cross into the legacy
-        // model mutator even if client state is manually seeded.
-        if (usePlaygroundStore.getState().prepared !== null) return;
+        if (!Number.isSafeInteger(id) || id < 1) return;
         if (configSyncPendingRef.current
+            || manualActionPendingRef.current
             || restoreBarrierRef.current !== null
             || useTrainingStore.getState().pendingConfigSource !== null) {
             return;
         }
-        // Protocol V2 does not expose a checkpoint timeline until Task 10.
-        // Keep the legacy restoration branch for that migration, but make it
-        // unreachable from a strict run unless the store owns the requested ID.
         if (!useTrainingStore.getState().checkpointTimeline.checkpoints.some(
             (checkpoint) => checkpoint.id === id,
         )) return;
+        manualActionPendingRef.current = true;
         let releaseRestore!: () => void;
         const restoreBarrier = new Promise<void>((resolve) => {
             releaseRestore = resolve;
         });
         restoreBarrierRef.current = restoreBarrier;
-        if (isPlayingRef.current) {
-            postStreamCommand({ type: 'stopTraining' });
-            stopRenderLoop();
-            isPlayingRef.current = false;
-        }
         try {
+            await pauseForMutation();
+            if (!mountedRef.current || configSyncPendingRef.current) return;
             if (!initializedRef.current) {
                 await initializeWorker();
                 if (!initializedRef.current) return;
             }
             const restoredPrepared = requirePreparedExperiment();
-            const result = await getWorkerApi().restoreCheckpoint(id);
-            const currentFingerprint = usePlaygroundStore.getState()
-                .prepared?.identities.recipeFingerprint ?? null;
-            if (configSyncPendingRef.current
-                || currentFingerprint !== restoredPrepared.identities.recipeFingerprint) {
+            const before = useTrainingStore.getState();
+            const currentGeneration = before.evidenceGenerationId;
+            const currentRevision = before.latestLiveSignal?.model.revision
+                ?? before.latestEvaluation?.model.revision;
+            if (currentGeneration === null || currentRevision === undefined) {
+                throw new Error('checkpoint restore requires current scientific evidence');
+            }
+            const requestId = requestIdRef.current + 1;
+            requestIdRef.current = requestId;
+            const result = await getWorkerApi().restoreCheckpointV2({
+                type: 'restore-checkpoint',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+                requestId,
+                checkpointId: id,
+            });
+            const currentPrepared = usePlaygroundStore.getState().prepared;
+            if (!mountedRef.current
+                || configSyncPendingRef.current
+                || currentPrepared?.identities.recipeFingerprint
+                    !== restoredPrepared.identities.recipeFingerprint) {
                 return;
             }
-            newRunTo(result.runId);
             const ts = useTrainingStore.getState();
-            applyFreshSnapshotToStore(ts, result.snapshot);
-            ts.setCheckpointTimeline(result.timeline as CheckpointTimeline);
+            const evaluation = result.evidence.latestEvaluation;
+            if (result.runId !== currentGeneration
+                || evaluation?.model.generationId !== currentGeneration
+                || evaluation.model.revision !== currentRevision + 1) {
+                throw new Error('checkpoint restore must advance the current revision exactly once');
+            }
+            const timeline = parseCheckpointTimelineV2(result.checkpointTimeline);
+            if (timeline.restoredCheckpointId !== id
+                || !timeline.checkpoints.some((checkpoint) => checkpoint.id === id)) {
+                throw new Error('checkpoint restore timeline does not identify the restored checkpoint');
+            }
+            const evidence = validateEvidenceAgainstPrepared(result.evidence, restoredPrepared);
+            const evidenceReplacement = ts.prepareEvidenceReplacement(evidence);
+            const framePatch = buildStrictV2FramePatch(
+                result,
+                true,
+                restoredPrepared,
+                'restore',
+            );
+
+            discardPendingSnapshot(result.runId, evaluation.model.revision);
+            ts.commitEvidenceReplacement(evidenceReplacement);
+            updateFrameBuffer(framePatch, { requireArtifactProvenance: true });
+            const frameVersions = getFrameVersions();
+            ts.setSnapshot(strictSnapshotForReactState(result));
+            ts.setTestMetricsStale(false);
+            ts.setFrameVersions(frameVersions);
+            ts.setCheckpointTimeline(timeline);
             ts.markTrainedRecipe(
                 projectPreparedExperiment(restoredPrepared),
                 'restore',
@@ -1626,15 +1605,17 @@ export function useTraining(): TrainingHook {
             );
             ts.setPauseReason('manual');
             ts.setStatus('paused');
+            ts.clearWorkerError();
         } catch (error) {
             reportWorkerError(error, 'Failed to restore checkpoint.');
         } finally {
             if (restoreBarrierRef.current === restoreBarrier) {
                 restoreBarrierRef.current = null;
             }
+            manualActionPendingRef.current = false;
             releaseRestore();
         }
-    }, [initializeWorker, reportWorkerError]);
+    }, [initializeWorker, pauseForMutation, reportWorkerError]);
 
     const initializeArena = useCallback(async (modelA: LiveArenaModelInput, modelB: LiveArenaModelInput) => {
         if (configSyncPendingRef.current || useTrainingStore.getState().pendingConfigSource !== null) {

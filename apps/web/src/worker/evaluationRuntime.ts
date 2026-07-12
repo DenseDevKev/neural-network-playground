@@ -31,6 +31,19 @@ export interface EvaluationRuntimeOptions {
     readonly evaluateRegularizationPenalty: (model: ModelRevision) => number;
 }
 
+export interface RestoreEvaluationPreparationOptions {
+    readonly model: ModelRevision;
+    readonly getCurrentModel: () => ModelRevision;
+    readonly evaluateTrain: (model: ModelRevision) => EvaluationValues;
+    readonly evaluateTest: (model: ModelRevision) => EvaluationValues;
+    readonly evaluateRegularizationPenalty: (model: ModelRevision) => number;
+}
+
+export interface PreparedRestoreEvaluation {
+    readonly evaluation: PairedEvaluation;
+    commit(): PairedEvaluation;
+}
+
 export type ForcedEvaluationTrigger = Exclude<EvaluationTrigger, 'cadence'>;
 
 /** A non-finite scientific value is terminal and must never be published. */
@@ -244,23 +257,75 @@ export class EvaluationRuntime {
         return evaluation;
     }
 
+    /**
+     * Evaluate a detached restore candidate without changing live runtime
+     * evidence. The returned commit performs no scientific recomputation.
+     */
+    prepareRestoreEvaluation(
+        options: RestoreEvaluationPreparationOptions,
+    ): PreparedRestoreEvaluation {
+        const model = this.validateAndFreezeModel(options.model);
+        if (model.revision <= this.currentModel.revision) {
+            throw new RangeError('restore model.revision must exceed the last observed model');
+        }
+        const expectedEvaluationId = this.nextEvaluationId;
+        const expectedCurrentModel = this.currentModel;
+        const evaluation = this.evaluateCandidate('restore', model, options);
+        let committed = false;
+        return Object.freeze({
+            evaluation,
+            commit: (): PairedEvaluation => {
+                if (committed) return evaluation;
+                if (this.nextEvaluationId !== expectedEvaluationId
+                    || !sameModel(this.currentModel, expectedCurrentModel)) {
+                    throw new Error('prepared restore evaluation is stale');
+                }
+                this.commitEvaluation(evaluation);
+                this._latestLiveSignal = undefined;
+                committed = true;
+                return evaluation;
+            },
+        });
+    }
+
     private publishEvaluation(
         trigger: EvaluationTrigger,
         model: ModelRevision,
     ): PairedEvaluation {
+        const published = this.evaluateCandidate(trigger, model, {
+            getCurrentModel: this.getCurrentModel,
+            evaluateTrain: this.evaluateTrain,
+            evaluateTest: this.evaluateTest,
+            evaluateRegularizationPenalty: this.evaluateRegularizationPenalty,
+        });
+        this.commitEvaluation(published);
+        return published;
+    }
+
+    private evaluateCandidate(
+        trigger: EvaluationTrigger,
+        model: ModelRevision,
+        computation: Pick<
+            RestoreEvaluationPreparationOptions,
+            | 'getCurrentModel'
+            | 'evaluateTrain'
+            | 'evaluateTest'
+            | 'evaluateRegularizationPenalty'
+        >,
+    ): PairedEvaluation {
         const frozenModel = this.validateAndFreezeModel(model);
-        const trainValues = this.evaluateTrain(frozenModel);
+        const trainValues = computation.evaluateTrain(frozenModel);
         assertFiniteEvaluationValues(trainValues, '$.evaluation.train.values');
-        this.assertModelUnchangedDuringEvaluation(frozenModel);
-        const testValues = this.evaluateTest(frozenModel);
+        this.assertModelUnchangedDuringEvaluation(frozenModel, computation.getCurrentModel);
+        const testValues = computation.evaluateTest(frozenModel);
         assertFiniteEvaluationValues(testValues, '$.evaluation.test.values');
-        this.assertModelUnchangedDuringEvaluation(frozenModel);
-        const regularizationPenalty = this.evaluateRegularizationPenalty(frozenModel);
+        this.assertModelUnchangedDuringEvaluation(frozenModel, computation.getCurrentModel);
+        const regularizationPenalty = computation.evaluateRegularizationPenalty(frozenModel);
         assertFiniteScientificValue(
             regularizationPenalty,
             '$.evaluation.objective.regularizationPenalty',
         );
-        this.assertModelUnchangedDuringEvaluation(frozenModel);
+        this.assertModelUnchangedDuringEvaluation(frozenModel, computation.getCurrentModel);
         const trainTotalObjective = trainValues.dataLoss + regularizationPenalty;
         assertFiniteScientificValue(
             trainTotalObjective,
@@ -295,14 +360,16 @@ export class EvaluationRuntime {
                 trainTotalObjective,
             },
         });
-        const published = deepFreeze(candidate) as PairedEvaluation;
+        return deepFreeze(candidate) as PairedEvaluation;
+    }
+
+    private commitEvaluation(published: PairedEvaluation): void {
         this.nextEvaluationId++;
         this._latestEvaluation = published;
         this.currentModel = published.model;
         // Any successful pair is current by construction, so it supersedes an
         // older cadence obligation (including after a validated restore).
         this.pendingCadenceStep = null;
-        return published;
     }
 
     private validateAndFreezeModel(model: ModelRevision): ModelRevision {
@@ -334,8 +401,11 @@ export class EvaluationRuntime {
         return this.validateAndFreezeModel(this.getCurrentModel());
     }
 
-    private assertModelUnchangedDuringEvaluation(expected: ModelRevision): void {
-        const current = this.readCurrentModel();
+    private assertModelUnchangedDuringEvaluation(
+        expected: ModelRevision,
+        getCurrentModel: () => ModelRevision,
+    ): void {
+        const current = this.validateAndFreezeModel(getCurrentModel());
         if (!sameModel(current, expected)) {
             throw new Error('current model changed during evaluation');
         }

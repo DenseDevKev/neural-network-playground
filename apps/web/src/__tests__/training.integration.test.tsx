@@ -114,6 +114,26 @@ async function fakeStrictResultForRequest(
         snapshot,
         runId,
         identities: prepared.identities,
+        checkpointTimeline: {
+            checkpoints: [{
+                id: 1,
+                step: 0,
+                epoch: 0,
+                trainLoss: trainValues.dataLoss,
+                testLoss: testValues.dataLoss,
+                ...(trainValues.accuracy === undefined
+                    ? {}
+                    : { trainAccuracy: trainValues.accuracy }),
+                ...(testValues.accuracy === undefined
+                    ? {}
+                    : { testAccuracy: testValues.accuracy }),
+                label: 'Step 0',
+            }],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: 1,
+            restoredCheckpointId: null,
+        },
         evidence: {
             type: 'evidence' as const,
             protocolVersion: 2 as const,

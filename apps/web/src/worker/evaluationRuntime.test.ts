@@ -166,6 +166,45 @@ describe('EvaluationRuntime', () => {
         expect(runtime.latestEvaluation).toBe(evaluations[6]);
     });
 
+    it('prepares a restore pair without mutation and commits it without recomputation', () => {
+        const fixture = createRuntime();
+        const initial = fixture.runtime.forceEvaluation('initial');
+        const live = recordAt(fixture, 1, 4, 0.5);
+        const restoredModel = modelAt(0, 2);
+        let evaluations = 0;
+
+        const prepared = fixture.runtime.prepareRestoreEvaluation({
+            model: restoredModel,
+            getCurrentModel: () => restoredModel,
+            evaluateTrain: () => {
+                evaluations++;
+                return { dataLoss: 0.25 };
+            },
+            evaluateTest: () => {
+                evaluations++;
+                return { dataLoss: 0.35 };
+            },
+            evaluateRegularizationPenalty: () => {
+                evaluations++;
+                return 0.05;
+            },
+        });
+
+        expect(prepared.evaluation).toMatchObject({
+            evaluationId: 2,
+            trigger: 'restore',
+            model: restoredModel,
+        });
+        expect(evaluations).toBe(3);
+        expect(fixture.runtime.latestEvaluation).toBe(initial);
+        expect(fixture.runtime.latestLiveSignal).toBe(live);
+
+        expect(prepared.commit()).toBe(prepared.evaluation);
+        expect(evaluations).toBe(3);
+        expect(fixture.runtime.latestEvaluation).toBe(prepared.evaluation);
+        expect(fixture.runtime.latestLiveSignal).toBeUndefined();
+    });
+
     it('rejects non-finite batch data before replacing the latest published signal', () => {
         const fixture = createRuntime();
         const { runtime, modelState } = fixture;

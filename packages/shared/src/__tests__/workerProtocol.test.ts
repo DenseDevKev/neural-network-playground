@@ -4,6 +4,7 @@ import {
     DEFAULT_DEMAND,
     WORKER_PROTOCOL_VERSION,
     isCaptureCheckpointRequestV2,
+    isRestoreCheckpointRequestV2,
     isCaptureRunRequestV2,
     isForceEvaluationRequestV2,
     isMainToWorkerCommand,
@@ -14,6 +15,7 @@ import {
     parseWorkerEvidenceMessageV2,
     parseWorkerExperimentRequestV2,
     parseMainToWorkerRequestV2,
+    parseCheckpointTimelineV2,
     parseWorkerToMainMessageV2,
     prepareExperimentDocument,
 } from '../index.js';
@@ -1187,6 +1189,12 @@ describe('version 2 worker protocol', () => {
             protocolVersion: 2,
             requestId: 5,
         })).toBe(true);
+        expect(isRestoreCheckpointRequestV2({
+            type: 'restore-checkpoint',
+            protocolVersion: 2,
+            requestId: 6,
+            checkpointId: 3,
+        })).toBe(true);
 
         expect(isForceEvaluationRequestV2({
             type: 'force-evaluation',
@@ -1222,5 +1230,83 @@ describe('version 2 worker protocol', () => {
             requestId: 5,
             label: 'silently ignored',
         })).toBe(false);
+        expect(parseMainToWorkerRequestV2({
+            type: 'restore-checkpoint',
+            protocolVersion: 2,
+            requestId: 6,
+            checkpointId: 3,
+        })).toEqual({
+            type: 'restore-checkpoint',
+            protocolVersion: 2,
+            requestId: 6,
+            checkpointId: 3,
+        });
+        expect(isRestoreCheckpointRequestV2({
+            type: 'restore-checkpoint',
+            protocolVersion: 2,
+            requestId: 6,
+            checkpointId: 0,
+        })).toBe(false);
+        expect(isRestoreCheckpointRequestV2({
+            type: 'restore-checkpoint',
+            protocolVersion: 2,
+            requestId: 6,
+            checkpointId: 3,
+            payload: { weights: [] },
+        })).toBe(false);
+    });
+
+    it('strictly parses bounded unique checkpoint metadata without checkpoint payloads', () => {
+        const timeline = {
+            checkpoints: [
+                {
+                    id: 1,
+                    step: 0,
+                    epoch: 0,
+                    trainLoss: 0.5,
+                    testLoss: 0.6,
+                    label: 'Step 0',
+                },
+                {
+                    id: 2,
+                    step: 4,
+                    epoch: 1,
+                    trainLoss: 0.4,
+                    testLoss: 0.5,
+                    trainAccuracy: 0.75,
+                    testAccuracy: 0.5,
+                    label: 'Step 4',
+                },
+            ],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: 2,
+            restoredCheckpointId: 1,
+        };
+        const parsed = parseCheckpointTimelineV2(timeline);
+        expect(parsed).toEqual(timeline);
+        expect(Object.isFrozen(parsed)).toBe(true);
+        expect(JSON.stringify(parsed)).not.toMatch(/weights|biases|optimizer|cursor/i);
+
+        expect(() => parseCheckpointTimelineV2({
+            ...timeline,
+            checkpoints: [...timeline.checkpoints, { ...timeline.checkpoints[0] }],
+        })).toThrow(/unique|duplicate/i);
+        expect(() => parseCheckpointTimelineV2({
+            ...timeline,
+            liveCheckpointId: 99,
+        })).toThrow(/liveCheckpointId|present/i);
+        expect(() => parseCheckpointTimelineV2({
+            ...timeline,
+            restoredCheckpointId: 99,
+        })).toThrow(/restoredCheckpointId|present/i);
+        expect(() => parseCheckpointTimelineV2({
+            ...timeline,
+            checkpoints: Array.from({ length: 9 }, (_, index) => ({
+                ...timeline.checkpoints[0],
+                id: index + 1,
+            })),
+        })).toThrow(/8|bounded/i);
+        expect(() => parseCheckpointTimelineV2({ ...timeline, payload: {} })).toThrow(/exactly/i);
     });
 });

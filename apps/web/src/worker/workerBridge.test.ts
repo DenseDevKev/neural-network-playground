@@ -65,6 +65,7 @@ import {
     setupStreamChannel,
     onSnapshot,
     newRunTo,
+    discardPendingSnapshot,
     postStreamCommand,
     startRenderLoop,
     stopRenderLoop,
@@ -453,6 +454,48 @@ describe('workerBridge streamed snapshots', () => {
         expect(receivedMessages[0].msg.type).toBe('snapshot');
         expect(receivedMessages[0].frameVersion).toBe(frame.version);
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+    });
+
+    it('discards and acknowledges a queued same-run snapshot before restore publication', () => {
+        const listener = getRegisteredStreamListener();
+        const startVersion = getFrameBuffer().version;
+
+        startRenderLoop();
+        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        expect(discardPendingSnapshot(1)).toBe(true);
+        runNextAnimationFrame();
+
+        expect(getFrameBuffer().version).toBe(startVersion);
+        expect(receivedMessages).toEqual([]);
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+
+        // Discard is not a run reset: the consumed snapshot ID remains fenced.
+        listener({ data: makeSnapshotMessage(1) } as MessageEvent);
+        runNextAnimationFrame();
+        expect(receivedMessages).toEqual([]);
+    });
+
+    it('drops and acknowledges a delayed same-run frame below the restored revision fence', () => {
+        const listener = getRegisteredStreamListener();
+        const startVersion = getFrameBuffer().version;
+
+        expect(discardPendingSnapshot(1, 5)).toBe(false);
+        startRenderLoop();
+        listener({ data: makeStrictSnapshotMessage(4) } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(getFrameBuffer().version).toBe(startVersion);
+        expect(receivedMessages).toEqual([]);
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+
+        listener({ data: makeStrictSnapshotMessage(5) } as MessageEvent);
+        runNextAnimationFrame();
+        expect(receivedMessages).toHaveLength(1);
+        expect(receivedMessages[0].msg).toMatchObject({
+            type: 'snapshot',
+            model: { generationId: 1, revision: 5 },
+        });
+        expect(fakePort1.postMessage).toHaveBeenCalledTimes(2);
     });
 
     it('atomically stores strict artifact arrays with each artifact provenance', () => {

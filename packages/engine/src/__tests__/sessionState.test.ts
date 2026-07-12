@@ -177,6 +177,18 @@ describe('Network V2 session state', () => {
         expect(restored.captureSessionState(adam)).toEqual(expected);
     });
 
+    it('builds a detached restore candidate at an explicit future revision', () => {
+        const source = makeTrainedAdamNetwork();
+        const captured = source.captureSessionState(adam);
+        const candidate = new Network({ ...networkConfig, seed: 999 });
+
+        candidate.restoreSessionState(captured, adam, 19, 41);
+
+        expect(candidate.getStep()).toBe(19);
+        expect(candidate.getRevision()).toBe(41);
+        expect(candidate.captureSessionState(adam)).toEqual(captured);
+    });
+
     it.each([
         ['Adam', adam],
         ['momentum', momentum],

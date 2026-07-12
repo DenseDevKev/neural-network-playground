@@ -31,6 +31,8 @@ const bridge = vi.hoisted(() => {
         initializeExperimentV2: vi.fn(),
         resetExperimentV2: vi.fn(),
         stepExperimentV2: vi.fn(),
+        captureCheckpointV2: vi.fn(),
+        restoreCheckpointV2: vi.fn(),
         initialize: vi.fn(),
         updateConfig: vi.fn(),
         reset: vi.fn(),
@@ -54,6 +56,7 @@ const bridge = vi.hoisted(() => {
         stopRenderLoop: vi.fn(),
         onSnapshot: vi.fn(),
         newRunTo: vi.fn(),
+        discardPendingSnapshot: vi.fn(),
         terminateWorker: vi.fn(),
     };
 });
@@ -66,6 +69,7 @@ vi.mock('../worker/workerBridge.ts', () => ({
     stopRenderLoop: bridge.stopRenderLoop,
     onSnapshot: bridge.onSnapshot,
     newRunTo: bridge.newRunTo,
+    discardPendingSnapshot: bridge.discardPendingSnapshot,
     terminateWorker: bridge.terminateWorker,
 }));
 
@@ -122,9 +126,10 @@ function makeEvidence(
     step: number,
     trigger: EvaluationTrigger,
     prepared: typeof INITIAL_PREPARED = INITIAL_PREPARED,
+    revision: number = step,
 ): WorkerEvidenceMessageV2 {
     if (!prepared) throw new Error('missing prepared fixture');
-    const model = { generationId, revision: step, step, epoch: Math.floor(step / 10) };
+    const model = { generationId, revision, step, epoch: Math.floor(step / 10) };
     const trainDataLoss = 0.4 - step * 0.001;
     const sampleCount = prepared.compiled.data.sampleCount;
     const trainCount = Math.min(sampleCount - 1, Math.max(
@@ -201,11 +206,12 @@ function makeV2Result(
     trigger: EvaluationTrigger = evaluationId === 1 ? 'initial' : 'manual-step',
     snapshot: NetworkSnapshot = makeSnapshot(step),
     prepared: typeof INITIAL_PREPARED = INITIAL_PREPARED,
+    revision: number = step,
 ) {
     if (!prepared) throw new Error('missing prepared fixture');
     snapshot = { ...snapshot };
     delete snapshot.historyPoint;
-    const baseEvidence = makeEvidence(runId, evaluationId, step, trigger, prepared);
+    const baseEvidence = makeEvidence(runId, evaluationId, step, trigger, prepared, revision);
     const snapshotConfusion = snapshot.testMetrics.confusionMatrix
         ?? snapshot.testMetrics.multiclassConfusionMatrix;
     let evidence: WorkerEvidenceMessageV2 = snapshotConfusion === undefined
@@ -223,7 +229,7 @@ function makeV2Result(
                 },
             },
         };
-    if (trigger === 'initial') {
+    if (trigger === 'initial' || trigger === 'restore') {
         evidence = {
             type: 'evidence',
             protocolVersion: 2,
@@ -286,6 +292,15 @@ function makeV2Result(
         runId,
         evidence,
         identities: prepared.identities,
+        checkpointTimeline: {
+            checkpoints: [
+                { id: 1, step: 0, epoch: 0, trainLoss: 0.4, testLoss: 0.5, label: 'Step 0' },
+            ],
+            maxCheckpoints: 8,
+            evictedCount: 0,
+            liveCheckpointId: 1,
+            restoredCheckpointId: trigger === 'restore' ? 1 : null,
+        },
         ...(Object.keys(artifacts).length === 0 ? {} : { artifacts }),
         ...(snapshot.layerStats === undefined ? {} : { layerStatsGradientRevision: step }),
     };
@@ -504,6 +519,22 @@ describe('useTraining', () => {
             );
         });
         bridge.workerApi.stepExperimentV2.mockReset().mockResolvedValue(makeV2Result(1, 4, 2));
+        bridge.workerApi.restoreCheckpointV2.mockReset().mockImplementation(() => {
+            const state = useTrainingStore.getState();
+            const generation = state.evidenceGenerationId ?? 1;
+            const revision = (state.latestLiveSignal?.model.revision
+                ?? state.latestEvaluation?.model.revision
+                ?? 0) + 1;
+            return makeV2Result(
+                generation,
+                0,
+                (state.latestEvaluation?.evaluationId ?? 1) + 1,
+                'restore',
+                makeSnapshot(0),
+                usePlaygroundStore.getState().prepared,
+                revision,
+            );
+        });
         bridge.workerApi.initializeArena.mockResolvedValue(makeArenaSnapshot(0));
         bridge.workerApi.stepArena.mockResolvedValue(makeArenaSnapshot(1));
         bridge.workerApi.restoreCheckpoint.mockResolvedValue({
@@ -532,6 +563,7 @@ describe('useTraining', () => {
         bridge.workerApi.setWebGpuEnabled.mockResolvedValue(undefined);
         bridge.setupStreamChannel.mockResolvedValue(undefined);
         bridge.onSnapshot.mockReturnValue(() => {});
+        bridge.discardPendingSnapshot.mockReturnValue(true);
     });
 
     it('initializes the worker and hydrates runtime state on mount', async () => {
@@ -1183,7 +1215,9 @@ describe('useTraining', () => {
 
         expect(useTrainingStore.getState().snapshot?.step).toBe(9);
         expect(useTrainingStore.getState().pauseReason).toBe('diverged');
-        expect(useTrainingStore.getState().checkpointTimeline.checkpoints).toEqual([]);
+        expect(useTrainingStore.getState().checkpointTimeline.checkpoints).toEqual([
+            expect.objectContaining({ id: 9, step: 9 }),
+        ]);
     });
 
     it('clears stale binary confusion when a fresh streamed snapshot omits confusion data', async () => {
@@ -1380,26 +1414,104 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().pauseReason).toBe('error');
     });
 
-    it('never reaches the legacy checkpoint mutator from a strict prepared run', async () => {
+    it('restores strict checkpoint evidence atomically without changing generation', async () => {
         const { result } = renderHook(() => useTraining());
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
-        useTrainingStore.getState().setCheckpointTimeline({
-            checkpoints: [
-                { id: 1, step: 0, epoch: 0, trainLoss: 0.4, testLoss: 0.5, label: 'Step 0' },
-            ],
-            maxCheckpoints: 8,
-            evictedCount: 0,
-            liveCheckpointId: 1,
-            restoredCheckpointId: null,
+        act(() => {
+            useTrainingStore.getState().applyEvidence(makeEvidence(1, 2, 1, 'manual-step'));
         });
+        expect(useTrainingStore.getState().latestLiveSignal).not.toBeNull();
 
         await act(async () => {
             await result.current.restoreCheckpoint(1);
         });
 
+        expect(bridge.workerApi.restoreCheckpointV2).toHaveBeenCalledWith({
+            type: 'restore-checkpoint',
+            protocolVersion: 2,
+            requestId: expect.any(Number),
+            checkpointId: 1,
+        });
+        expect(bridge.discardPendingSnapshot).toHaveBeenCalledWith(1, 2);
         expect(bridge.workerApi.restoreCheckpoint).not.toHaveBeenCalled();
+        expect(bridge.newRunTo).toHaveBeenCalledTimes(1);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(1);
+        expect(useTrainingStore.getState().latestLiveSignal).toBeNull();
+        expect(useTrainingStore.getState().latestEvaluation).toMatchObject({
+            trigger: 'restore',
+            model: { generationId: 1, revision: 2, step: 0 },
+        });
+        expect(useTrainingStore.getState().checkpointTimeline.restoredCheckpointId).toBe(1);
         expect(useTrainingStore.getState().snapshot?.step).toBe(0);
-        expect(useTrainingStore.getState().status).toBe('idle');
+        expect(useTrainingStore.getState().status).toBe('paused');
+        expect(useTrainingStore.getState().pauseReason).toBe('manual');
+    });
+
+    it('rejects forged restore metadata before changing evidence, frame, or timeline', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const before = useTrainingStore.getState();
+        const beforeFrame = getFrameVersions();
+        const forged = makeV2Result(
+            1,
+            0,
+            2,
+            'restore',
+            makeSnapshot(0),
+            INITIAL_PREPARED,
+            1,
+        );
+        forged.checkpointTimeline = {
+            ...forged.checkpointTimeline,
+            restoredCheckpointId: 99,
+        };
+        bridge.workerApi.restoreCheckpointV2.mockResolvedValueOnce(forged);
+        bridge.discardPendingSnapshot.mockClear();
+
+        await act(async () => result.current.restoreCheckpoint(1));
+
+        const after = useTrainingStore.getState();
+        expect(after.snapshot).toBe(before.snapshot);
+        expect(after.latestEvaluation).toBe(before.latestEvaluation);
+        expect(after.latestLiveSignal).toBe(before.latestLiveSignal);
+        expect(after.checkpointTimeline).toBe(before.checkpointTimeline);
+        expect(getFrameVersions()).toEqual(beforeFrame);
+        expect(bridge.discardPendingSnapshot).not.toHaveBeenCalled();
+        expect(after.workerError).toMatch(/restoredCheckpointId|present|timeline/i);
+    });
+
+    it('does not publish a restore completion after the hook unmounts', async () => {
+        const pending = deferred<ReturnType<typeof makeV2Result>>();
+        bridge.workerApi.restoreCheckpointV2.mockReset().mockReturnValueOnce(pending.promise);
+        const { result, unmount } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        bridge.discardPendingSnapshot.mockClear();
+        let restorePromise!: Promise<void>;
+
+        act(() => {
+            restorePromise = result.current.restoreCheckpoint(1);
+        });
+        await waitFor(() => expect(bridge.workerApi.restoreCheckpointV2).toHaveBeenCalledTimes(1));
+        unmount();
+        const afterUnmount = useTrainingStore.getState();
+        await act(async () => {
+            pending.resolve(makeV2Result(
+                1,
+                0,
+                2,
+                'restore',
+                makeSnapshot(0),
+                INITIAL_PREPARED,
+                1,
+            ));
+            await restorePromise;
+        });
+
+        const after = useTrainingStore.getState();
+        expect(after.snapshot).toBe(afterUnmount.snapshot);
+        expect(after.latestEvaluation).toBe(afterUnmount.latestEvaluation);
+        expect(after.checkpointTimeline).toBe(afterUnmount.checkpointTimeline);
+        expect(bridge.discardPendingSnapshot).not.toHaveBeenCalled();
     });
 
     it('clears pause reason on reset', async () => {
@@ -1838,7 +1950,7 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
     });
 
-    it('uses only strict V2 lifecycle methods and keeps checkpoint restore unreachable', async () => {
+    it('waits for pause acknowledgement and uses only strict V2 lifecycle methods', async () => {
         const { result } = renderHook(() => useTraining());
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
@@ -1861,8 +1973,28 @@ describe('useTraining', () => {
         expect(bridge.workerApi.step).not.toHaveBeenCalled();
         expect(bridge.workerApi.reset).not.toHaveBeenCalled();
         expect(bridge.workerApi.restoreCheckpoint).not.toHaveBeenCalled();
-        expect(bridge.postStreamCommand).toHaveBeenCalledTimes(1);
-        expect(useTrainingStore.getState().checkpointTimeline.checkpoints).toEqual([]);
+        expect(bridge.workerApi.restoreCheckpointV2).toHaveBeenCalledTimes(1);
+        expect(bridge.newRunTo).toHaveBeenCalledTimes(2);
+        expect(useTrainingStore.getState().checkpointTimeline.restoredCheckpointId).toBe(1);
+    });
+
+    it('waits for worker pause acknowledgement before restoring a running checkpoint', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        act(() => result.current.play());
+        expect(useTrainingStore.getState().status).toBe('running');
+        bridge.postStreamCommand.mockClear();
+
+        let restorePromise!: Promise<void>;
+        act(() => {
+            restorePromise = result.current.restoreCheckpoint(1);
+        });
+        expect(bridge.postStreamCommand).toHaveBeenCalledWith({ type: 'stopTraining' });
+        expect(bridge.workerApi.restoreCheckpointV2).not.toHaveBeenCalled();
+
+        act(() => getStreamHandler()({ type: 'status', runId: 1, status: 'paused' }));
+        await act(async () => restorePromise);
+        expect(bridge.workerApi.restoreCheckpointV2).toHaveBeenCalledTimes(1);
     });
 
     it('applies streamed V2 evidence immediately and pauses only for current-generation errors', async () => {

@@ -180,6 +180,10 @@ describe('TrainingControls', () => {
     const slider = screen.getByRole('slider', { name: 'Checkpoint timeline' });
     expect(slider).toHaveValue('1');
     expect(screen.getByRole('button', { name: 'Restore checkpoint Step 10' })).toBeInTheDocument();
+    expect(screen.getByText('Restore in-session parameters and optimizer state')).toBeInTheDocument();
+    expect(screen.getByText(
+      'Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.',
+    )).toBeInTheDocument();
 
     slider.focus();
     await user.keyboard('{ArrowLeft}');

@@ -84,11 +84,19 @@ export interface CaptureCheckpointRequestV2 {
     readonly requestId: number;
 }
 
+export interface RestoreCheckpointRequestV2 {
+    readonly type: 'restore-checkpoint';
+    readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
+    readonly requestId: number;
+    readonly checkpointId: number;
+}
+
 export type MainToWorkerRequestV2 =
     | WorkerExperimentRequestV2
     | ForceEvaluationRequestV2
     | CaptureRunRequestV2
-    | CaptureCheckpointRequestV2;
+    | CaptureCheckpointRequestV2
+    | RestoreCheckpointRequestV2;
 
 export interface WorkerArtifactProvenanceV2 {
     readonly confusionMatrix?: ArtifactProvenance;
@@ -319,6 +327,19 @@ export function isCaptureCheckpointRequestV2(
     return isExactCaptureRequest(value, 'capture-checkpoint');
 }
 
+export function isRestoreCheckpointRequestV2(
+    value: unknown,
+): value is RestoreCheckpointRequestV2 {
+    return hasExactOwnKeys(
+        value,
+        ['type', 'protocolVersion', 'requestId', 'checkpointId'],
+    )
+        && value['type'] === 'restore-checkpoint'
+        && value['protocolVersion'] === WORKER_PROTOCOL_VERSION
+        && isRequestId(value['requestId'])
+        && isRequestId(value['checkpointId']);
+}
+
 const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 function isCanonicalTimestamp(value: unknown): value is string {
@@ -359,7 +380,8 @@ export function parseMainToWorkerRequestV2(value: unknown): MainToWorkerRequestV
     if (isWorkerExperimentRequestV2Snapshot(snapshot)
         || isForceEvaluationRequestV2(snapshot)
         || isCaptureRunRequestV2(snapshot)
-        || isCaptureCheckpointRequestV2(snapshot)) {
+        || isCaptureCheckpointRequestV2(snapshot)
+        || isRestoreCheckpointRequestV2(snapshot)) {
         return snapshot as MainToWorkerRequestV2;
     }
     throw new TypeError('main-to-worker request: invalid version-2 request');
@@ -820,7 +842,11 @@ function isArenaModelSummaryList(value: unknown): value is ArenaModelSummary[] {
 }
 
 function isCheckpointSummary(value: unknown): value is CheckpointSummary {
-    if (!isRecord(value)) return false;
+    if (!hasExactOwnKeys(
+        value,
+        ['id', 'step', 'epoch', 'trainLoss', 'testLoss', 'label'],
+        ['trainAccuracy', 'testAccuracy'],
+    )) return false;
     return (
         isPositiveInteger(value['id']) &&
         isNonNegativeInteger(value['step']) &&
@@ -828,9 +854,12 @@ function isCheckpointSummary(value: unknown): value is CheckpointSummary {
         isFiniteNumber(value['trainLoss']) &&
         isFiniteNumber(value['testLoss']) &&
         isOptionalFiniteNumber(value['trainAccuracy']) &&
+        (value['trainAccuracy'] === undefined || (value['trainAccuracy'] >= 0 && value['trainAccuracy'] <= 1)) &&
         isOptionalFiniteNumber(value['testAccuracy']) &&
+        (value['testAccuracy'] === undefined || (value['testAccuracy'] >= 0 && value['testAccuracy'] <= 1)) &&
         typeof value['label'] === 'string' &&
-        value['label'].length > 0
+        value['label'].length > 0 &&
+        value['label'].length <= 120
     );
 }
 
@@ -838,20 +867,64 @@ function isNullablePositiveInteger(value: unknown): value is number | null {
     return value === null || isPositiveInteger(value);
 }
 
-function isCheckpointTimeline(value: unknown): value is CheckpointTimeline {
-    if (!isRecord(value)) return false;
-    return (
-        Array.isArray(value['checkpoints']) &&
-        value['checkpoints'].every(isCheckpointSummary) &&
-        isPositiveInteger(value['maxCheckpoints']) &&
-        isNonNegativeInteger(value['evictedCount']) &&
-        isNullablePositiveInteger(value['liveCheckpointId']) &&
-        isNullablePositiveInteger(value['restoredCheckpointId'])
-    );
+function assertCheckpointTimelineV2Snapshot(value: unknown): asserts value is CheckpointTimeline {
+    if (!hasExactOwnKeys(value, [
+        'checkpoints',
+        'maxCheckpoints',
+        'evictedCount',
+        'liveCheckpointId',
+        'restoredCheckpointId',
+    ])) {
+        throw new TypeError('checkpoint timeline must contain exactly the version-2 metadata fields');
+    }
+    if (value['maxCheckpoints'] !== 8) {
+        throw new TypeError('checkpoint timeline maxCheckpoints must be 8');
+    }
+    if (!Array.isArray(value['checkpoints']) || value['checkpoints'].length > 8) {
+        throw new TypeError('checkpoint timeline checkpoints must be bounded to 8 entries');
+    }
+    if (!value['checkpoints'].every(isCheckpointSummary)) {
+        throw new TypeError('checkpoint timeline contains a malformed checkpoint summary');
+    }
+    if (!isNonNegativeInteger(value['evictedCount'])) {
+        throw new TypeError('checkpoint timeline evictedCount must be a non-negative integer');
+    }
+    if (!isNullablePositiveInteger(value['liveCheckpointId'])) {
+        throw new TypeError('checkpoint timeline liveCheckpointId must be null or positive');
+    }
+    if (!isNullablePositiveInteger(value['restoredCheckpointId'])) {
+        throw new TypeError('checkpoint timeline restoredCheckpointId must be null or positive');
+    }
+    const ids = value['checkpoints'].map((entry) => entry.id);
+    if (new Set(ids).size !== ids.length) {
+        throw new TypeError('checkpoint timeline checkpoint IDs must be unique');
+    }
+    if (value['liveCheckpointId'] !== null && !ids.includes(value['liveCheckpointId'])) {
+        throw new TypeError('checkpoint timeline liveCheckpointId must be present in checkpoints');
+    }
+    if (value['restoredCheckpointId'] !== null
+        && !ids.includes(value['restoredCheckpointId'])) {
+        throw new TypeError('checkpoint timeline restoredCheckpointId must be present in checkpoints');
+    }
+}
+
+export function parseCheckpointTimelineV2(value: unknown): CheckpointTimeline {
+    const snapshot = createStableJsonSnapshot(value);
+    assertCheckpointTimelineV2Snapshot(snapshot);
+    return snapshot;
+}
+
+export function isCheckpointTimelineV2(value: unknown): value is CheckpointTimeline {
+    try {
+        assertCheckpointTimelineV2Snapshot(value);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function hasMalformedCheckpointTimelinePayload(m: Record<string, unknown>): boolean {
-    return 'checkpointTimeline' in m && !isCheckpointTimeline(m['checkpointTimeline']);
+    return 'checkpointTimeline' in m && !isCheckpointTimelineV2(m['checkpointTimeline']);
 }
 
 function hasValidSnapshotArtifactProvenance(m: Record<string, unknown>): boolean {

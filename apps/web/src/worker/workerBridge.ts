@@ -39,6 +39,7 @@ let _comlinkApi: Comlink.Remote<TrainingWorkerApi> | null = null;
 let _streamPort: MessagePort | null = null;
 let _currentRunId = 0;
 let _latestSnapshotId = -1;
+let _minimumSnapshotRevision = 0;
 let _rafId: number | null = null;
 let _pendingSnapshot: WorkerToMainMessage | null = null;
 
@@ -230,6 +231,25 @@ function handleWorkerMessage(msg: unknown): void {
 
     if (msg.type === 'snapshot') {
         const snapshot = snapshotWithFrozenArtifactProvenance(msg);
+        if (snapshot.runId === _currentRunId
+            && snapshot.protocolVersion === 2
+            && _minimumSnapshotRevision > 0) {
+            if (snapshot.model === undefined
+                || snapshot.model.generationId !== snapshot.runId
+                || !Number.isSafeInteger(snapshot.model.revision)
+                || snapshot.model.revision < 0) {
+                if (_streamPort) _streamPort.postMessage({ type: 'frameAck' });
+                emitWorkerError('Received strict snapshot without a valid current model revision');
+                return;
+            }
+            if (snapshot.model.revision < _minimumSnapshotRevision) {
+                // Comlink replies and stream-port messages use independent
+                // channels. A pre-restore frame can therefore arrive after
+                // the restore RPC; acknowledge it without making it visible.
+                if (_streamPort) _streamPort.postMessage({ type: 'frameAck' });
+                return;
+            }
+        }
         // Drop out-of-order snapshots
         if (snapshot.snapshotId <= _latestSnapshotId && snapshot.runId === _currentRunId) return;
         _latestSnapshotId = snapshot.snapshotId;
@@ -565,6 +585,7 @@ export function postStreamCommand(cmd: MainToWorkerCommand): void {
 export function newRun(): number {
     _currentRunId++;
     _latestSnapshotId = -1;
+    _minimumSnapshotRevision = 0;
     _pendingSnapshot = null;
     clearSharedBuffersIfRunMismatch();
     return _currentRunId;
@@ -576,8 +597,34 @@ export function newRun(): number {
 export function newRunTo(targetRunId: number): void {
     _currentRunId = targetRunId;
     _latestSnapshotId = -1;
+    _minimumSnapshotRevision = 0;
     _pendingSnapshot = null;
     clearSharedBuffersIfRunMismatch();
+}
+
+/**
+ * Drop one visual frame queued before a same-generation restore commit and,
+ * when provided, retain a minimum revision fence for delayed stream frames.
+ * The snapshot ID fence is intentionally retained, and every discarded frame
+ * is acknowledged so worker back-pressure cannot remain stuck.
+ */
+export function discardPendingSnapshot(
+    runId: number,
+    minimumRevision?: number,
+): boolean {
+    if (runId !== _currentRunId) return false;
+    if (minimumRevision !== undefined) {
+        if (!Number.isSafeInteger(minimumRevision) || minimumRevision < 0) {
+            throw new RangeError('minimum snapshot revision must be a non-negative safe integer');
+        }
+        _minimumSnapshotRevision = Math.max(_minimumSnapshotRevision, minimumRevision);
+    }
+    if (_pendingSnapshot?.type !== 'snapshot' || _pendingSnapshot.runId !== runId) {
+        return false;
+    }
+    _pendingSnapshot = null;
+    if (_streamPort) _streamPort.postMessage({ type: 'frameAck' });
+    return true;
 }
 
 /**
@@ -615,6 +662,7 @@ export function terminateWorker(): void {
     }
     _currentRunId = 0;
     _latestSnapshotId = -1;
+    _minimumSnapshotRevision = 0;
     _pendingSnapshot = null;
     _onSnapshot = null;
     // SAB views outlive a single run (they're shared with the worker) but
