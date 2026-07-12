@@ -655,6 +655,77 @@ describe('training worker scientific-trust V2 boundary', () => {
         ))).toBe(true);
     });
 
+    it('captures one worker-owned save pair with bounded same-generation histories', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const initialized = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.stepExperimentV2(3);
+
+        const record = await workerApi.captureRunArtifact({
+            id: '00000000-0000-0000-0000-000000000009',
+            createdAt: '2026-07-11T12:00:00.000Z',
+            updatedAt: '2026-07-11T12:00:00.000Z',
+            title: 'Worker evidence',
+        });
+
+        expect(record).toMatchObject({
+            kind: 'nn-playground-run',
+            schemaVersion: 2,
+            recipe: fixtures.prepared.document.recipe,
+            recipeFingerprint: fixtures.prepared.identities.recipeFingerprint,
+            snapshot: {
+                model: { generationId: initialized.runId, revision: 3, step: 3 },
+                evaluation: {
+                    trigger: 'save',
+                    model: { generationId: initialized.runId, revision: 3, step: 3 },
+                    dataset: { datasetKey: fixtures.prepared.identities.datasetKey },
+                    objectiveKey: fixtures.prepared.identities.objectiveKey,
+                },
+            },
+        });
+        expect(record.snapshot.evaluationHistory.at(-1)).toEqual(record.snapshot.evaluation);
+        expect(record.snapshot.trendHistory.length).toBeLessThanOrEqual(512);
+        expect(record.snapshot.evaluationHistory.length).toBeLessThanOrEqual(256);
+        expect(record.snapshot.trendHistory.every(
+            (point) => point.model.generationId === initialized.runId,
+        )).toBe(true);
+        expect(record.snapshot.evaluationHistory.every(
+            (point) => point.model.generationId === initialized.runId,
+        )).toBe(true);
+        expect(JSON.stringify(record)).not.toMatch(/weights|biases|parameters/i);
+    });
+
+    it('snapshots capture evidence before asynchronous validation can interleave a later step', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.stepExperimentV2(1);
+
+        const pending = workerApi.captureRunArtifact({
+            id: '00000000-0000-0000-0000-000000000010',
+            createdAt: '2026-07-11T12:00:00.000Z',
+            updatedAt: '2026-07-11T12:00:00.000Z',
+        });
+        const later = workerApi.stepExperimentV2(1);
+        const record = await pending;
+
+        expect(record.snapshot.model.revision).toBe(1);
+        expect(later.evidence.latestEvaluation?.model.revision).toBe(2);
+        expect(record.snapshot.evaluationHistory.at(-1)).toEqual(record.snapshot.evaluation);
+    });
+
+    it('rejects malformed capture metadata before changing worker history', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const before = workerApi.getMetricHistoryV2();
+
+        await expect(workerApi.captureRunArtifact({
+            id: 'not-a-uuid',
+            createdAt: '2026-07-11T12:00:00.000Z',
+            updatedAt: '2026-07-11T12:00:00.000Z',
+        })).rejects.toThrow(/capture run artifact request/i);
+
+        expect(workerApi.getMetricHistoryV2()).toEqual(before);
+    });
+
     it('forces and publishes an exact current pair before a comparison stop condition', async () => {
         vi.useFakeTimers();
         const fixtures = await createScientificTrustFixtures();

@@ -52,6 +52,9 @@ import {
     normalizeAppConfig,
     parseWorkerEvidenceMessageV2,
     parseWorkerProtocolErrorMessageV2,
+    parseCaptureRunArtifactRequestV2,
+    validateExperimentRunRecordV2,
+    compactEvenly,
     WORKER_PROTOCOL_VERSION,
 } from '@nn-playground/shared';
 import type {
@@ -78,6 +81,8 @@ import type {
     WorkerProtocolErrorCodeV2,
     WorkerProtocolErrorSourceV2,
     WorkerArtifactProvenanceV2,
+    CaptureRunArtifactRequestV2,
+    ExperimentRunRecordV2,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 import {
@@ -3055,6 +3060,43 @@ export const workerApi = {
             } else {
                 postRuntimeErrorV2(error, 'evaluation', 'evaluation-failed');
             }
+            throw error;
+        }
+    },
+
+    /**
+     * Capture recipe and scientific evidence in one worker-owned boundary.
+     * Every mutable read completes before asynchronous fingerprint validation
+     * yields, so a later command cannot be mixed into this saved artifact.
+     */
+    async captureRunArtifact(request: unknown): Promise<ExperimentRunRecordV2> {
+        try {
+            const metadata: CaptureRunArtifactRequestV2 = parseCaptureRunArtifactRequestV2(request);
+            const { prepared, history } = requireV2Runtime();
+            const evaluation = forceAndPublishEvaluationV2('save');
+            const capturedHistory = history.read();
+            const candidate: ExperimentRunRecordV2 = {
+                kind: 'nn-playground-run',
+                schemaVersion: 2,
+                ...metadata,
+                recipe: prepared.document.recipe,
+                recipeFingerprint: prepared.identities.recipeFingerprint,
+                snapshot: {
+                    model: evaluation.model,
+                    evaluation,
+                    trendHistory: compactEvenly(capturedHistory.trendHistory, 512),
+                    evaluationHistory: compactEvenly(capturedHistory.evaluationHistory, 256),
+                },
+            };
+            const validated = await validateExperimentRunRecordV2(candidate);
+            if (!validated.ok) {
+                throw new TypeError(validated.issues.map(
+                    (entry) => `${entry.path}: ${entry.message}`,
+                ).join('; '));
+            }
+            return validated.value;
+        } catch (error) {
+            postRuntimeErrorV2(error, 'persistence', 'capture-failed');
             throw error;
         }
     },

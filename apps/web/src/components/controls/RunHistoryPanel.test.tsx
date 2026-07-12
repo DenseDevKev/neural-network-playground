@@ -1,607 +1,243 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    EXPERIMENT_MEMORY_ENVELOPE_KIND,
+    PREPARED_PRESETS,
+} from '@nn-playground/shared';
+import type {
+    ExperimentRunRecordV2,
+    PreparedExperimentDocumentV2,
+} from '@nn-playground/shared';
 import { RunHistoryPanel } from './RunHistoryPanel.tsx';
 import {
     EXPERIMENT_MEMORY_STORAGE_KEY,
+    LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY,
     useExperimentMemoryStore,
 } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
-import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import {
-    resetFrameBuffer,
-    updateFrameBuffer,
-} from '../../worker/frameBuffer.ts';
-import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
-import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-} from '@nn-playground/shared';
 
-function makeRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentRunRecordV1 {
+const workerApi = vi.hoisted(() => ({
+    captureRunArtifact: vi.fn(),
+}));
+
+vi.mock('../../worker/workerBridge.ts', () => ({
+    getWorkerApi: () => workerApi,
+}));
+
+const IDS = [
+    '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-0000-0000-000000000002',
+    '00000000-0000-0000-0000-000000000003',
+] as const;
+
+function preset(id: (typeof PREPARED_PRESETS)[number]['id']) {
+    const entry = PREPARED_PRESETS.find((candidate) => candidate.id === id);
+    if (!entry) throw new Error(`Missing preset ${id}`);
+    return entry.prepared;
+}
+
+function makeRecord(
+    prepared: PreparedExperimentDocumentV2,
+    id = IDS[0],
+    title = 'Saved evidence',
+    testDataLoss = 0.5,
+): ExperimentRunRecordV2 {
+    const sampleCount = prepared.document.recipe.data.sampleCount;
+    const trainCount = Math.floor(sampleCount * prepared.document.recipe.data.trainFraction);
+    const testCount = sampleCount - trainCount;
+    const model = { generationId: Number(id.at(-1)) || 1, revision: 4, step: 4, epoch: 0 };
+    const dataset = {
+        generatorVersion: 2,
+        datasetKey: prepared.identities.datasetKey,
+        trainCount,
+        testCount,
+    };
+    const evaluation = {
+        evaluationId: 2,
+        trigger: 'save' as const,
+        model,
+        dataset,
+        objectiveKey: prepared.identities.objectiveKey,
+        train: {
+            basis: { kind: 'full-split' as const, split: 'train' as const, sampleCount: trainCount, populationCount: trainCount },
+            values: { dataLoss: 0.4 },
+        },
+        test: {
+            basis: { kind: 'full-split' as const, split: 'test' as const, sampleCount: testCount, populationCount: testCount },
+            values: { dataLoss: testDataLoss },
+        },
+        objective: { regularizationPenalty: 0, trainTotalObjective: 0.4 },
+    };
     return {
-        schemaVersion: 1,
-        id: 'run-1',
-        createdAt: '2026-04-26T00:00:00.000Z',
-        updatedAt: '2026-04-26T00:00:00.000Z',
-        title: 'Saved XOR',
-        config: {
-            data: { ...DEFAULT_DATA, dataset: 'xor' },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, hiddenLayers: [4, 4], seed: DEFAULT_DATA.seed },
-            training: { ...DEFAULT_TRAINING },
-            features: { ...DEFAULT_FEATURES },
-            ui: { showTestData: true, discretizeOutput: false },
+        kind: 'nn-playground-run',
+        schemaVersion: 2,
+        id,
+        createdAt: '2026-07-11T12:00:00.000Z',
+        updatedAt: '2026-07-11T12:00:00.000Z',
+        title,
+        recipe: prepared.document.recipe,
+        recipeFingerprint: prepared.identities.recipeFingerprint,
+        snapshot: {
+            model,
+            evaluation,
+            trendHistory: [],
+            evaluationHistory: [evaluation],
         },
-        summary: {
-            status: 'paused',
-            pauseReason: 'manual',
-            step: 120,
-            epoch: 3,
-            trainLoss: 0.22,
-            testLoss: 0.31,
-            trainMetrics: { loss: 0.22, accuracy: 0.9 },
-            testMetrics: { loss: 0.31, accuracy: 0.8 },
-        },
-        network: null,
-        history: [{ step: 120, trainLoss: 0.22, testLoss: 0.31 }],
-        ...overrides,
     };
 }
 
-function makeApprovedMulticlassConfig() {
-    return {
-        data: {
-            ...DEFAULT_DATA,
-            dataset: 'three-class-clusters' as const,
-            problemType: 'classification' as const,
-        },
-        network: {
-            ...DEFAULT_NETWORK,
-            inputSize: 2,
-            hiddenLayers: [],
-            outputSize: 3,
-            outputActivation: 'softmax' as const,
-            seed: DEFAULT_DATA.seed,
-        },
-        training: {
-            ...DEFAULT_TRAINING,
-            lossType: 'categoricalCrossEntropy' as const,
-        },
-        features: { ...DEFAULT_FEATURES },
-        ui: { showTestData: true, discretizeOutput: false },
-    };
-}
-
-function makeApprovedMulticlassRecord(overrides: Partial<ExperimentRunRecordV1> = {}): ExperimentRunRecordV1 {
-    return makeRecord({
-        id: 'multiclass',
-        title: 'Three class clusters',
-        config: makeApprovedMulticlassConfig(),
-        network: null,
-        ...overrides,
+async function hydrateSingleton(): Promise<void> {
+    await act(async () => {
+        await useExperimentMemoryStore.getState().hydrate();
     });
 }
 
-const workerAuthoredMulticlassConfusion = {
-    classCount: 3,
-    classLabels: [0, 1, 2],
-    counts: [2, 0, 1, 0, 3, 0, 1, 0, 4],
-} as const;
-
-describe('RunHistoryPanel', () => {
-    beforeEach(() => {
+describe('RunHistoryPanel V2 evidence memory', () => {
+    beforeEach(async () => {
         window.localStorage.clear();
-        useExperimentMemoryStore.getState().clearRecords();
-        usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
-        });
-        useTrainingStore.getState().resetHistory();
-        useTrainingStore.setState({
-            status: 'paused',
-            snapshot: null,
-            pauseReason: null,
-            arenaSummaries: null,
-            arenaSummariesVersion: 0,
-        });
-        resetFrameBuffer();
-    });
-
-    afterEach(() => {
+        workerApi.captureRunArtifact.mockReset();
         vi.restoreAllMocks();
+        await hydrateSingleton();
     });
 
-    it('renders an empty state when no runs are saved', () => {
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
+    it('asks the worker to author the record from metadata only and persists its artifact', async () => {
+        const prepared = usePlaygroundStore.getState().prepared!;
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: {
+            id: string;
+            createdAt: string;
+            updatedAt: string;
+        }) => makeRecord(prepared, metadata.id, 'Captured run'));
 
-        expect(screen.getByText('History is the saved-run record surface.')).toBeInTheDocument();
-        expect(screen.getByText('No saved runs')).toBeInTheDocument();
-    });
+        render(<RunHistoryPanel />);
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
 
-    it('does not create a new legacy V1 record from the current V2 runtime', async () => {
-        useTrainingStore.setState({
-            snapshot: {
-                step: 5,
-                epoch: 1,
-                trainLoss: 0.4,
-                testLoss: 0.5,
-                trainMetrics: { loss: 0.4, accuracy: 0.8 },
-                testMetrics: { loss: 0.5, accuracy: 0.7 },
-                weights: [[[0.1, 0.2]]],
-                biases: [[0.3]],
-                outputGrid: [],
-                gridSize: 50,
-                historyPoint: { step: 5, trainLoss: 0.4, testLoss: 0.5 },
-            } as any,
+        await waitFor(() => expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1));
+        const request = workerApi.captureRunArtifact.mock.calls[0][0];
+        expect(request).toEqual({
+            id: expect.stringMatching(/^[0-9a-f-]{36}$/u),
+            createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/u),
+            updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/u),
         });
-        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
-
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
-        const saveButton = screen.getByRole('button', { name: 'Save current run' });
-        expect(saveButton).toBeDisabled();
-        await userEvent.click(saveButton);
-
-        expect(screen.getByText(/v2 run saving is unavailable until provenance-aware records/i))
-            .toBeInTheDocument();
-        expect(useExperimentMemoryStore.getState().records).toHaveLength(0);
-        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
+        expect(Object.keys(request).sort()).toEqual(['createdAt', 'id', 'updatedAt']);
+        await waitFor(() => expect(screen.getByText('Captured run')).toBeInTheDocument());
+        const persisted = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '';
+        expect(persisted).toContain('"kind":"nn-playground-run"');
+        expect(persisted).not.toMatch(/weights|biases|parameters/i);
     });
 
-    it('keeps approved multiclass V2 state out of legacy V1 storage', async () => {
-        const multiclassConfig = makeApprovedMulticlassConfig();
-        usePlaygroundStore.setState(multiclassConfig);
-        useTrainingStore.setState({
-            snapshot: {
-                step: 7,
-                epoch: 1,
-                trainLoss: 0.36,
-                testLoss: 0.44,
-                trainMetrics: { loss: 0.36, accuracy: 0.76 },
-                testMetrics: { loss: 0.44, accuracy: 0.7 },
-                weights: [[[0.1, 0.2], [0.3, -0.2], [-0.1, 0.4]]],
-                biases: [[0.01, -0.02, 0.03]],
-                outputGrid: [],
-                gridSize: 50,
-                historyPoint: { step: 7, trainLoss: 0.36, testLoss: 0.44 },
-            } as any,
+    it('retries persistence with the captured record instead of recapturing scientific state', async () => {
+        const prepared = usePlaygroundStore.getState().prepared!;
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
+            makeRecord(prepared, metadata.id, 'Retry me')
+        ));
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
+            throw new DOMException('Quota exceeded', 'QuotaExceededError');
         });
-        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
 
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
-        const saveButton = screen.getByRole('button', { name: 'Save current run' });
-        expect(saveButton).toBeDisabled();
-        await userEvent.click(saveButton);
+        render(<RunHistoryPanel />);
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        await screen.findByText(/quota/i);
+        expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1);
 
-        expect(useExperimentMemoryStore.getState().records).toHaveLength(0);
-        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
+        setItem.mockRestore();
+        await userEvent.click(screen.getByRole('button', { name: 'Retry saving' }));
+
+        await waitFor(() => expect(screen.getByText('Retry me')).toBeInTheDocument());
+        expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1);
+        expect(useExperimentMemoryStore.getState().persistenceError).toBeNull();
     });
 
-    it('does not create legacy bytes from worker-authored multiclass confusion data', async () => {
-        const multiclassConfig = makeApprovedMulticlassConfig();
-        usePlaygroundStore.setState(multiclassConfig);
-        updateFrameBuffer({ multiclassConfusionMatrix: workerAuthoredMulticlassConfusion });
-        useTrainingStore.setState({
-            snapshot: {
-                step: 7,
-                epoch: 1,
-                trainLoss: 0.36,
-                testLoss: 0.44,
-                trainMetrics: { loss: 0.36, accuracy: 0.76 },
-                testMetrics: {
-                    loss: 0.44,
-                    accuracy: 0.7,
-                    multiclassConfusionMatrix: workerAuthoredMulticlassConfusion,
-                },
-                weights: [[[0.1, 0.2], [0.3, -0.2], [-0.1, 0.4]]],
-                biases: [[0.01, -0.02, 0.03]],
-                outputGrid: [],
-                gridSize: 50,
-                historyPoint: { step: 7, trainLoss: 0.36, testLoss: 0.44 },
-            } as any,
+    it('applies a saved recipe through a fresh version-2 document', async () => {
+        const prepared = preset('xor-hidden');
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(makeRecord(prepared));
         });
-        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument');
 
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
-        const saveButton = screen.getByRole('button', { name: 'Save current run' });
-        expect(saveButton).toBeDisabled();
-        await userEvent.click(saveButton);
+        render(<RunHistoryPanel />);
+        await userEvent.click(screen.getByRole('button', { name: 'Apply saved recipe' }));
 
-        expect(useExperimentMemoryStore.getState().records).toHaveLength(0);
-        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
-    });
-
-    it('keeps V1 saved runs read-only without entering the V2 runtime', () => {
-        const onRestore = vi.fn();
-        const onInitializeArena = vi.fn();
-        const onStepArena = vi.fn();
-        const store = usePlaygroundStore.getState();
-        const applyRecipe = vi.spyOn(store, 'applyRecipe');
-        const replaceDocument = vi.spyOn(store, 'replaceDocument');
-        const priorPrepared = store.prepared;
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord());
-        });
-        const priorBytes = JSON.stringify(useExperimentMemoryStore.getState().records[0]);
-
-        render(
-            <RunHistoryPanel
-                onRestore={onRestore}
-                onInitializeArena={onInitializeArena}
-                onStepArena={onStepArena}
-            />,
-        );
-
-        expect(screen.getByText('Legacy V1 record')).toBeInTheDocument();
-        expect(screen.getByText(/read-only and incompatible with the v2 experiment runtime/i))
-            .toBeInTheDocument();
+        await waitFor(() => expect(replaceDocument).toHaveBeenCalledWith(expect.objectContaining({
+            kind: 'nn-playground-experiment',
+            schemaVersion: 2,
+            recipe: prepared.document.recipe,
+        })));
         expect(screen.queryByRole('button', { name: /restore/i })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /live arena/i })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /delete/i })).not.toBeInTheDocument();
-        expect(usePlaygroundStore.getState().prepared).toBe(priorPrepared);
-        expect(JSON.stringify(useExperimentMemoryStore.getState().records[0])).toBe(priorBytes);
-        expect(applyRecipe).not.toHaveBeenCalled();
-        expect(replaceDocument).not.toHaveBeenCalled();
-        expect(onRestore).not.toHaveBeenCalled();
-        expect(onInitializeArena).not.toHaveBeenCalled();
-        expect(onStepArena).not.toHaveBeenCalled();
     });
 
-    it('shows existing-data comparison summaries between saved runs', () => {
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'baseline',
-                title: 'Baseline',
-                updatedAt: '2026-04-26T00:00:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 100,
-                    trainLoss: 0.4,
-                    testLoss: 0.6,
-                },
-            }));
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'tuned',
-                title: 'Tuned model',
-                updatedAt: '2026-04-26T00:01:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 180,
-                    trainLoss: 0.25,
-                    testLoss: 0.42,
-                },
-            }));
+    it('shows no numeric winner when dataset or objective identity differs', async () => {
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(makeRecord(
+                preset('circle-one-layer'),
+                IDS[0],
+                'Circle',
+                0.4,
+            ));
+            await useExperimentMemoryStore.getState().saveRecord(makeRecord(
+                preset('regression-plane'),
+                IDS[1],
+                'Regression',
+                0.2,
+            ));
         });
 
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
+        render(<RunHistoryPanel />);
 
-        expect(screen.getByRole('group', { name: 'Comparison for Tuned model against Baseline' })).toBeInTheDocument();
-        expect(screen.getByText('Compared with Baseline')).toBeInTheDocument();
-        expect(screen.getAllByText('Legacy V1 record')).toHaveLength(2);
-        expect(screen.getAllByText(/read-only and incompatible with the V2 experiment runtime/i)).toHaveLength(2);
-        expect(screen.getByRole('group', { name: 'Comparison for Tuned model against Baseline' }))
-            .toHaveTextContent(/not directly comparable/i);
-        expect(screen.queryByText('Train loss -0.1500')).not.toBeInTheDocument();
-        expect(screen.queryByText(/next adjustment:/i)).not.toBeInTheDocument();
+        const comparison = screen.getByRole('group', { name: 'Saved run comparison' });
+        expect(comparison).toHaveTextContent('Not directly comparable');
+        expect(comparison).not.toHaveTextContent(/winner|lower by|better/i);
     });
 
-    it('does not fabricate a current V2 versus legacy V1 winner', () => {
-        useTrainingStore.setState({
-            snapshot: {
-                step: 220,
-                epoch: 4,
-                trainLoss: 0.2,
-                testLoss: 0.36,
-                trainMetrics: { loss: 0.2, accuracy: 0.92 },
-                testMetrics: { loss: 0.36, accuracy: 0.84 },
-                weights: [[[0.1, 0.2]]],
-                biases: [[0.3]],
-                outputGrid: [],
-                gridSize: 50,
-            } as any,
-        });
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'previous',
-                title: 'Previous run',
-                updatedAt: '2026-04-26T00:00:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 180,
-                    trainLoss: 0.25,
-                    testLoss: 0.42,
-                },
-            }));
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'best',
-                title: 'Best saved',
-                updatedAt: '2026-04-26T00:01:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 160,
-                    trainLoss: 0.21,
-                    testLoss: 0.33,
-                },
-            }));
+    it('computes a numeric winner only for equal dataset and objective identities', async () => {
+        const prepared = preset('circle-one-layer');
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(makeRecord(prepared, IDS[0], 'Baseline', 0.6));
+            await useExperimentMemoryStore.getState().saveRecord(makeRecord(prepared, IDS[1], 'Tuned', 0.4));
         });
 
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
+        render(<RunHistoryPanel />);
 
-        expect(screen.queryByRole('region', { name: 'Comparison loop' })).not.toBeInTheDocument();
-        expect(screen.queryByText('Best saved vs current')).not.toBeInTheDocument();
-        expect(screen.queryByText(/which performed better/i)).not.toBeInTheDocument();
-        expect(screen.queryByText(/lower test loss/i)).not.toBeInTheDocument();
-        expect(screen.getByRole('region', { name: 'Legacy saved-run comparison' }))
-            .toHaveTextContent(/not directly comparable/i);
+        expect(screen.getByRole('group', { name: 'Saved run comparison' }))
+            .toHaveTextContent('Tuned has lower test data loss by 0.2000');
     });
 
-    it('does not rewrite legacy bytes through title editing', () => {
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord());
+    it('preserves legacy bytes through dismissal and deletes only explicitly', async () => {
+        const raw = '{"schemaVersion":1,"records":[{"id":"old"}]}';
+        window.localStorage.setItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY, raw);
+        await hydrateSingleton();
+
+        render(<RunHistoryPanel />);
+        expect(screen.getByRole('note', { name: 'Earlier saved runs' })).toHaveTextContent(/incompatible/i);
+        expect(screen.getByRole('button', { name: 'Download earlier runs' })).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Dismiss earlier runs notice' }));
+        expect(screen.queryByRole('note', { name: 'Earlier saved runs' })).not.toBeInTheDocument();
+        expect(window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(raw);
+
+        await act(async () => {
+            await useExperimentMemoryStore.getState().deleteLegacyStorage();
         });
-        const recordBefore = JSON.stringify(useExperimentMemoryStore.getState().records[0]);
-        const storageBefore = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
-
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
-
-        expect(screen.queryByLabelText('Title for Saved XOR')).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Update title for Saved XOR' }))
-            .not.toBeInTheDocument();
-        expect(JSON.stringify(useExperimentMemoryStore.getState().records[0])).toBe(recordBefore);
-        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(storageBefore);
+        expect(window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY)).toBeNull();
     });
 
-    it('renders a read-only side-by-side legacy comparison with accessible model regions', async () => {
-        const user = userEvent.setup();
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'baseline',
-                title: 'Baseline',
-                updatedAt: '2026-04-26T00:00:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 100,
-                    trainLoss: 0.4,
-                    testLoss: 0.6,
-                },
-                history: [
-                    { step: 0, trainLoss: 0.7, testLoss: 0.8 },
-                    { step: 100, trainLoss: 0.4, testLoss: 0.6 },
-                ],
-            }));
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'tuned',
-                title: 'Tuned model',
-                updatedAt: '2026-04-26T00:01:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 180,
-                    trainLoss: 0.25,
-                    testLoss: 0.42,
-                },
-                history: [
-                    { step: 0, trainLoss: 0.7, testLoss: 0.8 },
-                    { step: 180, trainLoss: 0.25, testLoss: 0.42 },
-                ],
-            }));
-        });
+    it('offers raw download and explicit deletion for a rejected record', async () => {
+        const valid = makeRecord(preset('circle-one-layer'));
+        const rejected = { schemaVersion: 1, id: 'rejected' };
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify({
+            kind: EXPERIMENT_MEMORY_ENVELOPE_KIND,
+            schemaVersion: 2,
+            records: [valid, rejected],
+        }));
+        await hydrateSingleton();
 
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
+        render(<RunHistoryPanel />);
+        expect(screen.getByText('Rejected saved record')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Download rejected record' })).toBeInTheDocument();
 
-        expect(screen.getByRole('region', { name: 'Legacy saved-run comparison' })).toBeInTheDocument();
-        expect(screen.getByRole('region', { name: 'Model A: Tuned model' })).toBeInTheDocument();
-        expect(screen.getByRole('region', { name: 'Model B: Baseline' })).toBeInTheDocument();
-        expect(screen.getByRole('group', { name: 'Legacy comparison summary' }))
-            .toHaveTextContent(/not directly comparable/i);
-        expect(screen.getByRole('group', { name: 'Legacy comparison summary' }))
-            .not.toHaveTextContent('lower test loss');
-
-        await user.selectOptions(screen.getByLabelText('Model A run'), 'baseline');
-
-        expect(screen.getByRole('region', { name: 'Model A: Baseline' })).toBeInTheDocument();
-        expect(screen.getByRole('group', { name: 'Legacy comparison summary' }))
-            .toHaveTextContent(/not directly comparable/i);
-    });
-
-    it('renders architecture comparison rows for selected saved runs', async () => {
-        const user = userEvent.setup();
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'baseline',
-                title: 'Baseline',
-                updatedAt: '2026-04-26T00:00:00.000Z',
-                config: {
-                    ...makeRecord().config,
-                    data: { ...DEFAULT_DATA, dataset: 'circle', numSamples: 300, noise: 0.05 },
-                    network: {
-                        ...DEFAULT_NETWORK,
-                        inputSize: 2,
-                        hiddenLayers: [4],
-                        activation: 'tanh',
-                        outputActivation: 'sigmoid',
-                    },
-                    training: {
-                        ...DEFAULT_TRAINING,
-                        optimizer: 'sgd',
-                        learningRate: 0.03,
-                        batchSize: 10,
-                        lossType: 'crossEntropy',
-                        regularization: 'none',
-                        regularizationRate: 0,
-                    },
-                    features: { ...DEFAULT_FEATURES },
-                },
-            }));
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'tuned',
-                title: 'Tuned model',
-                updatedAt: '2026-04-26T00:01:00.000Z',
-                config: {
-                    ...makeRecord().config,
-                    data: { ...DEFAULT_DATA, dataset: 'xor', numSamples: 500, noise: 0.1 },
-                    network: {
-                        ...DEFAULT_NETWORK,
-                        inputSize: 4,
-                        hiddenLayers: [8, 4],
-                        activation: 'relu',
-                        outputActivation: 'sigmoid',
-                    },
-                    training: {
-                        ...DEFAULT_TRAINING,
-                        optimizer: 'adam',
-                        learningRate: 0.01,
-                        batchSize: 16,
-                        lossType: 'crossEntropy',
-                        regularization: 'l2',
-                        regularizationRate: 0.003,
-                    },
-                    features: { ...DEFAULT_FEATURES, xSquared: true, xy: true },
-                },
-            }));
-        });
-
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
-
-        const architecture = screen.getByRole('group', { name: 'Architecture comparison' });
-        expect(architecture).toHaveTextContent('Hidden layers A [8, 4] / B [4]');
-        expect(architecture).toHaveTextContent('Total hidden units A 12 / B 4 (+8)');
-        expect(architecture).toHaveTextContent('Activation A relu / B tanh');
-        expect(architecture).toHaveTextContent('Output/loss A sigmoid + crossEntropy / B sigmoid + crossEntropy');
-        expect(architecture).toHaveTextContent('Optimizer/lr A adam @ 0.01 / B sgd @ 0.03');
-        expect(architecture).toHaveTextContent('Batch size A 16 / B 10 (+6)');
-        expect(architecture).toHaveTextContent('Regularization A l2 0.003 / B none 0');
-        expect(architecture).toHaveTextContent('Data A xor, 500 samples, noise 0.1 / B circle, 300 samples, noise 0.05');
-        expect(architecture).toHaveTextContent('Features A x, y, xSquared, xy / B x, y');
-
-        await user.selectOptions(screen.getByLabelText('Model A run'), 'baseline');
-
-        expect(screen.getByRole('group', { name: 'Architecture comparison' })).toHaveTextContent(
-            'Total hidden units A 4 / B 4 (same)',
-        );
-    });
-
-    it('does not expose live execution for scalar legacy records', () => {
-        const onInitializeArena = vi.fn();
-        const onStepArena = vi.fn();
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'baseline',
-                title: 'Baseline',
-                updatedAt: '2026-04-26T00:00:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 100,
-                    trainLoss: 0.4,
-                    testLoss: 0.6,
-                },
-            }));
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'tuned',
-                title: 'Tuned model',
-                updatedAt: '2026-04-26T00:01:00.000Z',
-                summary: {
-                    ...makeRecord().summary,
-                    step: 180,
-                    trainLoss: 0.25,
-                    testLoss: 0.42,
-                },
-            }));
-        });
-
-        render(
-            <RunHistoryPanel
-                onRestore={vi.fn()}
-                onInitializeArena={onInitializeArena}
-                onStepArena={onStepArena}
-            />,
-        );
-
-        expect(screen.getByRole('region', { name: 'Legacy saved-run comparison' })).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /live arena/i })).not.toBeInTheDocument();
-        expect(screen.getByText(/cannot be restored or executed in the live V2 arena/i)).toBeInTheDocument();
-        expect(onInitializeArena).not.toHaveBeenCalled();
-        expect(onStepArena).not.toHaveBeenCalled();
-    });
-
-    it('keeps multiclass V1 records static and read-only', () => {
-        const onInitializeArena = vi.fn();
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'scalar',
-                title: 'Scalar baseline',
-                updatedAt: '2026-04-26T00:00:00.000Z',
-            }));
-            useExperimentMemoryStore.getState().saveRecord(makeApprovedMulticlassRecord({
-                id: 'multiclass',
-                title: 'Three class clusters',
-                updatedAt: '2026-04-26T00:01:00.000Z',
-            }));
-        });
-
-        render(<RunHistoryPanel onRestore={vi.fn()} onInitializeArena={onInitializeArena} />);
-
-        expect(screen.getByRole('region', { name: 'Model A: Three class clusters' })).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: /live arena/i })).not.toBeInTheDocument();
-        expect(screen.getByText(/cannot be restored or executed in the live V2 arena/i)).toBeInTheDocument();
-        expect(onInitializeArena).not.toHaveBeenCalled();
-    });
-
-    it('renders accessible loss-history thumbnails from saved history points', () => {
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                history: [
-                    { step: 1, trainLoss: 0.9, testLoss: 1.1 },
-                    { step: 2, trainLoss: 0.6, testLoss: 0.8 },
-                    { step: 3, trainLoss: 0.3, testLoss: 0.5 },
-                ],
-            }));
-            useExperimentMemoryStore.getState().saveRecord(makeRecord({
-                id: 'no-history',
-                title: 'No history',
-                updatedAt: '2026-04-26T00:01:00.000Z',
-                history: [],
-            }));
-        });
-
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
-
-        expect(screen.getByRole('img', {
-            name: 'Loss thumbnail for Saved XOR: 3 points, train loss 0.9000 to 0.3000, test loss 1.1000 to 0.5000.',
-        })).toBeInTheDocument();
-        expect(screen.getByText('No loss history thumbnail')).toBeInTheDocument();
-    });
-
-    it('exports a markdown report for a saved run', async () => {
-        const createObjectURL = vi.fn(() => 'blob:report');
-        const revokeObjectURL = vi.fn();
-        Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configurable: true });
-        Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectURL, configurable: true });
-        const click = vi.fn();
-        vi.spyOn(document, 'createElement').mockImplementation((tagName) => {
-            const element = document.createElementNS('http://www.w3.org/1999/xhtml', tagName);
-            if (tagName === 'a') Object.defineProperty(element, 'click', { value: click });
-            return element as HTMLElement;
-        });
-        act(() => {
-            useExperimentMemoryStore.getState().saveRecord(makeRecord());
-        });
-
-        render(<RunHistoryPanel onRestore={vi.fn()} />);
-        await userEvent.click(screen.getByRole('button', { name: /export report for saved xor/i }));
-
-        expect(createObjectURL).toHaveBeenCalledTimes(1);
-        const report = await (createObjectURL.mock.calls[0][0] as Blob).text();
-        expect(report).toContain('- Optimizer: sgd');
-        expect(report).toContain('- Active features: x, y');
-        expect(report).toContain('- Generalization gap: 0.0900');
-        expect(report).toContain('- Legacy parameter snapshot present: no (not executable in V2)');
-        expect(report).toContain('Legacy V1 record');
-        expect(report).toContain('read-only and incompatible with the V2 experiment runtime');
-        expect(click).toHaveBeenCalledTimes(1);
-        expect(revokeObjectURL).toHaveBeenCalledWith('blob:report');
+        await userEvent.click(screen.getByRole('button', { name: 'Delete rejected record' }));
+        await waitFor(() => expect(screen.queryByText('Rejected saved record')).not.toBeInTheDocument());
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('"schemaVersion":1');
     });
 });

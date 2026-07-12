@@ -26,12 +26,18 @@ export {
 } from './serialization.js';
 export {
     EXPERIMENT_MEMORY_SCHEMA_VERSION,
+    EXPERIMENT_MEMORY_RECORD_KIND,
+    EXPERIMENT_MEMORY_ENVELOPE_KIND,
     EXPERIMENT_MEMORY_MAX_RECORDS,
-    EXPERIMENT_MEMORY_MAX_HISTORY,
-    createExperimentMemoryEnvelope,
-    normalizeExperimentMemoryEnvelope,
-    sanitizeExperimentHistory,
-    validateExperimentRunRecord,
+    EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS,
+    EXPERIMENT_MEMORY_MAX_TRENDS,
+    EXPERIMENT_MEMORY_MAX_EVALUATIONS,
+    EXPERIMENT_MEMORY_MAX_RECORD_BYTES,
+    EXPERIMENT_MEMORY_MAX_ENVELOPE_BYTES,
+    compactEvenly,
+    parseExperimentMemoryEnvelopeV2,
+    serializeExperimentMemoryEnvelopeV2,
+    validateExperimentRunRecordV2,
 } from './experimentMemory.js';
 export {
     ENGINE_CONTRACT_VERSION,
@@ -98,15 +104,18 @@ export type {
     ObjectiveKey,
 } from './types.js';
 export type {
-    ExperimentMemoryValidationOptions,
-    ExperimentRunSummary,
-    ExperimentRunRecordV1,
-    ExperimentMemoryEnvelopeV1,
+    ExperimentRunRecordV2,
+    ExperimentMemoryEnvelopeV2,
+    ExperimentMemoryIssue,
+    ExperimentMemoryResult,
+    RejectedExperimentRunRecordV2,
+    ExperimentMemoryReadResultV2,
 } from './experimentMemory.js';
 export {
     DEFAULT_DEMAND,
     WORKER_PROTOCOL_VERSION,
     isCaptureCheckpointRequestV2,
+    isCaptureRunArtifactRequestV2,
     isCaptureRunRequestV2,
     isForceEvaluationRequestV2,
     isMainToWorkerRequestV2,
@@ -116,6 +125,7 @@ export {
     isWorkerExperimentRequestV2,
     isWorkerProtocolErrorMessageV2,
     parseMainToWorkerRequestV2,
+    parseCaptureRunArtifactRequestV2,
     parseWorkerProtocolErrorMessageV2,
     parseWorkerToMainMessageV2,
     parseWorkerEvidenceMessageV2,
@@ -152,6 +162,7 @@ export type {
     ForcedEvaluationTriggerV2,
     ForceEvaluationRequestV2,
     CaptureRunRequestV2,
+    CaptureRunArtifactRequestV2,
     CaptureCheckpointRequestV2,
     MainToWorkerRequestV2,
     WorkerArtifactProvenanceV2,

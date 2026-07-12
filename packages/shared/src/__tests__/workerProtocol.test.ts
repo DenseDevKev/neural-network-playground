@@ -1177,6 +1177,10 @@ describe('version 2 worker protocol', () => {
             type: 'capture-run',
             protocolVersion: 2,
             requestId: 4,
+            id: '00000000-0000-0000-0000-000000000004',
+            createdAt: '2026-07-11T12:00:00.000Z',
+            updatedAt: '2026-07-11T12:00:00.000Z',
+            title: 'Saved evidence',
         })).toBe(true);
         expect(isCaptureCheckpointRequestV2({
             type: 'capture-checkpoint',
@@ -1203,6 +1207,14 @@ describe('version 2 worker protocol', () => {
             type: 'capture-run',
             protocolVersion: 2,
             requestId: 0,
+            id: '00000000-0000-0000-0000-000000000004',
+            createdAt: '2026-07-11T12:00:00.000Z',
+            updatedAt: '2026-07-11T12:00:00.000Z',
+        })).toBe(false);
+        expect(isCaptureRunRequestV2({
+            type: 'capture-run',
+            protocolVersion: 2,
+            requestId: 4,
         })).toBe(false);
         expect(isCaptureCheckpointRequestV2({
             type: 'capture-checkpoint',

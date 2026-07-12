@@ -64,6 +64,18 @@ export interface CaptureRunRequestV2 {
     readonly type: 'capture-run';
     readonly protocolVersion: typeof WORKER_PROTOCOL_VERSION;
     readonly requestId: number;
+    readonly id: string;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+    readonly title?: string;
+}
+
+/** Scientific metadata supplied by the UI; the worker authors every evidence field. */
+export interface CaptureRunArtifactRequestV2 {
+    readonly id: string;
+    readonly createdAt: string;
+    readonly updatedAt: string;
+    readonly title?: string;
 }
 
 export interface CaptureCheckpointRequestV2 {
@@ -274,7 +286,7 @@ export function isForceEvaluationRequestV2(value: unknown): boolean {
 
 function isExactCaptureRequest(
     value: unknown,
-    type: CaptureRunRequestV2['type'] | CaptureCheckpointRequestV2['type'],
+    type: CaptureCheckpointRequestV2['type'],
 ): boolean {
     return hasExactOwnKeys(value, ['type', 'protocolVersion', 'requestId'])
         && value['type'] === type
@@ -283,13 +295,63 @@ function isExactCaptureRequest(
 }
 
 export function isCaptureRunRequestV2(value: unknown): boolean {
-    return isExactCaptureRequest(value, 'capture-run');
+    return hasExactOwnKeys(
+        value,
+        ['type', 'protocolVersion', 'requestId', 'id', 'createdAt', 'updatedAt'],
+        ['title'],
+    )
+        && value['type'] === 'capture-run'
+        && value['protocolVersion'] === WORKER_PROTOCOL_VERSION
+        && isRequestId(value['requestId'])
+        && isCaptureRunArtifactRequestV2({
+            id: value['id'],
+            createdAt: value['createdAt'],
+            updatedAt: value['updatedAt'],
+            ...(Object.prototype.hasOwnProperty.call(value, 'title')
+                ? { title: value['title'] }
+                : {}),
+        });
 }
 
 export function isCaptureCheckpointRequestV2(
     value: unknown,
 ): boolean {
     return isExactCaptureRequest(value, 'capture-checkpoint');
+}
+
+const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+function isCanonicalTimestamp(value: unknown): value is string {
+    if (typeof value !== 'string' || value.length === 0) return false;
+    const timestamp = Date.parse(value);
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+export function isCaptureRunArtifactRequestV2(
+    value: unknown,
+): value is CaptureRunArtifactRequestV2 {
+    if (!hasExactOwnKeys(value, ['id', 'createdAt', 'updatedAt'], ['title'])) return false;
+    if (typeof value['id'] !== 'string' || !CANONICAL_UUID.test(value['id'])) return false;
+    if (!isCanonicalTimestamp(value['createdAt']) || !isCanonicalTimestamp(value['updatedAt'])) {
+        return false;
+    }
+    if (Date.parse(value['updatedAt']) < Date.parse(value['createdAt'])) return false;
+    return !Object.prototype.hasOwnProperty.call(value, 'title')
+        || (
+            typeof value['title'] === 'string'
+            && value['title'].length > 0
+            && Array.from(value['title']).length <= 120
+        );
+}
+
+export function parseCaptureRunArtifactRequestV2(
+    value: unknown,
+): CaptureRunArtifactRequestV2 {
+    const snapshot = createStableJsonSnapshot(value);
+    if (!isCaptureRunArtifactRequestV2(snapshot)) {
+        throw new TypeError('capture run artifact request: invalid metadata');
+    }
+    return snapshot;
 }
 
 export function parseMainToWorkerRequestV2(value: unknown): MainToWorkerRequestV2 {
