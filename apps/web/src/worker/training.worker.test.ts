@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Network } from '@nn-playground/engine';
 import {
     DEFAULT_DATA,
     DEFAULT_DEMAND,
@@ -879,6 +880,44 @@ describe('training worker activation histogram demand', () => {
 });
 
 describe('training worker lifecycle and demand cadence', () => {
+    it('pauses the legacy stream when a training loss becomes non-finite', async () => {
+        vi.useFakeTimers();
+        const stream = createCapturingPort();
+        const original = Network.prototype.trainBatch;
+        vi.spyOn(Network.prototype, 'trainBatch').mockImplementation(function (
+            this: Network,
+            ...args: Parameters<Network['trainBatch']>
+        ) {
+            original.apply(this, args);
+            return Number.NaN;
+        });
+        try {
+            workerApi.initialize(
+                { ...DEFAULT_NETWORK },
+                { ...DEFAULT_TRAINING },
+                { ...DEFAULT_DATA, seed: 906, numSamples: 20 },
+                { ...DEFAULT_FEATURES },
+            );
+            workerApi.setStreamPort(stream.port);
+
+            stream.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            await advanceOneWorkerTick();
+
+            expect(capturedSnapshots(stream.messages)).toContainEqual(expect.objectContaining({
+                scalars: expect.objectContaining({ trainLoss: Number.NaN }),
+            }));
+            expect(stream.messages).toContainEqual(expect.objectContaining({
+                type: 'status',
+                status: 'paused',
+                pauseReason: 'diverged',
+            }));
+        } finally {
+            stream.dispatch({ type: 'stopTraining' });
+            vi.restoreAllMocks();
+            vi.useRealTimers();
+        }
+    });
+
     it('initializes and steps two scalar-only arena model slots sequentially', () => {
         const arena = workerApi.initializeArena({
             modelA: {

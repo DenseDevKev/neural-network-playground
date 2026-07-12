@@ -56,6 +56,7 @@ import { initWeightsInto, initBiasesInto } from './initialization.js';
 import { transformPoint } from './features.js';
 import type { FeatureSpec } from './features.js';
 import { PRNG } from './prng.js';
+import { NonFiniteNumericalError } from './numericalError.js';
 
 type NetworkActivationKind = ActivationType | 'softmax';
 type NetworkLossKind = LossType | 'categoricalCrossEntropy';
@@ -76,25 +77,34 @@ function categoricalCrossEntropyFromLogits(logits: ArrayLike<number>, target: Ar
         const logit = logits[i];
         const targetValue = target[i];
         if (!Number.isFinite(logit)) {
-            throw new RangeError('logits must be finite');
+            throw new NonFiniteNumericalError(`logits[${i}]`, logit);
         }
-        if (!Number.isFinite(targetValue) || targetValue < 0) {
+        if (!Number.isFinite(targetValue)) {
+            throw new NonFiniteNumericalError(`target[${i}]`, targetValue);
+        }
+        if (targetValue < 0) {
             throw new RangeError('target values must be finite and non-negative');
         }
         if (logit > maxLogit) maxLogit = logit;
         targetSum += targetValue;
         targetLogitSum += targetValue * logit;
+        assertFiniteValue(targetSum, 'target.sum');
+        assertFiniteValue(targetLogitSum, 'categoricalCrossEntropyFromLogits.targetLogitSum');
     }
 
     let expSum = 0;
     for (let i = 0; i < logits.length; i++) {
         expSum += Math.exp(logits[i] - maxLogit);
+        assertFiniteValue(expSum, 'categoricalCrossEntropyFromLogits.exponentialSum');
     }
     if (Math.abs(targetSum - 1) > CATEGORICAL_TARGET_SUM_TOLERANCE) {
         throw new RangeError('target values must sum to 1');
     }
     const logNormalizer = maxLogit + Math.log(expSum);
-    return targetSum * logNormalizer - targetLogitSum;
+    assertFiniteValue(logNormalizer, 'categoricalCrossEntropyFromLogits.logNormalizer');
+    const result = targetSum * logNormalizer - targetLogitSum;
+    assertFiniteValue(result, 'categoricalCrossEntropyFromLogits.loss');
+    return result;
 }
 
 // ── Activation kernels ──────────────────────────────────────────────────────
@@ -252,7 +262,10 @@ function pickDAct(kind: NetworkActivationKind): LayerDActFn {
 }
 
 function assertLayerSize(value: number, name: string): void {
-    if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+    if (!Number.isFinite(value)) {
+        throw new NonFiniteNumericalError(name, value);
+    }
+    if (!Number.isInteger(value) || value <= 0) {
         throw new RangeError(`${name} must be a finite positive integer`);
     }
 }
@@ -271,7 +284,7 @@ function validatedLayerSizes(config: NetworkConfig): number[] {
 
 function assertFiniteValue(value: number, name: string): void {
     if (!Number.isFinite(value)) {
-        throw new RangeError(`${name} must be finite`);
+        throw new NonFiniteNumericalError(name, value);
     }
 }
 
@@ -284,7 +297,10 @@ function assertFiniteInRange(
 ): void {
     const minOk = options.minInclusive === true ? value >= min : value > min;
     const maxOk = options.maxInclusive === true ? value <= max : value < max;
-    if (!Number.isFinite(value) || !minOk || !maxOk) {
+    if (!Number.isFinite(value)) {
+        throw new NonFiniteNumericalError(name, value);
+    }
+    if (!minOk || !maxOk) {
         const minLabel = options.minInclusive === true ? `[${min}` : `(${min}`;
         const maxLabel = options.maxInclusive === true ? `${max}]` : `${max})`;
         throw new RangeError(`${name} must be finite and in range ${minLabel}, ${maxLabel}`);
@@ -518,7 +534,10 @@ function assertCompiledTrainingHyperparams(
         throw new RangeError('compiled training contract must be an object');
     }
     assertFiniteInRange(training.learningRate, 'learningRate', 0, Number.POSITIVE_INFINITY);
-    if (!Number.isFinite(training.batchSize) || !Number.isInteger(training.batchSize) || training.batchSize <= 0) {
+    if (!Number.isFinite(training.batchSize)) {
+        throw new NonFiniteNumericalError('batchSize', training.batchSize);
+    }
+    if (!Number.isInteger(training.batchSize) || training.batchSize <= 0) {
         throw new RangeError('batchSize must be a finite positive integer');
     }
 
@@ -1223,7 +1242,10 @@ export class Network {
 
     /** Legacy adapter: transform its complete gradient before optimizer-only kernels. */
     applyGradients(training: TrainingConfig, batchSize: number): void {
-        if (!Number.isFinite(batchSize) || batchSize <= 0) {
+        if (!Number.isFinite(batchSize)) {
+            throw new NonFiniteNumericalError('gradientNormalizationCount', batchSize);
+        }
+        if (batchSize <= 0) {
             throw new RangeError('gradient normalization count must be finite and greater than 0');
         }
         assertTrainingHyperparams(training);
@@ -2158,7 +2180,15 @@ export class Network {
 
     predictGridInto(gridInputs: number[][], target: Float32Array | Float64Array): void {
         for (let i = 0, len = gridInputs.length; i < len; i++) {
-            target[i] = this.forwardInto(gridInputs[i])[0];
+            const value = this.forwardInto(gridInputs[i])[0];
+            const converted = target instanceof Float32Array ? Math.fround(value) : value;
+            if (!Number.isFinite(value) || !Number.isFinite(converted)) {
+                throw new NonFiniteNumericalError(`predictionGrid.output[${i}]`, converted);
+            }
+            target[i] = value;
+            if (!Number.isFinite(target[i])) {
+                throw new NonFiniteNumericalError(`predictionGrid.output[${i}]`, target[i]);
+            }
         }
     }
 
@@ -2185,7 +2215,13 @@ export class Network {
                     bestConfidence = confidence;
                 }
             }
-            if (!Number.isFinite(bestConfidence) || bestConfidence < 0 || bestConfidence > 1) {
+            if (!Number.isFinite(bestConfidence)) {
+                throw new NonFiniteNumericalError(
+                    `multiclassBoundary.confidence[${i}]`,
+                    bestConfidence,
+                );
+            }
+            if (bestConfidence < 0 || bestConfidence > 1) {
                 throw new RangeError('multiclass boundary confidence must be finite and within [0, 1]');
             }
             classTarget[i] = bestClass;
@@ -2203,13 +2239,46 @@ export class Network {
 
         for (let i = 0; i < gridLen; i++) {
             const out = this.forwardInto(gridInputs[i]);
-            outputTarget[i] = out[0];
+            const output = out[0];
+            const convertedOutput = outputTarget instanceof Float32Array
+                ? Math.fround(output)
+                : output;
+            if (!Number.isFinite(output) || !Number.isFinite(convertedOutput)) {
+                throw new NonFiniteNumericalError(
+                    `predictionGrid.output[${i}]`,
+                    convertedOutput,
+                );
+            }
+            outputTarget[i] = output;
+            if (!Number.isFinite(outputTarget[i])) {
+                throw new NonFiniteNumericalError(
+                    `predictionGrid.output[${i}]`,
+                    outputTarget[i],
+                );
+            }
 
             let neuronIdx = 0;
             for (let l = 0; l < numLayers; l++) {
                 const layerOut = this.outputs[l];
                 for (let n = 0, len = layerOut.length; n < len; n++) {
-                    neuronTarget[neuronIdx * gridLen + i] = layerOut[n];
+                    const value = layerOut[n];
+                    const targetIndex = neuronIdx * gridLen + i;
+                    const converted = neuronTarget instanceof Float32Array
+                        ? Math.fround(value)
+                        : value;
+                    if (!Number.isFinite(value) || !Number.isFinite(converted)) {
+                        throw new NonFiniteNumericalError(
+                            `predictionGrid.neurons[${neuronIdx}][${i}]`,
+                            converted,
+                        );
+                    }
+                    neuronTarget[targetIndex] = value;
+                    if (!Number.isFinite(neuronTarget[targetIndex])) {
+                        throw new NonFiniteNumericalError(
+                            `predictionGrid.neurons[${neuronIdx}][${i}]`,
+                            neuronTarget[targetIndex],
+                        );
+                    }
                     neuronIdx++;
                 }
             }
@@ -2226,7 +2295,14 @@ export class Network {
         for (const w of this.weights) total += w.length;
         const buffer = new Float32Array(total);
         let off = 0;
-        for (const w of this.weights) {
+        for (let layer = 0; layer < this.weights.length; layer++) {
+            const w = this.weights[layer];
+            for (let index = 0; index < w.length; index++) {
+                const converted = Math.fround(w[index]);
+                if (!Number.isFinite(converted)) {
+                    throw new NonFiniteNumericalError(`weights[${layer}][${index}]`, converted);
+                }
+            }
             buffer.set(w, off);
             off += w.length;
         }
@@ -2238,7 +2314,14 @@ export class Network {
         for (const b of this.biases) total += b.length;
         const buffer = new Float32Array(total);
         let off = 0;
-        for (const b of this.biases) {
+        for (let layer = 0; layer < this.biases.length; layer++) {
+            const b = this.biases[layer];
+            for (let index = 0; index < b.length; index++) {
+                const converted = Math.fround(b[index]);
+                if (!Number.isFinite(converted)) {
+                    throw new NonFiniteNumericalError(`biases[${layer}][${index}]`, converted);
+                }
+            }
             buffer.set(b, off);
             off += b.length;
         }
@@ -2557,7 +2640,10 @@ export class Network {
         expectedOptimizer: OptimizerSpecV2,
         trainingStep: number,
     ): void {
-        if (!Number.isFinite(trainingStep) || !Number.isInteger(trainingStep) || trainingStep < 0) {
+        if (!Number.isFinite(trainingStep)) {
+            throw new NonFiniteNumericalError('trainingStep', trainingStep);
+        }
+        if (!Number.isInteger(trainingStep) || trainingStep < 0) {
             throw new RangeError('trainingStep must be a non-negative integer');
         }
 
@@ -2639,18 +2725,16 @@ export class Network {
         if (checkpoint == null || typeof checkpoint !== 'object') {
             throw new RangeError('checkpoint must be an object');
         }
-        if (
-            !Number.isFinite(checkpoint.currentStep) ||
-            !Number.isInteger(checkpoint.currentStep) ||
-            checkpoint.currentStep < 0
-        ) {
+        if (!Number.isFinite(checkpoint.currentStep)) {
+            throw new NonFiniteNumericalError('checkpoint.currentStep', checkpoint.currentStep);
+        }
+        if (!Number.isInteger(checkpoint.currentStep) || checkpoint.currentStep < 0) {
             throw new RangeError('checkpoint currentStep must be a non-negative integer');
         }
-        if (
-            !Number.isFinite(checkpoint.optimizerStep) ||
-            !Number.isInteger(checkpoint.optimizerStep) ||
-            checkpoint.optimizerStep < 0
-        ) {
+        if (!Number.isFinite(checkpoint.optimizerStep)) {
+            throw new NonFiniteNumericalError('checkpoint.optimizerStep', checkpoint.optimizerStep);
+        }
+        if (!Number.isInteger(checkpoint.optimizerStep) || checkpoint.optimizerStep < 0) {
             throw new RangeError('checkpoint optimizerStep must be a non-negative integer');
         }
         if (
@@ -2960,6 +3044,10 @@ export class Network {
                 const activationKind = activationKindForLayer(this.config, layerIndex);
                 for (let i = 0; i < out.length; i++) {
                     const value = out[i];
+                    assertFiniteValue(
+                        value,
+                        `activationHistograms.activations[${sampleIndex}][${layerIndex}][${i}]`,
+                    );
                     if (value < mins[layerIndex]) mins[layerIndex] = value;
                     if (value > maxes[layerIndex]) maxes[layerIndex] = value;
                     if (Math.abs(value) <= zeroThreshold) nearZeroCounts[layerIndex]++;
@@ -2980,6 +3068,12 @@ export class Network {
             const range = maxActivation - minActivation;
             const binStart = range === 0 ? minActivation - 0.5 : minActivation;
             const binWidth = (range === 0 ? 1 : range) / binCount;
+            const layerPath = `activationHistograms.layers[${layerIndex}]`;
+            assertFiniteValue(minActivation, `${layerPath}.minActivation`);
+            assertFiniteValue(maxActivation, `${layerPath}.maxActivation`);
+            assertFiniteValue(range, `${layerPath}.range`);
+            assertFiniteValue(binStart, `${layerPath}.binStart`);
+            assertFiniteValue(binWidth, `${layerPath}.binWidth`);
             layers.push({
                 layerIndex,
                 binCount,
@@ -3002,9 +3096,28 @@ export class Network {
                 const out = this.outputs[layerIndex];
                 const offset = layerIndex * binCount;
                 for (let i = 0; i < out.length; i++) {
-                    const rawBin = Math.floor((out[i] - layer.binStart) / layer.binWidth);
+                    const binningPath = `activationHistograms.binning[${sampleIndex}]`
+                        + `[${layerIndex}][${i}]`;
+                    const activation = out[i];
+                    assertFiniteValue(activation, `${binningPath}.activation`);
+                    const activationOffset = activation - layer.binStart;
+                    assertFiniteValue(activationOffset, `${binningPath}.offset`);
+                    const position = activationOffset / layer.binWidth;
+                    assertFiniteValue(position, `${binningPath}.position`);
+                    const rawBin = Math.floor(position);
+                    assertFiniteValue(rawBin, `${binningPath}.rawBin`);
                     const binIndex = Math.min(binCount - 1, Math.max(0, rawBin));
-                    bins[offset + binIndex]++;
+                    const flatBinIndex = offset + binIndex;
+                    const nextCount = bins[flatBinIndex] + 1;
+                    assertFiniteValue(
+                        nextCount,
+                        `activationHistograms.bins[${flatBinIndex}]`,
+                    );
+                    bins[flatBinIndex] = nextCount;
+                    assertFiniteValue(
+                        bins[flatBinIndex],
+                        `activationHistograms.bins[${flatBinIndex}]`,
+                    );
                 }
             }
         }

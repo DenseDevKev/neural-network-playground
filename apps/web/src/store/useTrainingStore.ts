@@ -16,6 +16,7 @@ import type {
     PauseReason,
     RecipeFingerprint,
     TrainingStatus,
+    WorkerEvidenceMessageV2,
 } from '@nn-playground/shared';
 import {
     canonicalizeJson,
@@ -26,12 +27,30 @@ import {
     appendHistoryPoint,
     resetHistoryBuffer,
 } from './historyBuffer.ts';
-import { metricHistoryBuffer } from './metricHistoryBuffer.ts';
+import {
+    metricHistoryBuffer,
+    type PreparedMetricHistoryAppend,
+    type PreparedMetricHistoryReplacement,
+} from './metricHistoryBuffer.ts';
 import { normalizeTrainingSpeed } from '../worker/trainingLoop.ts';
 import type { FrameVersions } from '../worker/frameBuffer.ts';
 
 export type ConfigChangeSource = 'data' | 'network' | 'features' | 'training' | 'preset' | null;
 export type TrainedRecipeSource = 'initialize' | 'config-sync' | 'reset' | 'restore';
+
+export interface PreparedTrainingEvidenceReplacement {
+    readonly evidence: WorkerEvidenceMessageV2;
+    readonly generationId: number;
+    readonly history: PreparedMetricHistoryReplacement;
+}
+
+export interface PreparedTrainingEvidenceAppend {
+    readonly generationId: number;
+    readonly latestLiveSignal: LiveTrainingSignal | null;
+    readonly latestEvaluation: PairedEvaluation | null;
+    readonly history: PreparedMetricHistoryAppend;
+    readonly publish: boolean;
+}
 
 function cloneAppConfig(config: AppConfig): AppConfig {
     return structuredClone(config);
@@ -100,6 +119,14 @@ export interface TrainingStore {
     resetHistory: () => void;
     /** Validate and atomically publish a strict protocol-V2 evidence message. */
     applyEvidence: (message: unknown) => void;
+    /** Preflight a fresh generation without mutating accepted evidence/history. */
+    prepareEvidenceReplacement: (
+        message: WorkerEvidenceMessageV2,
+    ) => PreparedTrainingEvidenceReplacement;
+    /** Validation-free publication of a prepared fresh generation. */
+    commitEvidenceReplacement: (prepared: PreparedTrainingEvidenceReplacement) => void;
+    prepareEvidenceAppend: (message: unknown) => PreparedTrainingEvidenceAppend;
+    commitEvidenceAppend: (prepared: PreparedTrainingEvidenceAppend) => void;
     /** Clear both scientific series and their generation in one publication. */
     resetEvidence: () => void;
     setFrameVersion: (version: number) => void;
@@ -140,6 +167,9 @@ function evidenceGenerationId(message: ReturnType<typeof parseWorkerEvidenceMess
     if (!artifact) throw new TypeError('evidence message has no generation identity');
     return artifact.model.generationId;
 }
+
+const committedEvidenceReplacements = new WeakSet<PreparedTrainingEvidenceReplacement>();
+const committedEvidenceAppends = new WeakSet<PreparedTrainingEvidenceAppend>();
 
 export const useTrainingStore = create<TrainingStore>((set, get) => ({
     status: 'idle',
@@ -227,8 +257,30 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
         set({ historyVersion: version });
     },
     applyEvidence: (value) => {
-        // Parse into a detached, deeply-frozen snapshot before inspecting or
-        // mutating any client state. This is the app's worker trust boundary.
+        const prepared = get().prepareEvidenceAppend(value);
+        get().commitEvidenceAppend(prepared);
+    },
+    prepareEvidenceReplacement: (evidence) => {
+        const generationId = evidenceGenerationId(evidence);
+        const history = metricHistoryBuffer.prepareReplacement(
+            evidence.liveSignal,
+            evidence.latestEvaluation,
+        );
+        return Object.freeze({ evidence, generationId, history });
+    },
+    commitEvidenceReplacement: (prepared) => {
+        if (committedEvidenceReplacements.has(prepared)) return;
+        prepared.history.commit();
+        set({
+            evidenceGenerationId: prepared.generationId,
+            latestLiveSignal: prepared.evidence.liveSignal ?? null,
+            latestEvaluation: prepared.evidence.latestEvaluation ?? null,
+            trainingTrendVersion: prepared.history.versions.trendVersion,
+            evaluationHistoryVersion: prepared.history.versions.evaluationVersion,
+        });
+        committedEvidenceReplacements.add(prepared);
+    },
+    prepareEvidenceAppend: (value) => {
         const message = parseWorkerEvidenceMessageV2(value);
         const generationId = evidenceGenerationId(message);
         const current = get();
@@ -238,10 +290,6 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
                 `evidence generation ${generationId} does not match active generation ${current.evidenceGenerationId}`,
             );
         }
-
-        // Preflight both channels before touching either packed series. This
-        // makes a bundle all-or-nothing even when one half is a replay or a
-        // conflict and the other half is new.
         let appendLive = false;
         if (message.liveSignal) {
             const latest = current.latestLiveSignal;
@@ -256,7 +304,6 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
                     || message.liveSignal.model.revision > latest.model.revision;
             }
         }
-
         let appendEvaluation = message.latestEvaluation !== undefined;
         if (message.latestEvaluation && current.latestEvaluation
             && message.latestEvaluation.evaluationId === current.latestEvaluation.evaluationId) {
@@ -266,38 +313,37 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
                     `conflicting evaluationId ${message.latestEvaluation.evaluationId}`,
                 );
             }
+            appendEvaluation = false;
         }
-
+        const history = metricHistoryBuffer.prepareAppend(
+            appendLive ? message.liveSignal : undefined,
+            appendEvaluation ? message.latestEvaluation : undefined,
+        );
+        appendEvaluation = history.evaluationAppended;
         const establishesGeneration = current.evidenceGenerationId === null;
-        if (!appendLive && !appendEvaluation && !establishesGeneration) return;
-
-        let trainingTrendVersion = current.trainingTrendVersion;
-        let evaluationHistoryVersion = current.evaluationHistoryVersion;
-        // Evaluation goes first: its bounded replay map can still reject a
-        // conflicting retained ID. The already-parsed live append cannot fail,
-        // so a rejected bundle never partially appends its live half.
-        if (appendEvaluation && message.latestEvaluation) {
-            const result = metricHistoryBuffer.appendEvaluation(message.latestEvaluation);
-            evaluationHistoryVersion = result.version;
-            appendEvaluation = result.appended;
-        }
-        if (appendLive && message.liveSignal) {
-            trainingTrendVersion = metricHistoryBuffer.appendTrend(message.liveSignal);
-        }
-
-        if (!appendLive && !appendEvaluation && !establishesGeneration) return;
-
-        set({
-            evidenceGenerationId: generationId,
+        return Object.freeze({
+            generationId,
             latestLiveSignal: appendLive && message.liveSignal
                 ? message.liveSignal
                 : current.latestLiveSignal,
             latestEvaluation: appendEvaluation && message.latestEvaluation
                 ? message.latestEvaluation
                 : current.latestEvaluation,
-            trainingTrendVersion,
-            evaluationHistoryVersion,
+            history,
+            publish: appendLive || appendEvaluation || establishesGeneration,
         });
+    },
+    commitEvidenceAppend: (prepared) => {
+        if (!prepared.publish || committedEvidenceAppends.has(prepared)) return;
+        prepared.history.commit();
+        set({
+            evidenceGenerationId: prepared.generationId,
+            latestLiveSignal: prepared.latestLiveSignal,
+            latestEvaluation: prepared.latestEvaluation,
+            trainingTrendVersion: prepared.history.versions.trendVersion,
+            evaluationHistoryVersion: prepared.history.versions.evaluationVersion,
+        });
+        committedEvidenceAppends.add(prepared);
     },
     resetEvidence: () => {
         const versions = metricHistoryBuffer.reset();

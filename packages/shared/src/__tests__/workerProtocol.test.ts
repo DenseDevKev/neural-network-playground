@@ -18,6 +18,120 @@ import {
     prepareExperimentDocument,
 } from '../index.js';
 
+const STRICT_DATASET = {
+    generatorVersion: 2,
+    datasetKey: 'dataset-strict',
+    trainCount: 200,
+    testCount: 100,
+} as const;
+
+function strictProvenance(
+    basis: Record<string, unknown>,
+    revision = 2,
+) {
+    return {
+        model: { generationId: 1, revision, step: 2, epoch: 0 },
+        dataset: STRICT_DATASET,
+        objectiveKey: 'objective-strict',
+        basis,
+    };
+}
+
+function validStrictSnapshot() {
+    return {
+        type: 'snapshot',
+        protocolVersion: 2,
+        runId: 1,
+        snapshotId: 1,
+        model: { generationId: 1, revision: 2, step: 2, epoch: 0 },
+        scalars: {
+            step: 2,
+            epoch: 0,
+            trainLoss: 0.4,
+            testLoss: 0.5,
+            gridSize: 2,
+        },
+        outputGrid: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+        weights: new Float32Array([0.1, 0.2]),
+        biases: new Float32Array([0.1]),
+        weightLayout: { layerSizes: [2, 1] },
+        layerStats: [{
+            meanActivation: 0.2,
+            activationStd: 0.1,
+            meanAbsWeight: 0.3,
+            meanAbsGradient: 0.05,
+        }],
+        layerStatsGradientRevision: 1,
+        artifacts: {
+            decisionBoundary: strictProvenance({
+                kind: 'prediction-grid',
+                pointCount: 4,
+                domain: [-1, 1, -1, 1],
+            }),
+            activationStatistics: strictProvenance({
+                kind: 'bounded-sample',
+                split: 'train',
+                sampleCount: 128,
+                populationCount: 200,
+            }),
+        },
+    } as const;
+}
+
+function validStrictHistogramSnapshot() {
+    const valid = validStrictSnapshot();
+    return {
+        ...valid,
+        activationHistogramBins: Float32Array.from([
+            128,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]),
+        activationHistogramLayout: {
+            binCount: 12,
+            layers: [{
+                layerIndex: 0,
+                binCount: 12,
+                binStart: -1,
+                binWidth: 1 / 6,
+                minActivation: -0.5,
+                maxActivation: 0.75,
+                totalCount: 128,
+                nearZeroCount: 1,
+                saturatedCount: 2,
+            }],
+        },
+        activationHistogramVersion: 1,
+        artifacts: {
+            ...valid.artifacts,
+            activationHistogram: strictProvenance({
+                kind: 'bounded-sample',
+                split: 'train',
+                sampleCount: 128,
+                populationCount: 200,
+            }),
+        },
+    };
+}
+
+function validStrictConfusionSnapshot() {
+    const valid = validStrictSnapshot();
+    return {
+        ...valid,
+        confusionMatrix: { tp: 100, tn: 0, fp: 0, fn: 0 },
+        confusionMatrixEvaluationId: 7,
+        confusionMatrixVersion: 1,
+        artifacts: {
+            ...valid.artifacts,
+            confusionMatrix: strictProvenance({
+                kind: 'full-split',
+                split: 'test',
+                sampleCount: 100,
+                populationCount: 100,
+            }),
+        },
+    };
+}
+
 describe('isMainToWorkerCommand', () => {
     it('accepts updateDemand commands with valid demand values', () => {
         expect(isMainToWorkerCommand({
@@ -80,6 +194,178 @@ describe('isMainToWorkerCommand', () => {
 });
 
 describe('isWorkerToMainMessage', () => {
+    it('accepts a strict snapshot whose artifact payloads have matching provenance', () => {
+        expect(isWorkerToMainMessage(validStrictSnapshot())).toBe(true);
+    });
+
+    it('accepts legacy snapshot payloads without artifact provenance', () => {
+        expect(isWorkerToMainMessage({
+            type: 'snapshot',
+            runId: 1,
+            snapshotId: 1,
+            scalars: {
+                step: 2,
+                epoch: 0,
+                trainLoss: 0.4,
+                testLoss: 0.5,
+                gridSize: 2,
+            },
+            outputGrid: new Float32Array([0.1, 0.2, 0.3, 0.4]),
+            historyPoint: { step: 2, trainLoss: 0.4, testLoss: 0.5 },
+        })).toBe(true);
+    });
+
+    it('rejects strict artifact payload/provenance mismatches in either direction', () => {
+        const valid = validStrictSnapshot();
+        expect(isWorkerToMainMessage({
+            ...valid,
+            artifacts: {
+                activationStatistics: valid.artifacts.activationStatistics,
+            },
+        })).toBe(false);
+        expect(isWorkerToMainMessage({
+            ...valid,
+            outputGrid: undefined,
+        })).toBe(false);
+    });
+
+    it('rejects a strict snapshot that retains an own legacy history key', () => {
+        expect(isWorkerToMainMessage({
+            ...validStrictSnapshot(),
+            historyPoint: undefined,
+        })).toBe(false);
+    });
+
+    it.each([
+        ['step', -1],
+        ['epoch', 1.5],
+        ['trainLoss', Number.NaN],
+        ['testLoss', Number.POSITIVE_INFINITY],
+        ['trainAccuracy', Number.NaN],
+        ['testAccuracy', Number.NEGATIVE_INFINITY],
+        ['gridSize', 0],
+        ['testMetricsStale', 'yes'],
+    ])('rejects strict snapshots with an invalid %s scalar', (key, value) => {
+        const valid = validStrictSnapshot();
+        expect(isWorkerToMainMessage({
+            ...valid,
+            scalars: {
+                ...valid.scalars,
+                [key]: value,
+            },
+        })).toBe(false);
+    });
+
+    it.each([
+        ['generation', {
+            model: { generationId: 2, revision: 2, step: 2, epoch: 0 },
+        }],
+        ['dataset', {
+            dataset: { ...STRICT_DATASET, datasetKey: 'another-dataset' },
+        }],
+        ['objective', {
+            objectiveKey: 'another-objective',
+        }],
+    ] as const)('rejects mixed strict artifact %s identity', (_label, change) => {
+        const valid = validStrictSnapshot();
+        expect(isWorkerToMainMessage({
+            ...valid,
+            artifacts: {
+                ...valid.artifacts,
+                decisionBoundary: {
+                    ...valid.artifacts.decisionBoundary,
+                    ...change,
+                },
+            },
+        })).toBe(false);
+    });
+
+    it('rejects a layer-statistics gradient revision newer than the activation model', () => {
+        expect(isWorkerToMainMessage({
+            ...validStrictSnapshot(),
+            layerStatsGradientRevision: 3,
+        })).toBe(false);
+    });
+
+    it('binds strict confusion payloads to one positive paired evaluation ID', () => {
+        const valid = validStrictConfusionSnapshot();
+        expect(isWorkerToMainMessage(valid)).toBe(true);
+        expect(isWorkerToMainMessage({
+            ...valid,
+            confusionMatrixEvaluationId: undefined,
+        })).toBe(false);
+        for (const confusionMatrixEvaluationId of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+            expect(isWorkerToMainMessage({
+                ...valid,
+                confusionMatrixEvaluationId,
+            })).toBe(false);
+        }
+        expect(isWorkerToMainMessage({
+            ...validStrictSnapshot(),
+            confusionMatrixEvaluationId: 1,
+        })).toBe(false);
+    });
+
+    it('rejects strict histogram fractions, wrong totals, bad order, and invalid ranges', () => {
+        const valid = validStrictHistogramSnapshot();
+        expect(isWorkerToMainMessage(valid)).toBe(true);
+
+        const invalid = [
+            {
+                ...valid,
+                activationHistogramBins: Float32Array.from([
+                    127.5,
+                    0.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ]),
+            },
+            {
+                ...valid,
+                activationHistogramBins: Float32Array.from([
+                    127,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ]),
+            },
+            {
+                ...valid,
+                activationHistogramLayout: {
+                    ...valid.activationHistogramLayout,
+                    layers: [{
+                        ...valid.activationHistogramLayout.layers[0],
+                        layerIndex: 1,
+                    }],
+                },
+            },
+            {
+                ...valid,
+                activationHistogramLayout: {
+                    ...valid.activationHistogramLayout,
+                    layers: [{
+                        ...valid.activationHistogramLayout.layers[0],
+                        minActivation: 1,
+                        maxActivation: -1,
+                    }],
+                },
+            },
+            {
+                ...valid,
+                activationHistogramLayout: {
+                    ...valid.activationHistogramLayout,
+                    layers: [{
+                        ...valid.activationHistogramLayout.layers[0],
+                        totalCount: 127,
+                    }],
+                },
+            },
+            {
+                ...valid,
+                activationHistogramBins: new Float32Array(13),
+            },
+        ];
+        for (const message of invalid) {
+            expect(isWorkerToMainMessage(message)).toBe(false);
+        }
+    });
+
     it('accepts scalar-only live arena snapshot summaries', () => {
         expect(isWorkerToMainMessage({
             type: 'arenaSnapshot',
@@ -229,7 +515,7 @@ describe('isWorkerToMainMessage', () => {
                 trainLoss: 0.5,
                 testLoss: 0.6,
             },
-            activationHistogramBins: new Float32Array([2, 1, 0, 1]),
+            activationHistogramBins: new Float32Array([2, 1]),
             activationHistogramLayout: {
                 binCount: 2,
                 layers: [

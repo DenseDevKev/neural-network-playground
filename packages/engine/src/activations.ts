@@ -1,5 +1,6 @@
 // ── Activation functions with derivatives ──
 import type { ActivationType, ScalarActivationType } from './types.js';
+import { NonFiniteNumericalError } from './numericalError.js';
 
 export interface ActivationFn {
     f: (x: number) => number;
@@ -68,7 +69,7 @@ export function softmax(logits: ArrayLike<number>): number[] {
     for (let i = 0; i < logits.length; i++) {
         const value = logits[i];
         if (!Number.isFinite(value)) {
-            throw new RangeError('softmax logits must be finite');
+            throw new NonFiniteNumericalError(`logits[${i}]`, value);
         }
         if (value > maxLogit) {
             maxLogit = value;
@@ -83,13 +84,19 @@ export function softmax(logits: ArrayLike<number>): number[] {
         sum += expValue;
     }
 
-    if (!Number.isFinite(sum) || sum <= 0) {
+    if (!Number.isFinite(sum)) {
+        throw new NonFiniteNumericalError('softmax.normalizer', sum);
+    }
+    if (sum <= 0) {
         throw new RangeError('softmax logits produced an invalid normalizer');
     }
 
     const invSum = 1 / sum;
     for (let i = 0; i < exps.length; i++) {
         exps[i] *= invSum;
+        if (!Number.isFinite(exps[i])) {
+            throw new NonFiniteNumericalError(`softmax.output[${i}]`, exps[i]);
+        }
     }
     return exps;
 }

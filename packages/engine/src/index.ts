@@ -1,5 +1,6 @@
 // ── Engine barrel export ──
 export { Network, buildGridInputs } from './network.js';
+export { NonFiniteNumericalError } from './numericalError.js';
 export { normalizeUint32Seed, PRNG } from './prng.js';
 export { getActivation, softmax, ACTIVATION_LABELS } from './activations.js';
 export type { ActivationFn } from './activations.js';

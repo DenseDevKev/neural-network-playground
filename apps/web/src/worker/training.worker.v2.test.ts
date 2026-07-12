@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    Network,
+    softmax,
+} from '@nn-playground/engine';
+import {
     DEFAULT_DATA,
+    DEFAULT_DEMAND,
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
@@ -15,6 +20,7 @@ import type {
     SchemaResult,
     WorkerEvidenceMessageV2,
     WorkerExperimentRequestV2,
+    WorkerSnapshotMessage,
 } from '@nn-playground/shared';
 import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.ts';
 
@@ -24,6 +30,10 @@ vi.mock('comlink', () => ({
 
 import {
     getV2AllocationCountForTests,
+    setGpuInitializationForTests,
+    setGpuPredictorForTests,
+    setRuntimeStopConditionsForTests,
+    setV2OutputOverflowForTests,
     setV2PrepareForTests,
     workerApi,
 } from './training.worker.ts';
@@ -36,6 +46,42 @@ function deferred<T>() {
         resolve = resolver;
     });
     return { promise, resolve };
+}
+
+function createDeferredGpuReadback(staleValue = 9_999) {
+    const completion = deferred<void>();
+    let output: Float32Array | null = null;
+    let neurons: Float32Array | null = null;
+    const predictor = {
+        updateWeights: vi.fn(),
+        predictGridInto: vi.fn((destination: Float32Array) => {
+            output = destination;
+            return completion.promise;
+        }),
+        predictGridWithNeuronsInto: vi.fn((
+            outputDestination: Float32Array,
+            neuronDestination: Float32Array,
+        ) => {
+            output = outputDestination;
+            neurons = neuronDestination;
+            return completion.promise;
+        }),
+        dispose: vi.fn(),
+    };
+    return {
+        predictor,
+        completion: completion.promise,
+        release(): void {
+            output?.fill(staleValue);
+            neurons?.fill(staleValue);
+            completion.resolve();
+        },
+        staleValue,
+    };
+}
+
+async function flushMicrotasks(turns = 8): Promise<void> {
+    for (let index = 0; index < turns; index++) await Promise.resolve();
 }
 
 function withFreshId(
@@ -86,17 +132,31 @@ function evidenceMessages(messages: unknown[]): WorkerEvidenceMessageV2[] {
     ));
 }
 
+function snapshotMessages(messages: unknown[]): WorkerSnapshotMessage[] {
+    return messages.filter((message): message is WorkerSnapshotMessage => (
+        typeof message === 'object'
+        && message !== null
+        && (message as { type?: unknown }).type === 'snapshot'
+    ));
+}
+
 describe('training worker scientific-trust V2 boundary', () => {
     beforeEach(() => {
         vi.useRealTimers();
     });
 
     afterEach(() => {
+        setGpuPredictorForTests(null);
+        setGpuInitializationForTests();
+        setRuntimeStopConditionsForTests();
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
         vi.useRealTimers();
     });
 
     it('commits a prepared experiment and returns a validated initial pair', async () => {
         const fixtures = await createScientificTrustFixtures();
+        workerApi.updateDemand(DEFAULT_DEMAND);
         const result = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
 
         expect(result.runId).toBeGreaterThan(0);
@@ -121,6 +181,28 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(result.evidence.latestEvaluation?.test.basis.sampleCount).toBe(
             result.evidence.latestEvaluation?.dataset.testCount,
         );
+        const pair = result.evidence.latestEvaluation!;
+        const predictionBasis = {
+            kind: 'prediction-grid',
+            pointCount: result.snapshot.gridSize * result.snapshot.gridSize,
+            domain: [-1, 1, -1, 1],
+        } as const;
+        expect(result.snapshot.outputGrid).toHaveLength(predictionBasis.pointCount);
+        expect(result.snapshot.neuronGrids).toBeInstanceOf(Float32Array);
+        expect(result.artifacts?.decisionBoundary).toEqual({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: predictionBasis,
+        });
+        expect(result.artifacts?.neuronGrids).toEqual({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: predictionBasis,
+        });
+        expect(result.snapshot.historyPoint).toBeUndefined();
+        expect(Object.prototype.hasOwnProperty.call(result.snapshot, 'historyPoint')).toBe(false);
         expect(isWorkerEvidenceMessageV2(result.evidence)).toBe(true);
         expect(isWorkerToMainMessage(result.evidence)).toBe(true);
     });
@@ -233,6 +315,8 @@ describe('training worker scientific-trust V2 boundary', () => {
         });
         expect(stepped.evidence.liveSignal?.model)
             .toEqual(stepped.evidence.latestEvaluation?.model);
+        expect(stepped.snapshot.historyPoint).toBeUndefined();
+        expect(Object.prototype.hasOwnProperty.call(stepped.snapshot, 'historyPoint')).toBe(false);
 
         const reset = workerApi.resetExperimentV2();
         expect(reset.runId).toBe(initial.runId + 1);
@@ -246,7 +330,279 @@ describe('training worker scientific-trust V2 boundary', () => {
                 epoch: 0,
             },
         });
+        expect(reset.snapshot.historyPoint).toBeUndefined();
+        expect(Object.prototype.hasOwnProperty.call(reset.snapshot, 'historyPoint')).toBe(false);
         expect(workerApi.getMetricHistoryV2().trendHistory).toEqual([]);
+    });
+
+    it('returns exact direct artifact provenance and omits cadence-reused binary grids', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needDecisionBoundary: true,
+            needNeuronGrids: true,
+            needLayerStats: true,
+            needActivationHistograms: true,
+            needConfusionMatrix: true,
+            gridInterval: 2,
+            activationHistogramInterval: 2,
+        });
+
+        const produced = workerApi.stepExperimentV2(1);
+        const pair = produced.evidence.latestEvaluation!;
+        const predictionBasis = {
+            kind: 'prediction-grid',
+            pointCount: produced.snapshot.gridSize * produced.snapshot.gridSize,
+            domain: [-1, 1, -1, 1],
+        } as const;
+        expect(produced.snapshot.outputGrid).toHaveLength(predictionBasis.pointCount);
+        expect(produced.snapshot.neuronGrids).toBeInstanceOf(Float32Array);
+        expect(produced.snapshot.activationHistograms?.bins).toBeInstanceOf(Float32Array);
+        expect(produced.snapshot.layerStats?.length).toBeGreaterThan(0);
+        expect(produced.snapshot.testMetrics.confusionMatrix)
+            .toEqual(pair.test.values.confusionMatrix);
+        expect(produced.artifacts?.decisionBoundary).toEqual({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: predictionBasis,
+        });
+        expect(produced.artifacts?.neuronGrids).toEqual({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: predictionBasis,
+        });
+        expect(produced.artifacts?.activationStatistics).toMatchObject({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: {
+                kind: 'bounded-sample',
+                split: 'train',
+                sampleCount: Math.min(128, pair.dataset.trainCount),
+                populationCount: pair.dataset.trainCount,
+            },
+        });
+        expect(produced.artifacts?.activationHistogram).toEqual(
+            produced.artifacts?.activationStatistics,
+        );
+        expect(produced.artifacts?.confusionMatrix).toEqual({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: pair.test.basis,
+        });
+        expect(Number.isSafeInteger(produced.layerStatsGradientRevision)).toBe(true);
+        expect(produced.layerStatsGradientRevision).toBeGreaterThanOrEqual(0);
+        expect(produced.layerStatsGradientRevision).toBeLessThanOrEqual(pair.model.revision);
+
+        const reused = workerApi.stepExperimentV2(1);
+        expect(reused.snapshot.outputGrid).toHaveLength(0);
+        expect(reused.snapshot.neuronGrids).toBeUndefined();
+        expect(reused.snapshot.activationHistograms).toBeUndefined();
+        expect(reused.artifacts?.decisionBoundary).toBeUndefined();
+        expect(reused.artifacts?.neuronGrids).toBeUndefined();
+        expect(reused.artifacts?.activationHistogram).toBeUndefined();
+        expect(reused.artifacts?.activationStatistics).toBeDefined();
+        expect(reused.artifacts?.confusionMatrix).toBeDefined();
+    });
+
+    it('returns current direct provenance for multiclass boundary and confusion artifacts', async () => {
+        const multiclassPrepared = PREPARED_PRESETS.find(
+            (entry) => entry.id === 'three-class-clusters',
+        )?.prepared;
+        if (!multiclassPrepared) throw new Error('missing three-class recipe');
+        await workerApi.initializeExperimentV2(requestForPrepared(multiclassPrepared));
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needDecisionBoundary: true,
+            needNeuronGrids: true,
+            needConfusionMatrix: true,
+            gridInterval: 1,
+        });
+
+        const produced = workerApi.stepExperimentV2(1);
+        const pair = produced.evidence.latestEvaluation!;
+        expect(produced.snapshot.outputGrid).toHaveLength(0);
+        expect(produced.snapshot.multiclassBoundary?.classGrid).toHaveLength(
+            produced.snapshot.gridSize * produced.snapshot.gridSize,
+        );
+        expect(produced.snapshot.multiclassBoundary?.confidenceGrid).toHaveLength(
+            produced.snapshot.gridSize * produced.snapshot.gridSize,
+        );
+        expect(produced.snapshot.neuronGrids).toBeUndefined();
+        expect(produced.snapshot.testMetrics.multiclassConfusionMatrix)
+            .toEqual(pair.test.values.confusionMatrix);
+        expect(produced.artifacts?.decisionBoundary).toEqual({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: {
+                kind: 'prediction-grid',
+                pointCount: produced.snapshot.gridSize * produced.snapshot.gridSize,
+                domain: [-1, 1, -1, 1],
+            },
+        });
+        expect(produced.artifacts?.neuronGrids).toBeUndefined();
+        expect(produced.artifacts?.confusionMatrix).toEqual({
+            model: pair.model,
+            dataset: pair.dataset,
+            objectiveKey: pair.objectiveKey,
+            basis: pair.test.basis,
+        });
+    });
+
+    it('discards a deferred GPU readback after a training mutation and recomputes on CPU', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('crossOriginIsolated', false);
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            gridInterval: 1,
+        });
+        workerApi.setWebGpuEnabled(true);
+        const gpu = createDeferredGpuReadback();
+        setGpuPredictorForTests(gpu.predictor);
+        const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        vi.advanceTimersByTime(20);
+        await flushMicrotasks();
+        expect(gpu.predictor.predictGridWithNeuronsInto).toHaveBeenCalledTimes(1);
+
+        const current = workerApi.stepExperimentV2(1);
+        cpu.mockClear();
+        gpu.release();
+        await gpu.completion;
+        await flushMicrotasks();
+
+        const snapshot = snapshotMessages(capture.messages).at(-1);
+        expect(cpu).toHaveBeenCalledTimes(1);
+        expect(snapshot?.artifacts?.decisionBoundary?.model).toEqual(
+            current.evidence.latestEvaluation?.model,
+        );
+        expect(snapshot?.outputGrid).toBeInstanceOf(Float32Array);
+        expect(snapshot?.outputGrid?.some((value) => value === gpu.staleValue)).toBe(false);
+        capture.dispatch({ type: 'stopTraining' });
+    });
+
+    it('discards a deferred output-only GPU readback after neuron demand changes', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('crossOriginIsolated', false);
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needNeuronGrids: false,
+            gridInterval: 1,
+        });
+        workerApi.setWebGpuEnabled(true);
+        const gpu = createDeferredGpuReadback();
+        setGpuPredictorForTests(gpu.predictor);
+        const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        vi.advanceTimersByTime(20);
+        await flushMicrotasks();
+        expect(gpu.predictor.predictGridInto).toHaveBeenCalledTimes(1);
+        expect(gpu.predictor.predictGridWithNeuronsInto).not.toHaveBeenCalled();
+
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needNeuronGrids: true,
+            gridInterval: 1,
+        });
+        gpu.release();
+        await gpu.completion;
+        await flushMicrotasks();
+
+        const snapshot = snapshotMessages(capture.messages).at(-1);
+        expect(cpu).toHaveBeenCalledTimes(1);
+        expect(snapshot?.outputGrid?.some((value) => value === gpu.staleValue)).toBe(false);
+        expect(snapshot?.neuronGrids).toBeInstanceOf(Float32Array);
+        expect(snapshot?.artifacts?.decisionBoundary).toBeDefined();
+        expect(snapshot?.artifacts?.neuronGrids).toBeDefined();
+        capture.dispatch({ type: 'stopTraining' });
+    });
+
+    it('does not install a GPU predictor when the toggle changes during device detection', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('crossOriginIsolated', false);
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, gridInterval: 1 });
+        workerApi.setWebGpuEnabled(true);
+        const detection = deferred<GPUDevice | null>();
+        const create = vi.fn();
+        setGpuInitializationForTests({
+            detect: () => detection.promise,
+            create,
+        });
+        const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        vi.advanceTimersByTime(20);
+        await flushMicrotasks();
+        workerApi.setWebGpuEnabled(false);
+        detection.resolve({} as GPUDevice);
+        await detection.promise;
+        await flushMicrotasks();
+
+        expect(create).not.toHaveBeenCalled();
+        expect(cpu).toHaveBeenCalledTimes(1);
+        const snapshot = snapshotMessages(capture.messages).at(-1);
+        expect(snapshot?.artifacts?.decisionBoundary).toBeDefined();
+        capture.dispatch({ type: 'stopTraining' });
+    });
+
+    it('discards an old-generation GPU readback without disturbing new readiness', async () => {
+        vi.useFakeTimers();
+        vi.stubGlobal('crossOriginIsolated', false);
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            gridInterval: 1,
+        });
+        workerApi.setWebGpuEnabled(true);
+        const gpu = createDeferredGpuReadback();
+        setGpuPredictorForTests(gpu.predictor);
+        const cpu = vi.spyOn(Network.prototype, 'predictGridWithNeuronsInto');
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        vi.advanceTimersByTime(20);
+        await flushMicrotasks();
+        expect(gpu.predictor.predictGridWithNeuronsInto).toHaveBeenCalledTimes(1);
+
+        const snapshotsBeforeReset = snapshotMessages(capture.messages).length;
+        const reset = workerApi.resetExperimentV2();
+        cpu.mockClear();
+        gpu.release();
+        await gpu.completion;
+        await flushMicrotasks();
+
+        expect(snapshotMessages(capture.messages)).toHaveLength(snapshotsBeforeReset);
+        expect(cpu).not.toHaveBeenCalled();
+        workerApi.setWebGpuEnabled(false);
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, gridInterval: 1 });
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        await vi.advanceTimersByTimeAsync(20);
+        const [snapshot] = snapshotMessages(capture.messages);
+        expect(snapshot?.runId).toBe(reset.runId);
+        expect(snapshot?.artifacts?.decisionBoundary?.model.generationId).toBe(reset.runId);
+        expect(cpu).toHaveBeenCalledTimes(1);
+        capture.dispatch({ type: 'stopTraining' });
     });
 
     it('publishes complete binary and multiclass task metrics without legacy loss math', async () => {
@@ -298,6 +654,393 @@ describe('training worker scientific-trust V2 boundary', () => {
             && Number.isFinite(point.objective.trainTotalObjective)
         ))).toBe(true);
     });
+
+    it('forces and publishes an exact current pair before a comparison stop condition', async () => {
+        vi.useFakeTimers();
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        const initialized = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        setRuntimeStopConditionsForTests([
+            { kind: 'target', metric: 'trainObjective', threshold: 1_000_000 },
+        ]);
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        await vi.advanceTimersByTimeAsync(20);
+
+        const history = workerApi.getMetricHistoryV2();
+        const live = history.trendHistory.at(-1)!;
+        const pair = history.evaluationHistory.at(-1)!;
+        expect(pair).toMatchObject({
+            trigger: 'stop-condition',
+            model: live.model,
+        });
+        expect(pair.model.generationId).toBe(initialized.runId);
+        expect(evidenceMessages(capture.messages).some(
+            (message) => message.latestEvaluation?.evaluationId === pair.evaluationId,
+        )).toBe(true);
+        expect(capture.messages).toContainEqual(expect.objectContaining({
+            type: 'status',
+            status: 'paused',
+            pauseReason: 'target-loss-reached',
+        }));
+    });
+
+    it('reuses an exact step-50 cadence pair instead of publishing a duplicate stop pair', async () => {
+        vi.useFakeTimers();
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        setRuntimeStopConditionsForTests([
+            { kind: 'target', metric: 'testDataLoss', threshold: -1 },
+        ]);
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 49 });
+        await vi.advanceTimersByTimeAsync(20);
+        capture.dispatch({ type: 'updateSpeed', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'frameAck' });
+        await vi.advanceTimersByTimeAsync(20);
+
+        const step50Pairs = workerApi.getMetricHistoryV2().evaluationHistory.filter(
+            (evaluation) => evaluation.model.step === 50,
+        );
+        const step50Evidence = evidenceMessages(capture.messages).filter(
+            (message) => message.latestEvaluation?.model.step === 50,
+        );
+        expect(step50Pairs).toHaveLength(1);
+        expect(step50Pairs[0]?.trigger).toBe('cadence');
+        expect(step50Evidence).toHaveLength(1);
+
+        capture.dispatch({ type: 'stopTraining' });
+    });
+
+    it('stops non-finite batch objectives as structured divergence without evidence or checkpoints', async () => {
+        vi.useFakeTimers();
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const beforeHistory = workerApi.getMetricHistoryV2();
+        const beforeMessages = capture.messages.length;
+        const original = Network.prototype.trainBatchIndexedV2;
+        vi.spyOn(Network.prototype, 'trainBatchIndexedV2').mockImplementation(function (
+            this: Network,
+            ...args: Parameters<Network['trainBatchIndexedV2']>
+        ) {
+            const result = original.apply(this, args);
+            return {
+                ...result,
+                objective: {
+                    ...result.objective,
+                    dataLoss: Number.NaN,
+                    totalObjective: Number.NaN,
+                },
+            };
+        });
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
+        expect(workerApi.getCheckpointTimeline().checkpoints).toEqual([]);
+        const emitted = capture.messages.slice(beforeMessages);
+        expect(evidenceMessages(emitted)).toEqual([]);
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'worker-error',
+            code: 'runtime-failure',
+            source: 'training',
+            path: '$.objective.dataLoss',
+        }));
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'status',
+            status: 'paused',
+            pauseReason: 'diverged',
+        }));
+    });
+
+    it('translates a real engine training overflow without publishing evidence or checkpoints', async () => {
+        vi.useFakeTimers();
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const beforeHistory = workerApi.getMetricHistoryV2();
+        const beforeMessages = capture.messages.length;
+        setV2OutputOverflowForTests();
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
+        expect(workerApi.getCheckpointTimeline().checkpoints).toEqual([]);
+        const emitted = capture.messages.slice(beforeMessages);
+        expect(evidenceMessages(emitted)).toEqual([]);
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'worker-error',
+            source: 'training',
+            path: '$.training.logits[0]',
+        }));
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'status',
+            status: 'paused',
+            pauseReason: 'diverged',
+        }));
+    });
+
+    it('translates a real pause evaluation overflow into terminal divergence', async () => {
+        vi.useFakeTimers();
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const beforeHistory = workerApi.getMetricHistoryV2();
+        const beforeMessages = capture.messages.length;
+        vi.spyOn(Network.prototype, 'evaluateObjective').mockImplementation(() => {
+            softmax([Number.POSITIVE_INFINITY]);
+            throw new Error('unreachable');
+        });
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        capture.dispatch({ type: 'stopTraining' });
+
+        expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
+        const emitted = capture.messages.slice(beforeMessages);
+        expect(evidenceMessages(emitted)).toEqual([]);
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'worker-error',
+            source: 'evaluation',
+            code: 'evaluation-failed',
+            path: '$.evaluation.train.logits[0]',
+        }));
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'status',
+            status: 'paused',
+            pauseReason: 'diverged',
+        }));
+    });
+
+    it('stops non-finite paired evaluation as structured divergence before evidence publication', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const beforeHistory = workerApi.getMetricHistoryV2();
+        const beforeMessages = capture.messages.length;
+        const original = Network.prototype.evaluateObjective;
+        vi.spyOn(Network.prototype, 'evaluateObjective').mockImplementation(function (
+            this: Network,
+            ...args: Parameters<Network['evaluateObjective']>
+        ) {
+            const result = original.apply(this, args);
+            return {
+                ...result,
+                dataLoss: Number.POSITIVE_INFINITY,
+                totalObjective: Number.POSITIVE_INFINITY,
+            };
+        });
+
+        expect(() => workerApi.forceEvaluationV2('stop-condition'))
+            .toThrow('terminal divergence');
+
+        expect(workerApi.getMetricHistoryV2()).toEqual(beforeHistory);
+        expect(workerApi.getCheckpointTimeline().checkpoints).toEqual([]);
+        const emitted = capture.messages.slice(beforeMessages);
+        expect(evidenceMessages(emitted)).toEqual([]);
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'worker-error',
+            code: 'evaluation-failed',
+            source: 'evaluation',
+            path: '$.evaluation.train.values.dataLoss',
+        }));
+        expect(emitted).toContainEqual(expect.objectContaining({
+            type: 'status',
+            status: 'paused',
+            pauseReason: 'diverged',
+        }));
+    });
+
+    it('rejects non-finite V2 compatibility scalars before posting a snapshot', async () => {
+        vi.useFakeTimers();
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            trainEvalInterval: 1,
+            testEvalInterval: 1,
+        });
+        const original = Network.prototype.evaluate;
+        vi.spyOn(Network.prototype, 'evaluate').mockImplementation(function (
+            this: Network,
+            ...args: Parameters<Network['evaluate']>
+        ) {
+            return { ...original.apply(this, args), loss: Number.NaN };
+        });
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        await vi.advanceTimersByTimeAsync(20);
+
+        expect(capture.messages.some((message) => (
+            typeof message === 'object'
+            && message !== null
+            && (message as { type?: unknown }).type === 'snapshot'
+        ))).toBe(false);
+        expect(capture.messages).toContainEqual(expect.objectContaining({
+            type: 'worker-error',
+            source: 'artifact',
+            code: 'artifact-failed',
+            path: '$.snapshot.trainLoss',
+        }));
+        expect(capture.messages).toContainEqual(expect.objectContaining({
+            type: 'status',
+            status: 'paused',
+            pauseReason: 'diverged',
+        }));
+        expect(workerApi.getMetricHistoryV2().trendHistory).toHaveLength(1);
+        expect(evidenceMessages(capture.messages).every((message) => (
+            message.liveSignal === undefined || Number.isFinite(message.liveSignal.dataLoss)
+        ))).toBe(true);
+    });
+
+    it('publishes strict artifact provenance and deterministic bounded layer statistics', async () => {
+        vi.useFakeTimers();
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        const initialized = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        workerApi.updateDemand({
+            ...DEFAULT_DEMAND,
+            needDecisionBoundary: true,
+            needNeuronGrids: false,
+            needLayerStats: true,
+            needActivationHistograms: true,
+            needConfusionMatrix: true,
+            gridInterval: 1,
+            activationHistogramInterval: 1,
+        });
+        const grid = vi.spyOn(Network.prototype, 'predictGridInto');
+        const statistics = vi.spyOn(Network.prototype, 'computeLayerStatistics');
+
+        capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+        await vi.advanceTimersByTimeAsync(20);
+
+        const snapshot = capture.messages.find((message): message is WorkerSnapshotMessage => (
+            typeof message === 'object'
+            && message !== null
+            && (message as { type?: unknown }).type === 'snapshot'
+        ));
+        const populationCount = initialized.evidence.latestEvaluation!.dataset.trainCount;
+        const sampleCount = Math.min(128, populationCount);
+        expect(snapshot).toBeDefined();
+        expect(snapshot?.protocolVersion).toBe(2);
+        expect(snapshot?.historyPoint).toBeUndefined();
+        expect(Object.prototype.hasOwnProperty.call(snapshot, 'historyPoint')).toBe(false);
+        expect(snapshot?.layerStats?.length).toBeGreaterThan(0);
+        expect(snapshot?.artifacts?.activationStatistics).toMatchObject({
+            model: {
+                generationId: initialized.runId,
+                revision: 1,
+                step: 1,
+            },
+            dataset: { trainCount: populationCount },
+            objectiveKey: fixtures.prepared.identities.objectiveKey,
+            basis: {
+                kind: 'bounded-sample',
+                split: 'train',
+                sampleCount,
+                populationCount,
+            },
+        });
+        expect(snapshot?.artifacts?.decisionBoundary?.basis).toEqual({
+            kind: 'prediction-grid',
+            pointCount: snapshot!.scalars.gridSize ** 2,
+            domain: [-1, 1, -1, 1],
+        });
+        expect(snapshot?.artifacts?.activationHistogram?.basis).toEqual({
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount,
+            populationCount,
+        });
+        expect(snapshot?.artifacts?.confusionMatrix?.basis).toEqual({
+            kind: 'full-split',
+            split: 'test',
+            sampleCount: initialized.evidence.latestEvaluation!.dataset.testCount,
+            populationCount: initialized.evidence.latestEvaluation!.dataset.testCount,
+        });
+        expect(snapshot?.confusionMatrix).toEqual(
+            initialized.evidence.latestEvaluation!.test.values.confusionMatrix,
+        );
+        expect(snapshot?.artifacts?.confusionMatrix?.model).toEqual(
+            initialized.evidence.latestEvaluation!.model,
+        );
+        expect(snapshot?.confusionMatrixEvaluationId).toBe(
+            initialized.evidence.latestEvaluation!.evaluationId,
+        );
+        expect(snapshot?.layerStatsGradientRevision).toBe(1);
+        expect(statistics).toHaveBeenCalledTimes(1);
+        expect(statistics.mock.calls[0]?.[0]).toHaveLength(populationCount);
+        expect(statistics.mock.calls[0]?.[1]).toBe(128);
+        expect(grid).toHaveBeenCalled();
+        expect(grid.mock.invocationCallOrder[0]).toBeLessThan(
+            statistics.mock.invocationCallOrder[0],
+        );
+
+        capture.dispatch({ type: 'frameAck' });
+        await vi.advanceTimersByTimeAsync(20);
+        const snapshots = capture.messages.filter((message): message is WorkerSnapshotMessage => (
+            typeof message === 'object'
+            && message !== null
+            && (message as { type?: unknown }).type === 'snapshot'
+        ));
+        expect(snapshots).toHaveLength(2);
+        expect(snapshots[1]?.confusionMatrix).toBeUndefined();
+        expect(snapshots[1]?.multiclassConfusionMatrix).toBeUndefined();
+        expect(snapshots[1]?.artifacts?.confusionMatrix).toBeUndefined();
+
+        capture.dispatch({ type: 'stopTraining' });
+    });
+
+    it.each(['sampleCount', 'populationCount'] as const)(
+        'rejects mismatched layer-statistics %s before publishing provenance',
+        async (field) => {
+            vi.useFakeTimers();
+            const fixtures = await createScientificTrustFixtures();
+            const capture = createCapturingPort();
+            workerApi.setStreamPort(capture.port);
+            await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+            workerApi.updateDemand({
+                ...DEFAULT_DEMAND,
+                needDecisionBoundary: false,
+                needNeuronGrids: false,
+                needLayerStats: true,
+                needActivationHistograms: false,
+                needConfusionMatrix: false,
+            });
+            const original = Network.prototype.computeLayerStatistics;
+            vi.spyOn(Network.prototype, 'computeLayerStatistics').mockImplementation(function (
+                this: Network,
+                inputs: Parameters<Network['computeLayerStatistics']>[0],
+                maxSamples?: number,
+            ) {
+                const result = original.call(this, inputs, maxSamples);
+                return { ...result, [field]: result[field] + 1 };
+            });
+
+            capture.dispatch({ type: 'startTraining', stepsPerFrame: 1 });
+            await vi.advanceTimersByTimeAsync(20);
+
+            expect(snapshotMessages(capture.messages)).toHaveLength(0);
+            expect(capture.messages).toContainEqual(expect.objectContaining({
+                type: 'worker-error',
+                source: 'runtime',
+                code: 'runtime-failure',
+                message: 'Layer statistics sample basis does not match the training population.',
+            }));
+        },
+    );
 
     it('wraps the shuffle seed for the maximum allowed uint32 data seed', async () => {
         const fixtures = await createScientificTrustFixtures();

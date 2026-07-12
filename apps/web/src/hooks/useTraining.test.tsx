@@ -1,16 +1,20 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NetworkSnapshot } from '@nn-playground/engine';
+import type { NetworkConfig, NetworkSnapshot } from '@nn-playground/engine';
 import {
     type ArenaScalarSnapshot,
+    type ArtifactBasis,
     DEFAULT_DATA,
     DEFAULT_DEMAND,
     DEFAULT_FEATURES,
+    GRID_SIZE,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
     type EvaluationTrigger,
     type WorkerEvidenceMessageV2,
+    type WorkerArtifactProvenanceV2,
     type WorkerExperimentRequestV2,
+    prepareExperimentDocument,
 } from '@nn-playground/shared';
 import type { WorkerToMainMessage } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
@@ -74,19 +78,34 @@ beforeAll(async () => {
     fixtures = await createScientificTrustFixtures();
 });
 
-function makeSnapshot(step: number): NetworkSnapshot {
+function makeSnapshot(
+    step: number,
+    network: NetworkConfig = { ...DEFAULT_NETWORK, inputSize: 2 },
+): NetworkSnapshot {
+    const layerSizes = [network.inputSize, ...network.hiddenLayers, network.outputSize];
+    const weights = layerSizes.slice(1).map((fanOut, layerIndex) => (
+        Array.from({ length: fanOut }, (_, neuronIndex) => (
+            Array.from(
+                { length: layerSizes[layerIndex] },
+                (_, inputIndex) => 0.01 * (1 + layerIndex + neuronIndex + inputIndex),
+            )
+        ))
+    ));
+    const biases = layerSizes.slice(1).map((fanOut) => Array.from({ length: fanOut }, () => 0.05));
+    const gridPointCount = GRID_SIZE * GRID_SIZE;
+    const neuronCount = layerSizes.slice(1).reduce((sum, size) => sum + size, 0);
     return {
         step,
         epoch: Math.floor(step / 10),
-        weights: [[[0.1, -0.2]]],
-        biases: [[0.05]],
+        weights,
+        biases,
         trainLoss: 0.4 - step * 0.01,
         testLoss: 0.5 - step * 0.01,
         trainMetrics: { loss: 0.4 - step * 0.01, accuracy: 0.7 },
         testMetrics: { loss: 0.5 - step * 0.01, accuracy: 0.6 },
-        outputGrid: new Float32Array([0.1, 0.2, 0.3, 0.4]),
-        gridSize: 2,
-        neuronGrids: new Float32Array([0.4, 0.3, 0.2, 0.1]),
+        outputGrid: new Float32Array(gridPointCount).fill(0.2),
+        gridSize: GRID_SIZE,
+        neuronGrids: new Float32Array(neuronCount * gridPointCount).fill(0.4),
         historyPoint: {
             step,
             trainLoss: 0.4 - step * 0.01,
@@ -102,9 +121,43 @@ function makeEvidence(
     evaluationId: number,
     step: number,
     trigger: EvaluationTrigger,
+    prepared: typeof INITIAL_PREPARED = INITIAL_PREPARED,
 ): WorkerEvidenceMessageV2 {
+    if (!prepared) throw new Error('missing prepared fixture');
     const model = { generationId, revision: step, step, epoch: Math.floor(step / 10) };
     const trainDataLoss = 0.4 - step * 0.001;
+    const sampleCount = prepared.compiled.data.sampleCount;
+    const trainCount = Math.min(sampleCount - 1, Math.max(
+        1,
+        Math.floor(sampleCount * prepared.compiled.data.trainFraction),
+    ));
+    const testCount = sampleCount - trainCount;
+    const valuesFor = (count: number) => {
+        if (prepared.compiled.task.kind === 'regression') return { dataLoss: trainDataLoss };
+        if (prepared.compiled.task.kind === 'binary-classification') return {
+            dataLoss: trainDataLoss,
+            accuracy: 1,
+            confusionMatrix: { tp: count, tn: 0, fp: 0, fn: 0 },
+        };
+        const first = Math.floor(count / 3);
+        const second = Math.floor((count - first) / 2);
+        const third = count - first - second;
+        return {
+            dataLoss: trainDataLoss,
+            accuracy: 1,
+            confusionMatrix: {
+                classCount: 3 as const,
+                classLabels: [0, 1, 2] as const,
+                counts: [first, 0, 0, 0, second, 0, 0, 0, third] as const,
+            },
+        };
+    };
+    const dataset = {
+        generatorVersion: 2,
+        datasetKey: prepared.identities.datasetKey,
+        trainCount,
+        testCount,
+    };
     return {
         type: 'evidence',
         protocolVersion: 2,
@@ -112,6 +165,8 @@ function makeEvidence(
             ...fixtures.liveSignal,
             model,
             basis: { ...fixtures.liveSignal.basis, throughStep: step },
+            dataset,
+            objectiveKey: prepared.identities.objectiveKey,
             dataLoss: trainDataLoss,
         },
         latestEvaluation: {
@@ -119,13 +174,17 @@ function makeEvidence(
             evaluationId,
             trigger,
             model,
+            dataset,
+            objectiveKey: prepared.identities.objectiveKey,
             train: {
                 ...fixtures.evaluation.train,
-                values: { dataLoss: trainDataLoss },
+                basis: { kind: 'full-split', split: 'train', sampleCount: trainCount, populationCount: trainCount },
+                values: valuesFor(trainCount),
             },
             test: {
                 ...fixtures.evaluation.test,
-                values: { dataLoss: trainDataLoss + 0.1 },
+                basis: { kind: 'full-split', split: 'test', sampleCount: testCount, populationCount: testCount },
+                values: { ...valuesFor(testCount), dataLoss: trainDataLoss + 0.1 },
             },
             objective: {
                 regularizationPenalty: 0,
@@ -141,42 +200,147 @@ function makeV2Result(
     evaluationId = 1,
     trigger: EvaluationTrigger = evaluationId === 1 ? 'initial' : 'manual-step',
     snapshot: NetworkSnapshot = makeSnapshot(step),
+    prepared: typeof INITIAL_PREPARED = INITIAL_PREPARED,
 ) {
+    if (!prepared) throw new Error('missing prepared fixture');
+    snapshot = { ...snapshot };
+    delete snapshot.historyPoint;
+    const baseEvidence = makeEvidence(runId, evaluationId, step, trigger, prepared);
+    const snapshotConfusion = snapshot.testMetrics.confusionMatrix
+        ?? snapshot.testMetrics.multiclassConfusionMatrix;
+    let evidence: WorkerEvidenceMessageV2 = snapshotConfusion === undefined
+        ? baseEvidence
+        : {
+            ...baseEvidence,
+            latestEvaluation: {
+                ...baseEvidence.latestEvaluation!,
+                test: {
+                    ...baseEvidence.latestEvaluation!.test,
+                    values: {
+                        ...baseEvidence.latestEvaluation!.test.values,
+                        confusionMatrix: snapshotConfusion,
+                    },
+                },
+            },
+        };
+    if (trigger === 'initial') {
+        evidence = {
+            type: 'evidence',
+            protocolVersion: 2,
+            latestEvaluation: evidence.latestEvaluation!,
+        };
+    }
+    const evaluation = evidence.latestEvaluation!;
+    const currentProvenance = (basis: ArtifactBasis) => ({
+        model: evaluation.model,
+        dataset: evaluation.dataset,
+        objectiveKey: evaluation.objectiveKey,
+        basis,
+    });
+    const artifacts: WorkerArtifactProvenanceV2 = {
+        ...(snapshot.outputGrid.length > 0 || snapshot.multiclassBoundary !== undefined
+            ? {
+                decisionBoundary: currentProvenance({
+                    kind: 'prediction-grid',
+                    pointCount: snapshot.gridSize * snapshot.gridSize,
+                    domain: [-1, 1, -1, 1],
+                }),
+            }
+            : {}),
+        ...(snapshot.neuronGrids !== undefined && snapshot.neuronGrids.length > 0
+            ? {
+                neuronGrids: currentProvenance({
+                    kind: 'prediction-grid',
+                    pointCount: snapshot.gridSize * snapshot.gridSize,
+                    domain: [-1, 1, -1, 1],
+                }),
+            }
+            : {}),
+        ...(snapshot.layerStats !== undefined
+            ? {
+                activationStatistics: currentProvenance({
+                    kind: 'bounded-sample',
+                    split: 'train',
+                    sampleCount: Math.min(128, evaluation.dataset.trainCount),
+                    populationCount: evaluation.dataset.trainCount,
+                }),
+            }
+            : {}),
+        ...(snapshot.activationHistograms !== undefined
+            ? {
+                activationHistogram: currentProvenance({
+                    kind: 'bounded-sample',
+                    split: 'train',
+                    sampleCount: Math.min(128, evaluation.dataset.trainCount),
+                    populationCount: evaluation.dataset.trainCount,
+                }),
+            }
+            : {}),
+        ...(snapshot.testMetrics.confusionMatrix !== undefined
+            || snapshot.testMetrics.multiclassConfusionMatrix !== undefined
+            ? { confusionMatrix: currentProvenance(evaluation.test.basis) }
+            : {}),
+    };
     return {
         snapshot,
         runId,
-        evidence: makeEvidence(runId, evaluationId, step, trigger),
+        evidence,
+        identities: prepared.identities,
+        ...(Object.keys(artifacts).length === 0 ? {} : { artifacts }),
+        ...(snapshot.layerStats === undefined ? {} : { layerStatsGradientRevision: step }),
     };
 }
 
+async function makeV2ResultForRequest(
+    runId: number,
+    request: WorkerExperimentRequestV2,
+) {
+    const prepared = await prepareExperimentDocument(request.document);
+    if (!prepared.ok) throw new Error('test worker request must prepare');
+    return makeV2Result(
+        runId,
+        0,
+        1,
+        'initial',
+        makeSnapshot(0, prepared.value.compiled.network),
+        prepared.value,
+    );
+}
+
 function withActivationHistograms(snapshot: NetworkSnapshot): NetworkSnapshot {
+    const sampleCount = Math.min(128, fixtures.evaluation.train.basis.sampleCount);
+    const layerSizes = DEFAULT_NETWORK.hiddenLayers.concat(DEFAULT_NETWORK.outputSize);
+    const layers = layerSizes.map(
+        (layerSize, layerIndex) => ({
+            layerIndex,
+            binCount: 12,
+            binStart: -1,
+            binWidth: 1 / 6,
+            minActivation: -0.5,
+            maxActivation: 0.8,
+            totalCount: sampleCount * layerSize,
+            nearZeroCount: 1,
+            saturatedCount: 2,
+        }),
+    );
     return {
         ...snapshot,
         activationHistograms: {
-            bins: new Float32Array([1, 3, 0, 2]),
-            layers: [
-                {
-                    layerIndex: 0,
-                    binCount: 4,
-                    binStart: -1,
-                    binWidth: 0.5,
-                    minActivation: -0.5,
-                    maxActivation: 0.8,
-                    totalCount: 6,
-                    nearZeroCount: 1,
-                    saturatedCount: 2,
-                },
-            ],
+            bins: Float32Array.from(layers.flatMap((layer) => (
+                [layer.totalCount, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            ))),
+            layers,
         },
     };
 }
 
 function withConfusionMatrix(snapshot: NetworkSnapshot): NetworkSnapshot {
+    const testCount = fixtures.evaluation.test.basis.sampleCount;
     return {
         ...snapshot,
         testMetrics: {
             ...snapshot.testMetrics,
-            confusionMatrix: { tp: 5, tn: 4, fp: 3, fn: 2 },
+            confusionMatrix: { tp: testCount, tn: 0, fp: 0, fn: 0 },
         },
     };
 }
@@ -321,15 +485,30 @@ describe('useTraining', () => {
 
         bridge.workerApi.initializeExperimentV2
             .mockReset()
-            .mockResolvedValueOnce(makeV2Result(101, 1))
-            .mockResolvedValue(makeV2Result(102, 2));
-        bridge.workerApi.resetExperimentV2.mockReset().mockResolvedValue(makeV2Result(103, 3));
-        bridge.workerApi.stepExperimentV2.mockReset().mockResolvedValue(makeV2Result(101, 4, 2));
+            .mockImplementation(async (request: WorkerExperimentRequestV2) => (
+                makeV2ResultForRequest(
+                    (useTrainingStore.getState().evidenceGenerationId ?? 0) + 1,
+                    request,
+                )
+            ));
+        bridge.workerApi.resetExperimentV2.mockReset().mockImplementation(() => {
+            const prepared = usePlaygroundStore.getState().prepared;
+            if (!prepared) throw new Error('reset test requires prepared experiment');
+            return makeV2Result(
+                (useTrainingStore.getState().evidenceGenerationId ?? 0) + 1,
+                0,
+                1,
+                'initial',
+                makeSnapshot(0, prepared.compiled.network),
+                prepared,
+            );
+        });
+        bridge.workerApi.stepExperimentV2.mockReset().mockResolvedValue(makeV2Result(1, 4, 2));
         bridge.workerApi.initializeArena.mockResolvedValue(makeArenaSnapshot(0));
         bridge.workerApi.stepArena.mockResolvedValue(makeArenaSnapshot(1));
         bridge.workerApi.restoreCheckpoint.mockResolvedValue({
             snapshot: makeSnapshot(0),
-            runId: 101,
+            runId: 1,
             timeline: {
                 checkpoints: [
                     { id: 1, step: 0, epoch: 0, trainLoss: 0.4, testLoss: 0.5, label: 'Step 0' },
@@ -359,9 +538,9 @@ describe('useTraining', () => {
         renderHook(() => useTraining());
 
         await waitFor(() => expect(bridge.workerApi.initializeExperimentV2).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
-        expect(bridge.newRunTo).toHaveBeenCalledWith(101);
+        expect(bridge.newRunTo).toHaveBeenCalledWith(1);
         expect(bridge.setupStreamChannel).toHaveBeenCalledTimes(1);
         expect(bridge.workerApi.updateDemand).toHaveBeenCalledWith(DEFAULT_DEMAND);
         expect(bridge.workerApi.setWebGpuEnabled).toHaveBeenCalledWith(true);
@@ -452,13 +631,13 @@ describe('useTraining', () => {
                 callOrder.push('setSnapshot');
                 original.setSnapshot(snapshot);
             },
-            resetEvidence: () => {
-                callOrder.push('resetEvidence');
-                original.resetEvidence();
+            prepareEvidenceReplacement: (evidence) => {
+                callOrder.push('prepareEvidenceReplacement');
+                return original.prepareEvidenceReplacement(evidence);
             },
-            applyEvidence: (evidence) => {
-                callOrder.push('applyEvidence');
-                original.applyEvidence(evidence);
+            commitEvidenceReplacement: (prepared) => {
+                callOrder.push('commitEvidenceReplacement');
+                original.commitEvidenceReplacement(prepared);
             },
             setFrameVersions: (versions) => {
                 callOrder.push('setFrameVersions');
@@ -468,27 +647,55 @@ describe('useTraining', () => {
 
         renderHook(() => useTraining());
 
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         expect(callOrder).toEqual([
-            'resetEvidence',
-            'applyEvidence',
+            'prepareEvidenceReplacement',
+            'commitEvidenceReplacement',
             'setSnapshot',
             'setFrameVersions',
         ]);
     });
 
-    it('keeps bounded activation histogram arrays in the frame buffer only', async () => {
+    it('stores worker-authored direct V2 artifacts with provenance during initialization', async () => {
         bridge.workerApi.initializeExperimentV2.mockReset().mockResolvedValue(
-            makeV2Result(101, 1, 1, 'initial', withActivationHistograms(makeSnapshot(1))),
+            makeV2Result(
+                1,
+                0,
+                1,
+                'initial',
+                withConfusionMatrix(withActivationHistograms(makeSnapshot(0))),
+            ),
         );
 
         renderHook(() => useTraining());
 
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
-        expect(getFrameBuffer().activationHistogramBins).toEqual(new Float32Array([1, 3, 0, 2]));
-        expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(1);
+        expect(getFrameBuffer().activationHistogramBins).toHaveLength(36);
+        expect(Array.from(getFrameBuffer().activationHistogramBins ?? []).filter(
+            (value) => value > 0,
+        )).toEqual([512, 512, 128]);
+        expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(3);
+        expect(getFrameBuffer().activationHistogramProvenance?.model.generationId).toBe(1);
+        expect(getFrameBuffer().outputGrid).toHaveLength(GRID_SIZE * GRID_SIZE);
+        expect(getFrameBuffer().outputGrid?.every(
+            (value) => Math.abs(value - 0.2) < 1e-6,
+        )).toBe(true);
+        expect(getFrameBuffer().decisionBoundaryProvenance?.model).toEqual(
+            useTrainingStore.getState().latestEvaluation?.model,
+        );
+        expect(getFrameBuffer().confusionMatrix).toEqual({
+            tp: fixtures.evaluation.test.basis.sampleCount,
+            tn: 0,
+            fp: 0,
+            fn: 0,
+        });
+        expect(getFrameBuffer().confusionMatrixProvenance?.model).toEqual(
+            useTrainingStore.getState().latestEvaluation?.model,
+        );
         expect(useTrainingStore.getState().snapshot?.activationHistograms).toBeUndefined();
+        expect(useTrainingStore.getState().snapshot?.outputGrid).toEqual([]);
+        expect(useTrainingStore.getState().snapshot?.testMetrics.confusionMatrix).toBeUndefined();
     });
 
     it('clears stale multiclass boundary frames when applying a fresh direct snapshot', async () => {
@@ -503,17 +710,17 @@ describe('useTraining', () => {
         });
         const initialMulticlassVersion = getFrameBuffer().multiclassBoundaryVersion;
         const emptySnapshot = {
-                ...makeSnapshot(1),
+                ...makeSnapshot(0),
                 outputGrid: new Float32Array(0),
-                neuronGrids: new Float32Array(0),
+                neuronGrids: undefined,
             };
         bridge.workerApi.initializeExperimentV2.mockReset().mockResolvedValue(
-            makeV2Result(101, 1, 1, 'initial', emptySnapshot),
+            makeV2Result(1, 0, 1, 'initial', emptySnapshot),
         );
 
         renderHook(() => useTraining());
 
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         expect(getFrameBuffer().multiclassClassGrid).toBeNull();
         expect(getFrameBuffer().multiclassConfidenceGrid).toBeNull();
         expect(getFrameBuffer().multiclassBoundaryLayout).toBeNull();
@@ -522,13 +729,20 @@ describe('useTraining', () => {
 
     it('clears stale worker-authored multiclass confusion data when stepping through a direct snapshot', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const evaluation = useTrainingStore.getState().latestEvaluation!;
 
         updateFrameBuffer({
             multiclassConfusionMatrix: {
                 classCount: 3,
                 classLabels: [0, 1, 2],
                 counts: [2, 1, 0, 0, 3, 1, 1, 0, 4],
+            },
+            confusionMatrixProvenance: {
+                model: { ...evaluation.model, generationId: 100 },
+                dataset: evaluation.dataset,
+                objectiveKey: evaluation.objectiveKey,
+                basis: evaluation.test.basis,
             },
         });
         const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
@@ -538,6 +752,7 @@ describe('useTraining', () => {
         });
 
         expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+        expect(getFrameBuffer().confusionMatrixProvenance).toBeNull();
         expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(
             initialMulticlassConfusionVersion + 1,
         );
@@ -546,7 +761,7 @@ describe('useTraining', () => {
 
     it('does not churn multiclass confusion state when direct sync has no stale worker-authored data', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
 
         await act(async () => {
@@ -558,23 +773,23 @@ describe('useTraining', () => {
         expect('multiclassConfusionMatrixVersion' in useTrainingStore.getState()).toBe(false);
     });
 
-    it('applies a freshly computed multiclass boundary from a direct step snapshot', async () => {
-        const classGrid = new Uint8Array([0, 1, 2, 1]);
-        const confidenceGrid = new Float32Array([0.9, 0.7, 0.8, 0.6]);
+    it('applies a worker-authored multiclass boundary from a direct V2 step', async () => {
+        const classGrid = new Uint8Array(GRID_SIZE * GRID_SIZE);
+        const confidenceGrid = new Float32Array(GRID_SIZE * GRID_SIZE).fill(0.8);
         const directSnapshot: NetworkSnapshot = {
             ...makeSnapshot(2),
+            outputGrid: new Float32Array(0),
             multiclassBoundary: {
                 classGrid,
                 confidenceGrid,
-                gridSize: 2,
+                gridSize: GRID_SIZE,
             },
         };
         bridge.workerApi.stepExperimentV2.mockResolvedValue(
-            makeV2Result(101, 2, 2, 'manual-step', directSnapshot),
+            makeV2Result(1, 2, 2, 'manual-step', directSnapshot),
         );
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
-
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         await act(async () => {
             await result.current.step();
         });
@@ -582,21 +797,32 @@ describe('useTraining', () => {
         expect(getFrameBuffer().multiclassClassGrid).toEqual(classGrid);
         expect(getFrameBuffer().multiclassConfidenceGrid).toEqual(confidenceGrid);
         expect(getFrameBuffer().multiclassBoundaryLayout).toEqual({
-            gridSize: 2,
+            gridSize: GRID_SIZE,
             classCount: 3,
             classLabels: [0, 1, 2],
         });
+        expect(getFrameBuffer().decisionBoundaryProvenance?.model).toEqual(
+            useTrainingStore.getState().latestEvaluation?.model,
+        );
+        expect(getFrameBuffer().outputGrid).toBeNull();
     });
 
     it('clears stale worker-authored multiclass confusion data when resetting through a direct snapshot', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const evaluation = useTrainingStore.getState().latestEvaluation!;
 
         updateFrameBuffer({
             multiclassConfusionMatrix: {
                 classCount: 3,
                 classLabels: [0, 1, 2],
                 counts: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+            },
+            confusionMatrixProvenance: {
+                model: evaluation.model,
+                dataset: evaluation.dataset,
+                objectiveKey: evaluation.objectiveKey,
+                basis: evaluation.test.basis,
             },
         });
         const initialMulticlassConfusionVersion = getFrameBuffer().multiclassConfusionMatrixVersion;
@@ -606,36 +832,164 @@ describe('useTraining', () => {
         });
 
         expect(getFrameBuffer().multiclassConfusionMatrix).toBeNull();
+        expect(getFrameBuffer().confusionMatrixProvenance).toBeNull();
         expect(getFrameBuffer().multiclassConfusionMatrixVersion).toBe(
             initialMulticlassConfusionVersion + 1,
         );
     });
 
-    it('retains the last activation histogram frame data across cadence-skipped snapshots', async () => {
+    it('retains same-generation activation histogram bytes and provenance on direct reuse', async () => {
         bridge.workerApi.initializeExperimentV2.mockReset().mockResolvedValue(
-            makeV2Result(101, 1, 1, 'initial', withActivationHistograms(makeSnapshot(1))),
+            makeV2Result(1, 0, 1, 'initial', withActivationHistograms(makeSnapshot(0))),
         );
-        bridge.workerApi.stepExperimentV2.mockResolvedValue(makeV2Result(101, 2, 2));
+        bridge.workerApi.stepExperimentV2.mockResolvedValue(makeV2Result(1, 2, 2));
 
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         const histogramBins = getFrameBuffer().activationHistogramBins;
-        expect(histogramBins).toEqual(new Float32Array([1, 3, 0, 2]));
+        const histogramProvenance = getFrameBuffer().activationHistogramProvenance;
+        expect(histogramBins).toHaveLength(36);
 
         await act(async () => {
             await result.current.step();
         });
 
         expect(getFrameBuffer().activationHistogramBins).toBe(histogramBins);
-        expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(1);
+        expect(getFrameBuffer().activationHistogramLayout?.layers).toHaveLength(3);
+        expect(getFrameBuffer().activationHistogramProvenance).toBe(histogramProvenance);
         expect(useTrainingStore.getState().snapshot?.step).toBe(2);
         expect(useTrainingStore.getState().snapshot?.activationHistograms).toBeUndefined();
     });
 
+    it('rejects forged direct artifact provenance before publishing frame or React state', async () => {
+        const forged = makeV2Result(1, 2, 2);
+        forged.artifacts = {
+            ...forged.artifacts,
+            decisionBoundary: {
+                ...forged.artifacts!.decisionBoundary!,
+                model: {
+                    ...forged.artifacts!.decisionBoundary!.model,
+                    revision: 1,
+                },
+            },
+        };
+        bridge.workerApi.stepExperimentV2.mockResolvedValue(forged);
+
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const beforeSnapshot = useTrainingStore.getState().snapshot;
+        const beforeGrid = getFrameBuffer().outputGrid;
+        const beforeProvenance = getFrameBuffer().decisionBoundaryProvenance;
+
+        await act(async () => {
+            await result.current.step();
+        });
+
+        expect(useTrainingStore.getState().workerError).toMatch(/provenance identity or basis mismatch/i);
+        expect(useTrainingStore.getState().snapshot).toBe(beforeSnapshot);
+        expect(getFrameBuffer().outputGrid).toBe(beforeGrid);
+        expect(getFrameBuffer().decisionBoundaryProvenance).toBe(beforeProvenance);
+    });
+
+    it('rejects direct confusion bytes that differ from the latest paired evaluation', async () => {
+        const valid = makeV2Result(
+            1,
+            2,
+            2,
+            'manual-step',
+            withConfusionMatrix(makeSnapshot(2)),
+        );
+        const forged = {
+            ...valid,
+            snapshot: {
+                ...valid.snapshot,
+                testMetrics: {
+                    ...valid.snapshot.testMetrics,
+                    confusionMatrix: { tp: 999, tn: 0, fp: 0, fn: 0 },
+                },
+            },
+        };
+        bridge.workerApi.stepExperimentV2.mockResolvedValue(forged);
+
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const beforeSnapshot = useTrainingStore.getState().snapshot;
+        const beforeFrame = getFrameBuffer();
+
+        await act(async () => {
+            await result.current.step();
+        });
+
+        expect(useTrainingStore.getState().workerError).toMatch(/does not match latest paired evaluation/i);
+        expect(useTrainingStore.getState().snapshot).toBe(beforeSnapshot);
+        expect(getFrameBuffer().outputGrid).toBe(beforeFrame.outputGrid);
+        expect(getFrameBuffer().confusionMatrix).toBe(beforeFrame.confusionMatrix);
+    });
+
+    it('rejects forged initialization artifacts and recovers on the next valid generation', async () => {
+        renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const beforeSnapshot = useTrainingStore.getState().snapshot;
+        const beforeEvaluation = useTrainingStore.getState().latestEvaluation;
+        const beforeFrame = getFrameBuffer();
+        bridge.workerApi.initializeExperimentV2.mockImplementationOnce(async (
+            request: WorkerExperimentRequestV2,
+        ) => {
+            const forged = await makeV2ResultForRequest(2, request);
+            forged.artifacts = {
+                ...forged.artifacts,
+                decisionBoundary: {
+                    ...forged.artifacts!.decisionBoundary!,
+                    model: {
+                        ...forged.artifacts!.decisionBoundary!.model,
+                        revision: 1,
+                    },
+                },
+            };
+            return forged;
+        });
+
+        await act(async () => {
+            useTrainingStore.getState().beginConfigChange('data');
+            const edited = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setSampleCount(recipe, DEFAULT_DATA.numSamples + 1),
+            );
+            expect(edited.ok).toBe(true);
+        });
+        await waitFor(() => expect(useTrainingStore.getState().configError)
+            .toMatch(/provenance identity or basis mismatch/i));
+
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(1);
+        expect(useTrainingStore.getState().latestEvaluation).toBe(beforeEvaluation);
+        expect(useTrainingStore.getState().snapshot).toBe(beforeSnapshot);
+        expect(getFrameBuffer().outputGrid).toBe(beforeFrame.outputGrid);
+        expect(getFrameBuffer().decisionBoundaryProvenance)
+            .toBe(beforeFrame.decisionBoundaryProvenance);
+        expect(bridge.newRunTo).toHaveBeenCalledTimes(1);
+        expect(bridge.newRunTo).toHaveBeenLastCalledWith(1);
+
+        bridge.workerApi.initializeExperimentV2.mockImplementationOnce(
+            (request: WorkerExperimentRequestV2) => makeV2ResultForRequest(3, request),
+        );
+        act(() => {
+            useTrainingStore.getState().retryConfigSync();
+        });
+
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(3));
+        expect(useTrainingStore.getState().configError).toBeNull();
+        expect(useTrainingStore.getState().latestEvaluation?.model.generationId).toBe(3);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
+        expect(getFrameBuffer().decisionBoundaryProvenance?.model.generationId).toBe(3);
+        expect(bridge.newRunTo).toHaveBeenLastCalledWith(3);
+        expect(useTrainingStore.getState().trainedRecipeFingerprint)
+            .toBe(usePlaygroundStore.getState().prepared?.identities.recipeFingerprint);
+        expect(useTrainingStore.getState().trainedRecipeSource).toBe('config-sync');
+    });
+
     it('initializes and steps the scalar live arena through bounded frame-buffer summaries', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         const modelA = {
             label: 'Tuned model',
@@ -669,12 +1023,12 @@ describe('useTraining', () => {
         expect(bridge.workerApi.stepArena).toHaveBeenCalledWith(2);
         expect(useTrainingStore.getState().arenaSummaries?.[0]?.step).toBe(1);
         expect(useTrainingStore.getState().arenaSummariesVersion).toBeGreaterThan(initializedVersion);
-        expect(useTrainingStore.getState().snapshot?.step).toBe(1);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
     });
 
     it('starts and stops the streaming training loop', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         act(() => {
             result.current.play();
@@ -696,7 +1050,7 @@ describe('useTraining', () => {
         expect(bridge.stopRenderLoop).toHaveBeenCalledTimes(1);
         expect(bridge.postStreamCommand).toHaveBeenCalledWith({ type: 'stopTraining' });
 
-        act(() => getStreamHandler()({ type: 'status', runId: 101, status: 'paused' }));
+        act(() => getStreamHandler()({ type: 'status', runId: 1, status: 'paused' }));
         act(() => {
             result.current.play();
         });
@@ -706,7 +1060,7 @@ describe('useTraining', () => {
 
     it('does not pause when training is not running', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         bridge.stopRenderLoop.mockClear();
         bridge.postStreamCommand.mockClear();
 
@@ -722,7 +1076,7 @@ describe('useTraining', () => {
 
     it('awaits the pause acknowledgement before a manual step from running', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         act(() => result.current.play());
         bridge.workerApi.stepExperimentV2.mockClear();
         bridge.postStreamCommand.mockClear();
@@ -734,7 +1088,7 @@ describe('useTraining', () => {
         expect(bridge.postStreamCommand).toHaveBeenCalledWith({ type: 'stopTraining' });
         expect(bridge.workerApi.stepExperimentV2).not.toHaveBeenCalled();
 
-        act(() => getStreamHandler()({ type: 'status', runId: 101, status: 'paused' }));
+        act(() => getStreamHandler()({ type: 'status', runId: 1, status: 'paused' }));
         await act(async () => stepPromise);
         expect(bridge.workerApi.stepExperimentV2).toHaveBeenCalledWith(1);
         expect(useTrainingStore.getState().pauseReason).toBe('manual');
@@ -742,7 +1096,7 @@ describe('useTraining', () => {
 
     it('records automatic worker pause reasons and stops the local render loop', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         act(() => {
             result.current.play();
@@ -752,7 +1106,7 @@ describe('useTraining', () => {
         act(() => {
             getStreamHandler()({
                 type: 'status',
-                runId: 101,
+                runId: 1,
                 status: 'paused',
                 pauseReason: 'diverged',
             });
@@ -765,13 +1119,13 @@ describe('useTraining', () => {
 
     it('preserves the final streamed snapshot before applying automatic paused status', async () => {
         renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         const handler = getStreamHandler();
 
         act(() => {
             handler({
                 type: 'snapshot',
-                runId: 101,
+                runId: 1,
                 snapshotId: 2,
                 scalars: {
                     step: 9,
@@ -793,7 +1147,7 @@ describe('useTraining', () => {
             });
             handler({
                 type: 'status',
-                runId: 101,
+                runId: 1,
                 status: 'paused',
                 pauseReason: 'diverged',
             });
@@ -805,23 +1159,38 @@ describe('useTraining', () => {
     });
 
     it('clears stale binary confusion when a fresh streamed snapshot omits confusion data', async () => {
-        bridge.workerApi.initializeExperimentV2.mockReset().mockResolvedValue(
-            makeV2Result(101, 1, 1, 'initial', withConfusionMatrix(makeSnapshot(1))),
-        );
-
         renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const handler = getStreamHandler();
+        act(() => {
+            handler({
+                type: 'snapshot',
+                runId: 1,
+                snapshotId: 1,
+                scalars: {
+                    step: 1,
+                    epoch: 0,
+                    trainLoss: 0.3,
+                    testLoss: 0.4,
+                    gridSize: 2,
+                    testMetricsStale: false,
+                },
+                outputGrid: new Float32Array(),
+                confusionMatrix: { tp: 5, tn: 4, fp: 3, fn: 2 },
+                historyPoint: { step: 1, trainLoss: 0.3, testLoss: 0.4 },
+            });
+        });
         await waitFor(() => expect(useTrainingStore.getState().snapshot?.testMetrics.confusionMatrix).toEqual({
             tp: 5,
             tn: 4,
             fp: 3,
             fn: 2,
         }));
-        const handler = getStreamHandler();
 
         act(() => {
             handler({
                 type: 'snapshot',
-                runId: 101,
+                runId: 1,
                 snapshotId: 2,
                 scalars: {
                     step: 2,
@@ -845,7 +1214,7 @@ describe('useTraining', () => {
         act(() => {
             handler({
                 type: 'snapshot',
-                runId: 101,
+                runId: 1,
                 snapshotId: 3,
                 scalars: {
                     step: 3,
@@ -876,7 +1245,7 @@ describe('useTraining', () => {
         act(() => {
             handler({
                 type: 'snapshot',
-                runId: 101,
+                runId: 1,
                 snapshotId: 4,
                 scalars: {
                     step: 4,
@@ -894,9 +1263,60 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().snapshot?.testMetrics.confusionMatrix).toBeUndefined();
     });
 
+    it('keeps strict streamed React snapshots scalar-only despite conflicting old artifacts', async () => {
+        renderHook(() => useTraining());
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        const evaluation = useTrainingStore.getState().latestEvaluation!;
+        const oldSnapshot = makeSnapshot(99);
+        useTrainingStore.getState().setSnapshot({
+            ...oldSnapshot,
+            testMetrics: {
+                ...oldSnapshot.testMetrics,
+                confusionMatrix: { tp: 1, tn: 2, fp: 3, fn: 4 },
+            },
+        });
+
+        act(() => getStreamHandler()({
+            type: 'snapshot',
+            protocolVersion: 2,
+            runId: 1,
+            snapshotId: 2,
+            model: { generationId: 1, revision: 1, step: 1, epoch: 0 },
+            scalars: {
+                step: 1,
+                epoch: 0,
+                trainLoss: 0.2,
+                testLoss: 0.3,
+                gridSize: GRID_SIZE,
+                testMetricsStale: true,
+            },
+            confusionMatrix: { tp: 10, tn: 20, fp: 30, fn: 40 },
+            confusionMatrixEvaluationId: evaluation.evaluationId,
+            confusionMatrixVersion: 1,
+            artifacts: {
+                confusionMatrix: {
+                    model: evaluation.model,
+                    dataset: evaluation.dataset,
+                    objectiveKey: evaluation.objectiveKey,
+                    basis: evaluation.test.basis,
+                },
+            },
+        }));
+
+        const strictSnapshot = useTrainingStore.getState().snapshot!;
+        expect(strictSnapshot.step).toBe(1);
+        expect(strictSnapshot.testMetrics.confusionMatrix).toBeUndefined();
+        expect(strictSnapshot.testMetrics.multiclassConfusionMatrix).toBeUndefined();
+        expect(strictSnapshot.weights).toEqual([]);
+        expect(strictSnapshot.biases).toEqual([]);
+        expect(strictSnapshot.outputGrid).toEqual([]);
+        expect(strictSnapshot.neuronGrids).toBeUndefined();
+        expect(strictSnapshot.layerStats).toBeUndefined();
+    });
+
     it('does not mark config-sync internal stops as manual pauses', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         const handler = getStreamHandler();
 
         act(() => {
@@ -910,7 +1330,7 @@ describe('useTraining', () => {
             );
             expect(edited.ok).toBe(true);
         });
-        act(() => handler({ type: 'status', runId: 101, status: 'paused' }));
+        act(() => handler({ type: 'status', runId: 1, status: 'paused' }));
 
         await waitFor(() => expect(bridge.workerApi.initializeExperimentV2).toHaveBeenCalledTimes(2));
         expect(bridge.postStreamCommand).toHaveBeenCalledTimes(1);
@@ -921,7 +1341,7 @@ describe('useTraining', () => {
     it('reports a worker error when a manual step fails', async () => {
         bridge.workerApi.stepExperimentV2.mockRejectedValueOnce(new Error('step exploded'));
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         await act(async () => {
             await result.current.step();
@@ -934,7 +1354,7 @@ describe('useTraining', () => {
 
     it('never reaches the legacy checkpoint mutator from a strict prepared run', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         useTrainingStore.getState().setCheckpointTimeline({
             checkpoints: [
                 { id: 1, step: 0, epoch: 0, trainLoss: 0.4, testLoss: 0.5, label: 'Step 0' },
@@ -950,13 +1370,13 @@ describe('useTraining', () => {
         });
 
         expect(bridge.workerApi.restoreCheckpoint).not.toHaveBeenCalled();
-        expect(useTrainingStore.getState().snapshot?.step).toBe(1);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
         expect(useTrainingStore.getState().status).toBe('idle');
     });
 
     it('clears pause reason on reset', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         useTrainingStore.getState().setPauseReason('diverged');
 
         await act(async () => {
@@ -969,20 +1389,20 @@ describe('useTraining', () => {
 
     it('clears stale test metrics when reset returns a freshly evaluated snapshot', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         useTrainingStore.getState().setTestMetricsStale(true);
 
         await act(async () => {
             await result.current.reset();
         });
 
-        expect(useTrainingStore.getState().snapshot?.step).toBe(3);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
         expect(useTrainingStore.getState().testMetricsStale).toBe(false);
     });
 
     it('syncs config changes successfully and clears config loading state', async () => {
         const { unmount } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         bridge.workerApi.initializeExperimentV2.mockClear();
 
         await act(async () => {
@@ -994,9 +1414,10 @@ describe('useTraining', () => {
         });
 
         await waitFor(() => expect(bridge.workerApi.initializeExperimentV2).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(2));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
 
-        expect(bridge.newRunTo).toHaveBeenCalledWith(102);
+        expect(bridge.newRunTo).toHaveBeenCalledWith(2);
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
         expect(useTrainingStore.getState().dataConfigLoading).toBe(false);
         expect(useTrainingStore.getState().configError).toBeNull();
@@ -1008,7 +1429,7 @@ describe('useTraining', () => {
 
     it('does not stop a run for projection-only config mutations', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         act(() => {
             result.current.play();
@@ -1030,7 +1451,7 @@ describe('useTraining', () => {
 
     it('ignores hidden projection changes without creating a config transaction', async () => {
         renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         bridge.workerApi.initializeExperimentV2.mockClear();
 
         act(() => {
@@ -1056,7 +1477,7 @@ describe('useTraining', () => {
 
     it('keeps a running worker isolated from hidden projection changes', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         act(() => {
             result.current.play();
@@ -1087,7 +1508,7 @@ describe('useTraining', () => {
 
     it('records config sync failures and keeps the previous config snapshot retryable', async () => {
         const { unmount } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         bridge.workerApi.initializeExperimentV2.mockRejectedValueOnce(new Error('bad network'));
 
         await act(async () => {
@@ -1106,14 +1527,17 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().trainedRecipeConfig?.network.hiddenLayers).toEqual(DEFAULT_NETWORK.hiddenLayers);
         expect(useTrainingStore.getState().trainedRecipeSource).toBe('initialize');
 
-        bridge.workerApi.initializeExperimentV2.mockResolvedValueOnce(makeV2Result(105, 5));
+        bridge.workerApi.initializeExperimentV2.mockImplementationOnce(
+            (request: WorkerExperimentRequestV2) => makeV2ResultForRequest(2, request),
+        );
         act(() => {
             useTrainingStore.getState().retryConfigSync();
         });
 
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(5));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
         expect(useTrainingStore.getState().configError).toBeNull();
-        expect(bridge.newRunTo).toHaveBeenCalledWith(105);
+        expect(bridge.newRunTo).toHaveBeenCalledWith(2);
         expect(useTrainingStore.getState().trainedRecipeConfig?.network.hiddenLayers).toEqual([5, 3]);
         expect(useTrainingStore.getState().trainedRecipeSource).toBe('config-sync');
 
@@ -1122,7 +1546,7 @@ describe('useTraining', () => {
 
     it('forwards WebGPU grid toggles to the worker after initialization', async () => {
         renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         bridge.workerApi.setWebGpuEnabled.mockClear();
 
         act(() => {
@@ -1136,7 +1560,7 @@ describe('useTraining', () => {
 
     it('drops stale config sync completions after a newer config wins', async () => {
         renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         const first = deferred<ReturnType<typeof makeV2Result>>();
         const second = deferred<ReturnType<typeof makeV2Result>>();
@@ -1165,26 +1589,28 @@ describe('useTraining', () => {
         await waitFor(() => expect(bridge.workerApi.initializeExperimentV2).toHaveBeenCalledTimes(2));
 
         await act(async () => {
-            second.resolve(makeV2Result(220, 20));
+            const request = bridge.workerApi.initializeExperimentV2.mock.calls[1]![0] as unknown as WorkerExperimentRequestV2;
+            second.resolve(await makeV2ResultForRequest(2, request));
             await second.promise;
         });
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(20));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
 
         await act(async () => {
-            first.resolve(makeV2Result(210, 10));
+            const request = bridge.workerApi.initializeExperimentV2.mock.calls[0]![0] as unknown as WorkerExperimentRequestV2;
+            first.resolve(await makeV2ResultForRequest(2, request));
             await first.promise;
         });
 
-        expect(useTrainingStore.getState().snapshot?.step).toBe(20);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
         expect(useTrainingStore.getState().configError).toBeNull();
-        expect(bridge.newRunTo).toHaveBeenCalledWith(220);
-        expect(bridge.newRunTo).not.toHaveBeenCalledWith(210);
+        expect(bridge.newRunTo).toHaveBeenCalledWith(2);
+        expect(bridge.newRunTo).toHaveBeenCalledTimes(1);
     });
 
     it('awaits one acknowledged pause before the newest overlapping config mutation', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         const handler = getStreamHandler();
         act(() => result.current.play());
         bridge.postStreamCommand.mockClear();
@@ -1209,7 +1635,7 @@ describe('useTraining', () => {
         expect(bridge.postStreamCommand).toHaveBeenCalledWith({ type: 'stopTraining' });
         expect(bridge.workerApi.initializeExperimentV2).not.toHaveBeenCalled();
 
-        act(() => handler({ type: 'status', runId: 101, status: 'paused' }));
+        act(() => handler({ type: 'status', runId: 1, status: 'paused' }));
         await waitFor(() => expect(bridge.workerApi.initializeExperimentV2).toHaveBeenCalledTimes(1));
         const request = bridge.workerApi.initializeExperimentV2.mock.calls[0]![0] as WorkerExperimentRequestV2;
         expect(request.requestId).toBe(3);
@@ -1221,8 +1647,10 @@ describe('useTraining', () => {
 
     it('keeps committed generation identity when auxiliary config hydration fails', async () => {
         renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
-        bridge.workerApi.initializeExperimentV2.mockResolvedValueOnce(makeV2Result(202, 20));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
+        bridge.workerApi.initializeExperimentV2.mockImplementationOnce(
+            (request: WorkerExperimentRequestV2) => makeV2ResultForRequest(2, request),
+        );
         bridge.workerApi.getTrainPoints.mockRejectedValueOnce(new Error('points hydration failed'));
 
         await act(async () => {
@@ -1234,9 +1662,10 @@ describe('useTraining', () => {
         });
         const expectedFingerprint = usePlaygroundStore.getState().prepared!.identities.recipeFingerprint;
 
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(20));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
         await waitFor(() => expect(useTrainingStore.getState().workerError).toBe('points hydration failed'));
-        expect(useTrainingStore.getState().evidenceGenerationId).toBe(202);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(2);
         expect(useTrainingStore.getState().trainedRecipeFingerprint).toBe(expectedFingerprint);
         expect(useTrainingStore.getState().trainedRecipeConfig?.data.numSamples)
             .toBe(DEFAULT_DATA.numSamples + 1);
@@ -1247,10 +1676,12 @@ describe('useTraining', () => {
 
     it('drops a manual-step completion after a prepared generation wins', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         const staleStep = deferred<ReturnType<typeof makeV2Result>>();
         bridge.workerApi.stepExperimentV2.mockReset().mockReturnValueOnce(staleStep.promise);
-        bridge.workerApi.initializeExperimentV2.mockResolvedValueOnce(makeV2Result(202, 20));
+        bridge.workerApi.initializeExperimentV2.mockImplementationOnce(
+            (request: WorkerExperimentRequestV2) => makeV2ResultForRequest(2, request),
+        );
 
         let stepPromise!: Promise<void>;
         act(() => {
@@ -1264,20 +1695,20 @@ describe('useTraining', () => {
             );
             expect(edited.ok).toBe(true);
         });
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(20));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
 
         await act(async () => {
-            staleStep.resolve(makeV2Result(101, 4, 2));
+            staleStep.resolve(makeV2Result(1, 4, 2));
             await stepPromise;
         });
-        expect(useTrainingStore.getState().snapshot?.step).toBe(20);
-        expect(useTrainingStore.getState().evidenceGenerationId).toBe(202);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(2);
         expect(useTrainingStore.getState().workerError).toBeNull();
     });
 
     it('blocks play during a manual step and drops a result older than streamed revision', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         const pendingStep = deferred<ReturnType<typeof makeV2Result>>();
         bridge.workerApi.stepExperimentV2.mockReset().mockReturnValueOnce(pendingStep.promise);
         bridge.postStreamCommand.mockClear();
@@ -1293,10 +1724,10 @@ describe('useTraining', () => {
         );
 
         act(() => {
-            getStreamHandler()(makeEvidence(101, 2, 5, 'cadence'));
+            getStreamHandler()(makeEvidence(1, 2, 5, 'cadence'));
             getStreamHandler()({
                 type: 'snapshot',
-                runId: 101,
+                runId: 1,
                 snapshotId: 5,
                 scalars: {
                     step: 5,
@@ -1311,7 +1742,7 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().snapshot?.step).toBe(5);
 
         await act(async () => {
-            pendingStep.resolve(makeV2Result(101, 4, 3));
+            pendingStep.resolve(makeV2Result(1, 4, 3));
             await stepPromise;
         });
         expect(useTrainingStore.getState().snapshot?.step).toBe(5);
@@ -1326,7 +1757,7 @@ describe('useTraining', () => {
 
     it('does not start training while a config sync is pending', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         const pending = deferred<ReturnType<typeof makeV2Result>>();
         bridge.workerApi.initializeExperimentV2.mockReset().mockReturnValueOnce(pending.promise);
@@ -1351,15 +1782,17 @@ describe('useTraining', () => {
         expect(bridge.postStreamCommand).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'startTraining' }));
 
         await act(async () => {
-            pending.resolve(makeV2Result(230, 30));
+            const request = bridge.workerApi.initializeExperimentV2.mock.calls[0]![0] as unknown as WorkerExperimentRequestV2;
+            pending.resolve(await makeV2ResultForRequest(2, request));
             await pending.promise;
         });
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(30));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
     });
 
     it('does not step or reset while config sync is pending', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         bridge.workerApi.stepExperimentV2.mockClear();
         bridge.workerApi.resetExperimentV2.mockClear();
 
@@ -1379,7 +1812,7 @@ describe('useTraining', () => {
 
     it('uses only strict V2 lifecycle methods and keeps checkpoint restore unreachable', async () => {
         const { result } = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
 
         await act(async () => {
             await result.current.step();
@@ -1391,7 +1824,7 @@ describe('useTraining', () => {
             resetPromise = result.current.reset();
         });
         expect(bridge.postStreamCommand).toHaveBeenCalledWith({ type: 'stopTraining' });
-        act(() => getStreamHandler()({ type: 'status', runId: 101, status: 'paused' }));
+        act(() => getStreamHandler()({ type: 'status', runId: 1, status: 'paused' }));
         await act(async () => resetPromise);
         await act(async () => result.current.restoreCheckpoint(1));
 
@@ -1406,12 +1839,12 @@ describe('useTraining', () => {
 
     it('applies streamed V2 evidence immediately and pauses only for current-generation errors', async () => {
         renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(101));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(1));
         const handler = getStreamHandler();
         const initialEvaluationVersion = useTrainingStore.getState().evaluationHistoryVersion;
 
         act(() => {
-            handler(makeEvidence(101, 2, 2, 'cadence'));
+            handler(makeEvidence(1, 2, 2, 'cadence'));
         });
         expect(useTrainingStore.getState().latestEvaluation?.evaluationId).toBe(2);
         expect(useTrainingStore.getState().evaluationHistoryVersion)
@@ -1447,7 +1880,7 @@ describe('useTraining', () => {
                 type: 'worker-error',
                 protocolVersion: 2,
                 requestId: null,
-                generationId: 101,
+                generationId: 1,
                 code: 'evaluation-failed',
                 path: '$.evaluation',
                 message: 'current evaluation failed',
@@ -1461,7 +1894,7 @@ describe('useTraining', () => {
 
     it('isolates stale and current preparation errors from the last valid run', async () => {
         renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(1));
+        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(0));
         const handler = getStreamHandler();
         const pending = deferred<ReturnType<typeof makeV2Result>>();
         bridge.workerApi.initializeExperimentV2.mockReset().mockReturnValueOnce(pending.promise);
@@ -1504,19 +1937,19 @@ describe('useTraining', () => {
         });
         expect(useTrainingStore.getState().configError).toBe('current preparation failed');
         expect(useTrainingStore.getState().workerError).toBeNull();
-        expect(useTrainingStore.getState().snapshot?.step).toBe(1);
-        expect(useTrainingStore.getState().evidenceGenerationId).toBe(101);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(1);
 
         await act(async () => {
             pending.resolve(makeV2Result(404, 40));
             await pending.promise;
         });
-        expect(useTrainingStore.getState().snapshot?.step).toBe(1);
-        expect(useTrainingStore.getState().evidenceGenerationId).toBe(101);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(1);
     });
 
     it('does not skip queued cadence evaluations when a direct step result jumps ahead', async () => {
-        const direct = makeV2Result(101, 4, 3, 'manual-step');
+        const direct = makeV2Result(1, 4, 3, 'manual-step');
         bridge.workerApi.stepExperimentV2.mockResolvedValueOnce(direct);
         const { result } = renderHook(() => useTraining());
         await waitFor(() => expect(useTrainingStore.getState().latestEvaluation?.evaluationId).toBe(1));
@@ -1531,7 +1964,7 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().evaluationHistoryVersion).toBe(initialEvaluationVersion);
 
         act(() => {
-            handler(makeEvidence(101, 2, 4, 'cadence'));
+            handler(makeEvidence(1, 2, 4, 'cadence'));
             handler(direct.evidence);
         });
         expect(useTrainingStore.getState().latestEvaluation?.evaluationId).toBe(3);
@@ -1548,7 +1981,9 @@ describe('useTraining', () => {
         bridge.workerApi.initializeExperimentV2
             .mockReset()
             .mockImplementationOnce(() => first.promise)
-            .mockResolvedValueOnce(makeV2Result(202, 20));
+            .mockImplementationOnce((request: WorkerExperimentRequestV2) => (
+                makeV2ResultForRequest(1, request)
+            ));
         renderHook(() => useTraining());
         await waitFor(() => expect(bridge.workerApi.initializeExperimentV2).toHaveBeenCalledTimes(1));
 
@@ -1559,14 +1994,14 @@ describe('useTraining', () => {
             );
             expect(edited.ok).toBe(true);
         });
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(20));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(1));
 
         await act(async () => {
             first.reject(new Error('superseded mount failed'));
             await first.promise.catch(() => undefined);
         });
-        expect(useTrainingStore.getState().snapshot?.step).toBe(20);
-        expect(useTrainingStore.getState().evidenceGenerationId).toBe(202);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(1);
         expect(useTrainingStore.getState().workerError).toBeNull();
         const requests = bridge.workerApi.initializeExperimentV2.mock.calls
             .map((call) => (call[0] as WorkerExperimentRequestV2).requestId);
@@ -1577,15 +2012,19 @@ describe('useTraining', () => {
         const stalePoints = deferred<Array<{ x: number; y: number; label: number }>>();
         bridge.workerApi.initializeExperimentV2
             .mockReset()
-            .mockResolvedValueOnce(makeV2Result(101, 1))
-            .mockResolvedValueOnce(makeV2Result(202, 20));
+            .mockImplementationOnce((request: WorkerExperimentRequestV2) => (
+                makeV2ResultForRequest(1, request)
+            ))
+            .mockImplementationOnce((request: WorkerExperimentRequestV2) => (
+                makeV2ResultForRequest(2, request)
+            ));
         bridge.workerApi.getTrainPoints
             .mockReset()
             .mockReturnValueOnce(stalePoints.promise)
             .mockResolvedValue([]);
         const { result } = renderHook(() => useTraining());
         await waitFor(() => expect(bridge.workerApi.getTrainPoints).toHaveBeenCalledTimes(1));
-        expect(useTrainingStore.getState().snapshot?.step).toBe(1);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
 
         await act(async () => {
             useTrainingStore.getState().beginConfigChange('data');
@@ -1594,7 +2033,7 @@ describe('useTraining', () => {
             );
             expect(edited.ok).toBe(true);
         });
-        await waitFor(() => expect(useTrainingStore.getState().snapshot?.step).toBe(20));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(2));
         await waitFor(() => expect(useTrainingStore.getState().pendingConfigSource).toBeNull());
 
         expect(bridge.setupStreamChannel).toHaveBeenCalledTimes(1);
@@ -1607,9 +2046,15 @@ describe('useTraining', () => {
             stepsPerFrame: 5,
         });
 
-        act(() => getStreamHandler()(makeEvidence(202, 2, 21, 'cadence')));
+        act(() => getStreamHandler()(makeEvidence(
+            2,
+            2,
+            21,
+            'cadence',
+            usePlaygroundStore.getState().prepared,
+        )));
         expect(useTrainingStore.getState().latestEvaluation?.evaluationId).toBe(2);
-        expect(useTrainingStore.getState().evidenceGenerationId).toBe(202);
+        expect(useTrainingStore.getState().evidenceGenerationId).toBe(2);
 
         await act(async () => {
             stalePoints.resolve([{ x: 9, y: 9, label: 1 }]);
@@ -1638,7 +2083,7 @@ describe('useTraining', () => {
 
     it('clears a dead worker session and accepts a restarted lower generation', async () => {
         const first = renderHook(() => useTraining());
-        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(101));
+        await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(1));
         const pendingConfig = deferred<ReturnType<typeof makeV2Result>>();
         bridge.workerApi.initializeExperimentV2.mockReset().mockReturnValueOnce(pendingConfig.promise);
 
@@ -1657,15 +2102,17 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
         expect(useTrainingStore.getState().dataConfigLoading).toBe(false);
         await act(async () => {
-            pendingConfig.resolve(makeV2Result(202, 20));
+            pendingConfig.resolve(makeV2Result(2, 20));
             await pendingConfig.promise;
         });
         expect(useTrainingStore.getState().snapshot).toBeNull();
 
-        bridge.workerApi.initializeExperimentV2.mockReset().mockResolvedValueOnce(makeV2Result(1, 5));
+        bridge.workerApi.initializeExperimentV2.mockReset().mockImplementationOnce(
+            (request: WorkerExperimentRequestV2) => makeV2ResultForRequest(1, request),
+        );
         renderHook(() => useTraining());
         await waitFor(() => expect(useTrainingStore.getState().evidenceGenerationId).toBe(1));
-        expect(useTrainingStore.getState().snapshot?.step).toBe(5);
+        expect(useTrainingStore.getState().snapshot?.step).toBe(0);
         expect(useTrainingStore.getState().trainedRecipeFingerprint)
             .toBe(usePlaygroundStore.getState().prepared!.identities.recipeFingerprint);
     });

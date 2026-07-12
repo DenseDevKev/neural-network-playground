@@ -30,6 +30,18 @@ export interface MetricHistorySnapshot extends MetricHistoryVersions {
     readonly evaluationHistory: readonly EvaluationPoint[];
 }
 
+export interface PreparedMetricHistoryReplacement {
+    readonly versions: MetricHistoryVersions;
+    /** Idempotent, validation-free publication of the prepared replacement. */
+    commit(): void;
+}
+
+export interface PreparedMetricHistoryAppend {
+    readonly versions: MetricHistoryVersions;
+    readonly evaluationAppended: boolean;
+    commit(): void;
+}
+
 function capacity(value: number, path: string): number {
     if (!Number.isSafeInteger(value) || value < 1 || value > 1_000_000) {
         throw new RangeError(`${path} must be a safe integer from 1 to 1000000`);
@@ -190,7 +202,7 @@ class PackedEvaluationStorage {
         this.materialized = Array.from({ length: capacity });
     }
 
-    append(point: PairedEvaluation): boolean {
+    preflight(point: PairedEvaluation): boolean {
         const existing = this.retainedEvaluationFingerprints.get(point.evaluationId);
         if (point.evaluationId <= this.highestEvaluationId) {
             if (existing === undefined) return false;
@@ -198,6 +210,11 @@ class PackedEvaluationStorage {
             if (existing === fingerprint) return false;
             throw new TypeError(`conflicting evaluationId ${point.evaluationId}`);
         }
+        return true;
+    }
+
+    append(point: PairedEvaluation): boolean {
+        if (!this.preflight(point)) return false;
         const fingerprint = canonicalizeJson(point);
         const evicted = this.count === this.capacity
             ? this.materialized[this.start]
@@ -290,21 +307,25 @@ class PackedEvaluationStorage {
 
 /** Bounded, packed client-side mirrors of the two scientific metric series. */
 export class MetricHistoryBuffer {
-    private readonly trends: PackedTrendStorage;
-    private readonly evaluations: PackedEvaluationStorage;
+    private trends: PackedTrendStorage;
+    private evaluations: PackedEvaluationStorage;
+    private readonly trendCapacity: number;
+    private readonly evaluationCapacity: number;
     private trendVersion = 0;
     private evaluationVersion = 0;
     private cachedSnapshot: MetricHistorySnapshot | undefined;
 
     constructor(options: MetricHistoryBufferOptions = {}) {
-        this.trends = new PackedTrendStorage(capacity(
+        this.trendCapacity = capacity(
             options.trendCapacity ?? DEFAULT_TREND_HISTORY_CAPACITY,
             'trendCapacity',
-        ));
-        this.evaluations = new PackedEvaluationStorage(capacity(
+        );
+        this.evaluationCapacity = capacity(
             options.evaluationCapacity ?? DEFAULT_EVALUATION_HISTORY_CAPACITY,
             'evaluationCapacity',
-        ));
+        );
+        this.trends = new PackedTrendStorage(this.trendCapacity);
+        this.evaluations = new PackedEvaluationStorage(this.evaluationCapacity);
     }
 
     get versions(): MetricHistoryVersions {
@@ -330,10 +351,12 @@ export class MetricHistoryBuffer {
 
     appendEvaluation(point: PairedEvaluation): { readonly appended: boolean; readonly version: number } {
         const parsed = parsePairedEvaluation(point);
-        if (!this.evaluations.append(parsed)) {
+        if (!this.evaluations.preflight(parsed)) {
             return Object.freeze({ appended: false, version: this.evaluationVersion });
         }
-        this.evaluationVersion = nextVersion(this.evaluationVersion, 'evaluationVersion');
+        const version = nextVersion(this.evaluationVersion, 'evaluationVersion');
+        this.evaluations.append(parsed);
+        this.evaluationVersion = version;
         this.cachedSnapshot = undefined;
         return Object.freeze({ appended: true, version: this.evaluationVersion });
     }
@@ -358,6 +381,91 @@ export class MetricHistoryBuffer {
         this.evaluationVersion = evaluationVersion;
         this.cachedSnapshot = undefined;
         return this.versions;
+    }
+
+    /**
+     * Build an empty-generation replacement without touching the accepted
+     * histories. All parsing, canonicalization, allocation, and version
+     * overflow checks finish before the returned commit can publish.
+     */
+    prepareReplacement(
+        liveSignal?: LiveTrainingSignal,
+        evaluation?: PairedEvaluation,
+    ): PreparedMetricHistoryReplacement {
+        const baseTrendVersion = this.trendVersion;
+        const baseEvaluationVersion = this.evaluationVersion;
+        const replacement = new MetricHistoryBuffer({
+            trendCapacity: this.trendCapacity,
+            evaluationCapacity: this.evaluationCapacity,
+        });
+        replacement.trendVersion = nextVersion(this.trendVersion, 'trendVersion');
+        replacement.evaluationVersion = nextVersion(
+            this.evaluationVersion,
+            'evaluationVersion',
+        );
+        if (evaluation !== undefined) replacement.appendEvaluation(evaluation);
+        if (liveSignal !== undefined) replacement.appendTrend(liveSignal);
+
+        const versions = replacement.versions;
+        let committed = false;
+        return Object.freeze({
+            versions,
+            commit: (): void => {
+                if (committed) return;
+                if (this.trendVersion !== baseTrendVersion
+                    || this.evaluationVersion !== baseEvaluationVersion) {
+                    throw new Error('prepared metric history replacement is stale');
+                }
+                this.trends = replacement.trends;
+                this.evaluations = replacement.evaluations;
+                this.trendVersion = replacement.trendVersion;
+                this.evaluationVersion = replacement.evaluationVersion;
+                this.cachedSnapshot = replacement.cachedSnapshot;
+                committed = true;
+            },
+        });
+    }
+
+    prepareAppend(
+        liveSignal?: LiveTrainingSignal,
+        evaluation?: PairedEvaluation,
+    ): PreparedMetricHistoryAppend {
+        const baseTrendVersion = this.trendVersion;
+        const baseEvaluationVersion = this.evaluationVersion;
+        const parsedLive = liveSignal === undefined ? undefined : parseLiveTrainingSignal(liveSignal);
+        const parsedEvaluation = evaluation === undefined
+            ? undefined
+            : parsePairedEvaluation(evaluation);
+        const evaluationAppended = parsedEvaluation !== undefined
+            && this.evaluations.preflight(parsedEvaluation);
+        const trendVersion = parsedLive === undefined
+            ? this.trendVersion
+            : nextVersion(this.trendVersion, 'trendVersion');
+        const evaluationVersion = !evaluationAppended
+            ? this.evaluationVersion
+            : nextVersion(this.evaluationVersion, 'evaluationVersion');
+        let committed = false;
+        return Object.freeze({
+            versions: Object.freeze({ trendVersion, evaluationVersion }),
+            evaluationAppended,
+            commit: (): void => {
+                if (committed) return;
+                if (this.trendVersion !== baseTrendVersion
+                    || this.evaluationVersion !== baseEvaluationVersion) {
+                    throw new Error('prepared metric history append is stale');
+                }
+                if (evaluationAppended && parsedEvaluation !== undefined) {
+                    this.evaluations.append(parsedEvaluation);
+                    this.evaluationVersion = evaluationVersion;
+                }
+                if (parsedLive !== undefined) {
+                    this.trends.append(parsedLive);
+                    this.trendVersion = trendVersion;
+                }
+                this.cachedSnapshot = undefined;
+                committed = true;
+            },
+        });
     }
 }
 

@@ -347,4 +347,57 @@ describe('useTrainingStore scientific evidence', () => {
         expect(publications).toBe(0);
         expect(metricHistoryBuffer.read()).toBe(before);
     });
+
+    it('publishes prepared replacement and append plans idempotently', () => {
+        let publications = 0;
+        const unsubscribe = useTrainingStore.subscribe(() => publications++);
+        const replacement = useTrainingStore.getState().prepareEvidenceReplacement(
+            fixtures.evidence,
+        );
+
+        useTrainingStore.getState().commitEvidenceReplacement(replacement);
+        useTrainingStore.getState().commitEvidenceReplacement(replacement);
+        expect(publications).toBe(1);
+
+        const append = useTrainingStore.getState().prepareEvidenceAppend(evidenceAt(2, 1));
+        useTrainingStore.getState().commitEvidenceAppend(append);
+        useTrainingStore.getState().commitEvidenceAppend(append);
+        unsubscribe();
+
+        expect(publications).toBe(2);
+        expect(useTrainingStore.getState().latestEvaluation?.evaluationId).toBe(2);
+        expect(metricHistoryBuffer.read().evaluationHistory).toHaveLength(2);
+    });
+
+    it('keeps store and packed histories unchanged when prepared append validation fails', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        const beforeState = useTrainingStore.getState();
+        const beforeHistory = metricHistoryBuffer.read();
+
+        expect(() => useTrainingStore.getState().prepareEvidenceAppend({
+            ...evidenceAt(2, 1),
+            protocolVersion: 99,
+        })).toThrow(/version-2 evidence/i);
+
+        expect(useTrainingStore.getState()).toBe(beforeState);
+        expect(metricHistoryBuffer.read()).toBe(beforeHistory);
+    });
+
+    it('rejects a stale prepared append without publishing its superseded evidence', () => {
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
+        const stale = useTrainingStore.getState().prepareEvidenceAppend(evidenceAt(2, 1));
+        useTrainingStore.getState().applyEvidence(evidenceAt(3, 2));
+        const before = useTrainingStore.getState();
+        let publications = 0;
+        const unsubscribe = useTrainingStore.subscribe(() => publications++);
+
+        expect(() => useTrainingStore.getState().commitEvidenceAppend(stale)).toThrow(/stale/i);
+        unsubscribe();
+
+        expect(publications).toBe(0);
+        expect(useTrainingStore.getState()).toBe(before);
+        expect(useTrainingStore.getState().latestEvaluation?.evaluationId).toBe(3);
+        expect(metricHistoryBuffer.read().evaluationHistory.map(({ evaluationId }) => evaluationId))
+            .toEqual([1, 3]);
+    });
 });

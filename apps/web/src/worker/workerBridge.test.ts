@@ -1,7 +1,7 @@
 // ── workerBridge Error-Path Tests ──
 // Exercises onerror / onmessageerror handlers and stale-run error passthrough.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Stub out Comlink before importing workerBridge ──
 vi.mock('comlink', () => ({
@@ -72,13 +72,32 @@ import {
 } from './workerBridge';
 import { getFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
 import {
+    CTL_FLAGS,
+    CTL_SEQ_END,
+    CTL_SEQ_START,
     FLAG_NEURON_GRIDS,
     FLAG_OUTPUT_GRID,
     allocSharedSnapshotViews,
     publishSharedSnapshot,
 } from './sharedSnapshot.ts';
-import type { WorkerSnapshotMessage, WorkerToMainMessage } from '@nn-playground/shared';
+import type {
+    ArtifactBasis,
+    ArtifactProvenance,
+    DatasetRevision,
+    WorkerArtifactProvenanceV2,
+    WorkerSnapshotMessage,
+    WorkerToMainMessage,
+} from '@nn-playground/shared';
 import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.ts';
+
+let artifactDataset: DatasetRevision;
+let artifactObjectiveKey: string;
+
+beforeAll(async () => {
+    const fixtures = await createScientificTrustFixtures();
+    artifactDataset = fixtures.evaluation.dataset;
+    artifactObjectiveKey = fixtures.evaluation.objectiveKey;
+});
 
 describe('workerBridge error paths', () => {
     let receivedMessages: WorkerToMainMessage[];
@@ -276,6 +295,79 @@ function makeSnapshotMessage(
     };
 }
 
+function artifactProvenance(
+    snapshotId: number,
+    basis: ArtifactBasis,
+): ArtifactProvenance {
+    return {
+        model: {
+            generationId: 1,
+            revision: snapshotId,
+            step: snapshotId * 10,
+            epoch: snapshotId,
+        },
+        dataset: artifactDataset,
+        objectiveKey: artifactObjectiveKey,
+        basis,
+    };
+}
+
+function makeStrictSnapshotMessage(
+    snapshotId: number,
+    overrides: Partial<WorkerSnapshotMessage> = {},
+): WorkerSnapshotMessage {
+    const { historyPoint: _legacyHistoryPoint, ...legacy } = makeSnapshotMessage(snapshotId);
+    const artifacts: WorkerArtifactProvenanceV2 = {
+        decisionBoundary: artifactProvenance(snapshotId, {
+            kind: 'prediction-grid',
+            pointCount: 4,
+            domain: [-1, 1, -1, 1],
+        }),
+        neuronGrids: artifactProvenance(snapshotId, {
+            kind: 'prediction-grid',
+            pointCount: 4,
+            domain: [-1, 1, -1, 1],
+        }),
+        activationHistogram: artifactProvenance(snapshotId, {
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount: Math.min(128, artifactDataset.trainCount),
+            populationCount: artifactDataset.trainCount,
+        }),
+    };
+    const histogramSampleCount = Math.min(128, artifactDataset.trainCount);
+    return {
+        ...legacy,
+        protocolVersion: 2,
+        model: {
+            generationId: 1,
+            revision: snapshotId,
+            step: snapshotId * 10,
+            epoch: snapshotId,
+        },
+        activationHistogramBins: Float32Array.from([
+            histogramSampleCount,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]),
+        activationHistogramLayout: {
+            binCount: 12,
+            layers: [{
+                layerIndex: 0,
+                binCount: 12,
+                binStart: 0,
+                binWidth: 0.5,
+                minActivation: 0,
+                maxActivation: 1,
+                totalCount: histogramSampleCount,
+                nearZeroCount: 1,
+                saturatedCount: 0,
+            }],
+        },
+        artifacts,
+        ...overrides,
+    } as WorkerSnapshotMessage;
+}
+
 function withTestMetricsStale(
     msg: WorkerSnapshotMessage,
     testMetricsStale: boolean,
@@ -361,6 +453,457 @@ describe('workerBridge streamed snapshots', () => {
         expect(receivedMessages[0].msg.type).toBe('snapshot');
         expect(receivedMessages[0].frameVersion).toBe(frame.version);
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck' });
+    });
+
+    it('atomically stores strict artifact arrays with each artifact provenance', () => {
+        const listener = getRegisteredStreamListener();
+        const base = makeStrictSnapshotMessage(1);
+        const activationStatistics = artifactProvenance(1, {
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount: Math.min(128, artifactDataset.trainCount),
+            populationCount: artifactDataset.trainCount,
+        });
+        const message = {
+            ...base,
+            layerStats: [{
+                meanActivation: 0.2,
+                activationStd: 0.1,
+                meanAbsWeight: 0.3,
+                meanAbsGradient: 0.05,
+            }],
+            layerStatsGradientRevision: 1,
+            artifacts: {
+                ...base.artifacts,
+                activationStatistics,
+            },
+        } satisfies WorkerSnapshotMessage;
+
+        startRenderLoop();
+        listener({ data: message } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.outputGrid).toBe(message.outputGrid);
+        expect(frame.decisionBoundaryProvenance).toEqual(message.artifacts?.decisionBoundary);
+        expect(frame.neuronGrids).toBe(message.neuronGrids);
+        expect(frame.neuronGridsProvenance).toEqual(message.artifacts?.neuronGrids);
+        expect(frame.activationHistogramBins).toBe(message.activationHistogramBins);
+        expect(frame.activationHistogramProvenance).toEqual(
+            message.artifacts?.activationHistogram,
+        );
+        expect(frame.layerStatsProvenance).toEqual(activationStatistics);
+        expect(frame.layerStatsGradientRevision).toBe(1);
+    });
+
+    it('rejects an entire strict frame when any artifact payload lacks provenance', () => {
+        const listener = getRegisteredStreamListener();
+        const before = getFrameBuffer();
+        const message = makeStrictSnapshotMessage(1, {
+            artifacts: {
+                decisionBoundary: artifactProvenance(1, {
+                    kind: 'prediction-grid',
+                    pointCount: 4,
+                    domain: [-1, 1, -1, 1],
+                }),
+            },
+        });
+
+        startRenderLoop();
+        listener({ data: message } as MessageEvent);
+
+        expect(receivedMessages.at(-1)?.msg.type).toBe('error');
+        expect(getFrameBuffer()).toBe(before);
+    });
+
+    it('rejects strict provenance without the corresponding artifact payload', () => {
+        const listener = getRegisteredStreamListener();
+        const before = getFrameBuffer();
+        const message = makeStrictSnapshotMessage(1, {
+            outputGrid: undefined,
+            neuronGrids: undefined,
+            neuronGridLayout: undefined,
+            activationHistogramBins: undefined,
+            activationHistogramLayout: undefined,
+            activationHistogramVersion: undefined,
+            artifacts: {
+                decisionBoundary: artifactProvenance(1, {
+                    kind: 'prediction-grid',
+                    pointCount: 4,
+                    domain: [-1, 1, -1, 1],
+                }),
+            },
+        });
+
+        startRenderLoop();
+        listener({ data: message } as MessageEvent);
+
+        expect(receivedMessages.at(-1)?.msg.type).toBe('error');
+        expect(getFrameBuffer()).toBe(before);
+    });
+
+    it.each([
+        ['foreign generation', (message: WorkerSnapshotMessage) => ({
+            ...message,
+            artifacts: {
+                ...message.artifacts,
+                decisionBoundary: {
+                    ...message.artifacts!.decisionBoundary!,
+                    model: {
+                        ...message.artifacts!.decisionBoundary!.model,
+                        generationId: 2,
+                    },
+                },
+            },
+        })],
+        ['mixed dataset', (message: WorkerSnapshotMessage) => ({
+            ...message,
+            artifacts: {
+                ...message.artifacts,
+                neuronGrids: {
+                    ...message.artifacts!.neuronGrids!,
+                    dataset: {
+                        ...message.artifacts!.neuronGrids!.dataset,
+                        datasetKey: `d2.1.${'A'.repeat(43)}`,
+                    },
+                },
+            },
+        })],
+        ['mixed objective', (message: WorkerSnapshotMessage) => ({
+            ...message,
+            artifacts: {
+                ...message.artifacts,
+                activationHistogram: {
+                    ...message.artifacts!.activationHistogram!,
+                    objectiveKey: `o2.1.${'A'.repeat(43)}`,
+                },
+            },
+        })],
+    ] as const)('rejects strict artifact provenance with %s identity', (_label, forge) => {
+        const listener = getRegisteredStreamListener();
+        const before = getFrameBuffer();
+
+        startRenderLoop();
+        listener({ data: forge(makeStrictSnapshotMessage(1)) } as MessageEvent);
+
+        expect(receivedMessages.at(-1)?.msg.type).toBe('error');
+        expect(getFrameBuffer()).toBe(before);
+    });
+
+    it('rejects a layer gradient revision newer than its activation model revision', () => {
+        const listener = getRegisteredStreamListener();
+        const before = getFrameBuffer();
+        const base = makeStrictSnapshotMessage(1);
+        const message = {
+            ...base,
+            layerStats: [{
+                meanActivation: 0.2,
+                activationStd: 0.1,
+                meanAbsWeight: 0.3,
+                meanAbsGradient: 0.05,
+            }],
+            layerStatsGradientRevision: 2,
+            artifacts: {
+                ...base.artifacts,
+                activationStatistics: artifactProvenance(1, {
+                    kind: 'bounded-sample',
+                    split: 'train',
+                    sampleCount: Math.min(128, artifactDataset.trainCount),
+                    populationCount: artifactDataset.trainCount,
+                }),
+            },
+        } satisfies WorkerSnapshotMessage;
+
+        startRenderLoop();
+        listener({ data: message } as MessageEvent);
+
+        expect(receivedMessages.at(-1)?.msg.type).toBe('error');
+        expect(getFrameBuffer()).toBe(before);
+    });
+
+    it('preserves strict artifact bytes and provenance on a reuse frame', () => {
+        const listener = getRegisteredStreamListener();
+        const first = makeStrictSnapshotMessage(1);
+
+        startRenderLoop();
+        listener({ data: first } as MessageEvent);
+        runNextAnimationFrame();
+        const grid = getFrameBuffer().outputGrid;
+        const gridProvenance = getFrameBuffer().decisionBoundaryProvenance;
+
+        listener({
+            data: makeStrictSnapshotMessage(2, {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                neuronGridLayout: undefined,
+                activationHistogramBins: undefined,
+                activationHistogramLayout: undefined,
+                activationHistogramVersion: undefined,
+                artifacts: undefined,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(getFrameBuffer().outputGrid).toBe(grid);
+        expect(getFrameBuffer().decisionBoundaryProvenance).toBe(gridProvenance);
+    });
+
+    it('stores a frozen provenance snapshot isolated from later message mutation', () => {
+        const listener = getRegisteredStreamListener();
+        const message = makeStrictSnapshotMessage(1);
+
+        startRenderLoop();
+        listener({ data: message } as MessageEvent);
+        const mutable = message as unknown as {
+            artifacts: { decisionBoundary: { model: { revision: number } } };
+        };
+        mutable.artifacts.decisionBoundary.model.revision = 999;
+        runNextAnimationFrame();
+
+        const stored = getFrameBuffer().decisionBoundaryProvenance!;
+        expect(stored.model.revision).toBe(1);
+        expect(Object.isFrozen(stored)).toBe(true);
+        expect(Object.isFrozen(stored.model)).toBe(true);
+        expect(Object.isFrozen(stored.basis)).toBe(true);
+    });
+
+    it('applies strict SAB artifact provenance only with the consistent shared payload', () => {
+        const listener = getRegisteredStreamListener();
+        const sharedViews = allocSharedSnapshotViews(2, 1);
+        const sharedSeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([0.8, 0.7, 0.6, 0.5]),
+            new Float32Array([0.1, 0.2, 0.3, 0.4]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 1,
+                control: sharedViews.controlSAB,
+                outputGrid: sharedViews.outputGridSAB,
+                neuronGrids: sharedViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+        const decisionBoundary = artifactProvenance(1, {
+            kind: 'prediction-grid',
+            pointCount: 4,
+            domain: [-1, 1, -1, 1],
+        });
+        const neuronGrids = artifactProvenance(1, {
+            kind: 'prediction-grid',
+            pointCount: 4,
+            domain: [-1, 1, -1, 1],
+        });
+
+        startRenderLoop();
+        listener({
+            data: makeStrictSnapshotMessage(1, {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq,
+                activationHistogramBins: undefined,
+                activationHistogramLayout: undefined,
+                activationHistogramVersion: undefined,
+                artifacts: { decisionBoundary, neuronGrids },
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(getFrameBuffer().outputGrid).toEqual(
+            new Float32Array([0.8, 0.7, 0.6, 0.5]),
+        );
+        expect(getFrameBuffer().decisionBoundaryProvenance).toEqual(decisionBoundary);
+        expect(getFrameBuffer().neuronGridsProvenance).toEqual(neuronGrids);
+    });
+
+    it('keeps accepted SAB bytes and provenance unchanged after a torn read', () => {
+        const listener = getRegisteredStreamListener();
+        const sharedViews = allocSharedSnapshotViews(2, 1);
+        const firstSeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([0.8, 0.7, 0.6, 0.5]),
+            new Float32Array([0.1, 0.2, 0.3, 0.4]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 1,
+                control: sharedViews.controlSAB,
+                outputGrid: sharedViews.outputGridSAB,
+                neuronGrids: sharedViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+        const strictShared = (snapshotId: number, sharedSeq: number) => {
+            const decisionBoundary = artifactProvenance(snapshotId, {
+                kind: 'prediction-grid',
+                pointCount: 4,
+                domain: [-1, 1, -1, 1],
+            });
+            const neuronGrids = artifactProvenance(snapshotId, {
+                kind: 'prediction-grid',
+                pointCount: 4,
+                domain: [-1, 1, -1, 1],
+            });
+            return makeStrictSnapshotMessage(snapshotId, {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq,
+                activationHistogramBins: undefined,
+                activationHistogramLayout: undefined,
+                activationHistogramVersion: undefined,
+                artifacts: { decisionBoundary, neuronGrids },
+            });
+        };
+
+        startRenderLoop();
+        listener({ data: strictShared(1, firstSeq) } as MessageEvent);
+        runNextAnimationFrame();
+        const acceptedGrid = getFrameBuffer().outputGrid;
+        const acceptedNeurons = getFrameBuffer().neuronGrids;
+        const acceptedProvenance = getFrameBuffer().decisionBoundaryProvenance;
+
+        sharedViews.outputGrid.set([9, 9, 9, 9]);
+        sharedViews.neuronGrids.set([8, 8, 8, 8]);
+        Atomics.store(sharedViews.control, CTL_FLAGS, FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS);
+        Atomics.store(sharedViews.control, CTL_SEQ_END, firstSeq + 1);
+        Atomics.store(sharedViews.control, CTL_SEQ_START, firstSeq + 2);
+        listener({ data: strictShared(2, firstSeq + 1) } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(getFrameBuffer().outputGrid).toBe(acceptedGrid);
+        expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([0.8, 0.7, 0.6, 0.5]));
+        expect(getFrameBuffer().neuronGrids).toBe(acceptedNeurons);
+        expect(getFrameBuffer().neuronGrids).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
+        expect(getFrameBuffer().decisionBoundaryProvenance).toBe(acceptedProvenance);
+    });
+
+    it('does not swap SAB staging bytes when the observed sequence is newer than the envelope', () => {
+        const listener = getRegisteredStreamListener();
+        const sharedViews = allocSharedSnapshotViews(2, 1);
+        const firstSeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([1, 2, 3, 4]),
+            new Float32Array([4, 3, 2, 1]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 1,
+                control: sharedViews.controlSAB,
+                outputGrid: sharedViews.outputGridSAB,
+                neuronGrids: sharedViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+        const message = (snapshotId: number, sharedSeq: number) => makeStrictSnapshotMessage(
+            snapshotId,
+            {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq,
+                activationHistogramBins: undefined,
+                activationHistogramLayout: undefined,
+                activationHistogramVersion: undefined,
+                artifacts: {
+                    decisionBoundary: artifactProvenance(snapshotId, {
+                        kind: 'prediction-grid',
+                        pointCount: 4,
+                        domain: [-1, 1, -1, 1],
+                    }),
+                    neuronGrids: artifactProvenance(snapshotId, {
+                        kind: 'prediction-grid',
+                        pointCount: 4,
+                        domain: [-1, 1, -1, 1],
+                    }),
+                },
+            },
+        );
+
+        startRenderLoop();
+        listener({ data: message(1, firstSeq) } as MessageEvent);
+        runNextAnimationFrame();
+        const accepted = Array.from(getFrameBuffer().outputGrid!);
+        const secondSeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([9, 9, 9, 9]),
+            new Float32Array([8, 8, 8, 8]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+        expect(secondSeq).toBeGreaterThan(firstSeq);
+
+        listener({ data: message(2, firstSeq) } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(Array.from(getFrameBuffer().outputGrid!)).toEqual(accepted);
+        expect(getFrameBuffer().decisionBoundaryProvenance?.model.revision).toBe(1);
+    });
+
+    it('does not swap SAB staging bytes when flags disagree with claimed artifacts', () => {
+        const listener = getRegisteredStreamListener();
+        const sharedViews = allocSharedSnapshotViews(2, 1);
+        const firstSeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([1, 2, 3, 4]),
+            new Float32Array([4, 3, 2, 1]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+        listener({
+            data: {
+                type: 'sharedBuffers',
+                runId: 1,
+                control: sharedViews.controlSAB,
+                outputGrid: sharedViews.outputGridSAB,
+                neuronGrids: sharedViews.neuronGridsSAB,
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent);
+        const message = (snapshotId: number, sharedSeq: number) => makeStrictSnapshotMessage(
+            snapshotId,
+            {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq,
+                activationHistogramBins: undefined,
+                activationHistogramLayout: undefined,
+                activationHistogramVersion: undefined,
+                artifacts: {
+                    decisionBoundary: artifactProvenance(snapshotId, {
+                        kind: 'prediction-grid', pointCount: 4, domain: [-1, 1, -1, 1],
+                    }),
+                    neuronGrids: artifactProvenance(snapshotId, {
+                        kind: 'prediction-grid', pointCount: 4, domain: [-1, 1, -1, 1],
+                    }),
+                },
+            },
+        );
+
+        startRenderLoop();
+        listener({ data: message(1, firstSeq) } as MessageEvent);
+        runNextAnimationFrame();
+        const acceptedGrid = Array.from(getFrameBuffer().outputGrid!);
+        const acceptedNeurons = Array.from(getFrameBuffer().neuronGrids!);
+        const outputOnlySeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([9, 9, 9, 9]),
+            null,
+            FLAG_OUTPUT_GRID,
+        );
+
+        listener({ data: message(2, outputOnlySeq) } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(Array.from(getFrameBuffer().outputGrid!)).toEqual(acceptedGrid);
+        expect(Array.from(getFrameBuffer().neuronGrids!)).toEqual(acceptedNeurons);
+        expect(getFrameBuffer().decisionBoundaryProvenance?.model.revision).toBe(1);
     });
 
     it('clears cached scalar grids when a streamed snapshot sends explicit empty grid payloads', () => {

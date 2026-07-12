@@ -5,7 +5,10 @@ import type {
     EvaluationValues,
     ModelRevision,
 } from '@nn-playground/shared';
-import { EvaluationRuntime } from './evaluationRuntime.ts';
+import {
+    EvaluationRuntime,
+    TerminalDivergenceError,
+} from './evaluationRuntime.ts';
 
 const DATASET: DatasetRevision = {
     generatorVersion: 1,
@@ -173,7 +176,20 @@ describe('EvaluationRuntime', () => {
             model: modelAt(2),
             batchSize: 4,
             dataLoss: Number.NaN,
-        })).toThrow('dataLoss');
+        })).toThrow(TerminalDivergenceError);
+        try {
+            runtime.recordBatch({
+                model: modelAt(2),
+                batchSize: 4,
+                dataLoss: Number.NaN,
+            });
+        } catch (error) {
+            expect(error).toMatchObject({
+                name: 'TerminalDivergenceError',
+                path: '$.objective.dataLoss',
+                value: Number.NaN,
+            });
+        }
         expect(runtime.latestLiveSignal).toBe(valid);
     });
 
@@ -183,7 +199,16 @@ describe('EvaluationRuntime', () => {
         recordAt(fixture, 50, 4, 0.5);
         state.test = { dataLoss: Number.POSITIVE_INFINITY };
 
-        expect(() => runtime.takeCadenceEvaluation()).toThrow('test.values.dataLoss');
+        expect(() => runtime.takeCadenceEvaluation()).toThrow(TerminalDivergenceError);
+        try {
+            runtime.takeCadenceEvaluation();
+        } catch (error) {
+            expect(error).toMatchObject({
+                name: 'TerminalDivergenceError',
+                path: '$.evaluation.test.values.dataLoss',
+                value: Number.POSITIVE_INFINITY,
+            });
+        }
         expect(runtime.latestEvaluation).toBeUndefined();
 
         state.test = { dataLoss: 0.6 };
@@ -191,6 +216,33 @@ describe('EvaluationRuntime', () => {
         expect(recovered?.evaluationId).toBe(1);
         expect(runtime.takeCadenceEvaluation()).toBeUndefined();
     });
+
+    it.each([
+        ['train data loss', { train: { dataLoss: Number.NaN } }, '$.evaluation.train.values.dataLoss'],
+        ['test accuracy', { test: { dataLoss: 0.6, accuracy: Number.POSITIVE_INFINITY } }, '$.evaluation.test.values.accuracy'],
+        ['regularization penalty', { penalty: Number.NEGATIVE_INFINITY }, '$.evaluation.objective.regularizationPenalty'],
+    ] as const)(
+        'classifies non-finite %s as terminal divergence before consuming publication state',
+        (_label, overrides, path) => {
+            const fixture = createRuntime(overrides);
+
+            expect(() => fixture.runtime.forceEvaluation('initial')).toThrow(TerminalDivergenceError);
+            try {
+                fixture.runtime.forceEvaluation('initial');
+            } catch (error) {
+                expect(error).toMatchObject({
+                    name: 'TerminalDivergenceError',
+                    path,
+                });
+            }
+            expect(fixture.runtime.latestEvaluation).toBeUndefined();
+
+            fixture.state.train = { dataLoss: 0.4 };
+            fixture.state.test = { dataLoss: 0.6 };
+            fixture.state.penalty = 0.1;
+            expect(fixture.runtime.forceEvaluation('initial').evaluationId).toBe(1);
+        },
+    );
 
     it('rejects a model from another generation and non-monotonic batch identities', () => {
         const fixture = createRuntime();

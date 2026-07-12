@@ -7,6 +7,7 @@
 import * as Comlink from 'comlink';
 import {
     Network,
+    NonFiniteNumericalError,
     PRNG,
     buildGridInputs,
     generateDataset,
@@ -68,12 +69,15 @@ import type {
     DatasetRevision,
     EvaluationValues,
     ForcedEvaluationTriggerV2,
+    ArtifactBasis,
+    ArtifactProvenance,
     LiveTrainingSignal,
     PairedEvaluation,
     PreparedExperimentDocumentV2,
     WorkerEvidenceMessageV2,
     WorkerProtocolErrorCodeV2,
     WorkerProtocolErrorSourceV2,
+    WorkerArtifactProvenanceV2,
 } from '@nn-playground/shared';
 import type { FeatureSpec } from '@nn-playground/engine';
 import {
@@ -88,6 +92,8 @@ import {
     DEFAULT_RUNTIME_STOP_CONDITIONS,
     createInitialStopConditionState,
     evaluateStopConditions,
+    stopConditionsRequireCurrentEvaluation,
+    type StopCondition,
     type StopConditionState,
 } from './stopConditions.ts';
 import {
@@ -98,7 +104,10 @@ import {
     type MiniBatchScratch,
 } from './trainingLoop.ts';
 import { projectPreparedExperiment } from '../store/legacyProjection.ts';
-import { EvaluationRuntime } from './evaluationRuntime.ts';
+import {
+    EvaluationRuntime,
+    TerminalDivergenceError,
+} from './evaluationRuntime.ts';
 import {
     RuntimeMetricHistory,
     type RuntimeMetricHistorySnapshot,
@@ -179,8 +188,12 @@ interface WorkerState {
     confusionMatrixVersion: number;
     /** Monotonic identity for bounded multiclass confusion matrix payload freshness. */
     multiclassConfusionMatrixVersion: number;
+    /** Evaluation ID whose paired confusion bytes were most recently transported. */
+    lastPackedConfusionEvaluationId: number | null;
     /** Monotonic identity for activation histogram payload freshness. */
     activationHistogramVersion: number;
+    /** Clipped-gradient revision summarized by the current layer-statistics payload. */
+    layerStatsGradientRevision: number | null;
     /** Monotonic identity for bounded multiclass boundary payload freshness. */
     multiclassBoundaryVersion: number;
     /** Pre-allocated buffers for grid predictions. */
@@ -559,7 +572,9 @@ const state: WorkerState = {
     stopConditionState: createInitialStopConditionState(),
     confusionMatrixVersion: 0,
     multiclassConfusionMatrixVersion: 0,
+    lastPackedConfusionEvaluationId: null,
     activationHistogramVersion: 0,
+    layerStatsGradientRevision: null,
     multiclassBoundaryVersion: 0,
     outputGridBuffer: null,
     neuronGridsBuffer: null,
@@ -664,6 +679,9 @@ export interface WorkerExperimentResultV2 {
     readonly snapshot: NetworkSnapshot;
     readonly runId: number;
     readonly evidence: WorkerEvidenceMessageV2;
+    readonly identities: PreparedExperimentDocumentV2['identities'];
+    readonly artifacts?: WorkerArtifactProvenanceV2;
+    readonly layerStatsGradientRevision?: number;
 }
 
 interface V2RuntimeBuild {
@@ -698,6 +716,11 @@ interface V2RuntimeBuild {
 let experimentRequestGate = new ExperimentRequestGate();
 let v2MutationSequence = 0;
 let v2AllocationCount = 0;
+let runtimeStopConditions: readonly StopCondition[] = DEFAULT_RUNTIME_STOP_CONDITIONS;
+let detectWebGPUForRuntime: typeof detectWebGPU = detectWebGPU;
+let createWebGPUGridPredictorForRuntime = (
+    args: ConstructorParameters<typeof WebGPUGridPredictor>[0],
+): WebGPUGridPredictor => new WebGPUGridPredictor(args);
 export const MAX_MANUAL_V2_STEP_ITERATIONS = 10;
 
 /** Narrow diagnostic seam: forged/stale-boundary tests assert allocation never starts. */
@@ -712,6 +735,54 @@ export function setV2PrepareForTests(
     experimentRequestGate = new ExperimentRequestGate(
         prepare === undefined ? {} : { prepare },
     );
+}
+
+/** Narrow seam for proving comparison stop-condition behavior in the worker loop. */
+export function setRuntimeStopConditionsForTests(
+    conditions?: readonly StopCondition[],
+): void {
+    runtimeStopConditions = conditions === undefined
+        ? DEFAULT_RUNTIME_STOP_CONDITIONS
+        : [...conditions];
+    state.stopConditionState = createInitialStopConditionState();
+}
+
+/** Narrow seam for deterministic async WebGPU readback race tests. */
+export function setGpuPredictorForTests(
+    predictor: Pick<
+        WebGPUGridPredictor,
+        | 'updateWeights'
+        | 'predictGridInto'
+        | 'predictGridWithNeuronsInto'
+        | 'dispose'
+    > | null,
+): void {
+    state.gpuPredictor = predictor as WebGPUGridPredictor | null;
+}
+
+/** Narrow seam for deterministic device-detection/toggle race tests. */
+export function setGpuInitializationForTests(
+    overrides?: {
+        readonly detect?: typeof detectWebGPU;
+        readonly create?: (
+            args: ConstructorParameters<typeof WebGPUGridPredictor>[0],
+        ) => WebGPUGridPredictor;
+    },
+): void {
+    detectWebGPUForRuntime = overrides?.detect ?? detectWebGPU;
+    createWebGPUGridPredictorForRuntime = overrides?.create
+        ?? ((args) => new WebGPUGridPredictor(args));
+}
+
+/** Narrow seam for proving real engine overflow translation at worker boundaries. */
+export function setV2OutputOverflowForTests(): void {
+    const { network, compiled } = requireV2Runtime();
+    const outputLayer = compiled.network.hiddenLayers.length;
+    const fanIn = compiled.network.hiddenLayers.at(-1) ?? compiled.network.inputSize;
+    for (let input = 0; input < fanIn; input++) {
+        network.setWeight(outputLayer, 0, input, Number.MAX_VALUE);
+    }
+    network.setBias(outputLayer, 0, Number.MAX_VALUE);
 }
 
 function beginV2Mutation(): number {
@@ -826,11 +897,48 @@ function postRuntimeErrorV2(
         requestId: null,
         generationId: state.prepared && state.runId > 0 ? state.runId : null,
         code,
-        path: '$',
+        path: error instanceof TerminalDivergenceError ? error.path : '$',
         message: protocolErrorText(error, 'Worker V2 runtime failure.'),
         source,
     });
     deliverProtocolErrorV2(message);
+}
+
+function postTerminalDivergenceV2(
+    error: TerminalDivergenceError,
+    source: WorkerProtocolErrorSourceV2,
+    code: WorkerProtocolErrorCodeV2 = 'runtime-failure',
+): void {
+    stopInternalLoop();
+    postRuntimeErrorV2(error, source, code);
+    postStatus('paused', 'diverged');
+}
+
+function postTerminalDivergenceForPhase(
+    error: TerminalDivergenceError,
+    fallback: 'training' | 'evaluation',
+): void {
+    if (error.path.startsWith('$.snapshot') || error.path.startsWith('$.gpu')) {
+        postTerminalDivergenceV2(error, 'artifact', 'artifact-failed');
+        return;
+    }
+    postTerminalDivergenceV2(
+        error,
+        fallback,
+        fallback === 'evaluation' ? 'evaluation-failed' : 'runtime-failure',
+    );
+}
+
+function withEngineNumericalBoundary<T>(pathPrefix: string, operation: () => T): T {
+    try {
+        return operation();
+    } catch (error) {
+        if (error instanceof NonFiniteNumericalError) {
+            const suffix = error.path.startsWith('[') ? error.path : `.${error.path}`;
+            throw new TerminalDivergenceError(`${pathPrefix}${suffix}`, error.value);
+        }
+        throw error;
+    }
 }
 
 function argmax(values: readonly number[]): number {
@@ -941,7 +1049,7 @@ function stageV2Runtime(
             step: network.getStep(),
             epoch: epochRef.value,
         }),
-        evaluateTrain: (model) => {
+        evaluateTrain: (model) => withEngineNumericalBoundary('$.evaluation.train', () => {
             const objective = network.evaluateObjective(
                 trainInputs,
                 trainTargets,
@@ -959,14 +1067,16 @@ function stageV2Runtime(
                 compiled.task,
                 objective.dataLoss,
             );
-        },
-        evaluateTest: () => withTaskMetricsV2(
-            network,
-            testInputs,
-            testTargets,
-            compiled.task,
-            network.evaluateDataLoss(testInputs, testTargets, compiled.objective),
-        ),
+        }),
+        evaluateTest: () => withEngineNumericalBoundary('$.evaluation.test', () => (
+            withTaskMetricsV2(
+                network,
+                testInputs,
+                testTargets,
+                compiled.task,
+                network.evaluateDataLoss(testInputs, testTargets, compiled.objective),
+            )
+        )),
         evaluateRegularizationPenalty: (model) => {
             if (cachedTrainObjective === null
                 || cachedTrainObjective.generationId !== model.generationId
@@ -1068,7 +1178,9 @@ function installStagedV2State(staged: V2RuntimeBuild, generationId: number): voi
     state.snapshotId = 0;
     state.snapshotsSinceLastTestEval = 0;
     state.snapshotsSinceLastTrainEval = 0;
-    state.snapshotsSinceLastGrid = 0;
+    // A fresh strict generation must return its initially demanded boundary
+    // artifacts immediately; subsequent snapshots resume normal cadence.
+    state.snapshotsSinceLastGrid = state.demand.gridInterval;
     state.snapshotsSinceLastActivationHistogram = state.demand.needActivationHistograms
         ? state.demand.activationHistogramInterval
         : 0;
@@ -1081,7 +1193,9 @@ function installStagedV2State(staged: V2RuntimeBuild, generationId: number): voi
     state.gridFreshFromGpu = false;
     state.stopConditionState = createInitialStopConditionState();
     state.confusionMatrixVersion++;
+    state.lastPackedConfusionEvaluationId = null;
     state.activationHistogramVersion++;
+    state.layerStatsGradientRevision = null;
     resetCheckpoints();
     resetAck();
 }
@@ -1126,6 +1240,8 @@ function commitV2Runtime(prepared: PreparedExperimentDocumentV2): WorkerExperime
         snapshot,
         runId: generationId,
         evidence: staged.initialEvidence,
+        identities: prepared.identities,
+        ...directSnapshotArtifactBundle(snapshot),
     };
 }
 
@@ -1375,6 +1491,7 @@ function buildDataAndNetwork(): void {
     state.stopConditionState = createInitialStopConditionState();
     state.confusionMatrixVersion++;
     state.activationHistogramVersion++;
+    state.layerStatsGradientRevision = null;
     resetCheckpoints();
 
     // Increment run ID
@@ -1461,12 +1578,14 @@ async function ensureGpuPredictor(): Promise<WebGPUGridPredictor | null> {
     ];
     if (exceedsGpuShape(layerSizes)) return null;
 
-    const device = await detectWebGPU();
-    if (state.runId !== runId || gpuPredictorSignature() !== signature) return null;
+    const device = await detectWebGPUForRuntime();
+    if (!state.gpuEnabled
+        || state.runId !== runId
+        || gpuPredictorSignature() !== signature) return null;
     if (!device) return null;
 
     try {
-        const predictor = new WebGPUGridPredictor({
+        const predictor = createWebGPUGridPredictorForRuntime({
             device,
             layerSizes,
             gridLen: state.gridInputs.length,
@@ -1476,7 +1595,9 @@ async function ensureGpuPredictor(): Promise<WebGPUGridPredictor | null> {
         // Grid inputs are constant per shape — upload once and never again
         // until the next shape change disposes this predictor.
         predictor.setGridInputs(state.gridInputsFlat);
-        if (state.runId !== runId || gpuPredictorSignature() !== signature) {
+        if (!state.gpuEnabled
+            || state.runId !== runId
+            || gpuPredictorSignature() !== signature) {
             predictor.dispose();
             return null;
         }
@@ -1519,42 +1640,151 @@ async function runGpuGridIfDue(): Promise<void> {
     });
     if (readbackMode === 'none' || readbackMode === 'cpu') return;
 
+    const requestedNetwork = state.network;
+    const requestedRunId = state.runId;
+    const requestedRevision = requestedNetwork.getRevision();
+    const requestedMutationSequence = v2MutationSequence;
+    const requestedDemand = state.demand;
+    const requestedGpuEnabled = state.gpuEnabled;
+    const requestedOutputBuffer = state.outputGridBuffer;
+    const requestedNeuronBuffer = state.neuronGridsBuffer;
+    const requestIsCurrent = (): boolean => (
+        state.network === requestedNetwork
+        && state.runId === requestedRunId
+        && state.network.getRevision() === requestedRevision
+        && v2MutationSequence === requestedMutationSequence
+        && state.demand === requestedDemand
+        && state.gpuEnabled === requestedGpuEnabled
+        && state.outputGridBuffer === requestedOutputBuffer
+        && state.neuronGridsBuffer === requestedNeuronBuffer
+    );
+    const forceCpuFallback = (): void => {
+        // A generation replacement owns different network and buffer objects.
+        // Its readiness must not be disturbed by completion of the discarded
+        // predecessor. A revision-only race reuses the captured objects and
+        // therefore must overwrite the stale readback on the CPU.
+        if (state.network !== requestedNetwork
+            || state.outputGridBuffer !== requestedOutputBuffer
+            || state.neuronGridsBuffer !== requestedNeuronBuffer) {
+            return;
+        }
+        state.gridFreshFromGpu = false;
+        state.gridStale = true;
+        state.snapshotsSinceLastGrid = Math.max(
+            state.snapshotsSinceLastGrid,
+            state.demand.gridInterval,
+        );
+    };
+
     const predictor = await ensureGpuPredictor();
+    if (!requestIsCurrent()) {
+        forceCpuFallback();
+        return;
+    }
     if (!predictor) return;
 
-    // Push the latest weights to the GPU. The flat accessors allocate a
-    // fresh Float32Array per call — we accept that small cost in exchange
-    // for not having to reach into Network's private packed buffers.
-    const flat = state.network.getWeightsFlat();
-    predictor.updateWeights(flat.buffer, state.network.getBiasesFlat());
+    const readbackIdentity = {
+        runId: requestedRunId,
+        revision: requestedRevision,
+        mutationSequence: requestedMutationSequence,
+        demand: requestedDemand,
+        gpuEnabled: requestedGpuEnabled,
+        readbackMode,
+        network: requestedNetwork,
+        predictor,
+        outputBuffer: requestedOutputBuffer,
+        neuronBuffer: requestedNeuronBuffer,
+    };
+    const readbackIsCurrent = (): boolean => (
+        state.runId === readbackIdentity.runId
+        && state.network === readbackIdentity.network
+        && state.network.getRevision() === readbackIdentity.revision
+        && v2MutationSequence === readbackIdentity.mutationSequence
+        && state.demand === readbackIdentity.demand
+        && state.gpuEnabled === readbackIdentity.gpuEnabled
+        && selectWebGpuGridReadbackMode({
+            needDecisionBoundary: state.demand.needDecisionBoundary,
+            needNeuronGrids: state.demand.needNeuronGrids,
+            gridLen: state.gridInputs.length,
+            neuronCount: state.network.getTotalNeuronCount(),
+        }) === readbackIdentity.readbackMode
+        && state.gpuPredictor === readbackIdentity.predictor
+        && state.outputGridBuffer === readbackIdentity.outputBuffer
+        && state.neuronGridsBuffer === readbackIdentity.neuronBuffer
+    );
 
     try {
+        // Push the latest weights to the GPU. Float32 representability is a
+        // scientific boundary, so typed failures become terminal divergence.
+        const flat = readbackIdentity.network.getWeightsFlat();
+        predictor.updateWeights(flat.buffer, readbackIdentity.network.getBiasesFlat());
         workerPerfMark('perf:worker:predictGridGpu:start');
         if (readbackMode === 'withNeurons') {
             await predictor.predictGridWithNeuronsInto(
-                state.outputGridBuffer,
-                state.neuronGridsBuffer,
+                readbackIdentity.outputBuffer,
+                readbackIdentity.neuronBuffer,
             );
         } else {
-            await predictor.predictGridInto(state.outputGridBuffer);
+            await predictor.predictGridInto(readbackIdentity.outputBuffer);
         }
         workerPerfMeasure('perf:worker:predictGridGpu', 'perf:worker:predictGridGpu:start');
+        if (!readbackIsCurrent()) {
+            forceCpuFallback();
+            return;
+        }
+        for (let index = 0; index < readbackIdentity.outputBuffer.length; index++) {
+            const value = readbackIdentity.outputBuffer[index];
+            if (!Number.isFinite(value)) {
+                throw new NonFiniteNumericalError(`predictionGrid.output[${index}]`, value);
+            }
+        }
+        if (readbackMode === 'withNeurons') {
+            for (let index = 0; index < readbackIdentity.neuronBuffer.length; index++) {
+                const value = readbackIdentity.neuronBuffer[index];
+                if (!Number.isFinite(value)) {
+                    throw new NonFiniteNumericalError(`predictionGrid.neurons[${index}]`, value);
+                }
+            }
+        }
         state.gridFreshFromGpu = true;
     } catch (err) {
+        if (!readbackIsCurrent()) {
+            forceCpuFallback();
+            return;
+        }
+        if (err instanceof NonFiniteNumericalError) {
+            throw new TerminalDivergenceError(`$.gpu.${err.path}`, err.value);
+        }
         console.warn('[worker] GPU grid prediction failed, falling back to CPU', err);
-        // Leave gridFreshFromGpu false; computeSnapshot will run the CPU
-        // branch this frame.
+        forceCpuFallback();
     }
 }
 
 // ── Snapshot computation ──
+
+function assertFiniteV2SnapshotScalars(snapshot: NetworkSnapshot): void {
+    if (!state.prepared) return;
+    const candidates: Array<readonly [string, number | undefined]> = [
+        ['$.snapshot.trainLoss', snapshot.trainLoss],
+        ['$.snapshot.testLoss', snapshot.testLoss],
+        ['$.snapshot.trainMetrics.loss', snapshot.trainMetrics.loss],
+        ['$.snapshot.testMetrics.loss', snapshot.testMetrics.loss],
+        ['$.snapshot.trainMetrics.accuracy', snapshot.trainMetrics.accuracy],
+        ['$.snapshot.testMetrics.accuracy', snapshot.testMetrics.accuracy],
+    ];
+    for (const [path, value] of candidates) {
+        if (value !== undefined && !Number.isFinite(value)) {
+            throw new TerminalDivergenceError(path, value);
+        }
+    }
+}
 
 /**
  * @param opts.lightweight — when true, skips the deep-copy of weights/biases
  * into the snapshot. The streaming path transfers flat buffers separately
  * (see packSnapshotMessage), so nested copies are pure waste there.
  */
-function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot {
+function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): NetworkSnapshot {
     workerPerfMark('perf:worker:snapshot:start');
     if (!state.network || !state.trainingConfig || !state.dataConfig) {
         throw new Error('Not initialized');
@@ -1732,6 +1962,9 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         GRID_SIZE,
         { includeParams: !opts.lightweight },
     );
+    if (state.prepared) {
+        delete snap.historyPoint;
+    }
     // Direct RPC snapshots do not pass through WorkerSnapshotMessage.scalars,
     // so keep their cadence metadata alongside the metrics themselves.
     snap.testMetricsStale = state.testMetricsStale;
@@ -1756,7 +1989,22 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
     }
 
     if (demand.needLayerStats) {
-        snap.layerStats = state.network.getLayerStats();
+        const populationCount = state.trainInputs.length;
+        const sampleCount = Math.min(128, populationCount);
+        const statistics = state.network.computeLayerStatistics(state.trainInputs, 128);
+        if (statistics.sampleCount !== sampleCount
+            || statistics.populationCount !== populationCount) {
+            throw new Error(
+                'Layer statistics sample basis does not match the training population.',
+            );
+        }
+        if (statistics.revision !== state.network.getRevision()) {
+            throw new Error('layer statistics revision must equal the current model revision');
+        }
+        snap.layerStats = statistics.layers;
+        state.layerStatsGradientRevision = statistics.gradientRevision;
+    } else {
+        state.layerStatsGradientRevision = null;
     }
 
     const wantsActivationHistograms = demand.needActivationHistograms;
@@ -1776,11 +2024,128 @@ function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot 
         state.snapshotsSinceLastActivationHistogram++;
     }
 
+    if (state.prepared) {
+        const pairedMatrix = state.demand.needConfusionMatrix
+            ? state.evaluationRuntime?.latestEvaluation?.test.values.confusionMatrix
+            : undefined;
+        snap.testMetrics.confusionMatrix = undefined;
+        snap.testMetrics.multiclassConfusionMatrix = undefined;
+        if (pairedMatrix !== undefined) {
+            if (isMulticlassConfusionMatrix(pairedMatrix)) {
+                snap.testMetrics.multiclassConfusionMatrix = pairedMatrix;
+            } else {
+                snap.testMetrics.confusionMatrix = pairedMatrix;
+            }
+        }
+    }
+
     // Legacy checkpoint payloads cannot restore strict V2 provenance. Keep
     // them disabled until the dedicated V2 checkpoint transaction lands.
+    assertFiniteV2SnapshotScalars(snap);
+    if (state.prepared) {
+        // Prove the display transport can represent every parameter before
+        // evidence/frame publication; Float64 values may overflow Float32.
+        state.network.getWeightsFlat();
+        state.network.getBiasesFlat();
+    }
     if (!state.prepared) captureCheckpointFromSnapshot(snap);
     workerPerfMeasure('perf:worker:snapshot', 'perf:worker:snapshot:start');
     return snap;
+}
+
+function computeSnapshot(opts: { lightweight?: boolean } = {}): NetworkSnapshot {
+    if (!state.prepared) return computeSnapshotUnchecked(opts);
+    return withEngineNumericalBoundary('$.snapshot.engine', () => computeSnapshotUnchecked(opts));
+}
+
+function artifactProvenanceAt(
+    basis: ArtifactBasis,
+    model: ArtifactProvenance['model'],
+): ArtifactProvenance {
+    if (!state.prepared || !state.datasetRevision) {
+        throw new Error('strict artifact provenance requires an initialized V2 experiment');
+    }
+    return {
+        model,
+        dataset: state.datasetRevision,
+        objectiveKey: state.prepared.identities.objectiveKey,
+        basis,
+    };
+}
+
+function currentArtifactProvenance(basis: ArtifactBasis): ArtifactProvenance {
+    if (!state.network) throw new Error('strict artifact provenance requires a network');
+    return artifactProvenanceAt(basis, {
+        generationId: state.runId,
+        revision: state.network.getRevision(),
+        step: state.network.getStep(),
+        epoch: state.epoch,
+    });
+}
+
+function isMulticlassConfusionMatrix(
+    matrix: NonNullable<PairedEvaluation['test']['values']['confusionMatrix']>,
+): matrix is MulticlassConfusionMatrixData {
+    return 'classCount' in matrix;
+}
+
+function directSnapshotArtifactBundle(
+    snapshot: NetworkSnapshot,
+): Pick<WorkerExperimentResultV2, 'artifacts' | 'layerStatsGradientRevision'> {
+    if (!state.prepared || !state.datasetRevision) return {};
+    const produced: {
+        -readonly [Key in keyof WorkerArtifactProvenanceV2]: WorkerArtifactProvenanceV2[Key];
+    } = {};
+    if (snapshot.outputGrid.length > 0 || snapshot.multiclassBoundary !== undefined) {
+        produced.decisionBoundary = currentArtifactProvenance({
+            kind: 'prediction-grid',
+            pointCount: snapshot.gridSize * snapshot.gridSize,
+            domain: [-1, 1, -1, 1],
+        });
+    }
+    if (snapshot.neuronGrids !== undefined && snapshot.neuronGrids.length > 0) {
+        produced.neuronGrids = currentArtifactProvenance({
+            kind: 'prediction-grid',
+            pointCount: snapshot.gridSize * snapshot.gridSize,
+            domain: [-1, 1, -1, 1],
+        });
+    }
+    if (snapshot.layerStats !== undefined) {
+        produced.activationStatistics = currentArtifactProvenance({
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount: Math.min(128, state.datasetRevision.trainCount),
+            populationCount: state.datasetRevision.trainCount,
+        });
+    }
+    if (snapshot.activationHistograms !== undefined) {
+        produced.activationHistogram = currentArtifactProvenance({
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount: Math.min(128, state.datasetRevision.trainCount),
+            populationCount: state.datasetRevision.trainCount,
+        });
+    }
+    if (snapshot.testMetrics.confusionMatrix !== undefined
+        || snapshot.testMetrics.multiclassConfusionMatrix !== undefined) {
+        const evaluation = state.evaluationRuntime?.latestEvaluation;
+        if (evaluation === undefined) {
+            throw new Error('direct confusion artifact requires a paired evaluation');
+        }
+        produced.confusionMatrix = artifactProvenanceAt(
+            evaluation.test.basis,
+            evaluation.model,
+        );
+    }
+    if (snapshot.layerStats !== undefined && state.layerStatsGradientRevision === null) {
+        throw new Error('direct layer statistics require a clipped-gradient revision');
+    }
+    return {
+        ...(Object.keys(produced).length === 0 ? {} : { artifacts: produced }),
+        ...(snapshot.layerStats === undefined
+            ? {}
+            : { layerStatsGradientRevision: state.layerStatsGradientRevision! }),
+    };
 }
 
 /**
@@ -1815,8 +2180,11 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     let multiclassConfidenceGrid: Float32Array | undefined;
     let multiclassBoundaryLayout: WorkerSnapshotMessage['multiclassBoundaryLayout'] | undefined;
     let multiclassBoundaryVersion: number | undefined;
+    let confusionMatrix: WorkerSnapshotMessage['confusionMatrix'] | undefined;
     let multiclassConfusionMatrix: WorkerSnapshotMessage['multiclassConfusionMatrix'] | undefined;
     let multiclassConfusionMatrixVersion: number | undefined;
+    let confusionMatrixProvenance: ArtifactProvenance | undefined;
+    let confusionMatrixEvaluationId: number | undefined;
 
     if (sharedViews) {
         let flags = 0;
@@ -1932,33 +2300,124 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         transferables.push(outputGrid.buffer, neuronGrids.buffer);
     }
 
-    if (
-        !state.testMetricsStale &&
-        state.demand.needConfusionMatrix &&
-        state.networkConfig &&
-        state.trainingConfig &&
-        state.dataConfig &&
-        isApprovedWorkerMulticlassConfig(state.networkConfig, state.trainingConfig, state.dataConfig) &&
-        snap.testMetrics?.multiclassConfusionMatrix
-    ) {
-        multiclassConfusionMatrix = snap.testMetrics.multiclassConfusionMatrix;
-        state.multiclassConfusionMatrixVersion++;
-        multiclassConfusionMatrixVersion = state.multiclassConfusionMatrixVersion;
+    if (state.prepared) {
+        const evaluation = state.evaluationRuntime?.latestEvaluation;
+        const matrix = state.demand.needConfusionMatrix
+            ? evaluation?.test.values.confusionMatrix
+            : undefined;
+        if (matrix !== undefined
+            && evaluation !== undefined
+            && evaluation.evaluationId !== state.lastPackedConfusionEvaluationId) {
+            state.lastPackedConfusionEvaluationId = evaluation.evaluationId;
+            confusionMatrixEvaluationId = evaluation.evaluationId;
+            confusionMatrixProvenance = artifactProvenanceAt(
+                evaluation.test.basis,
+                evaluation.model,
+            );
+            if (isMulticlassConfusionMatrix(matrix)) {
+                multiclassConfusionMatrix = matrix;
+                state.multiclassConfusionMatrixVersion++;
+                multiclassConfusionMatrixVersion = state.multiclassConfusionMatrixVersion;
+            } else {
+                confusionMatrix = matrix;
+                state.confusionMatrixVersion++;
+            }
+        }
+    } else {
+        confusionMatrix = state.testMetricsStale
+            ? undefined
+            : snap.testMetrics?.confusionMatrix;
+        if (
+            !state.testMetricsStale &&
+            state.demand.needConfusionMatrix &&
+            state.networkConfig &&
+            state.trainingConfig &&
+            state.dataConfig &&
+            isApprovedWorkerMulticlassConfig(
+                state.networkConfig,
+                state.trainingConfig,
+                state.dataConfig,
+            ) &&
+            snap.testMetrics?.multiclassConfusionMatrix
+        ) {
+            multiclassConfusionMatrix = snap.testMetrics.multiclassConfusionMatrix;
+            state.multiclassConfusionMatrixVersion++;
+            multiclassConfusionMatrixVersion = state.multiclassConfusionMatrixVersion;
+        }
     }
 
-    // History point
-    const historyPoint: HistoryPoint = {
-        step: snap.step,
-        trainLoss: snap.trainLoss,
-        testLoss: snap.testLoss,
-        trainAccuracy: snap.trainMetrics?.accuracy,
-        testAccuracy: snap.testMetrics?.accuracy,
-    };
+    const historyPoint: HistoryPoint | undefined = state.prepared
+        ? undefined
+        : {
+            step: snap.step,
+            trainLoss: snap.trainLoss,
+            testLoss: snap.testLoss,
+            trainAccuracy: snap.trainMetrics?.accuracy,
+            testAccuracy: snap.testMetrics?.accuracy,
+        };
+
+    let artifacts: WorkerArtifactProvenanceV2 | undefined;
+    if (state.prepared && state.datasetRevision) {
+        const produced: WorkerArtifactProvenanceV2 = {
+            ...((outputGrid !== undefined && outputGrid.length > 0)
+                || multiclassClassGrid !== undefined
+                || sharedSeq !== undefined
+                ? {
+                    decisionBoundary: currentArtifactProvenance({
+                        kind: 'prediction-grid',
+                        pointCount: gridSize * gridSize,
+                        domain: [-1, 1, -1, 1],
+                    }),
+                }
+                : {}),
+            ...((neuronGrids !== undefined && neuronGrids.length > 0)
+                || (sharedSeq !== undefined && neuronGridLayout !== undefined)
+                ? {
+                    neuronGrids: currentArtifactProvenance({
+                        kind: 'prediction-grid',
+                        pointCount: gridSize * gridSize,
+                        domain: [-1, 1, -1, 1],
+                    }),
+                }
+                : {}),
+            ...(snap.layerStats !== undefined
+                ? {
+                    activationStatistics: currentArtifactProvenance({
+                        kind: 'bounded-sample',
+                        split: 'train',
+                        sampleCount: Math.min(128, state.datasetRevision.trainCount),
+                        populationCount: state.datasetRevision.trainCount,
+                    }),
+                }
+                : {}),
+            ...(activationHistogramBins !== undefined
+                ? {
+                    activationHistogram: currentArtifactProvenance({
+                        kind: 'bounded-sample',
+                        split: 'train',
+                        sampleCount: Math.min(128, state.datasetRevision.trainCount),
+                        populationCount: state.datasetRevision.trainCount,
+                    }),
+                }
+                : {}),
+            ...(confusionMatrixProvenance === undefined
+                ? {}
+                : { confusionMatrix: confusionMatrixProvenance }),
+        };
+        if (Object.keys(produced).length > 0) artifacts = produced;
+    }
 
     const message: WorkerSnapshotMessage = {
         type: 'snapshot',
+        protocolVersion: state.prepared ? WORKER_PROTOCOL_VERSION : undefined,
         runId: state.runId,
         snapshotId: ++state.snapshotId,
+        model: state.prepared && state.network ? {
+            generationId: state.runId,
+            revision: state.network.getRevision(),
+            step: state.network.getStep(),
+            epoch: state.epoch,
+        } : undefined,
         scalars: {
             step: snap.step,
             epoch: snap.epoch,
@@ -1976,6 +2435,9 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         biases: biasesFlat,
         weightLayout: { layerSizes },
         layerStats: snap.layerStats,
+        layerStatsGradientRevision: snap.layerStats === undefined
+            ? undefined
+            : state.layerStatsGradientRevision ?? undefined,
         activationHistogramBins,
         activationHistogramLayout,
         activationHistogramVersion,
@@ -1983,8 +2445,10 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         multiclassConfidenceGrid,
         multiclassBoundaryLayout,
         multiclassBoundaryVersion,
-        historyPoint,
-        confusionMatrix: state.testMetricsStale ? undefined : snap.testMetrics?.confusionMatrix,
+        ...(historyPoint === undefined ? {} : { historyPoint }),
+        artifacts,
+        confusionMatrix,
+        confusionMatrixEvaluationId,
         confusionMatrixVersion: state.confusionMatrixVersion,
         multiclassConfusionMatrix,
         multiclassConfusionMatrixVersion,
@@ -2085,14 +2549,16 @@ function trainOneStepV2(): {
     const start = batchSlot * batchSize;
     const end = Math.min(start + batchSize, sampleCount);
     beginV2Mutation();
-    const result = network.trainBatchIndexedV2(
-        state.trainInputs,
-        state.trainTargets,
-        state.shuffledIndices,
-        start,
-        end,
-        compiled.training,
-    );
+    const result = withEngineNumericalBoundary('$.training', () => (
+        network.trainBatchIndexedV2(
+            state.trainInputs,
+            state.trainTargets,
+            state.shuffledIndices,
+            start,
+            end,
+            compiled.training,
+        )
+    ));
 
     if (batchSlot === batchCount - 1) {
         state.epoch++;
@@ -2140,7 +2606,12 @@ function scheduleNextTick(): void {
 // back-pressure gate `state.awaitingAck` is set BEFORE we enter this
 // async work, so subsequent ticks skip their snapshot block until the
 // main thread acks.
-async function produceAndPostSnapshot(): Promise<void> {
+interface SnapshotPipelineIdentity {
+    readonly runId: number;
+    readonly network: Network | null;
+}
+
+async function produceAndPostSnapshot(identity: SnapshotPipelineIdentity): Promise<void> {
     if (!state.streamPort) return;
 
     // GPU grid pre-fill (AS-4). When enabled + capable + due, this
@@ -2148,6 +2619,9 @@ async function produceAndPostSnapshot(): Promise<void> {
     // synchronous computeSnapshot below detects the freshly-filled
     // buffers via state.gridFreshFromGpu and skips its CPU branch.
     await runGpuGridIfDue();
+    // An awaited predecessor must never continue packing against a replacement
+    // generation or interfere with its independent backpressure lifecycle.
+    if (state.runId !== identity.runId || state.network !== identity.network) return;
 
     // Live evidence is transport-coalesced to one current signal per visual
     // frame. Worker history still contains every batch (see trainOneStepV2).
@@ -2156,29 +2630,69 @@ async function produceAndPostSnapshot(): Promise<void> {
         postEvidenceV2(makeEvidenceV2(currentLive));
     }
 
-    const snap = computeSnapshot({ lightweight: true });
-    const stopEvaluation = state.running
-        ? evaluateStopConditions(
-            DEFAULT_RUNTIME_STOP_CONDITIONS,
+    let stopEvaluation: ReturnType<typeof evaluateStopConditions> | null = null;
+    if (state.running && state.prepared && state.network && state.evaluationRuntime) {
+        const model = {
+            generationId: state.runId,
+            revision: state.network.getRevision(),
+            step: state.network.getStep(),
+            epoch: state.epoch,
+        };
+        let currentEvaluation = state.evaluationRuntime.latestEvaluation;
+        const evaluationIsCurrent = currentEvaluation !== undefined
+            && currentEvaluation.model.generationId === model.generationId
+            && currentEvaluation.model.revision === model.revision
+            && currentEvaluation.model.step === model.step
+            && currentEvaluation.model.epoch === model.epoch;
+        if (stopConditionsRequireCurrentEvaluation(runtimeStopConditions)
+            && !evaluationIsCurrent) {
+            try {
+                currentEvaluation = forceAndPublishEvaluationV2('stop-condition');
+            } catch (error) {
+                if (error instanceof TerminalDivergenceError) {
+                    postTerminalDivergenceV2(error, 'evaluation', 'evaluation-failed');
+                    return;
+                }
+                throw error;
+            }
+        }
+        stopEvaluation = evaluateStopConditions(
+            runtimeStopConditions,
             {
-                step: snap.step,
-                trainLoss: snap.trainLoss,
-                testLoss: snap.testLoss,
-                trainAccuracy: snap.trainMetrics.accuracy,
-                testAccuracy: snap.testMetrics.accuracy,
+                model,
+                liveSignal: currentLive,
+                currentEvaluation,
             },
             state.stopConditionState,
-        )
-        : null;
-    if (stopEvaluation) {
+        );
         state.stopConditionState = stopEvaluation.nextState;
+        if (stopEvaluation.terminalDivergence) {
+            postTerminalDivergenceV2(
+                new TerminalDivergenceError(
+                    stopEvaluation.terminalDivergence.path,
+                    stopEvaluation.terminalDivergence.value,
+                ),
+                'evaluation',
+                'evaluation-failed',
+            );
+            return;
+        }
     }
 
-    const { message, transferables } = packSnapshotMessage(snap);
+    const snap = computeSnapshot({ lightweight: true });
+    const legacyDiverged = state.running
+        && state.prepared === null
+        && (!Number.isFinite(snap.trainLoss) || !Number.isFinite(snap.testLoss));
+
+    const { message, transferables } = withEngineNumericalBoundary(
+        '$.snapshot.parameters',
+        () => packSnapshotMessage(snap),
+    );
     state.streamPort.postMessage(message, transferables);
-    if (stopEvaluation?.pauseReason) {
+    const pauseReason = stopEvaluation?.pauseReason ?? (legacyDiverged ? 'diverged' : null);
+    if (pauseReason) {
         stopInternalLoop();
-        postStatus('paused', stopEvaluation.pauseReason);
+        postStatus('paused', pauseReason);
     }
 }
 
@@ -2208,10 +2722,22 @@ function trainTick(): void {
                 // pre-fill awaits the device. The ack will land after
                 // postMessage in produceAndPostSnapshot() completes.
                 state.awaitingAck = true;
-                produceAndPostSnapshot().catch((err) => {
+                const pipelineIdentity: SnapshotPipelineIdentity = {
+                    runId: state.runId,
+                    network: state.network,
+                };
+                produceAndPostSnapshot(pipelineIdentity).catch((err) => {
+                    if (state.runId !== pipelineIdentity.runId
+                        || state.network !== pipelineIdentity.network) return;
                     state.awaitingAck = false;
                     stopInternalLoop();
-                    if (state.prepared) postRuntimeErrorV2(err, 'runtime');
+                    if (state.prepared) {
+                        if (err instanceof TerminalDivergenceError) {
+                            postTerminalDivergenceForPhase(err, 'evaluation');
+                        } else {
+                            postRuntimeErrorV2(err, 'runtime');
+                        }
+                    }
                     else {
                         const msg = err instanceof Error ? err.message : String(err);
                         postError(`Training snapshot error: ${msg}`);
@@ -2225,7 +2751,13 @@ function trainTick(): void {
         }
     } catch (err) {
         stopInternalLoop();
-        if (state.prepared) postRuntimeErrorV2(err, 'training');
+        if (state.prepared) {
+            if (err instanceof TerminalDivergenceError) {
+                postTerminalDivergenceForPhase(err, 'training');
+            } else {
+                postRuntimeErrorV2(err, 'training');
+            }
+        }
         else postError(`Training error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
@@ -2261,6 +2793,7 @@ function applyDemand(demand: VisualizationDemand): void {
     state.gridStale = true;
     if (confusionDemandChanged) {
         state.lastTestMetrics = null;
+        state.lastPackedConfusionEvaluationId = null;
         state.confusionMatrixVersion++;
     }
 }
@@ -2306,7 +2839,13 @@ function handleStreamCommand(cmd: unknown): void {
                 break;
         }
     } catch (err) {
-        if (state.prepared) postRuntimeErrorV2(err, 'runtime');
+        if (state.prepared) {
+            if (err instanceof TerminalDivergenceError) {
+                postTerminalDivergenceV2(err, 'evaluation', 'evaluation-failed');
+            } else {
+                postRuntimeErrorV2(err, 'runtime');
+            }
+        }
         else postError(`Command handling error: ${err instanceof Error ? err.message : String(err)}`);
     }
 }
@@ -2459,13 +2998,20 @@ export const workerApi = {
             // Replace the evaluation-only force message with a richer direct/manual
             // update for consumers that invoke this RPC without a running frame.
             postEvidenceV2(evidence);
+            const snapshot = computeSnapshot();
             return {
-                snapshot: computeSnapshot(),
+                snapshot,
                 runId: state.runId,
                 evidence,
+                identities: state.prepared!.identities,
+                ...directSnapshotArtifactBundle(snapshot),
             };
         } catch (error) {
-            postRuntimeErrorV2(error, 'training');
+            if (error instanceof TerminalDivergenceError) {
+                postTerminalDivergenceForPhase(error, 'training');
+            } else {
+                postRuntimeErrorV2(error, 'training');
+            }
             throw error;
         }
     },
@@ -2504,7 +3050,11 @@ export const workerApi = {
                 evidence: makeEvidenceV2(undefined, evaluation),
             };
         } catch (error) {
-            postRuntimeErrorV2(error, 'evaluation', 'evaluation-failed');
+            if (error instanceof TerminalDivergenceError) {
+                postTerminalDivergenceV2(error, 'evaluation', 'evaluation-failed');
+            } else {
+                postRuntimeErrorV2(error, 'evaluation', 'evaluation-failed');
+            }
             throw error;
         }
     },
@@ -2648,6 +3198,7 @@ export const workerApi = {
         state.gridFreshFromGpu = false;
         state.confusionMatrixVersion++;
         state.activationHistogramVersion++;
+        state.layerStatsGradientRevision = null;
         resetAck();
 
         const snapshot = computeSnapshot();

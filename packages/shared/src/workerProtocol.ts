@@ -20,6 +20,7 @@ import type {
     ArtifactProvenance,
     EvaluationTrigger,
     LiveTrainingSignal,
+    ModelRevision,
     PairedEvaluation,
 } from './metricProvenance.js';
 import { isPauseReason } from './types.js';
@@ -532,15 +533,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isPositiveInteger(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value > 0;
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0;
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
 function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isModelRevision(value: unknown): value is ModelRevision {
+    return isRecord(value)
+        && isPositiveInteger(value['generationId'])
+        && isNonNegativeInteger(value['revision'])
+        && isNonNegativeInteger(value['step'])
+        && isNonNegativeInteger(value['epoch']);
 }
 
 function isPositiveFiniteNumber(value: unknown): value is number {
@@ -568,6 +577,7 @@ function isActivationHistogramLayer(value: unknown): value is ActivationHistogra
         isPositiveFiniteNumber(value['binWidth']) &&
         isFiniteNumber(value['minActivation']) &&
         isFiniteNumber(value['maxActivation']) &&
+        value['minActivation'] <= value['maxActivation'] &&
         isNonNegativeInteger(value['totalCount']) &&
         isNonNegativeInteger(value['nearZeroCount']) &&
         isNonNegativeInteger(value['saturatedCount']) &&
@@ -581,9 +591,9 @@ function isActivationHistogramLayout(value: unknown): value is ActivationHistogr
     if (!isPositiveInteger(value['binCount'])) return false;
     if (!Array.isArray(value['layers'])) return false;
     if (!value['layers'].every(isActivationHistogramLayer)) return false;
-    return (
-        value['layers'].every((layer) => layer.binCount === value['binCount'])
-    );
+    return value['layers'].every((layer, index) => (
+        layer.layerIndex === index && layer.binCount === value['binCount']
+    ));
 }
 
 function hasMalformedActivationHistogramPayload(m: Record<string, unknown>): boolean {
@@ -598,9 +608,20 @@ function hasMalformedActivationHistogramPayload(m: Record<string, unknown>): boo
         (sum, layer) => sum + layer.binCount,
         0,
     );
-    return (
-        m['activationHistogramBins'].length < expectedBins
-    );
+    if (m['activationHistogramBins'].length !== expectedBins
+        || m['activationHistogramBins'].some(
+            (value) => !Number.isSafeInteger(value) || value < 0,
+        )) return true;
+    let offset = 0;
+    for (const layer of m['activationHistogramLayout'].layers) {
+        let sum = 0;
+        for (let index = 0; index < layer.binCount; index++) {
+            sum += m['activationHistogramBins'][offset + index];
+        }
+        if (sum !== layer.totalCount) return true;
+        offset += layer.binCount;
+    }
+    return false;
 }
 
 export interface MulticlassBoundaryLayout {
@@ -673,6 +694,15 @@ function isMulticlassConfusionMatrixData(value: unknown): value is MulticlassCon
         if (!isNonNegativeInteger(counts[i])) return false;
     }
     return true;
+}
+
+function isBinaryConfusionMatrixData(value: unknown): value is ConfusionMatrixData {
+    if (!isRecord(value)
+        || Object.keys(value).sort().join(',') !== 'fn,fp,tn,tp') return false;
+    return isNonNegativeInteger(value['tp'])
+        && isNonNegativeInteger(value['tn'])
+        && isNonNegativeInteger(value['fp'])
+        && isNonNegativeInteger(value['fn']);
 }
 
 function hasMalformedMulticlassConfusionMatrixPayload(m: Record<string, unknown>): boolean {
@@ -762,6 +792,274 @@ function hasMalformedCheckpointTimelinePayload(m: Record<string, unknown>): bool
     return 'checkpointTimeline' in m && !isCheckpointTimeline(m['checkpointTimeline']);
 }
 
+function hasValidSnapshotArtifactProvenance(m: Record<string, unknown>): boolean {
+    const protocolVersion = m['protocolVersion'];
+    if (protocolVersion === undefined) {
+        // Legacy snapshots do not make scientific artifact claims.
+        return m['artifacts'] === undefined;
+    }
+    if (protocolVersion !== WORKER_PROTOCOL_VERSION) return false;
+    if (Object.prototype.hasOwnProperty.call(m, 'historyPoint')) return false;
+    if (!isRequestId(m['runId'])) return false;
+    if (!isNonNegativeInteger(m['snapshotId'])) return false;
+
+    const scalars = m['scalars'];
+    if (!isRecord(scalars)
+        || !isNonNegativeInteger(scalars['step'])
+        || !isNonNegativeInteger(scalars['epoch'])
+        || !isFiniteNumber(scalars['trainLoss'])
+        || !isFiniteNumber(scalars['testLoss'])
+        || !isOptionalFiniteNumber(scalars['trainAccuracy'])
+        || !isOptionalFiniteNumber(scalars['testAccuracy'])
+        || (scalars['trainAccuracy'] !== undefined
+            && (scalars['trainAccuracy'] < 0 || scalars['trainAccuracy'] > 1))
+        || (scalars['testAccuracy'] !== undefined
+            && (scalars['testAccuracy'] < 0 || scalars['testAccuracy'] > 1))
+        || !isPositiveInteger(scalars['gridSize'])
+        || (
+            scalars['testMetricsStale'] !== undefined
+            && !isBoolean(scalars['testMetricsStale'])
+        )) {
+        return false;
+    }
+    const frameModel = m['model'];
+    if (!isModelRevision(frameModel)
+        || frameModel.generationId !== m['runId']
+        || frameModel.step !== scalars['step']
+        || frameModel.epoch !== scalars['epoch']) {
+        return false;
+    }
+
+    if (m['outputGrid'] !== undefined && !isFloat32Array(m['outputGrid'])) return false;
+    if (m['neuronGrids'] !== undefined && !isFloat32Array(m['neuronGrids'])) return false;
+    if (m['layerStats'] !== undefined && !Array.isArray(m['layerStats'])) return false;
+    if (m['sharedSeq'] !== undefined && !isNonNegativeInteger(m['sharedSeq'])) return false;
+    const outputGrid = m['outputGrid'];
+    if (isFloat32Array(outputGrid)
+        && outputGrid.length > 0
+        && (
+            outputGrid.length !== scalars['gridSize'] * scalars['gridSize']
+            || outputGrid.some((value) => !Number.isFinite(value))
+        )) return false;
+
+    const neuronLayout = m['neuronGridLayout'];
+    if (neuronLayout !== undefined && (
+        !isRecord(neuronLayout)
+        || !isPositiveInteger(neuronLayout['count'])
+        || neuronLayout['gridSize'] !== scalars['gridSize']
+    )) return false;
+    const neuronGrids = m['neuronGrids'];
+    const neuronCount = isRecord(neuronLayout) && isPositiveInteger(neuronLayout['count'])
+        ? neuronLayout['count']
+        : undefined;
+    if (isFloat32Array(neuronGrids) && neuronGrids.length > 0 && (
+        neuronCount === undefined
+        || neuronGrids.length
+            !== neuronCount * scalars['gridSize'] * scalars['gridSize']
+        || neuronGrids.some((value) => !Number.isFinite(value))
+    )) return false;
+    if (neuronLayout !== undefined
+        && !(isFloat32Array(neuronGrids) && neuronGrids.length > 0)
+        && m['sharedSeq'] === undefined) return false;
+
+    if (!isFloat32Array(m['weights'])
+        || !isFloat32Array(m['biases'])
+        || !isRecord(m['weightLayout'])
+        || !Array.isArray(m['weightLayout']['layerSizes'])
+        || m['weightLayout']['layerSizes'].length < 2
+        || !m['weightLayout']['layerSizes'].every(isPositiveInteger)
+        || m['weights'].some((value) => !Number.isFinite(value))
+        || m['biases'].some((value) => !Number.isFinite(value))) {
+        return false;
+    }
+    const layerSizes = m['weightLayout']['layerSizes'] as number[];
+    const expectedWeights = layerSizes.slice(0, -1).reduce(
+        (sum, size, index) => sum + size * layerSizes[index + 1],
+        0,
+    );
+    const expectedBiases = layerSizes.slice(1).reduce((sum, size) => sum + size, 0);
+    if (m['weights'].length !== expectedWeights || m['biases'].length !== expectedBiases) {
+        return false;
+    }
+    const expectedNeuronCount = layerSizes.slice(1).reduce((sum, size) => sum + size, 0);
+    if (isRecord(neuronLayout) && neuronLayout['count'] !== expectedNeuronCount) return false;
+    if (isFloat32Array(outputGrid)
+        && outputGrid.length > 0
+        && m['multiclassClassGrid'] !== undefined) return false;
+
+    const layerStats = m['layerStats'];
+    if (layerStats !== undefined && (
+        !Array.isArray(layerStats)
+        || layerStats.length !== layerSizes.length - 1
+        || layerStats.some((stats) => (
+            !isRecord(stats)
+            || Object.keys(stats).sort().join(',')
+                !== 'activationStd,meanAbsGradient,meanAbsWeight,meanActivation'
+            || !isFiniteNumber(stats['meanActivation'])
+            || !isFiniteNumber(stats['activationStd'])
+            || stats['activationStd'] < 0
+            || !isFiniteNumber(stats['meanAbsWeight'])
+            || stats['meanAbsWeight'] < 0
+            || !isFiniteNumber(stats['meanAbsGradient'])
+            || stats['meanAbsGradient'] < 0
+        ))
+    )) return false;
+    if (isRecord(m['activationHistogramLayout'])
+        && Array.isArray(m['activationHistogramLayout']['layers'])
+        && m['activationHistogramLayout']['layers'].length !== layerSizes.length - 1) {
+        return false;
+    }
+    if (isFloat32Array(m['activationHistogramBins'])
+        && m['activationHistogramBins'].some((value) => !Number.isFinite(value) || value < 0)) {
+        return false;
+    }
+
+    const artifacts = m['artifacts'];
+    if (artifacts !== undefined && !isWorkerArtifactProvenanceV2(artifacts)) return false;
+    const artifactRecord = isRecord(artifacts) ? artifacts : null;
+    const hasArtifact = (key: keyof WorkerArtifactProvenanceV2): boolean => (
+        artifactRecord !== null && Object.prototype.hasOwnProperty.call(artifactRecord, key)
+    );
+
+    const hasSharedPayload = m['sharedSeq'] !== undefined;
+    const decisionBoundaryPayload = (
+        isFloat32Array(m['outputGrid']) && m['outputGrid'].length > 0
+    ) || m['multiclassClassGrid'] !== undefined || hasSharedPayload;
+    const neuronGridsPayload = (
+        isFloat32Array(m['neuronGrids']) && m['neuronGrids'].length > 0
+    ) || (hasSharedPayload && m['neuronGridLayout'] !== undefined);
+    const activationStatisticsPayload = m['layerStats'] !== undefined;
+    if (activationStatisticsPayload !== (m['layerStatsGradientRevision'] !== undefined)) {
+        return false;
+    }
+    if (m['layerStatsGradientRevision'] !== undefined
+        && !isNonNegativeInteger(m['layerStatsGradientRevision'])) {
+        return false;
+    }
+    const presentArtifacts = artifactRecord === null
+        ? []
+        : Object.values(artifactRecord).filter(
+            (value): value is ArtifactProvenance => value !== undefined,
+        );
+    const [firstArtifact, ...remainingArtifacts] = presentArtifacts;
+    if (presentArtifacts.some((provenance) => provenance.model.generationId !== m['runId'])) {
+        return false;
+    }
+    if (firstArtifact !== undefined
+        && remainingArtifacts.some(
+            (provenance) => !hasSameEvidenceIdentity(firstArtifact, provenance),
+        )) {
+        return false;
+    }
+    for (const key of [
+        'decisionBoundary',
+        'neuronGrids',
+        'activationStatistics',
+        'activationHistogram',
+    ] as const) {
+        const provenance = artifactRecord?.[key] as ArtifactProvenance | undefined;
+        if (provenance !== undefined && (
+            provenance.model.generationId !== frameModel.generationId
+            || provenance.model.revision !== frameModel.revision
+            || provenance.model.step !== frameModel.step
+            || provenance.model.epoch !== frameModel.epoch
+        )) return false;
+    }
+    const confusionProvenance = artifactRecord?.['confusionMatrix'] as
+        | ArtifactProvenance
+        | undefined;
+    if (confusionProvenance !== undefined && (
+        confusionProvenance.model.generationId !== frameModel.generationId
+        || confusionProvenance.model.revision > frameModel.revision
+        || confusionProvenance.model.step > frameModel.step
+        || confusionProvenance.model.epoch > frameModel.epoch
+    )) return false;
+    const gridPointCount = scalars['gridSize'] * scalars['gridSize'];
+    for (const key of ['decisionBoundary', 'neuronGrids'] as const) {
+        const provenance = artifactRecord?.[key] as ArtifactProvenance | undefined;
+        if (provenance !== undefined && (
+            provenance.basis.kind !== 'prediction-grid'
+            || provenance.basis.pointCount !== gridPointCount
+            || provenance.basis.domain.some(
+                (value, index) => value !== [-1, 1, -1, 1][index],
+            )
+        )) return false;
+    }
+    const activationHistogramProvenance = artifactRecord?.['activationHistogram'] as
+        | ArtifactProvenance
+        | undefined;
+    if (activationHistogramProvenance !== undefined && (
+        activationHistogramProvenance.basis.kind !== 'bounded-sample'
+        || activationHistogramProvenance.basis.split !== 'train'
+        || activationHistogramProvenance.basis.populationCount
+            !== activationHistogramProvenance.dataset.trainCount
+        || activationHistogramProvenance.basis.sampleCount
+            !== Math.min(128, activationHistogramProvenance.dataset.trainCount)
+    )) return false;
+    const activationHistogramLayout = m['activationHistogramLayout'];
+    if (activationHistogramProvenance !== undefined && (
+        !isActivationHistogramLayout(activationHistogramLayout)
+        || activationHistogramLayout.binCount !== 12
+        || activationHistogramLayout.layers.length !== layerSizes.length - 1
+        || activationHistogramLayout.layers.some((layer, index) => (
+            layer.layerIndex !== index
+            || layer.totalCount !== (
+                activationHistogramProvenance.basis.kind === 'bounded-sample'
+                    ? activationHistogramProvenance.basis.sampleCount * layerSizes[index + 1]
+                    : -1
+            )
+        ))
+    )) return false;
+    const binaryConfusion = m['confusionMatrix'];
+    const multiclassConfusion = m['multiclassConfusionMatrix'];
+    const hasConfusionMatrix = binaryConfusion !== undefined || multiclassConfusion !== undefined;
+    if (hasConfusionMatrix !== (m['confusionMatrixEvaluationId'] !== undefined)
+        || (hasConfusionMatrix && !isPositiveInteger(m['confusionMatrixEvaluationId']))) {
+        return false;
+    }
+    if (binaryConfusion !== undefined && (
+        !isBinaryConfusionMatrixData(binaryConfusion)
+        || !isNonNegativeInteger(m['confusionMatrixVersion'])
+        || multiclassConfusion !== undefined
+    )) return false;
+    if (confusionProvenance !== undefined && (
+        confusionProvenance.basis.kind !== 'full-split'
+        || confusionProvenance.basis.split !== 'test'
+    )) return false;
+    const confusionSampleCount = confusionProvenance?.basis.kind === 'full-split'
+        ? confusionProvenance.basis.sampleCount
+        : undefined;
+    if (confusionProvenance !== undefined && binaryConfusion !== undefined
+        && isBinaryConfusionMatrixData(binaryConfusion)
+        && binaryConfusion.tp + binaryConfusion.tn + binaryConfusion.fp + binaryConfusion.fn
+            !== confusionSampleCount) return false;
+    if (confusionProvenance !== undefined && isMulticlassConfusionMatrixData(multiclassConfusion)
+        && multiclassConfusion.counts.reduce((sum, count) => sum + count, 0)
+            !== confusionSampleCount) return false;
+    const activationProvenance = artifactRecord?.['activationStatistics'] as
+        | ArtifactProvenance
+        | undefined;
+    if (activationProvenance !== undefined
+        && typeof m['layerStatsGradientRevision'] === 'number'
+        && m['layerStatsGradientRevision'] > activationProvenance.model.revision) {
+        return false;
+    }
+    const activationHistogramPayload = m['activationHistogramBins'] !== undefined;
+    const confusionMatrixPayload = (
+        m['confusionMatrix'] !== undefined || m['multiclassConfusionMatrix'] !== undefined
+    );
+
+    return (
+        decisionBoundaryPayload === hasArtifact('decisionBoundary')
+        && neuronGridsPayload === hasArtifact('neuronGrids')
+        && activationStatisticsPayload === hasArtifact('activationStatistics')
+        && activationHistogramPayload === hasArtifact('activationHistogram')
+        && confusionMatrixPayload === hasArtifact('confusionMatrix')
+        && !hasArtifact('predictionTrace')
+        && !hasArtifact('lossLandscape')
+    );
+}
+
 export function normalizeVisualizationDemand(value: unknown): VisualizationDemand | null {
     if (!isRecord(value)) return null;
 
@@ -828,8 +1126,12 @@ export interface SnapshotScalars {
 /** Full snapshot message posted from the worker. */
 export interface WorkerSnapshotMessage {
     type: 'snapshot';
+    /** Present only on strict scientific-trust snapshots. */
+    protocolVersion?: typeof WORKER_PROTOCOL_VERSION;
     runId: number;
     snapshotId: number;
+    /** Exact current model identity for strict V2 frame artifacts. */
+    model?: ModelRevision;
     scalars: SnapshotScalars;
 
     // Heavy payloads — presence depends on demand flags
@@ -840,6 +1142,8 @@ export interface WorkerSnapshotMessage {
     biases?: Float32Array;
     weightLayout?: { layerSizes: number[] };
     layerStats?: LayerStats[];
+    /** Revision of the most recently applied clipped gradient summarized above. */
+    layerStatsGradientRevision?: number;
     activationHistogramBins?: Float32Array;
     activationHistogramLayout?: ActivationHistogramLayout;
     activationHistogramVersion?: number;
@@ -848,8 +1152,13 @@ export interface WorkerSnapshotMessage {
     multiclassBoundaryLayout?: MulticlassBoundaryLayout;
     multiclassBoundaryVersion?: number;
 
-    historyPoint: HistoryPoint;
+    /** Legacy-only chart publication; strict snapshots publish typed evidence instead. */
+    historyPoint?: HistoryPoint;
+    /** Per-artifact identity and basis for every strict heavy artifact payload. */
+    artifacts?: WorkerArtifactProvenanceV2;
     confusionMatrix?: ConfusionMatrixData;
+    /** Exact paired evaluation that produced the strict confusion payload. */
+    confusionMatrixEvaluationId?: number;
     confusionMatrixVersion?: number;
     multiclassConfusionMatrix?: MulticlassConfusionMatrixData;
     multiclassConfusionMatrixVersion?: number;
@@ -1034,6 +1343,7 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 typeof m['snapshotId'] === 'number' &&
                 m['scalars'] !== null &&
                 typeof m['scalars'] === 'object' &&
+                hasValidSnapshotArtifactProvenance(m) &&
                 !hasMalformedActivationHistogramPayload(m) &&
                 !hasMalformedMulticlassBoundaryPayload(m) &&
                 !hasMalformedMulticlassConfusionMatrixPayload(m) &&

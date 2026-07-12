@@ -9,24 +9,27 @@ import type {
     ObjectiveSpecV2,
     PenaltySpecV2,
 } from './types.js';
+import { NonFiniteNumericalError } from './numericalError.js';
 
 const DISTRIBUTION_SUM_TOLERANCE = 1e-5;
 const MAX_OBJECTIVE_PARAMETER = 1_000_000;
 
 function assertFinite(value: number, name: string): void {
     if (!Number.isFinite(value)) {
-        throw new RangeError(`${name} must be finite`);
+        throw new NonFiniteNumericalError(name, value);
     }
 }
 
 function assertFiniteNonNegative(value: number, name: string): void {
-    if (!Number.isFinite(value) || value < 0) {
+    assertFinite(value, name);
+    if (value < 0) {
         throw new RangeError(`${name} must be finite and non-negative`);
     }
 }
 
 function assertFinitePositiveAtMost(value: number, maximum: number, name: string): void {
-    if (!Number.isFinite(value) || value <= 0 || value > maximum) {
+    assertFinite(value, name);
+    if (value <= 0 || value > maximum) {
         throw new RangeError(`${name} must be finite and in range (0, ${maximum}]`);
     }
 }
@@ -74,6 +77,7 @@ function assertDestinationLength(
 }
 
 function assertBinaryTarget(target: number): void {
+    assertFinite(target, 'target');
     if (target !== 0 && target !== 1) {
         throw new RangeError('binary cross-entropy target must be exactly 0 or 1');
     }
@@ -113,14 +117,18 @@ function binaryCrossEntropyWithLogitsUnchecked(logit: number, target: number): n
 export function binaryCrossEntropyWithLogits(logit: number, target: number): number {
     assertFinite(logit, 'logit');
     assertBinaryTarget(target);
-    return binaryCrossEntropyWithLogitsUnchecked(logit, target);
+    const result = binaryCrossEntropyWithLogitsUnchecked(logit, target);
+    assertFinite(result, 'binaryCrossEntropyWithLogits.loss');
+    return result;
 }
 
 /** Derivative of binary cross-entropy with respect to its input logit. */
 export function binaryCrossEntropyLogitDelta(logit: number, target: number): number {
     assertFinite(logit, 'logit');
     assertBinaryTarget(target);
-    return stableSigmoid(logit) - target;
+    const result = stableSigmoid(logit) - target;
+    assertFinite(result, 'binaryCrossEntropyWithLogits.delta');
+    return result;
 }
 
 function categoricalMaximum(logits: ArrayLike<number>): number {
@@ -150,11 +158,14 @@ export function categoricalCrossEntropyWithLogits(
     const outputCount = assertCategoricalLogitsAndTarget(logits, target);
     const maximum = categoricalMaximum(logits);
     const exponentialSum = categoricalShiftedExponentialSum(logits, maximum);
+    assertFinite(exponentialSum, 'categoricalCrossEntropyWithLogits.exponentialSum');
     const logExponentialSum = Math.log(exponentialSum);
+    assertFinite(logExponentialSum, 'categoricalCrossEntropyWithLogits.logExponentialSum');
     let loss = 0;
     for (let i = 0; i < outputCount; i++) {
         if (target[i] === 0) continue;
         loss += target[i] * ((maximum - logits[i]) + logExponentialSum);
+        assertFinite(loss, 'categoricalCrossEntropyWithLogits.loss');
     }
     return loss;
 }
@@ -166,10 +177,14 @@ export function categoricalCrossEntropyLogitDelta(
 ): number[] {
     const outputCount = assertCategoricalLogitsAndTarget(logits, target);
     const maximum = categoricalMaximum(logits);
-    const inverseExponentialSum = 1 / categoricalShiftedExponentialSum(logits, maximum);
+    const exponentialSum = categoricalShiftedExponentialSum(logits, maximum);
+    assertFinite(exponentialSum, 'categoricalCrossEntropyWithLogits.exponentialSum');
+    const inverseExponentialSum = 1 / exponentialSum;
+    assertFinite(inverseExponentialSum, 'categoricalCrossEntropyWithLogits.inverseExponentialSum');
     const delta = new Array<number>(outputCount);
     for (let i = 0; i < outputCount; i++) {
         delta[i] = Math.exp(logits[i] - maximum) * inverseExponentialSum - target[i];
+        assertFinite(delta[i], `categoricalCrossEntropyWithLogits.delta[${i}]`);
     }
     return delta;
 }
@@ -178,14 +193,18 @@ export function categoricalCrossEntropyLogitDelta(
 export function meanSquaredErrorScalar(prediction: number, target: number): number {
     assertFinite(prediction, 'prediction');
     assertFinite(target, 'target');
-    return (prediction - target) ** 2;
+    const result = (prediction - target) ** 2;
+    assertFinite(result, 'meanSquaredErrorScalar.loss');
+    return result;
 }
 
 /** Scalar true-MSE derivative used by the compatibility loss adapter. */
 export function meanSquaredErrorScalarDelta(prediction: number, target: number): number {
     assertFinite(prediction, 'prediction');
     assertFinite(target, 'target');
-    return 2 * (prediction - target);
+    const result = 2 * (prediction - target);
+    assertFinite(result, 'meanSquaredErrorScalar.delta');
+    return result;
 }
 
 /** Mean squared error across output coordinates. */
@@ -197,8 +216,11 @@ export function meanSquaredError(
     let sum = 0;
     for (let i = 0; i < outputCount; i++) {
         sum += (prediction[i] - target[i]) ** 2;
+        assertFinite(sum, 'meanSquaredError.sum');
     }
-    return sum / outputCount;
+    const result = sum / outputCount;
+    assertFinite(result, 'meanSquaredError.loss');
+    return result;
 }
 
 /** Prediction derivative of mean squared error across output coordinates. */
@@ -211,6 +233,7 @@ export function meanSquaredErrorDelta(
     const delta = new Array<number>(outputCount);
     for (let i = 0; i < outputCount; i++) {
         delta[i] = 2 * (prediction[i] - target[i]) * inverseOutputCount;
+        assertFinite(delta[i], `meanSquaredError.delta[${i}]`);
     }
     return delta;
 }
@@ -241,8 +264,11 @@ export function huberLoss(
     let sum = 0;
     for (let i = 0; i < outputCount; i++) {
         sum += huberElement(prediction[i] - target[i], delta);
+        assertFinite(sum, 'huberLoss.sum');
     }
-    return sum / outputCount;
+    const result = sum / outputCount;
+    assertFinite(result, 'huberLoss.loss');
+    return result;
 }
 
 /** Prediction derivative of Huber loss, averaged across output coordinates. */
@@ -257,6 +283,7 @@ export function huberLossDelta(
     const result = new Array<number>(outputCount);
     for (let i = 0; i < outputCount; i++) {
         result[i] = huberElementDelta(prediction[i] - target[i], delta) * inverseOutputCount;
+        assertFinite(result[i], `huberLoss.delta[${i}]`);
     }
     return result;
 }

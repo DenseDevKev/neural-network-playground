@@ -33,6 +33,30 @@ export interface EvaluationRuntimeOptions {
 
 export type ForcedEvaluationTrigger = Exclude<EvaluationTrigger, 'cadence'>;
 
+/** A non-finite scientific value is terminal and must never be published. */
+export class TerminalDivergenceError extends Error {
+    readonly path: string;
+    readonly value: number;
+
+    constructor(path: string, value: number) {
+        super(`terminal divergence: ${path} is non-finite`);
+        this.name = 'TerminalDivergenceError';
+        this.path = path;
+        this.value = value;
+    }
+}
+
+function assertFiniteScientificValue(value: number, path: string): void {
+    if (!Number.isFinite(value)) throw new TerminalDivergenceError(path, value);
+}
+
+function assertFiniteEvaluationValues(values: EvaluationValues, path: string): void {
+    assertFiniteScientificValue(values.dataLoss, `${path}.dataLoss`);
+    if (values.accuracy !== undefined) {
+        assertFiniteScientificValue(values.accuracy, `${path}.accuracy`);
+    }
+}
+
 function deepFreeze<T>(value: T): Readonly<T> {
     if (typeof value !== 'object' || value === null || Object.isFrozen(value)) {
         return value;
@@ -145,6 +169,7 @@ export class EvaluationRuntime {
                 `pending cadence evaluation at step ${this.pendingCadenceStep} must be consumed`,
             );
         }
+        assertFiniteScientificValue(measurement.dataLoss, '$.objective.dataLoss');
         const previous = this._latestLiveSignal;
         const ema = previous === undefined
             ? measurement.dataLoss
@@ -225,11 +250,22 @@ export class EvaluationRuntime {
     ): PairedEvaluation {
         const frozenModel = this.validateAndFreezeModel(model);
         const trainValues = this.evaluateTrain(frozenModel);
+        assertFiniteEvaluationValues(trainValues, '$.evaluation.train.values');
         this.assertModelUnchangedDuringEvaluation(frozenModel);
         const testValues = this.evaluateTest(frozenModel);
+        assertFiniteEvaluationValues(testValues, '$.evaluation.test.values');
         this.assertModelUnchangedDuringEvaluation(frozenModel);
         const regularizationPenalty = this.evaluateRegularizationPenalty(frozenModel);
+        assertFiniteScientificValue(
+            regularizationPenalty,
+            '$.evaluation.objective.regularizationPenalty',
+        );
         this.assertModelUnchangedDuringEvaluation(frozenModel);
+        const trainTotalObjective = trainValues.dataLoss + regularizationPenalty;
+        assertFiniteScientificValue(
+            trainTotalObjective,
+            '$.evaluation.objective.trainTotalObjective',
+        );
         const candidate = parsePairedEvaluation({
             evaluationId: this.nextEvaluationId,
             trigger,
@@ -256,7 +292,7 @@ export class EvaluationRuntime {
             },
             objective: {
                 regularizationPenalty,
-                trainTotalObjective: trainValues.dataLoss + regularizationPenalty,
+                trainTotalObjective,
             },
         });
         const published = deepFreeze(candidate) as PairedEvaluation;

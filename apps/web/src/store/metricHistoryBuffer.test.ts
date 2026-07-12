@@ -205,4 +205,75 @@ describe('MetricHistoryBuffer', () => {
         expect(() => buffer.appendTrend(invalid)).toThrow('dataLoss');
         expect(buffer.versions).toEqual({ trendVersion: 0, evaluationVersion: 0 });
     });
+
+    it('prepares replacement validation without mutating accepted history', () => {
+        const buffer = new MetricHistoryBuffer();
+        buffer.appendTrend(signalAt(1));
+        buffer.appendEvaluation(evaluationAt(1));
+        const before = buffer.read();
+
+        expect(() => buffer.prepareReplacement({
+            ...signalAt(2),
+            dataLoss: Number.NaN,
+        }, evaluationAt(2))).toThrow('dataLoss');
+
+        expect(buffer.read()).toBe(before);
+    });
+
+    it('commits prepared appends idempotently', () => {
+        const buffer = new MetricHistoryBuffer();
+        const prepared = buffer.prepareAppend(signalAt(1), evaluationAt(1));
+
+        prepared.commit();
+        const committed = buffer.read();
+        prepared.commit();
+
+        expect(buffer.read()).toBe(committed);
+        expect(committed.trendHistory).toHaveLength(1);
+        expect(committed.evaluationHistory).toHaveLength(1);
+        expect(committed.trendVersion).toBe(1);
+        expect(committed.evaluationVersion).toBe(1);
+    });
+
+    it('rejects stale prepared append and replacement plans without overwriting newer history', () => {
+        const appendBuffer = new MetricHistoryBuffer();
+        const appendPlan = appendBuffer.prepareAppend(signalAt(1), evaluationAt(1));
+        appendBuffer.appendTrend(signalAt(2));
+        expect(() => appendPlan.commit()).toThrow(/stale/i);
+        expect(appendBuffer.read().trendHistory.map(({ model }) => model.step)).toEqual([2]);
+        expect(appendBuffer.read().evaluationHistory).toEqual([]);
+
+        const replacementBuffer = new MetricHistoryBuffer();
+        const replacementPlan = replacementBuffer.prepareReplacement(
+            signalAt(1),
+            evaluationAt(1),
+        );
+        replacementBuffer.appendEvaluation(evaluationAt(2));
+        expect(() => replacementPlan.commit()).toThrow(/stale/i);
+        expect(replacementBuffer.read().evaluationHistory.map(({ evaluationId }) => evaluationId))
+            .toEqual([2]);
+    });
+
+    it('preflights safe-integer version exhaustion before mutating packed history', () => {
+        const trendBuffer = new MetricHistoryBuffer();
+        const trendInternals = trendBuffer as unknown as {
+            trendVersion: number;
+            cachedSnapshot: unknown;
+        };
+        trendInternals.trendVersion = Number.MAX_SAFE_INTEGER;
+        trendInternals.cachedSnapshot = undefined;
+        expect(() => trendBuffer.prepareAppend(signalAt(1))).toThrow(/trendVersion exhausted/);
+        expect(trendBuffer.read().trendHistory).toEqual([]);
+
+        const evaluationBuffer = new MetricHistoryBuffer();
+        const evaluationInternals = evaluationBuffer as unknown as {
+            evaluationVersion: number;
+            cachedSnapshot: unknown;
+        };
+        evaluationInternals.evaluationVersion = Number.MAX_SAFE_INTEGER;
+        evaluationInternals.cachedSnapshot = undefined;
+        expect(() => evaluationBuffer.appendEvaluation(evaluationAt(1)))
+            .toThrow(/evaluationVersion exhausted/);
+        expect(evaluationBuffer.read().evaluationHistory).toEqual([]);
+    });
 });

@@ -12,12 +12,19 @@ import type {
     MainToWorkerCommand,
     WorkerSnapshotMessage,
     WorkerEvidenceMessageV2,
+    WorkerArtifactProvenanceV2,
+    ArtifactProvenance,
 } from '@nn-playground/shared';
 import {
     isWorkerToMainMessage,
+    parseArtifactProvenance,
     parseWorkerToMainMessageV2,
 } from '@nn-playground/shared';
-import { updateFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
+import {
+    updateFrameBuffer,
+    resetFrameBuffer,
+    type FrameBufferPatch,
+} from './frameBuffer.ts';
 import {
     attachSharedSnapshotViews,
     FLAG_NEURON_GRIDS,
@@ -44,8 +51,12 @@ let _pendingSnapshot: WorkerToMainMessage | null = null;
 // while React is mid-paint.
 let _sharedViews: SharedSnapshotViews | null = null;
 let _sharedViewsRunId: number | null = null;
+/** Staging destinations are never exposed until a complete frame commit. */
 let _sharedOutputReadBuf: Float32Array | null = null;
 let _sharedNeuronReadBuf: Float32Array | null = null;
+/** Previously committed buffers; swapped back to staging after the next commit. */
+let _sharedOutputPublishedBuf: Float32Array | null = null;
+let _sharedNeuronPublishedBuf: Float32Array | null = null;
 let _sharedNeuronGridLayout: { count: number; gridSize: number } | null = null;
 
 function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
@@ -64,6 +75,10 @@ function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
     _sharedNeuronReadBuf = new Float32Array(
         Math.max(1, msg.neuronGridLayout.count * msg.gridSize * msg.gridSize),
     );
+    _sharedOutputPublishedBuf = new Float32Array(msg.gridSize * msg.gridSize);
+    _sharedNeuronPublishedBuf = new Float32Array(
+        Math.max(1, msg.neuronGridLayout.count * msg.gridSize * msg.gridSize),
+    );
     _sharedNeuronGridLayout = msg.neuronGridLayout;
 }
 
@@ -72,6 +87,8 @@ function tearDownSharedBuffers(): void {
     _sharedViewsRunId = null;
     _sharedOutputReadBuf = null;
     _sharedNeuronReadBuf = null;
+    _sharedOutputPublishedBuf = null;
+    _sharedNeuronPublishedBuf = null;
     _sharedNeuronGridLayout = null;
 }
 
@@ -92,6 +109,31 @@ function emitWorkerError(message: string): void {
     if (_onSnapshot) {
         _onSnapshot({ type: 'error', runId: _currentRunId, message });
     }
+}
+
+function deepFreezeArtifact<T>(value: T): Readonly<T> {
+    if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
+    for (const key of Reflect.ownKeys(value)) {
+        deepFreezeArtifact((value as Record<PropertyKey, unknown>)[key]);
+    }
+    return Object.freeze(value);
+}
+
+function snapshotWithFrozenArtifactProvenance(
+    message: WorkerSnapshotMessage,
+): WorkerSnapshotMessage {
+    if (message.protocolVersion !== 2 || message.artifacts === undefined) return message;
+    const parsed: Partial<Record<keyof WorkerArtifactProvenanceV2, ArtifactProvenance>> = {};
+    for (const key of Object.keys(message.artifacts) as Array<keyof WorkerArtifactProvenanceV2>) {
+        const provenance = message.artifacts[key];
+        if (provenance !== undefined) {
+            parsed[key] = deepFreezeArtifact(parseArtifactProvenance(provenance));
+        }
+    }
+    return {
+        ...message,
+        artifacts: Object.freeze(parsed) as WorkerArtifactProvenanceV2,
+    };
 }
 
 // ── Initialization ──
@@ -187,12 +229,13 @@ function handleWorkerMessage(msg: unknown): void {
     if (msg.type !== 'error' && msg.runId < _currentRunId) return;
 
     if (msg.type === 'snapshot') {
+        const snapshot = snapshotWithFrozenArtifactProvenance(msg);
         // Drop out-of-order snapshots
-        if (msg.snapshotId <= _latestSnapshotId && msg.runId === _currentRunId) return;
-        _latestSnapshotId = msg.snapshotId;
+        if (snapshot.snapshotId <= _latestSnapshotId && snapshot.runId === _currentRunId) return;
+        _latestSnapshotId = snapshot.snapshotId;
 
         // Store as pending — will be applied on next rAF tick (latest-wins)
-        _pendingSnapshot = msg;
+        _pendingSnapshot = snapshot;
     } else if (msg.type === 'sharedBuffers') {
         // Worker (re)allocated its SAB transport. Install views immediately
         // so the very next snapshot can read from them. Never queued to rAF
@@ -219,8 +262,6 @@ function evidenceGenerationId(message: WorkerEvidenceMessageV2): number {
 // that are actually present in the message are written — this is essential
 // for the cadence-gated snapshots, where the worker omits the grid on
 // reuse frames and the main thread must retain the previously cached one.
-type FrameBufferPatch = Parameters<typeof updateFrameBuffer>[0];
-
 function buildSnapshotFramePatch(
     msg: WorkerSnapshotMessage,
     currentRunId: number,
@@ -251,7 +292,14 @@ function buildSnapshotFramePatch(
             sharedOutputReadBuf,
             sharedNeuronReadBuf,
         );
-        if (result) {
+        const strictFlags = FLAG_OUTPUT_GRID
+            | (msg.artifacts?.neuronGrids === undefined ? 0 : FLAG_NEURON_GRIDS);
+        const matchesStrictEnvelope = msg.protocolVersion !== 2 || (
+            result !== null
+            && result.seq === msg.sharedSeq
+            && result.flags === strictFlags
+        );
+        if (result && matchesStrictEnvelope) {
             if ((result.flags & FLAG_OUTPUT_GRID) !== 0) {
                 patch.outputGrid = sharedOutputReadBuf;
                 patch.gridSize = msg.scalars.gridSize;
@@ -274,6 +322,14 @@ function buildSnapshotFramePatch(
             patch.outputGrid = msg.outputGrid.length > 0 ? msg.outputGrid : null;
             patch.gridSize = msg.outputGrid.length > 0 ? msg.scalars.gridSize : 0;
             if (!hasMulticlassBoundaryPayload && msg.outputGrid.length > 0) {
+                patch.multiclassClassGrid = null;
+                patch.multiclassConfidenceGrid = null;
+                patch.multiclassBoundaryLayout = null;
+            } else if (
+                msg.protocolVersion === 2
+                && !hasMulticlassBoundaryPayload
+                && msg.outputGrid.length === 0
+            ) {
                 patch.multiclassClassGrid = null;
                 patch.multiclassConfidenceGrid = null;
                 patch.multiclassBoundaryLayout = null;
@@ -316,16 +372,97 @@ function buildSnapshotFramePatch(
     if (msg.confusionMatrix !== undefined) {
         patch.confusionMatrix = msg.confusionMatrix;
         patch.multiclassConfusionMatrix = null;
-    } else if (msg.scalars.testMetricsStale === false) {
+    } else if (msg.protocolVersion !== 2 && msg.scalars.testMetricsStale === false) {
         patch.confusionMatrix = null;
     }
     if (msg.multiclassConfusionMatrix !== undefined) {
         patch.multiclassConfusionMatrix = msg.multiclassConfusionMatrix;
         patch.confusionMatrix = null;
-    } else if (msg.scalars.testMetricsStale === false) {
+    } else if (msg.protocolVersion !== 2 && msg.scalars.testMetricsStale === false) {
         patch.multiclassConfusionMatrix = null;
     }
+    attachStrictArtifactProvenance(msg, patch);
     return patch;
+}
+
+function rotateCommittedSharedReadBuffers(patch: FrameBufferPatch): void {
+    if (_sharedOutputReadBuf !== null
+        && _sharedOutputPublishedBuf !== null
+        && patch.outputGrid === _sharedOutputReadBuf) {
+        const previousPublished = _sharedOutputPublishedBuf;
+        _sharedOutputPublishedBuf = _sharedOutputReadBuf;
+        _sharedOutputReadBuf = previousPublished;
+    }
+    if (_sharedNeuronReadBuf !== null
+        && _sharedNeuronPublishedBuf !== null
+        && patch.neuronGrids === _sharedNeuronReadBuf) {
+        const previousPublished = _sharedNeuronPublishedBuf;
+        _sharedNeuronPublishedBuf = _sharedNeuronReadBuf;
+        _sharedNeuronReadBuf = previousPublished;
+    }
+}
+
+function patchHasOwn(patch: FrameBufferPatch, key: keyof FrameBufferPatch): boolean {
+    return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+function attachStrictArtifactProvenance(
+    msg: WorkerSnapshotMessage,
+    patch: FrameBufferPatch,
+): void {
+    if (msg.protocolVersion !== 2) return;
+    const artifacts = msg.artifacts;
+
+    const boundaryMutated = patchHasOwn(patch, 'outputGrid')
+        || patchHasOwn(patch, 'multiclassClassGrid')
+        || patchHasOwn(patch, 'multiclassConfidenceGrid')
+        || patchHasOwn(patch, 'multiclassBoundaryLayout');
+    if (boundaryMutated) {
+        const boundaryPresent = patch.outputGrid != null
+            || patch.multiclassClassGrid != null
+            || patch.multiclassConfidenceGrid != null;
+        patch.decisionBoundaryProvenance = boundaryPresent
+            ? artifacts!.decisionBoundary!
+            : null;
+    }
+
+    const neuronMutated = patchHasOwn(patch, 'neuronGrids')
+        || patchHasOwn(patch, 'neuronGridLayout');
+    if (neuronMutated) {
+        patch.neuronGridsProvenance = patch.neuronGrids != null
+            ? artifacts!.neuronGrids!
+            : null;
+    }
+
+    if (patchHasOwn(patch, 'layerStats')) {
+        patch.layerStatsProvenance = patch.layerStats != null
+            ? artifacts!.activationStatistics!
+            : null;
+        patch.layerStatsGradientRevision = patch.layerStats != null
+            ? msg.layerStatsGradientRevision!
+            : null;
+    }
+
+    const histogramMutated = patchHasOwn(patch, 'activationHistogramBins')
+        || patchHasOwn(patch, 'activationHistogramLayout');
+    if (histogramMutated) {
+        patch.activationHistogramProvenance = patch.activationHistogramBins != null
+            ? artifacts!.activationHistogram!
+            : null;
+    }
+
+    const confusionMutated = patchHasOwn(patch, 'confusionMatrix')
+        || patchHasOwn(patch, 'multiclassConfusionMatrix');
+    if (confusionMutated) {
+        const matrixPresent = patch.confusionMatrix != null
+            || patch.multiclassConfusionMatrix != null;
+        patch.confusionMatrixProvenance = matrixPresent
+            ? artifacts!.confusionMatrix!
+            : null;
+        patch.confusionMatrixEvaluationId = matrixPresent
+            ? msg.confusionMatrixEvaluationId!
+            : null;
+    }
 }
 
 function rafLoop(): void {
@@ -337,7 +474,7 @@ function rafLoop(): void {
 
         // Write heavy arrays to frame buffer
         if (msg.type === 'snapshot') {
-            updateFrameBuffer(buildSnapshotFramePatch(
+            const patch = buildSnapshotFramePatch(
                 msg,
                 _currentRunId,
                 _sharedViews,
@@ -345,7 +482,11 @@ function rafLoop(): void {
                 _sharedOutputReadBuf,
                 _sharedNeuronReadBuf,
                 _sharedNeuronGridLayout,
-            ));
+            );
+            updateFrameBuffer(patch, msg.protocolVersion === 2
+                ? { requireArtifactProvenance: true }
+                : undefined);
+            rotateCommittedSharedReadBuffers(patch);
         }
 
         // Notify the subscriber (typically updates useTrainingStore scalars)
@@ -382,7 +523,7 @@ export function stopRenderLoop(): void {
         const msg = _pendingSnapshot;
         _pendingSnapshot = null;
         if (msg.type === 'snapshot') {
-            updateFrameBuffer(buildSnapshotFramePatch(
+            const patch = buildSnapshotFramePatch(
                 msg,
                 _currentRunId,
                 _sharedViews,
@@ -390,7 +531,11 @@ export function stopRenderLoop(): void {
                 _sharedOutputReadBuf,
                 _sharedNeuronReadBuf,
                 _sharedNeuronGridLayout,
-            ));
+            );
+            updateFrameBuffer(patch, msg.protocolVersion === 2
+                ? { requireArtifactProvenance: true }
+                : undefined);
+            rotateCommittedSharedReadBuffers(patch);
         }
         _onSnapshot(msg);
         if (msg.type === 'snapshot' && _streamPort) {

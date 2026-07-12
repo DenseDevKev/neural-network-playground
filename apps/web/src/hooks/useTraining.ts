@@ -24,6 +24,8 @@ import {
     getFrameBuffer,
     getFrameVersions,
     updateFrameBuffer,
+    validateFrameBufferPatch,
+    type FrameBufferPatch,
     type FrameVersions,
 } from '../worker/frameBuffer.ts';
 import {
@@ -39,19 +41,28 @@ import type {
     NetworkSnapshot,
     TrainingConfig,
 } from '@nn-playground/engine';
+import { getDatasetContract } from '@nn-playground/engine';
 import type {
+    ArtifactProvenance,
     ArenaScalarSnapshot,
     CheckpointTimeline,
     PairedEvaluation,
     PreparedExperimentDocumentV2,
     WorkerEvidenceMessageV2,
+    WorkerArtifactProvenanceV2,
     WorkerExperimentRequestV2,
     WorkerArenaSnapshotMessage,
     WorkerProtocolErrorMessageV2,
     WorkerSnapshotMessage,
     WorkerToMainMessage,
 } from '@nn-playground/shared';
-import { WORKER_PROTOCOL_VERSION } from '@nn-playground/shared';
+import {
+    GRID_SIZE,
+    WORKER_PROTOCOL_VERSION,
+    parseArtifactProvenance,
+    parseWorkerEvidenceMessageV2,
+} from '@nn-playground/shared';
+import type { WorkerExperimentResultV2 } from '../worker/training.worker.ts';
 
 export interface LiveArenaModelInput {
     label?: string;
@@ -201,16 +212,661 @@ function syncSnapshotToFrameBuffer(snapshot: NetworkSnapshot): FrameVersions {
     return getFrameVersions();
 }
 
+function deepFreezeDirectArtifact<T>(value: T): Readonly<T> {
+    if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
+    for (const key of Reflect.ownKeys(value)) {
+        deepFreezeDirectArtifact((value as Record<PropertyKey, unknown>)[key]);
+    }
+    return Object.freeze(value);
+}
+
+function directArtifact(
+    result: WorkerExperimentResultV2,
+    key: keyof WorkerArtifactProvenanceV2,
+    expectedBasis: ArtifactProvenance['basis'],
+): ArtifactProvenance {
+    const raw = result.artifacts?.[key];
+    if (raw === undefined) throw new Error(`direct V2 ${key} payload requires provenance`);
+    const parsed = parseArtifactProvenance(raw);
+    const evaluation = result.evidence.latestEvaluation;
+    const sameModel = evaluation !== undefined
+        && parsed.model.generationId === evaluation.model.generationId
+        && parsed.model.revision === evaluation.model.revision
+        && parsed.model.step === evaluation.model.step
+        && parsed.model.epoch === evaluation.model.epoch;
+    const sameBasis = (() => {
+        if (parsed.basis.kind !== expectedBasis.kind) return false;
+        switch (expectedBasis.kind) {
+            case 'prediction-grid':
+                return parsed.basis.kind === 'prediction-grid'
+                    && parsed.basis.pointCount === expectedBasis.pointCount
+                    && parsed.basis.domain.every(
+                        (value, index) => value === expectedBasis.domain[index],
+                    );
+            case 'bounded-sample':
+                return parsed.basis.kind === 'bounded-sample'
+                    && parsed.basis.split === expectedBasis.split
+                    && parsed.basis.sampleCount === expectedBasis.sampleCount
+                    && parsed.basis.populationCount === expectedBasis.populationCount;
+            case 'full-split':
+                return parsed.basis.kind === 'full-split'
+                    && parsed.basis.split === expectedBasis.split
+                    && parsed.basis.sampleCount === expectedBasis.sampleCount
+                    && parsed.basis.populationCount === expectedBasis.populationCount;
+            case 'parameter-grid':
+                return parsed.basis.kind === 'parameter-grid'
+                    && parsed.basis.sampleCount === expectedBasis.sampleCount
+                    && parsed.basis.parameterPositions === expectedBasis.parameterPositions;
+        }
+    })();
+    if (parsed.model.generationId !== result.runId
+        || evaluation === undefined
+        || !sameModel
+        || parsed.dataset.generatorVersion !== evaluation.dataset.generatorVersion
+        || parsed.dataset.datasetKey !== evaluation.dataset.datasetKey
+        || parsed.dataset.trainCount !== evaluation.dataset.trainCount
+        || parsed.dataset.testCount !== evaluation.dataset.testCount
+        || parsed.objectiveKey !== evaluation.objectiveKey
+        || !sameBasis) {
+        throw new Error(`direct V2 ${key} provenance identity or basis mismatch`);
+    }
+    return deepFreezeDirectArtifact(parsed) as ArtifactProvenance;
+}
+
+function validateEvidenceAgainstPrepared(
+    value: unknown,
+    prepared: PreparedExperimentDocumentV2,
+): WorkerEvidenceMessageV2 {
+    const evidence = parseWorkerEvidenceMessageV2(value);
+    const sampleCount = prepared.compiled.data.sampleCount;
+    const trainCount = sampleCount === 1
+        ? 1
+        : Math.min(sampleCount - 1, Math.max(
+            1,
+            Math.floor(sampleCount * prepared.compiled.data.trainFraction),
+        ));
+    const testCount = sampleCount - trainCount;
+    const generatorVersion = getDatasetContract(prepared.compiled.data.dataset).generatorVersion;
+    const identities = [
+        evidence.liveSignal,
+        evidence.latestEvaluation,
+        ...Object.values(evidence.artifacts ?? {}),
+    ].filter((entry): entry is NonNullable<typeof entry> => entry !== undefined);
+    if (identities.some((entry) => (
+        entry.dataset.generatorVersion !== generatorVersion
+        || entry.dataset.datasetKey !== prepared.identities.datasetKey
+        || entry.dataset.trainCount !== trainCount
+        || entry.dataset.testCount !== testCount
+        || entry.objectiveKey !== prepared.identities.objectiveKey
+    ))) {
+        throw new Error('worker evidence does not match the active prepared experiment');
+    }
+    const evaluation = evidence.latestEvaluation;
+    if (evaluation !== undefined) {
+        const validSide = (
+            side: PairedEvaluation['train'] | PairedEvaluation['test'],
+            count: number,
+        ): boolean => {
+            const { accuracy, confusionMatrix } = side.values;
+            if (prepared.compiled.task.kind === 'regression') {
+                return accuracy === undefined && confusionMatrix === undefined;
+            }
+            if (accuracy === undefined || accuracy < 0 || accuracy > 1
+                || confusionMatrix === undefined) return false;
+            if (prepared.compiled.task.kind === 'binary-classification') {
+                return !('classCount' in confusionMatrix)
+                    && confusionMatrix.tp + confusionMatrix.tn
+                        + confusionMatrix.fp + confusionMatrix.fn === count
+                    && accuracy === (confusionMatrix.tp + confusionMatrix.tn) / count;
+            }
+            return 'classCount' in confusionMatrix
+                && confusionMatrix.counts.reduce((sum, value) => sum + value, 0) === count
+                && accuracy === (
+                    confusionMatrix.counts[0]
+                    + confusionMatrix.counts[4]
+                    + confusionMatrix.counts[8]
+                ) / count;
+        };
+        if (!validSide(evaluation.train, trainCount)
+            || !validSide(evaluation.test, testCount)) {
+            throw new Error('worker evidence task metrics do not match the active prepared task');
+        }
+    }
+    return evidence;
+}
+
+function preflightStrictV2Result(
+    result: WorkerExperimentResultV2,
+    expectedPrepared: PreparedExperimentDocumentV2,
+    freshGeneration: boolean,
+): WorkerEvidenceMessageV2 {
+    const { snapshot } = result;
+    const evidence = validateEvidenceAgainstPrepared(result.evidence, expectedPrepared);
+    const evaluation = evidence.latestEvaluation;
+    if (result.identities?.canonicalRecipeKey
+            !== expectedPrepared.identities.canonicalRecipeKey
+        || result.identities?.recipeFingerprint
+            !== expectedPrepared.identities.recipeFingerprint
+        || result.identities?.datasetKey !== expectedPrepared.identities.datasetKey
+        || result.identities?.objectiveKey !== expectedPrepared.identities.objectiveKey) {
+        throw new Error('direct V2 result prepared identities do not match the active recipe');
+    }
+    const expectedTrainCount = Math.min(
+        expectedPrepared.compiled.data.sampleCount - 1,
+        Math.max(
+            1,
+            Math.floor(
+                expectedPrepared.compiled.data.sampleCount
+                * expectedPrepared.compiled.data.trainFraction,
+            ),
+        ),
+    );
+    const expectedTestCount = expectedPrepared.compiled.data.sampleCount - expectedTrainCount;
+    if (evaluation === undefined
+        || result.runId !== evaluation.model.generationId
+        || snapshot.step !== evaluation.model.step
+        || snapshot.epoch !== evaluation.model.epoch
+        || (evidence.liveSignal !== undefined && (
+            evidence.liveSignal.model.generationId !== result.runId
+            || evidence.liveSignal.model.revision !== evaluation.model.revision
+            || evidence.liveSignal.model.step !== evaluation.model.step
+            || evidence.liveSignal.model.epoch !== evaluation.model.epoch
+        ))
+        || evaluation.dataset.datasetKey !== expectedPrepared.identities.datasetKey
+        || evaluation.dataset.generatorVersion !== getDatasetContract(
+            expectedPrepared.compiled.data.dataset,
+        ).generatorVersion
+        || evaluation.objectiveKey !== expectedPrepared.identities.objectiveKey
+        || evaluation.dataset.trainCount !== expectedTrainCount
+        || evaluation.dataset.testCount !== expectedTestCount) {
+        throw new Error('direct V2 result requires an exact current evidence pair');
+    }
+    if (freshGeneration && (
+        evaluation.evaluationId !== 1
+        || evaluation.trigger !== 'initial'
+        || evaluation.model.revision !== 0
+        || evaluation.model.step !== 0
+        || evaluation.model.epoch !== 0
+        || evidence.liveSignal !== undefined
+    )) {
+        throw new Error('fresh direct V2 result requires the initial revision-zero evaluation');
+    }
+    if (!freshGeneration && evaluation.trigger !== 'manual-step') {
+        throw new Error('manual direct V2 result requires a manual-step evaluation');
+    }
+    const validateTaskSide = (
+        side: PairedEvaluation['train'] | PairedEvaluation['test'],
+        expectedCount: number,
+    ): boolean => {
+        const { accuracy, confusionMatrix } = side.values;
+        if (expectedPrepared.compiled.task.kind === 'regression') {
+            return accuracy === undefined && confusionMatrix === undefined;
+        }
+        if (accuracy === undefined || !Number.isFinite(accuracy) || accuracy < 0 || accuracy > 1
+            || confusionMatrix === undefined) return false;
+        if (expectedPrepared.compiled.task.kind === 'binary-classification') {
+            return !('classCount' in confusionMatrix)
+                && confusionMatrix.tp + confusionMatrix.tn
+                    + confusionMatrix.fp + confusionMatrix.fn === expectedCount
+                && accuracy === (confusionMatrix.tp + confusionMatrix.tn) / expectedCount;
+        }
+        return 'classCount' in confusionMatrix
+            && confusionMatrix.classCount === 3
+            && confusionMatrix.classLabels.every((label, index) => label === index)
+            && confusionMatrix.counts.reduce((sum, count) => sum + count, 0) === expectedCount
+            && accuracy === (
+                confusionMatrix.counts[0]
+                + confusionMatrix.counts[4]
+                + confusionMatrix.counts[8]
+            ) / expectedCount;
+    };
+    const classification = expectedPrepared.compiled.task.kind !== 'regression';
+    if (!validateTaskSide(evaluation.train, expectedTrainCount)
+        || !validateTaskSide(evaluation.test, expectedTestCount)
+        || (classification && (
+            snapshot.trainMetrics.accuracy === undefined
+            || snapshot.testMetrics.accuracy === undefined
+        ))
+        || (!classification && (
+            snapshot.trainMetrics.accuracy !== undefined
+            || snapshot.testMetrics.accuracy !== undefined
+        ))) {
+        throw new Error('direct V2 result task metrics do not match the prepared task');
+    }
+    if (Object.prototype.hasOwnProperty.call(snapshot, 'historyPoint')) {
+        throw new Error('direct V2 result cannot contain legacy historyPoint');
+    }
+    const finiteScalars = [
+        snapshot.trainLoss,
+        snapshot.testLoss,
+        snapshot.trainMetrics.loss,
+        snapshot.testMetrics.loss,
+        snapshot.trainMetrics.accuracy,
+        snapshot.testMetrics.accuracy,
+    ];
+    if (!Number.isSafeInteger(snapshot.step)
+        || snapshot.step < 0
+        || !Number.isSafeInteger(snapshot.epoch)
+        || snapshot.epoch < 0
+        || snapshot.gridSize !== GRID_SIZE
+        || snapshot.trainLoss !== snapshot.trainMetrics.loss
+        || snapshot.testLoss !== snapshot.testMetrics.loss
+        || (snapshot.trainMetrics.accuracy !== undefined
+            && (snapshot.trainMetrics.accuracy < 0 || snapshot.trainMetrics.accuracy > 1))
+        || (snapshot.testMetrics.accuracy !== undefined
+            && (snapshot.testMetrics.accuracy < 0 || snapshot.testMetrics.accuracy > 1))
+        || (snapshot.testMetricsStale !== undefined
+            && typeof snapshot.testMetricsStale !== 'boolean')
+        || finiteScalars.some((value) => value !== undefined && !Number.isFinite(value))) {
+        throw new Error('direct V2 result contains invalid snapshot scalars');
+    }
+
+    const layerSizes = [
+        expectedPrepared.compiled.network.inputSize,
+        ...expectedPrepared.compiled.network.hiddenLayers,
+        expectedPrepared.compiled.network.outputSize,
+    ];
+    if (!Array.isArray(snapshot.weights)
+        || snapshot.weights.length !== layerSizes.length - 1
+        || !Array.isArray(snapshot.biases)
+        || snapshot.biases.length !== layerSizes.length - 1) {
+        throw new Error('direct V2 result parameter topology mismatch');
+    }
+    for (let layerIndex = 0; layerIndex < layerSizes.length - 1; layerIndex++) {
+        const weights = snapshot.weights[layerIndex];
+        const biases = snapshot.biases[layerIndex];
+        if (!Array.isArray(weights)
+            || weights.length !== layerSizes[layerIndex + 1]
+            || !Array.isArray(biases)
+            || biases.length !== layerSizes[layerIndex + 1]) {
+            throw new Error('direct V2 result parameter topology mismatch');
+        }
+        for (const row of weights) {
+            if (!Array.isArray(row)
+                || row.length !== layerSizes[layerIndex]
+                || row.some((value) => (
+                    !Number.isFinite(value) || !Number.isFinite(Math.fround(value))
+                ))) {
+                throw new Error('direct V2 result contains malformed or non-finite weights');
+            }
+        }
+        if (biases.some((value) => (
+            !Number.isFinite(value) || !Number.isFinite(Math.fround(value))
+        ))) {
+            throw new Error('direct V2 result contains non-finite biases');
+        }
+    }
+
+    const gridPointCount = snapshot.gridSize * snapshot.gridSize;
+    const outputGrid = snapshot.outputGrid;
+    if (!(outputGrid instanceof Float32Array) && !Array.isArray(outputGrid)) {
+        throw new Error('direct V2 result output grid has an invalid representation');
+    }
+    if ((outputGrid.length !== 0 && outputGrid.length !== gridPointCount)
+        || Array.from(outputGrid).some((value) => (
+            !Number.isFinite(value) || !Number.isFinite(Math.fround(value))
+        ))) {
+        throw new Error('direct V2 result output grid has an invalid size or value');
+    }
+    if (snapshot.multiclassBoundary !== undefined) {
+        const boundary = snapshot.multiclassBoundary;
+        if (outputGrid.length > 0
+            || boundary.gridSize !== snapshot.gridSize
+            || !(boundary.classGrid instanceof Uint8Array)
+            || !(boundary.confidenceGrid instanceof Float32Array)
+            || boundary.classGrid.length !== gridPointCount
+            || boundary.confidenceGrid.length !== gridPointCount
+            || boundary.classGrid.some((value) => value > 2)
+            || boundary.confidenceGrid.some((value) => (
+                !Number.isFinite(value) || value < 0 || value > 1
+            ))) {
+            throw new Error('direct V2 result multiclass boundary is malformed');
+        }
+    }
+    if (snapshot.neuronGrids !== undefined) {
+        const expectedNeuronValues = layerSizes.slice(1).reduce((sum, size) => sum + size, 0)
+            * gridPointCount;
+        const validFlat = snapshot.neuronGrids instanceof Float32Array
+            && snapshot.neuronGrids.length === expectedNeuronValues
+            && !snapshot.neuronGrids.some((value) => !Number.isFinite(value));
+        const validNested = Array.isArray(snapshot.neuronGrids)
+            && snapshot.neuronGrids.length === expectedNeuronValues / gridPointCount
+            && snapshot.neuronGrids.every((grid) => (
+                (Array.isArray(grid) || grid instanceof Float32Array)
+                && grid.length === gridPointCount
+                && !Array.from(grid).some((value) => (
+                    !Number.isFinite(value) || !Number.isFinite(Math.fround(value))
+                ))
+            ));
+        if (!validFlat && !validNested) {
+            throw new Error('direct V2 result neuron grids have an invalid size or value');
+        }
+    }
+    if (snapshot.layerStats === undefined && result.layerStatsGradientRevision !== undefined) {
+        throw new Error('direct V2 result has a surplus layer statistics revision');
+    }
+    if (snapshot.layerStats !== undefined && (
+        snapshot.layerStats.length !== layerSizes.length - 1
+        || snapshot.layerStats.some((stats) => (
+            Object.keys(stats).sort().join(',')
+                !== 'activationStd,meanAbsGradient,meanAbsWeight,meanActivation'
+            || Object.values(stats).some((value) => !Number.isFinite(value))
+            || stats.activationStd < 0
+            || stats.meanAbsWeight < 0
+            || stats.meanAbsGradient < 0
+        ))
+    )) {
+        throw new Error('direct V2 result layer statistics are malformed');
+    }
+    if (snapshot.activationHistograms !== undefined) {
+        const histogram = snapshot.activationHistograms;
+        const histogramSampleCount = Math.min(128, expectedTrainCount);
+        const validLayers = histogram.layers.length === layerSizes.length - 1
+            && histogram.layers.every((layer, index) => (
+                layer.layerIndex === index
+                && layer.binCount === 12
+                && Number.isFinite(layer.binStart)
+                && Number.isFinite(layer.binWidth)
+                && layer.binWidth > 0
+                && Number.isFinite(layer.minActivation)
+                && Number.isFinite(layer.maxActivation)
+                && layer.minActivation <= layer.maxActivation
+                && layer.totalCount === histogramSampleCount * layerSizes[index + 1]
+                && Number.isSafeInteger(layer.nearZeroCount)
+                && layer.nearZeroCount >= 0
+                && layer.nearZeroCount <= layer.totalCount
+                && Number.isSafeInteger(layer.saturatedCount)
+                && layer.saturatedCount >= 0
+                && layer.saturatedCount <= layer.totalCount
+                && Array.from(
+                    histogram.bins.subarray(index * 12, (index + 1) * 12),
+                ).reduce((sum, count) => sum + count, 0) === layer.totalCount
+            ));
+        if (!(histogram.bins instanceof Float32Array)
+            || histogram.bins.length !== histogram.layers.length * 12
+            || histogram.bins.some((value) => (
+                !Number.isSafeInteger(value) || value < 0
+            ))
+            || !validLayers) {
+            throw new Error('direct V2 result activation histogram is malformed');
+        }
+    }
+    return evidence;
+}
+
+function buildStrictV2FramePatch(
+    result: WorkerExperimentResultV2,
+    replaceAbsentArtifacts: boolean,
+    expectedPrepared: PreparedExperimentDocumentV2,
+): FrameBufferPatch {
+    const { snapshot } = result;
+    preflightStrictV2Result(result, expectedPrepared, replaceAbsentArtifacts);
+    const currentFrame = getFrameBuffer();
+    const { buffer: weights, layerSizes } = flattenWeights(snapshot.weights);
+    const biases = flattenBiases(snapshot.biases);
+    const patch: Parameters<typeof updateFrameBuffer>[0] = {
+        weights,
+        biases,
+        weightLayout: { layerSizes },
+    };
+
+    const hasScalarBoundary = snapshot.outputGrid.length > 0;
+    const hasMulticlassBoundary = snapshot.multiclassBoundary !== undefined;
+    if (hasScalarBoundary && hasMulticlassBoundary) {
+        throw new Error('direct V2 snapshot cannot contain scalar and multiclass boundaries');
+    }
+    const hasCurrentBoundary = currentFrame.outputGrid !== null
+        || currentFrame.multiclassClassGrid !== null
+        || currentFrame.multiclassConfidenceGrid !== null
+        || currentFrame.multiclassBoundaryLayout !== null
+        || currentFrame.decisionBoundaryProvenance !== null;
+    const canReuseCurrentBoundary = (
+        currentFrame.outputGrid !== null
+        || currentFrame.multiclassClassGrid !== null
+        || currentFrame.multiclassConfidenceGrid !== null
+    ) && currentFrame.decisionBoundaryProvenance?.model.generationId === result.runId;
+    const clearCurrentBoundary = !hasScalarBoundary
+        && !hasMulticlassBoundary
+        && (replaceAbsentArtifacts || (hasCurrentBoundary && !canReuseCurrentBoundary));
+    if (hasScalarBoundary || hasMulticlassBoundary || clearCurrentBoundary) {
+        patch.outputGrid = hasScalarBoundary
+            ? snapshot.outputGrid instanceof Float32Array
+                ? snapshot.outputGrid
+                : new Float32Array(snapshot.outputGrid)
+            : null;
+        patch.gridSize = hasScalarBoundary || hasMulticlassBoundary ? snapshot.gridSize : 0;
+        patch.multiclassClassGrid = snapshot.multiclassBoundary?.classGrid ?? null;
+        patch.multiclassConfidenceGrid = snapshot.multiclassBoundary?.confidenceGrid ?? null;
+        patch.multiclassBoundaryLayout = snapshot.multiclassBoundary === undefined
+            ? null
+            : {
+                gridSize: snapshot.multiclassBoundary.gridSize,
+                classCount: 3,
+                classLabels: [0, 1, 2],
+            };
+        patch.decisionBoundaryProvenance = hasScalarBoundary || hasMulticlassBoundary
+            ? directArtifact(result, 'decisionBoundary', {
+                kind: 'prediction-grid',
+                pointCount: snapshot.gridSize * snapshot.gridSize,
+                domain: [-1, 1, -1, 1],
+            })
+            : null;
+    }
+
+    let neuronGrids: Float32Array | null = null;
+    let neuronGridLayout: { count: number; gridSize: number } | null = null;
+    if (snapshot.neuronGrids !== undefined && snapshot.neuronGrids.length > 0) {
+        if (snapshot.neuronGrids instanceof Float32Array) {
+            neuronGrids = snapshot.neuronGrids;
+            neuronGridLayout = { count: getTotalNeuronCount(layerSizes), gridSize: snapshot.gridSize };
+        } else {
+            const flattened = flattenNeuronGrids(snapshot.neuronGrids, snapshot.gridSize);
+            neuronGrids = flattened.buffer;
+            neuronGridLayout = flattened.layout;
+        }
+    }
+    const hasCurrentNeuronGrids = currentFrame.neuronGrids !== null
+        || currentFrame.neuronGridLayout !== null
+        || currentFrame.neuronGridsProvenance !== null;
+    const canReuseCurrentNeuronGrids = currentFrame.neuronGrids !== null
+        && currentFrame.neuronGridLayout !== null
+        && currentFrame.neuronGridsProvenance?.model.generationId === result.runId;
+    const clearCurrentNeuronGrids = neuronGrids === null
+        && (replaceAbsentArtifacts || (hasCurrentNeuronGrids && !canReuseCurrentNeuronGrids));
+    if (neuronGrids !== null || clearCurrentNeuronGrids) {
+        patch.neuronGrids = neuronGrids;
+        patch.neuronGridLayout = neuronGridLayout;
+        patch.neuronGridsProvenance = neuronGrids === null
+            ? null
+            : directArtifact(result, 'neuronGrids', {
+                kind: 'prediction-grid',
+                pointCount: snapshot.gridSize * snapshot.gridSize,
+                domain: [-1, 1, -1, 1],
+            });
+    }
+
+    if (snapshot.layerStats !== undefined) {
+        patch.layerStats = snapshot.layerStats;
+        const populationCount = result.evidence.latestEvaluation!.dataset.trainCount;
+        const provenance = directArtifact(result, 'activationStatistics', {
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount: Math.min(128, populationCount),
+            populationCount,
+        });
+        const gradientRevision = result.layerStatsGradientRevision;
+        if (!Number.isSafeInteger(gradientRevision)
+            || (gradientRevision as number) < 0
+            || (gradientRevision as number) > provenance.model.revision) {
+            throw new Error('direct V2 layer statistics require a valid gradient revision');
+        }
+        patch.layerStatsProvenance = provenance;
+        patch.layerStatsGradientRevision = gradientRevision!;
+    } else {
+        const hasCurrentLayerStats = currentFrame.layerStats !== null
+            || currentFrame.layerStatsProvenance !== null
+            || currentFrame.layerStatsGradientRevision !== null;
+        const canReuseCurrentLayerStats = currentFrame.layerStats !== null
+            && currentFrame.layerStatsProvenance?.model.generationId === result.runId
+            && Number.isSafeInteger(currentFrame.layerStatsGradientRevision)
+            && (currentFrame.layerStatsGradientRevision as number) >= 0;
+        if (replaceAbsentArtifacts || (hasCurrentLayerStats && !canReuseCurrentLayerStats)) {
+            patch.layerStats = null;
+            patch.layerStatsProvenance = null;
+            patch.layerStatsGradientRevision = null;
+        }
+    }
+
+    if (snapshot.activationHistograms !== undefined) {
+        patch.activationHistogramBins = snapshot.activationHistograms.bins;
+        patch.activationHistogramLayout = {
+            binCount: snapshot.activationHistograms.layers[0]?.binCount ?? 0,
+            layers: snapshot.activationHistograms.layers,
+        };
+        patch.activationHistogramProvenance = directArtifact(result, 'activationHistogram', {
+            kind: 'bounded-sample',
+            split: 'train',
+            sampleCount: Math.min(
+                128,
+                result.evidence.latestEvaluation!.dataset.trainCount,
+            ),
+            populationCount: result.evidence.latestEvaluation!.dataset.trainCount,
+        });
+    } else {
+        const hasCurrentHistogram = currentFrame.activationHistogramBins !== null
+            || currentFrame.activationHistogramLayout !== null
+            || currentFrame.activationHistogramProvenance !== null;
+        const canReuseCurrentHistogram = currentFrame.activationHistogramBins !== null
+            && currentFrame.activationHistogramLayout !== null
+            && currentFrame.activationHistogramProvenance?.model.generationId === result.runId;
+        if (replaceAbsentArtifacts || (hasCurrentHistogram && !canReuseCurrentHistogram)) {
+            patch.activationHistogramBins = null;
+            patch.activationHistogramLayout = null;
+            patch.activationHistogramProvenance = null;
+        }
+    }
+
+    const binaryConfusion = snapshot.testMetrics.confusionMatrix;
+    const multiclassConfusion = snapshot.testMetrics.multiclassConfusionMatrix;
+    if (binaryConfusion !== undefined && multiclassConfusion !== undefined) {
+        throw new Error('direct V2 snapshot cannot contain two confusion matrix kinds');
+    }
+    if (binaryConfusion !== undefined || multiclassConfusion !== undefined) {
+        const pairedConfusion = result.evidence.latestEvaluation?.test.values.confusionMatrix;
+        const binaryMatches = binaryConfusion !== undefined
+            && pairedConfusion !== undefined
+            && !('classCount' in pairedConfusion)
+            && binaryConfusion.tp === pairedConfusion.tp
+            && binaryConfusion.tn === pairedConfusion.tn
+            && binaryConfusion.fp === pairedConfusion.fp
+            && binaryConfusion.fn === pairedConfusion.fn;
+        const multiclassMatches = multiclassConfusion !== undefined
+            && pairedConfusion !== undefined
+            && 'classCount' in pairedConfusion
+            && multiclassConfusion.classCount === pairedConfusion.classCount
+            && multiclassConfusion.classLabels.every(
+                (label, index) => label === pairedConfusion.classLabels[index],
+            )
+            && multiclassConfusion.counts.length === pairedConfusion.counts.length
+            && multiclassConfusion.counts.every(
+                (count, index) => count === pairedConfusion.counts[index],
+            );
+        if (!binaryMatches && !multiclassMatches) {
+            throw new Error('direct V2 confusion matrix does not match latest paired evaluation');
+        }
+        patch.confusionMatrix = binaryMatches ? pairedConfusion : null;
+        patch.multiclassConfusionMatrix = multiclassMatches ? pairedConfusion : null;
+        patch.confusionMatrixProvenance = directArtifact(result, 'confusionMatrix', {
+            kind: 'full-split',
+            split: 'test',
+            sampleCount: result.evidence.latestEvaluation!.dataset.testCount,
+            populationCount: result.evidence.latestEvaluation!.dataset.testCount,
+        });
+        patch.confusionMatrixEvaluationId = result.evidence.latestEvaluation!.evaluationId;
+    } else {
+        const hasCurrentConfusion = currentFrame.confusionMatrix !== null
+            || currentFrame.multiclassConfusionMatrix !== null
+            || currentFrame.confusionMatrixProvenance !== null
+            || currentFrame.confusionMatrixEvaluationId !== null;
+        const canReuseCurrentConfusion = (
+            currentFrame.confusionMatrix !== null
+            || currentFrame.multiclassConfusionMatrix !== null
+        ) && currentFrame.confusionMatrixProvenance?.model.generationId === result.runId;
+        if (replaceAbsentArtifacts || (hasCurrentConfusion && !canReuseCurrentConfusion)) {
+            patch.confusionMatrix = null;
+            patch.multiclassConfusionMatrix = null;
+            patch.confusionMatrixProvenance = null;
+            patch.confusionMatrixEvaluationId = null;
+        }
+    }
+
+    const expectedKeys = new Set<keyof WorkerArtifactProvenanceV2>();
+    if (hasScalarBoundary || hasMulticlassBoundary) expectedKeys.add('decisionBoundary');
+    if (neuronGrids !== null) expectedKeys.add('neuronGrids');
+    if (snapshot.layerStats !== undefined) expectedKeys.add('activationStatistics');
+    if (snapshot.activationHistograms !== undefined) expectedKeys.add('activationHistogram');
+    if (binaryConfusion !== undefined || multiclassConfusion !== undefined) {
+        expectedKeys.add('confusionMatrix');
+    }
+    for (const key of Object.keys(result.artifacts ?? {}) as Array<keyof WorkerArtifactProvenanceV2>) {
+        if (!expectedKeys.has(key)) throw new Error(`direct V2 ${key} provenance has no payload`);
+    }
+
+    validateFrameBufferPatch(patch, { requireArtifactProvenance: true });
+    return patch;
+}
+
 function snapshotForReactState(snapshot: NetworkSnapshot): NetworkSnapshot {
     if (!snapshot.activationHistograms) return snapshot;
     const { activationHistograms: _activationHistograms, ...rest } = snapshot;
     return rest;
 }
 
+function strictSnapshotForReactState(result: WorkerExperimentResultV2): NetworkSnapshot {
+    const { snapshot } = result;
+    const evaluation = result.evidence.latestEvaluation;
+    if (evaluation === undefined) throw new Error('direct V2 snapshot requires current evaluation');
+    const {
+        activationHistograms: _activationHistograms,
+        multiclassBoundary: _multiclassBoundary,
+        neuronGrids: _neuronGrids,
+        layerStats: _layerStats,
+        historyPoint: _historyPoint,
+        ...rest
+    } = snapshot;
+    return {
+        ...rest,
+        trainLoss: evaluation.train.values.dataLoss,
+        testLoss: evaluation.test.values.dataLoss,
+        testMetricsStale: false,
+        weights: [],
+        biases: [],
+        outputGrid: [],
+        trainMetrics: {
+            loss: evaluation.train.values.dataLoss,
+            accuracy: evaluation.train.values.accuracy,
+        },
+        testMetrics: {
+            loss: evaluation.test.values.dataLoss,
+            accuracy: evaluation.test.values.accuracy,
+        },
+    };
+}
+
 function applyFreshSnapshotToStore(ts: TrainingStore, snapshot: NetworkSnapshot): void {
     ts.setSnapshot(snapshotForReactState(snapshot));
     ts.setTestMetricsStale(snapshot.testMetricsStale === true);
     ts.setFrameVersions(syncSnapshotToFrameBuffer(snapshot));
+}
+
+function applyFreshV2SnapshotToStore(
+    ts: TrainingStore,
+    result: WorkerExperimentResultV2,
+    frameVersions: FrameVersions,
+): void {
+    ts.setSnapshot(strictSnapshotForReactState(result));
+    ts.setTestMetricsStale(false);
+    ts.setFrameVersions(frameVersions);
 }
 
 const EMPTY_CHECKPOINT_TIMELINE: CheckpointTimeline = {
@@ -233,6 +889,7 @@ function createStreamSnapshot(
     msg: WorkerSnapshotMessage,
     previousSnapshot: NetworkSnapshot | null,
 ): NetworkSnapshot {
+    const strict = msg.protocolVersion === 2;
     return {
         step: msg.scalars.step,
         epoch: msg.scalars.epoch,
@@ -245,23 +902,29 @@ function createStreamSnapshot(
         testMetrics: {
             loss: msg.scalars.testLoss,
             accuracy: msg.scalars.testAccuracy,
-            confusionMatrix: msg.confusionMatrix ?? (
-                msg.scalars.testMetricsStale === false
-                    ? undefined
-                    : previousSnapshot?.testMetrics.confusionMatrix
-            ),
+            ...(strict ? {} : {
+                confusionMatrix: msg.confusionMatrix ?? (
+                    msg.scalars.testMetricsStale === false
+                        ? undefined
+                        : previousSnapshot?.testMetrics.confusionMatrix
+                ),
+            }),
         },
-        weights: previousSnapshot?.weights ?? [],
-        biases: previousSnapshot?.biases ?? [],
-        outputGrid: msg.outputGrid !== undefined && msg.outputGrid.length === 0
+        weights: strict ? [] : previousSnapshot?.weights ?? [],
+        biases: strict ? [] : previousSnapshot?.biases ?? [],
+        outputGrid: strict
             ? []
-            : previousSnapshot?.outputGrid ?? [],
+            : msg.outputGrid !== undefined && msg.outputGrid.length === 0
+                ? []
+                : previousSnapshot?.outputGrid ?? [],
         gridSize: msg.scalars.gridSize,
-        neuronGrids: msg.neuronGrids !== undefined && msg.neuronGrids.length === 0
+        neuronGrids: strict
             ? undefined
-            : previousSnapshot?.neuronGrids,
-        layerStats: previousSnapshot?.layerStats,
-        historyPoint: msg.historyPoint,
+            : msg.neuronGrids !== undefined && msg.neuronGrids.length === 0
+                ? undefined
+                : previousSnapshot?.neuronGrids,
+        layerStats: strict ? undefined : previousSnapshot?.layerStats,
+        ...(msg.historyPoint === undefined ? {} : { historyPoint: msg.historyPoint }),
     };
 }
 
@@ -269,6 +932,7 @@ export function useTraining(): TrainingHook {
     // All refs first (stable hook order)
     const mountedRef = useRef(true);
     const initializedRef = useRef(false);
+    const activePreparedRef = useRef<PreparedExperimentDocumentV2 | null>(null);
     const prevPreparedRef = useRef<PreparedExperimentDocumentV2 | null>(null);
     const prevConfigSyncNonceRef = useRef(0);
     const requestIdRef = useRef(0);
@@ -378,12 +1042,25 @@ export function useTraining(): TrainingHook {
 
     const applyFreshV2Run = useCallback((
         result: Awaited<ReturnType<ReturnType<typeof getWorkerApi>['initializeExperimentV2']>>,
+        owner: PreparedExperimentDocumentV2,
     ) => {
+        // Preflight both strict boundaries before changing the active bridge
+        // generation or scientific store. A forged direct artifact must leave
+        // the entire previously accepted run observable and intact.
+        const evidence = parseWorkerEvidenceMessageV2(result.evidence);
+        const framePatch = buildStrictV2FramePatch(
+            result,
+            true,
+            owner,
+        );
         const ts = useTrainingStore.getState();
+        const evidenceReplacement = ts.prepareEvidenceReplacement(evidence);
         newRunTo(result.runId);
-        ts.resetEvidence();
-        ts.applyEvidence(result.evidence);
-        applyFreshSnapshotToStore(ts, result.snapshot);
+        ts.commitEvidenceReplacement(evidenceReplacement);
+        updateFrameBuffer(framePatch, { requireArtifactProvenance: true });
+        const frameVersions = getFrameVersions();
+        applyFreshV2SnapshotToStore(ts, result, frameVersions);
+        activePreparedRef.current = owner;
         ts.setCheckpointTimeline(EMPTY_CHECKPOINT_TIMELINE);
         ts.clearWorkerError();
         ts.clearPauseReason();
@@ -395,9 +1072,10 @@ export function useTraining(): TrainingHook {
         source: TrainedRecipeSource,
     ): boolean => {
         const ts = useTrainingStore.getState();
-        if (ts.evidenceGenerationId !== null
-            && result.runId <= ts.evidenceGenerationId) return false;
-        applyFreshV2Run(result);
+        if (result.runId <= (ts.evidenceGenerationId ?? 0)) {
+            throw new Error('fresh V2 result must advance the active generation monotonically');
+        }
+        applyFreshV2Run(result, owner);
         ts.setTrainPoints([]);
         ts.setTestPoints([]);
         ts.markTrainedRecipe(
@@ -508,7 +1186,11 @@ export function useTraining(): TrainingHook {
 
             if (msg.type === 'evidence') {
                 try {
-                    ts.applyEvidence(msg);
+                    const activePrepared = activePreparedRef.current;
+                    if (activePrepared === null) {
+                        throw new Error('scientific evidence arrived before an active prepared run');
+                    }
+                    ts.applyEvidence(validateEvidenceAgainstPrepared(msg, activePrepared));
                 } catch (error) {
                     reportWorkerError(error, 'Received invalid scientific evidence from the worker.');
                 }
@@ -820,14 +1502,30 @@ export function useTraining(): TrainingHook {
             if (resultRevision !== undefined
                 && currentRevision !== undefined
                 && resultRevision < currentRevision) return;
-            ts.setSnapshot(snapshotForReactState(result.snapshot));
-            ts.setTestMetricsStale(result.snapshot.testMetricsStale === true);
-            ts.setFrameVersions(syncSnapshotToFrameBuffer(result.snapshot));
+            const expectedPrepared = activePreparedRef.current;
+            if (expectedPrepared === null) {
+                throw new Error('direct V2 step requires an active prepared experiment');
+            }
+            const framePatch = buildStrictV2FramePatch(
+                result,
+                false,
+                expectedPrepared,
+            );
             const directEvidence = evidenceForDirectStep(
                 result.evidence,
                 ts.latestEvaluation,
             );
-            if (directEvidence) ts.applyEvidence(directEvidence);
+            const preparedEvidence = directEvidence === null
+                ? null
+                : ts.prepareEvidenceAppend(
+                    validateEvidenceAgainstPrepared(directEvidence, expectedPrepared),
+                );
+            updateFrameBuffer(framePatch, { requireArtifactProvenance: true });
+            const frameVersions = getFrameVersions();
+            ts.setSnapshot(strictSnapshotForReactState(result));
+            ts.setTestMetricsStale(false);
+            ts.setFrameVersions(frameVersions);
+            if (preparedEvidence !== null) ts.commitEvidenceAppend(preparedEvidence);
         } catch (error) {
             reportWorkerError(error, 'Failed to run a training step.');
         } finally {

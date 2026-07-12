@@ -2,7 +2,7 @@
 // Exercises the training loop pipeline through a mocked workerBridge,
 // driving synthetic snapshots and asserting store updates.
 
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 import { useTrainingStore } from '../store/useTrainingStore';
@@ -15,12 +15,11 @@ import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
+    GRID_SIZE,
+    prepareExperimentDocument,
+    type WorkerExperimentRequestV2,
 } from '@nn-playground/shared';
-import type { WorkerEvidenceMessageV2 } from '@nn-playground/shared';
-import {
-    createScientificTrustFixtures,
-    type ScientificTrustFixtures,
-} from '../test/scientificTrustFixtures.ts';
+import { getDatasetContract } from '@nn-playground/engine';
 
 // ── Fake workerBridge ──
 
@@ -45,24 +44,110 @@ const fakeSnapshot = {
     historyPoint: { step: 10, trainLoss: 0.3, testLoss: 0.4 },
 };
 
-let fixtures: ScientificTrustFixtures;
-
-beforeAll(async () => {
-    fixtures = await createScientificTrustFixtures();
-});
-
-function fakeEvidence(generationId: number): WorkerEvidenceMessageV2 {
-    const model = { ...fixtures.liveSignal.model, generationId };
-    return {
-        type: 'evidence',
-        protocolVersion: 2,
-        liveSignal: { ...fixtures.liveSignal, model },
-        latestEvaluation: { ...fixtures.evaluation, model },
+async function fakeStrictResultForRequest(
+    request: WorkerExperimentRequestV2,
+    runId: number,
+) {
+    const preparedResult = await prepareExperimentDocument(request.document);
+    if (!preparedResult.ok) throw new Error('integration fixture request must prepare');
+    const prepared = preparedResult.value;
+    const sampleCount = prepared.compiled.data.sampleCount;
+    const trainCount = Math.min(sampleCount - 1, Math.max(
+        1,
+        Math.floor(sampleCount * prepared.compiled.data.trainFraction),
+    ));
+    const testCount = sampleCount - trainCount;
+    const model = { generationId: runId, revision: 0, step: 0, epoch: 0 };
+    const dataset = {
+        generatorVersion: getDatasetContract(prepared.compiled.data.dataset).generatorVersion,
+        datasetKey: prepared.identities.datasetKey,
+        trainCount,
+        testCount,
     };
-}
-
-function fakeStrictResult(runId: number) {
-    return { snapshot: fakeSnapshot, runId, evidence: fakeEvidence(runId) };
+    const valuesFor = (count: number, dataLoss: number) => {
+        if (prepared.compiled.task.kind === 'regression') return { dataLoss };
+        if (prepared.compiled.task.kind === 'binary-classification') {
+            return {
+                dataLoss,
+                accuracy: 1,
+                confusionMatrix: { tp: count, tn: 0, fp: 0, fn: 0 },
+            };
+        }
+        const first = Math.floor(count / 3);
+        const second = Math.floor((count - first) / 2);
+        const third = count - first - second;
+        return {
+            dataLoss,
+            accuracy: 1,
+            confusionMatrix: {
+                classCount: 3 as const,
+                classLabels: [0, 1, 2] as const,
+                counts: [first, 0, 0, 0, second, 0, 0, 0, third] as const,
+            },
+        };
+    };
+    const trainValues = valuesFor(trainCount, 0.3);
+    const testValues = valuesFor(testCount, 0.4);
+    const layerSizes = [
+        prepared.compiled.network.inputSize,
+        ...prepared.compiled.network.hiddenLayers,
+        prepared.compiled.network.outputSize,
+    ];
+    const snapshot = {
+        step: 0,
+        epoch: 0,
+        trainLoss: 0.3,
+        testLoss: 0.4,
+        trainMetrics: { loss: 0.3, accuracy: trainValues.accuracy },
+        testMetrics: { loss: 0.4, accuracy: testValues.accuracy },
+        weights: layerSizes.slice(1).map((fanOut, layerIndex) => (
+            Array.from({ length: fanOut }, () => (
+                Array.from({ length: layerSizes[layerIndex] }, () => 0.01)
+            ))
+        )),
+        biases: layerSizes.slice(1).map((fanOut) => Array.from({ length: fanOut }, () => 0)),
+        outputGrid: new Float32Array(0),
+        gridSize: GRID_SIZE,
+        testMetricsStale: false,
+    };
+    return {
+        snapshot,
+        runId,
+        identities: prepared.identities,
+        evidence: {
+            type: 'evidence' as const,
+            protocolVersion: 2 as const,
+            latestEvaluation: {
+                evaluationId: 1,
+                trigger: 'initial' as const,
+                model,
+                dataset,
+                objectiveKey: prepared.identities.objectiveKey,
+                train: {
+                    basis: {
+                        kind: 'full-split' as const,
+                        split: 'train' as const,
+                        sampleCount: trainCount,
+                        populationCount: trainCount,
+                    },
+                    values: trainValues,
+                },
+                test: {
+                    basis: {
+                        kind: 'full-split' as const,
+                        split: 'test' as const,
+                        sampleCount: testCount,
+                        populationCount: testCount,
+                    },
+                    values: testValues,
+                },
+                objective: {
+                    regularizationPenalty: 0,
+                    trainTotalObjective: 0.3,
+                },
+            },
+        },
+    };
 }
 
 const fakeWorkerApi = {
@@ -151,11 +236,14 @@ describe('Training integration', () => {
         fakeStopRenderLoop = vi.fn();
         fakeNewRunTo = vi.fn();
 
-        fakeWorkerApi.initializeExperimentV2.mockReset()
-            .mockResolvedValueOnce(fakeStrictResult(1))
-            .mockResolvedValue(fakeStrictResult(2));
-        fakeWorkerApi.resetExperimentV2.mockReset().mockResolvedValue(fakeStrictResult(3));
-        fakeWorkerApi.stepExperimentV2.mockReset().mockResolvedValue(fakeStrictResult(1));
+        fakeWorkerApi.initializeExperimentV2.mockReset().mockImplementation(
+            (request: WorkerExperimentRequestV2) => fakeStrictResultForRequest(
+                request,
+                (useTrainingStore.getState().evidenceGenerationId ?? 0) + 1,
+            ),
+        );
+        fakeWorkerApi.resetExperimentV2.mockReset();
+        fakeWorkerApi.stepExperimentV2.mockReset();
         fakeWorkerApi.restoreCheckpoint.mockResolvedValue({
             snapshot: fakeSnapshot,
             runId: 1,
@@ -228,9 +316,11 @@ describe('Training integration', () => {
         await act(async () => {
             render(<App />);
         });
+        await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         expect(fakeWorkerApi.initializeExperimentV2).toHaveBeenCalledTimes(1);
         expect(fakeWorkerApi.initialize).not.toHaveBeenCalled();
+        expect(useTrainingStore.getState().workerError).toBeNull();
         expect(fakeNewRunTo).toHaveBeenCalledWith(1);
         expect(useTrainingStore.getState().snapshot?.trainLoss).toBe(0.3);
     });
@@ -239,6 +329,7 @@ describe('Training integration', () => {
         await act(async () => {
             render(<App />);
         });
+        await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         await act(async () => {
             fireEvent.click(screen.getByRole('button', { name: 'Play' }));
@@ -254,6 +345,7 @@ describe('Training integration', () => {
         await act(async () => {
             render(<App />);
         });
+        await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         // Start training first
         await act(async () => {
@@ -277,6 +369,7 @@ describe('Training integration', () => {
         await act(async () => {
             render(<App />);
         });
+        await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         const snapshotMsg = {
             type: 'snapshot' as const,
@@ -308,6 +401,7 @@ describe('Training integration', () => {
         await act(async () => {
             render(<App />);
         });
+        await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         const errorMsg = {
             type: 'error' as const,
@@ -342,9 +436,12 @@ describe('Dataset switching scenario', () => {
             activeTabRight: 'boundary',
         });
 
-        fakeWorkerApi.initializeExperimentV2.mockReset()
-            .mockResolvedValueOnce(fakeStrictResult(1))
-            .mockResolvedValue(fakeStrictResult(2));
+        fakeWorkerApi.initializeExperimentV2.mockReset().mockImplementation(
+            (request: WorkerExperimentRequestV2) => fakeStrictResultForRequest(
+                request,
+                (useTrainingStore.getState().evidenceGenerationId ?? 0) + 1,
+            ),
+        );
         fakeWorkerApi.getTrainPoints.mockResolvedValue([]);
         fakeWorkerApi.getTestPoints.mockResolvedValue([]);
         fakeWorkerApi.updateDemand.mockResolvedValue(undefined);
@@ -383,6 +480,7 @@ describe('Dataset switching scenario', () => {
         await act(async () => {
             render(<App />);
         });
+        await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         // Mark as initialized so config-sync useEffect runs
         fakeWorkerApi.initializeExperimentV2.mockClear();

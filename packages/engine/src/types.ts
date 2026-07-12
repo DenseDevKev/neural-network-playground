@@ -658,5 +658,6 @@ export interface NetworkSnapshot {
     /** Compact, demand-gated activation histograms for inspection. */
     activationHistograms?: ActivationHistogramResult;
 
-    historyPoint: HistoryPoint;
+    /** Legacy chart point. Strict V2 consumers use typed trend/evaluation histories instead. */
+    historyPoint?: HistoryPoint;
 }
