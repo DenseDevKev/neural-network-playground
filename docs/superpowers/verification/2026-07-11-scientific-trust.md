@@ -52,7 +52,7 @@ nonzero-update throughput.
 | 9 | `53665e0`, `41c632b` |
 | 10 | `5d67ae5`, `23db2e5`, `6dd0412` |
 | 11 | `d52d04d`, `afbb68e`, `1db9722`, `d64c93a`, `32be12c` |
-| 12 | Performance/browser/final-verification commit pending final integrated gates. |
+| 12 | `5893cfc`, `e6c3d7a` |
 
 ## Post-change repository gates
 
