@@ -7,7 +7,8 @@
         "dev": "vite",
         "build": "tsc && vite build",
         "preview": "vite preview",
-        "test": "NODE_OPTIONS=--experimental-require-module vitest run --pool=forks --reporter=dot --passWithNoTests"
+        "test": "NODE_OPTIONS=--experimental-require-module vitest run --pool=forks --reporter=dot --passWithNoTests",
+        "test:perf": "NODE_OPTIONS=--experimental-require-module vitest run --config vitest.perf.config.ts --pool=forks --reporter=verbose"
     },
     "dependencies": {
         "@nn-playground/engine": "workspace:*",

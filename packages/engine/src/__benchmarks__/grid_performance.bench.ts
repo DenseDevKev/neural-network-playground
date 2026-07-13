@@ -17,6 +17,12 @@ const GRID_SIZE = 100; // Larger grid for better measurement
 const features = { x: true, y: true, xSquared: false, ySquared: false, xy: false, sinX: false, sinY: false, cosX: false, cosY: false };
 const activeFeatures = getActiveFeatures(features);
 const gridInputs = buildGridInputs(GRID_SIZE, activeFeatures);
+const BASELINE_120_PERCENT_MAX_MS = {
+    predictGrid: 11.2504104,
+    predictGridInto: 11.1464268,
+    predictGridWithNeurons: 14.37312,
+    predictGridWithNeuronsInto: 12.2388,
+} as const;
 
 function expectFiniteArray(values: ArrayLike<number>): void {
     expect(values.length).toBeGreaterThan(0);
@@ -65,6 +71,12 @@ describe('Grid Prediction Performance Benchmark', () => {
         expect(Number.isFinite(newTotal)).toBe(true);
         expect(oldTotal).toBeGreaterThanOrEqual(0);
         expect(newTotal).toBeGreaterThanOrEqual(0);
+        expect(oldTotal / iterations).toBeLessThanOrEqual(
+            BASELINE_120_PERCENT_MAX_MS.predictGrid,
+        );
+        expect(newTotal / iterations).toBeLessThanOrEqual(
+            BASELINE_120_PERCENT_MAX_MS.predictGridInto,
+        );
         expectFiniteArray(reference);
         expectFiniteArray(target);
         for (let i = 0; i < reference.length; i++) {
@@ -109,6 +121,12 @@ describe('Grid Prediction Performance Benchmark', () => {
         expect(Number.isFinite(newTotal)).toBe(true);
         expect(oldTotal).toBeGreaterThanOrEqual(0);
         expect(newTotal).toBeGreaterThanOrEqual(0);
+        expect(oldTotal / iterations).toBeLessThanOrEqual(
+            BASELINE_120_PERCENT_MAX_MS.predictGridWithNeurons,
+        );
+        expect(newTotal / iterations).toBeLessThanOrEqual(
+            BASELINE_120_PERCENT_MAX_MS.predictGridWithNeuronsInto,
+        );
         expect(reference.outputGrid).toHaveLength(gridInputs.length);
         expect(reference.neuronGrids).toHaveLength(totalNeurons);
         expect(outputTarget).toHaveLength(gridInputs.length);
