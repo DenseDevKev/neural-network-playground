@@ -205,6 +205,46 @@ describe('workerBridge error paths', () => {
         expect(receivedMessages[0].type).toBe('error');
     });
 
+    it('does not throw when a malformed handshake cannot be stringified', async () => {
+        await setupStreamChannel();
+        const listener = getRegisteredStreamListener();
+
+        expect(() => listener({
+            data: {
+                type: 'sharedBuffers',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+                runId: 1,
+                control: {},
+                outputGrid: {},
+                neuronGrids: {},
+                gridSize: 2n,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent)).not.toThrow();
+        expect(receivedMessages).toHaveLength(1);
+        expect(receivedMessages[0]).toMatchObject({ type: 'error' });
+    });
+
+    it('rejects a future-version shared-buffer handshake without throwing', async () => {
+        await setupStreamChannel();
+        const listener = getRegisteredStreamListener();
+
+        expect(() => listener({
+            data: {
+                type: 'sharedBuffers',
+                protocolVersion: WORKER_PROTOCOL_VERSION + 1,
+                runId: 1,
+                control: new SharedArrayBuffer(32),
+                outputGrid: new SharedArrayBuffer(16),
+                neuronGrids: new SharedArrayBuffer(16),
+                gridSize: 2,
+                neuronGridLayout: { count: 1, gridSize: 2 },
+            },
+        } as MessageEvent)).not.toThrow();
+        expect(receivedMessages).toHaveLength(1);
+        expect(receivedMessages[0]).toMatchObject({ type: 'error' });
+    });
+
     it('delivers current V2 evidence immediately and drops stale generations', async () => {
         const fixtures = await createScientificTrustFixtures();
         await setupStreamChannel();
@@ -1374,6 +1414,50 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.neuronGrids).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
         expect(frame.neuronGridLayout).toEqual({ count: 1, gridSize: 2 });
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
+    });
+
+    it('rejects malformed shared-buffer lengths without replacing the installed transport', () => {
+        const listener = getRegisteredStreamListener();
+        const sharedViews = allocSharedSnapshotViews(2, 1);
+        const sharedSeq = publishSharedSnapshot(
+            sharedViews,
+            new Float32Array([0.8, 0.7, 0.6, 0.5]),
+            new Float32Array([0.1, 0.2, 0.3, 0.4]),
+            FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
+        );
+        const validHandshake = {
+            type: 'sharedBuffers' as const,
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            runId: 1,
+            control: sharedViews.controlSAB,
+            outputGrid: sharedViews.outputGridSAB,
+            neuronGrids: sharedViews.neuronGridsSAB,
+            gridSize: 2,
+            neuronGridLayout: { count: 1, gridSize: 2 },
+        };
+        listener({ data: validHandshake } as MessageEvent);
+
+        expect(() => listener({
+            data: {
+                ...validHandshake,
+                outputGrid: new SharedArrayBuffer(1),
+            },
+        } as MessageEvent)).not.toThrow();
+        expect(receivedMessages.at(-1)?.msg).toMatchObject({ type: 'error' });
+
+        startRenderLoop();
+        listener({
+            data: makeStrictSnapshotMessage(1, {
+                outputGrid: undefined,
+                neuronGrids: undefined,
+                sharedSeq,
+            }),
+        } as MessageEvent);
+        runNextAnimationFrame();
+
+        const frame = getFrameBuffer();
+        expect(frame.outputGrid).toEqual(new Float32Array([0.8, 0.7, 0.6, 0.5]));
+        expect(frame.neuronGrids).toEqual(new Float32Array([0.1, 0.2, 0.3, 0.4]));
     });
 
     it('does not let stale shared buffers install or satisfy a later snapshot', () => {

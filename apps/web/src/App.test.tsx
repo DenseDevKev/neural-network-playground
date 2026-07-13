@@ -21,6 +21,50 @@ const trainingMock = {
     restoreCheckpoint: vi.fn(),
 };
 
+function liveSignal(revision: number, step: number, epoch: number) {
+    return {
+        model: { generationId: 1, revision, step, epoch },
+        dataset: {
+            generatorVersion: 2,
+            datasetKey: 'test-dataset',
+            trainCount: 150,
+            testCount: 150,
+        },
+        objectiveKey: 'test-objective',
+        basis: {
+            kind: 'mini-batch-ema' as const,
+            alpha: 0.1,
+            latestBatchSize: 10,
+            throughStep: step,
+        },
+        dataLoss: 0.25,
+    };
+}
+
+function fullEvaluation(revision: number, step: number, epoch: number) {
+    return {
+        evaluationId: 12,
+        trigger: 'pause' as const,
+        model: { generationId: 1, revision, step, epoch },
+        dataset: {
+            generatorVersion: 2,
+            datasetKey: 'test-dataset',
+            trainCount: 150,
+            testCount: 150,
+        },
+        objectiveKey: 'test-objective',
+        train: {
+            basis: { kind: 'full-split' as const, split: 'train' as const, sampleCount: 150, populationCount: 150 },
+            values: { dataLoss: 0.2, accuracy: 0.9 },
+        },
+        test: {
+            basis: { kind: 'full-split' as const, split: 'test' as const, sampleCount: 150, populationCount: 150 },
+            values: { dataLoss: 0.3, accuracy: 0.8 },
+        },
+        objective: { regularizationPenalty: 0, trainTotalObjective: 0.2 },
+    };
+}
+
 vi.mock('./hooks/useTraining.ts', () => ({
     useTraining: () => {
         useTrainingMount();
@@ -254,6 +298,21 @@ describe('App accessibility shell', () => {
         const { container } = render(<App />);
         expect(container.querySelector('.forge-shell')).toBeTruthy();
         expect(screen.getByRole('status', { name: 'Status bar' })).toBeInTheDocument();
+    });
+
+    it('shows the newest scientific model in the status bar after a forced pause evaluation', () => {
+        useTrainingStore.setState({
+            status: 'paused',
+            evidenceGenerationId: 1,
+            latestLiveSignal: liveSignal(2_450, 2_450, 163),
+            latestEvaluation: fullEvaluation(2_500, 2_500, 166),
+        });
+
+        render(<App />);
+
+        const statusBar = screen.getByRole('status', { name: 'Status bar' });
+        expect(statusBar).toHaveTextContent('STEP 2,500');
+        expect(statusBar).not.toHaveTextContent('STEP 2,450');
     });
 
     it('switches Build and Run views through the store', () => {

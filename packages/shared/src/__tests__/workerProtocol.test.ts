@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_DEMAND,
     DEFAULT_EXPERIMENT_DOCUMENT,
+    GRID_SIZE,
+    MAX_HIDDEN_LAYERS,
+    MAX_NEURONS_PER_LAYER,
     WORKER_PROTOCOL_VERSION,
     isCaptureCheckpointRequestV2,
     isCaptureRunRequestV2,
@@ -290,13 +293,22 @@ describe('strict V2 streaming protocol', () => {
     });
 
     it('requires protocol version 2 for status and shared stream frames', () => {
+        const checkpointTimeline = validStrictSnapshot().checkpointTimeline;
         expect(isWorkerToMainMessage({
             type: 'status',
             protocolVersion: 2,
             runId: 1,
             status: 'paused',
             pauseReason: 'diverged',
+            checkpointTimeline,
         })).toBe(true);
+        expect(isWorkerToMainMessage({
+            type: 'status',
+            protocolVersion: 2,
+            runId: 1,
+            status: 'paused',
+            checkpointTimeline: { ...checkpointTimeline, maxCheckpoints: 7 },
+        })).toBe(false);
         expect(isWorkerToMainMessage({
             type: 'status',
             runId: 1,
@@ -309,6 +321,89 @@ describe('strict V2 streaming protocol', () => {
             status: 'paused',
             unexpected: true,
         })).toBe(false);
+    });
+
+    it('accepts only exact, resource-bounded SharedArrayBuffer handshakes', () => {
+        const gridSize = 2;
+        const neuronCount = 1;
+        const valid = {
+            type: 'sharedBuffers',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            runId: 1,
+            control: new SharedArrayBuffer(8 * Int32Array.BYTES_PER_ELEMENT),
+            outputGrid: new SharedArrayBuffer(
+                gridSize * gridSize * Float32Array.BYTES_PER_ELEMENT,
+            ),
+            neuronGrids: new SharedArrayBuffer(
+                neuronCount * gridSize * gridSize * Float32Array.BYTES_PER_ELEMENT,
+            ),
+            gridSize,
+            neuronGridLayout: { count: neuronCount, gridSize },
+        } as const;
+        expect(isWorkerToMainMessage(valid)).toBe(true);
+
+        const regularBuffer = new ArrayBuffer(valid.control.byteLength);
+        expect(isWorkerToMainMessage({ ...valid, control: regularBuffer })).toBe(false);
+        expect(isWorkerToMainMessage({
+            ...valid,
+            outputGrid: new ArrayBuffer(valid.outputGrid.byteLength),
+        })).toBe(false);
+        expect(isWorkerToMainMessage({
+            ...valid,
+            neuronGrids: new ArrayBuffer(valid.neuronGrids.byteLength),
+        })).toBe(false);
+
+        expect(isWorkerToMainMessage({
+            ...valid,
+            control: new SharedArrayBuffer(valid.control.byteLength + 4),
+        })).toBe(false);
+        expect(isWorkerToMainMessage({
+            ...valid,
+            outputGrid: new SharedArrayBuffer(valid.outputGrid.byteLength + 4),
+        })).toBe(false);
+        expect(isWorkerToMainMessage({
+            ...valid,
+            neuronGrids: new SharedArrayBuffer(valid.neuronGrids.byteLength + 4),
+        })).toBe(false);
+
+        for (const invalidGridSize of [0, 1.5, GRID_SIZE + 1, Number.MAX_SAFE_INTEGER + 1]) {
+            expect(isWorkerToMainMessage({ ...valid, gridSize: invalidGridSize })).toBe(false);
+        }
+        expect(isWorkerToMainMessage({
+            ...valid,
+            neuronGridLayout: { count: neuronCount, gridSize: gridSize + 1 },
+        })).toBe(false);
+
+        const maximumNeuronCount = MAX_HIDDEN_LAYERS * MAX_NEURONS_PER_LAYER + 3;
+        for (const invalidNeuronCount of [
+            0,
+            1.5,
+            maximumNeuronCount + 1,
+            Number.MAX_SAFE_INTEGER + 1,
+        ]) {
+            expect(isWorkerToMainMessage({
+                ...valid,
+                neuronGridLayout: { count: invalidNeuronCount, gridSize },
+            })).toBe(false);
+        }
+    });
+
+    it('returns false instead of invoking hostile accessors or leaking proxy errors', () => {
+        const throwingAccessor = {};
+        Object.defineProperty(throwingAccessor, 'type', {
+            enumerable: true,
+            get: () => { throw new Error('hostile type getter'); },
+        });
+        const throwingProxy = new Proxy({}, {
+            getPrototypeOf: () => { throw new Error('hostile prototype trap'); },
+            ownKeys: () => { throw new Error('hostile ownKeys trap'); },
+            get: () => { throw new Error('hostile get trap'); },
+        });
+
+        expect(() => isWorkerToMainMessage(throwingAccessor)).not.toThrow();
+        expect(isWorkerToMainMessage(throwingAccessor)).toBe(false);
+        expect(() => isWorkerToMainMessage(throwingProxy)).not.toThrow();
+        expect(isWorkerToMainMessage(throwingProxy)).toBe(false);
     });
 });
 

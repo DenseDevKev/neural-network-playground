@@ -1,6 +1,7 @@
 // ── Training Controls ──
 import { memo, useEffect, useId, useMemo, useState } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { getTrainingLifecycleUi } from './trainingLifecycle.ts';
@@ -21,7 +22,10 @@ const RESTORE_GUARANTEE = 'Future shuffles may differ; this checkpoint guarantee
 export const TrainingControls = memo(function TrainingControls({ training }: Props) {
     const status = useTrainingStore((s) => s.status);
     const currentModel = useTrainingStore((s) => (
-        s.latestLiveSignal?.model ?? s.latestEvaluation?.model ?? null
+        selectScientificEvidence({
+            latestLiveSignal: s.latestLiveSignal,
+            latestEvaluation: s.latestEvaluation,
+        }).currentModel
     ));
     const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
     const setStepsPerFrame = useTrainingStore((s) => s.setStepsPerFrame);

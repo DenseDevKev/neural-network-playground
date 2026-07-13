@@ -29,6 +29,11 @@ import type {
     RecipeFingerprint,
     ValidatedExperimentDocumentV2,
 } from './types.js';
+import {
+    GRID_SIZE,
+    MAX_HIDDEN_LAYERS,
+    MAX_NEURONS_PER_LAYER,
+} from './constants.js';
 
 // ─────────────────────────────────────────────────────────
 // Strict protocol version 2
@@ -1306,6 +1311,7 @@ export interface WorkerStatusMessage {
     runId: number;
     status: 'idle' | 'running' | 'paused';
     pauseReason?: PauseReason | null;
+    checkpointTimeline?: CheckpointTimeline;
 }
 
 export interface WorkerErrorMessage {
@@ -1342,6 +1348,79 @@ export interface WorkerSharedBuffersMessage {
     neuronGrids: SharedArrayBuffer;
     gridSize: number;
     neuronGridLayout: { count: number; gridSize: number };
+}
+
+const SHARED_CONTROL_WORD_COUNT = 8;
+const MAX_SHARED_NEURON_COUNT = MAX_HIDDEN_LAYERS * MAX_NEURONS_PER_LAYER + 3;
+
+function exactSharedArrayBufferByteLength(value: unknown): number | null {
+    if (typeof SharedArrayBuffer !== 'function') return null;
+    const byteLengthGetter = Object.getOwnPropertyDescriptor(
+        SharedArrayBuffer.prototype,
+        'byteLength',
+    )?.get;
+    if (byteLengthGetter === undefined) return null;
+    try {
+        const byteLength = byteLengthGetter.call(value) as unknown;
+        return Number.isSafeInteger(byteLength) && (byteLength as number) >= 0
+            ? byteLength as number
+            : null;
+    } catch {
+        return null;
+    }
+}
+
+function safePositiveProduct(...factors: number[]): number | null {
+    let product = 1;
+    for (const factor of factors) {
+        if (!Number.isSafeInteger(factor) || factor <= 0) return null;
+        if (product > Number.MAX_SAFE_INTEGER / factor) return null;
+        product *= factor;
+    }
+    return product;
+}
+
+function isWorkerSharedBuffersMessage(
+    message: Record<string, unknown>,
+): boolean {
+    if (!hasExactOwnKeys(message, [
+        'type',
+        'protocolVersion',
+        'runId',
+        'control',
+        'outputGrid',
+        'neuronGrids',
+        'gridSize',
+        'neuronGridLayout',
+    ])) return false;
+    const gridSize = message['gridSize'];
+    const layout = message['neuronGridLayout'];
+    if (!Number.isSafeInteger(gridSize)
+        || (gridSize as number) <= 0
+        || (gridSize as number) > GRID_SIZE
+        || !hasExactOwnKeys(layout, ['count', 'gridSize'])) {
+        return false;
+    }
+    const neuronCount = layout['count'];
+    if (!Number.isSafeInteger(neuronCount)
+        || (neuronCount as number) <= 0
+        || (neuronCount as number) > MAX_SHARED_NEURON_COUNT
+        || layout['gridSize'] !== gridSize) {
+        return false;
+    }
+    const gridPointCount = safePositiveProduct(gridSize as number, gridSize as number);
+    if (gridPointCount === null) return false;
+    const outputBytes = safePositiveProduct(gridPointCount, Float32Array.BYTES_PER_ELEMENT);
+    const neuronBytes = safePositiveProduct(
+        neuronCount as number,
+        gridPointCount,
+        Float32Array.BYTES_PER_ELEMENT,
+    );
+    if (outputBytes === null || neuronBytes === null) return false;
+    return exactSharedArrayBufferByteLength(message['control'])
+            === SHARED_CONTROL_WORD_COUNT * Int32Array.BYTES_PER_ELEMENT
+        && exactSharedArrayBufferByteLength(message['outputGrid']) === outputBytes
+        && exactSharedArrayBufferByteLength(message['neuronGrids']) === neuronBytes;
 }
 
 export type WorkerToMainMessage =
@@ -1406,7 +1485,7 @@ export type MainToWorkerCommand =
  * Validates the `type` discriminator and required primitive fields only;
  * does not recurse into `layerStats` arrays to avoid per-frame overhead.
  */
-export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
+function isWorkerToMainMessageUnchecked(x: unknown): x is WorkerToMainMessage {
     if (isRecord(x)
         && (x['type'] === 'evidence' || x['type'] === 'worker-error')) {
         return isWorkerToMainMessageV2(x);
@@ -1434,7 +1513,7 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 hasExactOwnKeys(
                     m,
                     ['type', 'protocolVersion', 'runId', 'status'],
-                    ['pauseReason'],
+                    ['pauseReason', 'checkpointTimeline'],
                 ) &&
                 (
                     m['status'] === 'idle' ||
@@ -1445,6 +1524,10 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                     !('pauseReason' in m) ||
                     m['pauseReason'] === null ||
                     isPauseReason(m['pauseReason'])
+                ) &&
+                (
+                    !('checkpointTimeline' in m) ||
+                    isCheckpointTimelineV2(m['checkpointTimeline'])
                 )
             );
         case 'error':
@@ -1453,32 +1536,18 @@ export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
                 ['type', 'protocolVersion', 'runId', 'message'],
             ) && isBoundedString(m['message'], 4_096);
         case 'sharedBuffers':
-            // SharedArrayBuffer is a distinct global constructor; fall back to
-            // a truthy-object check in environments that don't expose it
-            // (tests, hosts without cross-origin isolation). We never *send*
-            // this message from such hosts, so accepting the fallback there
-            // only matters for symmetry.
-            return (
-                hasExactOwnKeys(m, [
-                    'type',
-                    'protocolVersion',
-                    'runId',
-                    'control',
-                    'outputGrid',
-                    'neuronGrids',
-                    'gridSize',
-                    'neuronGridLayout',
-                ]) &&
-                typeof m['gridSize'] === 'number' &&
-                m['control'] !== null &&
-                typeof m['control'] === 'object' &&
-                m['outputGrid'] !== null &&
-                typeof m['outputGrid'] === 'object' &&
-                m['neuronGrids'] !== null &&
-                typeof m['neuronGrids'] === 'object'
-            );
+            return isWorkerSharedBuffersMessage(m);
         default:
             return false;
+    }
+}
+
+/** Total Worker -> Main guard: adversarial accessors and proxies fail closed. */
+export function isWorkerToMainMessage(x: unknown): x is WorkerToMainMessage {
+    try {
+        return isWorkerToMainMessageUnchecked(x);
+    } catch {
+        return false;
     }
 }
 

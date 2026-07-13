@@ -70,6 +70,30 @@ describe('version-2 experiment memory store', () => {
         expect(window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(legacyRaw);
     });
 
+    it('fails closed around an incompatible whole envelope until explicit deletion', async () => {
+        const raw = '{ "kind": "nn-playground-experiment-memory", "schemaVersion": 3, "records": [] }';
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, raw);
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const record = await makeRecord();
+
+        expect(store.getState().incompatibleEnvelope?.rawJson).toBe(raw);
+        expect(store.getState().rejectedRecords).toEqual([]);
+        expect(await store.getState().deleteRejectedRecord(-1)).toBe(false);
+        expect(await store.getState().clearRecords()).toBe(false);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(raw);
+        expect(await store.getState().saveRecord(record)).toBe(false);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(raw);
+        expect(store.getState().pendingSave).toEqual(record);
+        expect(store.getState().persistenceError?.message).toMatch(/incompatible.*delete/i);
+
+        expect(await store.getState().deleteIncompatibleEnvelope()).toBe(true);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBeNull();
+        expect(store.getState().incompatibleEnvelope).toBeNull();
+        expect(await store.getState().retryPersistence()).toBe(true);
+        expect(store.getState().records).toEqual([record]);
+    });
+
     it('serializes overlapping async saves without losing a record', async () => {
         const store = createExperimentMemoryStore();
         await store.getState().hydrate();

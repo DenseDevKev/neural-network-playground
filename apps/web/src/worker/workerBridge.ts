@@ -62,25 +62,30 @@ let _sharedNeuronPublishedBuf: Float32Array | null = null;
 let _sharedNeuronGridLayout: { count: number; gridSize: number } | null = null;
 
 function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
-    _sharedViews = attachSharedSnapshotViews({
+    const nextViews = attachSharedSnapshotViews({
         control: msg.control,
         outputGrid: msg.outputGrid,
         neuronGrids: msg.neuronGrids,
         gridSize: msg.gridSize,
         neuronCount: msg.neuronGridLayout.count,
     });
-    _sharedViewsRunId = msg.runId;
     // Allocate reader-side destination arrays sized to the new shape.
     // These are regular (non-shared) Float32Arrays so downstream renderers
     // work on a stable copy; the cost is a single memcpy per snapshot.
-    _sharedOutputReadBuf = new Float32Array(msg.gridSize * msg.gridSize);
-    _sharedNeuronReadBuf = new Float32Array(
+    const nextOutputReadBuf = new Float32Array(msg.gridSize * msg.gridSize);
+    const nextNeuronReadBuf = new Float32Array(
         Math.max(1, msg.neuronGridLayout.count * msg.gridSize * msg.gridSize),
     );
-    _sharedOutputPublishedBuf = new Float32Array(msg.gridSize * msg.gridSize);
-    _sharedNeuronPublishedBuf = new Float32Array(
+    const nextOutputPublishedBuf = new Float32Array(msg.gridSize * msg.gridSize);
+    const nextNeuronPublishedBuf = new Float32Array(
         Math.max(1, msg.neuronGridLayout.count * msg.gridSize * msg.gridSize),
     );
+    _sharedViews = nextViews;
+    _sharedViewsRunId = msg.runId;
+    _sharedOutputReadBuf = nextOutputReadBuf;
+    _sharedNeuronReadBuf = nextNeuronReadBuf;
+    _sharedOutputPublishedBuf = nextOutputPublishedBuf;
+    _sharedNeuronPublishedBuf = nextNeuronPublishedBuf;
     _sharedNeuronGridLayout = msg.neuronGridLayout;
 }
 
@@ -195,10 +200,18 @@ export async function setupStreamChannel(): Promise<void> {
 
 // ── Message Handling ──
 
-function handleWorkerMessage(msg: unknown): void {
+function handleWorkerMessage(value: unknown): void {
     // Validate message shape before processing.
-    if (!isWorkerToMainMessage(msg)) {
-        emitWorkerError('Received malformed message from worker: ' + JSON.stringify(msg));
+    let msg: WorkerToMainMessage | null = null;
+    try {
+        if (isWorkerToMainMessage(value)) msg = value;
+    } catch {
+        msg = null;
+    }
+    if (msg === null) {
+        emitWorkerError(
+            'Received malformed message from worker: ' + describeMalformedMessage(value),
+        );
         return;
     }
 
@@ -268,10 +281,22 @@ function handleWorkerMessage(msg: unknown): void {
         // so the very next snapshot can read from them. Never queued to rAF
         // — we need this in place before any snapshot referring to it
         // arrives, and it carries no per-frame data.
-        installSharedBuffers(msg);
+        try {
+            installSharedBuffers(msg);
+        } catch {
+            emitWorkerError('Received malformed shared-buffer handshake from worker');
+        }
     } else {
         // Status/error messages are applied immediately
         if (_onSnapshot) _onSnapshot(msg);
+    }
+}
+
+function describeMalformedMessage(value: unknown): string {
+    try {
+        return JSON.stringify(value) ?? String(value);
+    } catch {
+        return '[unserializable message]';
     }
 }
 

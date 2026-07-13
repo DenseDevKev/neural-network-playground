@@ -110,6 +110,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const hydrationStatus = useExperimentMemoryStore((state) => state.hydrationStatus);
     const records = useExperimentMemoryStore((state) => state.records);
     const rejectedRecords = useExperimentMemoryStore((state) => state.rejectedRecords);
+    const incompatibleEnvelope = useExperimentMemoryStore((state) => state.incompatibleEnvelope);
     const legacyRaw = useExperimentMemoryStore((state) => state.legacyRaw);
     const legacyNoticeDismissed = useExperimentMemoryStore((state) => state.legacyNoticeDismissed);
     const persistenceError = useExperimentMemoryStore((state) => state.persistenceError);
@@ -119,6 +120,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const dismissPersistenceError = useExperimentMemoryStore((state) => state.dismissPersistenceError);
     const discardPendingSave = useExperimentMemoryStore((state) => state.discardPendingSave);
     const removeRecord = useExperimentMemoryStore((state) => state.removeRecord);
+    const deleteIncompatibleEnvelope = useExperimentMemoryStore((state) => state.deleteIncompatibleEnvelope);
     const dismissLegacyNotice = useExperimentMemoryStore((state) => state.dismissLegacyNotice);
     const deleteLegacyStorage = useExperimentMemoryStore((state) => state.deleteLegacyStorage);
     const prepared = usePlaygroundStore((state) => state.access.status === 'ready'
@@ -259,6 +261,47 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                             onClick={() => { void deleteLegacyStorage(); }}
                         >
                             Delete earlier runs
+                        </button>
+                    </div>
+                </section>
+            )}
+
+            {incompatibleEnvelope !== null && (
+                <section
+                    className="inspection__layer"
+                    role="note"
+                    aria-label="Incompatible saved-run file"
+                    style={{ marginTop: 12 }}
+                >
+                    <div className="inspection__layer-name">Saved-run file is incompatible</div>
+                    <div className="inspection__empty" style={{ marginTop: 6 }}>
+                        These bytes were not changed or loaded as individual runs. Download a copy
+                        before deleting the file. New saves remain pending until it is deleted.
+                    </div>
+                    <div className="inspection__empty" role="alert" style={{ marginTop: 6 }}>
+                        {incompatibleEnvelope.issues
+                            .map((entry) => `${entry.path}: ${entry.message}`)
+                            .join(' ')}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                        <button
+                            type="button"
+                            className="btn btn--ghost btn--sm"
+                            onClick={() => downloadText(
+                                'nn-playground-incompatible-saved-runs.json',
+                                incompatibleEnvelope.rawJson,
+                            )}
+                            aria-label="Download incompatible saved-run file"
+                        >
+                            Download raw file
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn--ghost btn--sm"
+                            onClick={() => { void deleteIncompatibleEnvelope(); }}
+                            aria-label="Delete incompatible saved-run file"
+                        >
+                            Delete incompatible file
                         </button>
                     </div>
                 </section>

@@ -115,7 +115,7 @@ function makeEvidence(
 ): WorkerEvidenceMessageV2 {
     if (!prepared) throw new Error('missing prepared fixture');
     const model = { generationId, revision, step, epoch: Math.floor(step / 10) };
-    const trainDataLoss = 0.4 - step * 0.001;
+    const trainDataLoss = Math.max(0.05, 0.4 - step * 0.001);
     const sampleCount = prepared.compiled.data.sampleCount;
     const trainCount = Math.min(sampleCount - 1, Math.max(
         1,
@@ -970,6 +970,58 @@ describe('useTraining', () => {
         expect(useTrainingStore.getState().pauseReason).toBeNull();
     });
 
+    it('replaces a stale checkpoint selection from the authoritative pause acknowledgement', async () => {
+        renderHook(() => useTraining());
+        await waitFor(() => expect(currentEvidenceStep()).toBe(0));
+        const staleCheckpoint = {
+            id: 900,
+            step: 4_500,
+            epoch: 0,
+            trainDataLoss: 0.2,
+            testDataLoss: 0.3,
+            label: 'Step 4500',
+        };
+        const authoritativeCheckpoint = {
+            id: 910,
+            step: 4_550,
+            epoch: 0,
+            trainDataLoss: 0.1,
+            testDataLoss: 0.2,
+            label: 'Step 4550',
+        };
+        useTrainingStore.setState({
+            checkpointTimeline: {
+                checkpoints: [staleCheckpoint],
+                maxCheckpoints: 8,
+                evictedCount: 892,
+                liveCheckpointId: staleCheckpoint.id,
+                restoredCheckpointId: null,
+            },
+        });
+
+        act(() => getStreamHandler()({
+            type: 'status',
+            protocolVersion: 2,
+            runId: 1,
+            status: 'paused',
+            checkpointTimeline: {
+                checkpoints: [authoritativeCheckpoint],
+                maxCheckpoints: 8,
+                evictedCount: 902,
+                liveCheckpointId: authoritativeCheckpoint.id,
+                restoredCheckpointId: null,
+            },
+        }));
+
+        expect(useTrainingStore.getState().checkpointTimeline).toEqual({
+            checkpoints: [authoritativeCheckpoint],
+            maxCheckpoints: 8,
+            evictedCount: 902,
+            liveCheckpointId: authoritativeCheckpoint.id,
+            restoredCheckpointId: null,
+        });
+    });
+
     it('does not pause when training is not running', async () => {
         const { result } = renderHook(() => useTraining());
         await waitFor(() => expect(currentEvidenceStep()).toBe(0));
@@ -1611,6 +1663,105 @@ describe('useTraining', () => {
         expect(bridge.postStreamCommand).toHaveBeenCalledWith(
             expect.objectContaining({ type: 'startTraining', protocolVersion: 2 }),
         );
+    });
+
+    it('drops a direct-step result older than a newer forced evaluation despite a stale live signal', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(currentEvidenceStep()).toBe(0));
+        const handler = getStreamHandler();
+        const staleLive = makeEvidence(1, 2, 2_450, 'cadence', INITIAL_PREPARED, 2_450);
+        const currentPause = makeEvidence(1, 3, 2_500, 'pause', INITIAL_PREPARED, 2_500);
+        act(() => {
+            handler(staleLive);
+            handler({
+                type: 'evidence',
+                protocolVersion: 2,
+                latestEvaluation: currentPause.latestEvaluation,
+            });
+        });
+        bridge.workerApi.stepExperimentV2.mockResolvedValueOnce(makeV2Result(
+            1,
+            2_490,
+            4,
+            'manual-step',
+            makeSnapshot(2_490),
+            INITIAL_PREPARED,
+            2_490,
+        ));
+
+        await act(async () => result.current.step());
+
+        expect(useTrainingStore.getState().workerError).toBeNull();
+        expect(useTrainingStore.getState().latestLiveSignal?.model.revision).toBe(2_450);
+        expect(useTrainingStore.getState().latestEvaluation?.model.revision).toBe(2_500);
+    });
+
+    it('restores the current high-speed checkpoint from the newer pause evaluation revision', async () => {
+        const { result } = renderHook(() => useTraining());
+        await waitFor(() => expect(currentEvidenceStep()).toBe(0));
+        const handler = getStreamHandler();
+        const streamed = makeEvidence(1, 2, 2_450, 'cadence', INITIAL_PREPARED, 2_450);
+        const paused = makeEvidence(1, 3, 2_500, 'pause', INITIAL_PREPARED, 2_500);
+        const checkpoint = {
+            id: 501,
+            step: 2_500,
+            epoch: 250,
+            trainDataLoss: 0.1,
+            testDataLoss: 0.2,
+            label: 'Step 2500',
+        };
+        act(() => {
+            handler(streamed);
+            handler({
+                type: 'evidence',
+                protocolVersion: 2,
+                latestEvaluation: paused.latestEvaluation,
+            });
+            handler({
+                type: 'status',
+                protocolVersion: 2,
+                runId: 1,
+                status: 'paused',
+                checkpointTimeline: {
+                    checkpoints: [checkpoint],
+                    maxCheckpoints: 8,
+                    evictedCount: 493,
+                    liveCheckpointId: checkpoint.id,
+                    restoredCheckpointId: null,
+                },
+            });
+        });
+        expect(useTrainingStore.getState().latestLiveSignal?.model.revision).toBe(2_450);
+        expect(useTrainingStore.getState().latestEvaluation?.model.revision).toBe(2_500);
+
+        const restored = makeV2Result(
+            1,
+            2_500,
+            4,
+            'restore',
+            makeSnapshot(2_500),
+            INITIAL_PREPARED,
+            2_501,
+        );
+        restored.checkpointTimeline = {
+            checkpoints: [checkpoint],
+            maxCheckpoints: 8,
+            evictedCount: 493,
+            liveCheckpointId: checkpoint.id,
+            restoredCheckpointId: checkpoint.id,
+        };
+        bridge.workerApi.restoreCheckpointV2.mockResolvedValueOnce(restored);
+
+        await act(async () => result.current.restoreCheckpoint(checkpoint.id));
+
+        expect(useTrainingStore.getState().workerError).toBeNull();
+        expect(useTrainingStore.getState().latestEvaluation?.model).toMatchObject({
+            generationId: 1,
+            revision: 2_501,
+            step: 2_500,
+        });
+        expect(useTrainingStore.getState().checkpointTimeline.restoredCheckpointId)
+            .toBe(checkpoint.id);
     });
 
     it('does not start training while a config sync is pending', async () => {

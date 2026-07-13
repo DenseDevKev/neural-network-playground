@@ -1,6 +1,7 @@
 import {
     parseWorkerExperimentRequestV2,
     prepareExperimentDocument,
+    WORKER_PROTOCOL_VERSION,
 } from '@nn-playground/shared';
 import type {
     PreparedExperimentDocumentV2,
@@ -19,7 +20,11 @@ export class ExperimentTransactionError extends Error {
     constructor(
         readonly code: Extract<
             WorkerProtocolErrorCodeV2,
-            'malformed-request' | 'invalid-experiment' | 'identity-mismatch' | 'stale-request'
+            | 'malformed-request'
+            | 'unsupported-protocol-version'
+            | 'invalid-experiment'
+            | 'identity-mismatch'
+            | 'stale-request'
         >,
         readonly path: string,
         message: string,
@@ -50,12 +55,54 @@ function parseRequest(value: unknown): WorkerExperimentRequestV2 {
     try {
         return parseWorkerExperimentRequestV2(value);
     } catch (error) {
+        const unsupported = recognizableFutureInitializeRequest(value);
+        if (unsupported !== null) {
+            throw new ExperimentTransactionError(
+                'unsupported-protocol-version',
+                '$.protocolVersion',
+                `Worker protocol version ${unsupported.protocolVersion} is not supported.`,
+                unsupported.requestId,
+            );
+        }
         throw new ExperimentTransactionError(
             'malformed-request',
             '$',
             error instanceof Error ? error.message : 'Invalid version-2 worker request.',
             null,
         );
+    }
+}
+
+function recognizableFutureInitializeRequest(value: unknown): {
+    readonly protocolVersion: number;
+    readonly requestId: number;
+} | null {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+    try {
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== Object.prototype && prototype !== null) return null;
+        const record = value as Record<string, unknown>;
+        for (const key of ['type', 'protocolVersion', 'requestId']) {
+            const descriptor = Object.getOwnPropertyDescriptor(record, key);
+            if (descriptor === undefined || !('value' in descriptor) || !descriptor.enumerable) {
+                return null;
+            }
+        }
+        const protocolVersion = record['protocolVersion'];
+        const requestId = record['requestId'];
+        if (record['type'] !== 'initialize-experiment'
+            || !Number.isSafeInteger(protocolVersion)
+            || (protocolVersion as number) <= WORKER_PROTOCOL_VERSION
+            || !Number.isSafeInteger(requestId)
+            || (requestId as number) <= 0) {
+            return null;
+        }
+        return {
+            protocolVersion: protocolVersion as number,
+            requestId: requestId as number,
+        };
+    } catch {
+        return null;
     }
 }
 

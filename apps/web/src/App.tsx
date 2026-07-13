@@ -5,6 +5,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useLayoutStore } from './store/useLayoutStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
+import { selectScientificEvidence } from './store/evidenceSelectors.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import { useTraining } from './hooks/useTraining.ts';
 import { Header } from './components/layout/Header.tsx';
@@ -332,7 +333,8 @@ function StatusBar() {
     ));
     const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
     const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
-    const step = latestLiveSignal?.model.step ?? latestEvaluation?.model.step ?? 0;
+    const step = selectScientificEvidence({ latestLiveSignal, latestEvaluation })
+        .currentModel?.step ?? 0;
 
     return (
         <div

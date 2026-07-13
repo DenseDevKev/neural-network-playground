@@ -329,6 +329,9 @@ function postStatus(status: WorkerStatusMessage['status'], pauseReason?: PauseRe
     if (pauseReason !== undefined) {
         statusMsg.pauseReason = pauseReason;
     }
+    if (status === 'paused') {
+        statusMsg.checkpointTimeline = buildCheckpointTimeline();
+    }
     state.streamPort.postMessage(statusMsg);
 }
 
@@ -339,7 +342,6 @@ const WORKER_PERF_ENABLED = import.meta.env.DEV && import.meta.env.VITE_WORKER_P
 const ACTIVATION_HISTOGRAM_BIN_COUNT = 12;
 const ACTIVATION_HISTOGRAM_MAX_SAMPLES = 128;
 const CHECKPOINT_MAX_COUNT = 8;
-const CHECKPOINT_STEP_INTERVAL = 5;
 
 function encodeTargetLabel(label: number, outputSize: number): number[] {
     if (outputSize === 1) return [label];
@@ -550,24 +552,23 @@ function forceAndCaptureCheckpointV2(): PairedEvaluation {
     return evaluation;
 }
 
-function captureCheckpointAfterCadenceV2(
+function captureCheckpointFromCadenceV2(
     preparedCadence: PreparedCadenceEvaluation,
-): { cadenceEvaluation: PairedEvaluation; checkpointEvaluation: PairedEvaluation } {
-    const { runtime, history } = requireV2Runtime();
-    const preparedCheckpoint = runtime.prepareCheckpointEvaluation(preparedCadence);
-    const entry = prepareV2CheckpointEntry(preparedCheckpoint.evaluation);
+): PairedEvaluation {
+    const { history } = requireV2Runtime();
+    const checkpointEvaluation: PairedEvaluation = {
+        ...preparedCadence.evaluation,
+        trigger: 'checkpoint',
+    };
+    const entry = prepareV2CheckpointEntry(checkpointEvaluation);
     const cadenceEvidence = makeEvidenceV2(undefined, preparedCadence.evaluation);
-    const checkpointEvidence = makeEvidenceV2(undefined, preparedCheckpoint.evaluation);
 
     beginV2Mutation();
     const cadenceEvaluation = preparedCadence.commit();
-    const checkpointEvaluation = preparedCheckpoint.commit();
     history.appendEvaluation(cadenceEvaluation);
-    history.appendEvaluation(checkpointEvaluation);
     commitV2CheckpointEntry(entry);
     postEvidenceV2(cadenceEvidence);
-    postEvidenceV2(checkpointEvidence);
-    return { cadenceEvaluation, checkpointEvaluation };
+    return cadenceEvaluation;
 }
 
 function resolvePendingCadenceBeforeTrainingV2(
@@ -577,8 +578,8 @@ function resolvePendingCadenceBeforeTrainingV2(
     const preparedCadence = runtime.prepareCadenceEvaluation();
     if (preparedCadence === undefined) return undefined;
     const pendingStep = preparedCadence.evaluation.model.step;
-    if (pendingStep > 0 && pendingStep % CHECKPOINT_STEP_INTERVAL === 0) {
-        return captureCheckpointAfterCadenceV2(preparedCadence).cadenceEvaluation;
+    if (pendingStep > 0 && pendingStep % runtime.policy.everySteps === 0) {
+        return captureCheckpointFromCadenceV2(preparedCadence);
     }
 
     const evidence = makeEvidenceV2(undefined, preparedCadence.evaluation);
@@ -2121,26 +2122,24 @@ function trainOneStepV2(): {
             epoch: epochRef.value,
         },
         batchSize: result.sampleCount,
-        dataLoss: result.objective.dataLoss,
+        dataLoss: result.postUpdateDataLoss,
     });
     history.appendLiveSignal(liveSignal);
     state.gridStale = true;
 
     const checkpointDue = result.step > 0
-        && result.step % CHECKPOINT_STEP_INTERVAL === 0;
+        && result.step % runtime.policy.everySteps === 0;
     const preparedCadence = runtime.prepareCadenceEvaluation();
     if (preparedCadence !== undefined) {
         if (checkpointDue) {
-            cadenceEvaluation = captureCheckpointAfterCadenceV2(
-                preparedCadence,
-            ).cadenceEvaluation;
+            cadenceEvaluation = captureCheckpointFromCadenceV2(preparedCadence);
         } else {
             cadenceEvaluation = preparedCadence.commit();
             history.appendEvaluation(cadenceEvaluation);
             // Cadence evidence is never coalesced into a latest-wins visual frame.
             postEvidenceV2(makeEvidenceV2(undefined, cadenceEvaluation));
         }
-    } else if (checkpointDue) forceAndCaptureCheckpointV2();
+    }
     return cadenceEvaluation === undefined
         ? { liveSignal }
         : { liveSignal, cadenceEvaluation };

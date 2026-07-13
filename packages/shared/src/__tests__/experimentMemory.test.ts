@@ -544,6 +544,22 @@ describe('version-2 experiment memory contracts', () => {
         expect(rejected.envelopeIssues[0]?.code).toBe('resource-limit');
     });
 
+    it('preserves invalid whole-envelope bytes separately from rejected record siblings', async () => {
+        for (const rawJson of [
+            ' {not valid JSON',
+            '{ "kind": "nn-playground-experiment-memory", "schemaVersion": 3, "records": [] }',
+        ]) {
+            const result = await parseExperimentMemoryEnvelopeV2(rawJson);
+
+            expect(result.records).toEqual([]);
+            expect(result.rejectedRecords).toEqual([]);
+            expect(result.incompatibleEnvelope).toEqual({
+                rawJson,
+                issues: result.envelopeIssues,
+            });
+        }
+    });
+
     it('returns a valid sibling beside a structured rejected raw record', async () => {
         const valid = await makeRecord();
         const rejectedRaw = { kind: 'nn-playground-run', schemaVersion: 1, id: 'legacy' };

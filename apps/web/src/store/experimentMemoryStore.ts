@@ -6,6 +6,7 @@ import {
     validateExperimentRunRecordV2,
 } from '@nn-playground/shared';
 import type {
+    IncompatibleExperimentMemoryEnvelopeV2,
     ExperimentMemoryIssue,
     ExperimentRunRecordV2,
     RejectedExperimentRunRecordV2,
@@ -18,6 +19,7 @@ export interface ExperimentMemoryStore {
     hydrationStatus: 'loading' | 'ready';
     records: readonly ExperimentRunRecordV2[];
     rejectedRecords: readonly RejectedExperimentRunRecordV2[];
+    incompatibleEnvelope: IncompatibleExperimentMemoryEnvelopeV2 | null;
     legacyRaw: string | null;
     legacyNoticeDismissed: boolean;
     persistenceError: ExperimentMemoryIssue | null;
@@ -32,6 +34,7 @@ export interface ExperimentMemoryStore {
     removeRecord: (id: string) => Promise<boolean>;
     clearRecords: () => Promise<boolean>;
     deleteRejectedRecord: (sourceIndex: number) => Promise<boolean>;
+    deleteIncompatibleEnvelope: () => Promise<boolean>;
     dismissLegacyNotice: () => void;
     deleteLegacyStorage: () => Promise<boolean>;
 }
@@ -58,6 +61,14 @@ function firstIssue(
     });
 }
 
+function incompatibleEnvelopeWriteIssue(): ExperimentMemoryIssue {
+    return Object.freeze({
+        code: 'unsupported-version',
+        path: '$',
+        message: 'Saving is blocked by incompatible saved-run data. Download and delete the incompatible saved-run file, then retry saving.',
+    });
+}
+
 export function createExperimentMemoryStore() {
     let queue: Promise<void> = Promise.resolve();
 
@@ -74,6 +85,13 @@ export function createExperimentMemoryStore() {
             pendingSaveOnFailure: ExperimentRunRecordV2 | null,
             pendingSaveOnSuccess: ExperimentRunRecordV2 | null,
         ): Promise<boolean> => {
+            if (get().incompatibleEnvelope !== null) {
+                set({
+                    persistenceError: incompatibleEnvelopeWriteIssue(),
+                    pendingSave: pendingSaveOnFailure,
+                });
+                return false;
+            }
             const serialized = await serializeExperimentMemoryEnvelopeV2(
                 records,
                 rejectedRecords.map((entry) => entry.rawJson),
@@ -108,6 +126,7 @@ export function createExperimentMemoryStore() {
             set((previous) => ({
                 records: verified.records,
                 rejectedRecords: verified.rejectedRecords,
+                incompatibleEnvelope: null,
                 persistenceError: pendingSaveOnSuccess === null
                     ? null
                     : previous.persistenceError,
@@ -120,6 +139,7 @@ export function createExperimentMemoryStore() {
             hydrationStatus: 'loading',
             records: Object.freeze([]),
             rejectedRecords: Object.freeze([]),
+            incompatibleEnvelope: null,
             legacyRaw: null,
             legacyNoticeDismissed: false,
             persistenceError: null,
@@ -137,6 +157,7 @@ export function createExperimentMemoryStore() {
                         hydrationStatus: 'ready',
                         records: Object.freeze([]),
                         rejectedRecords: Object.freeze([]),
+                        incompatibleEnvelope: previous.incompatibleEnvelope,
                         legacyRaw,
                         legacyNoticeDismissed: previous.legacyNoticeDismissed
                             && previous.legacyRaw === legacyRaw,
@@ -151,6 +172,7 @@ export function createExperimentMemoryStore() {
                         hydrationStatus: 'ready',
                         records: Object.freeze([]),
                         rejectedRecords: Object.freeze([]),
+                        incompatibleEnvelope: null,
                         legacyRaw,
                         legacyNoticeDismissed: previous.legacyNoticeDismissed
                             && previous.legacyRaw === legacyRaw,
@@ -165,6 +187,7 @@ export function createExperimentMemoryStore() {
                     hydrationStatus: 'ready',
                     records: parsed.records,
                     rejectedRecords: parsed.rejectedRecords,
+                    incompatibleEnvelope: parsed.incompatibleEnvelope,
                     legacyRaw,
                     legacyNoticeDismissed: previous.legacyNoticeDismissed
                         && previous.legacyRaw === legacyRaw,
@@ -284,6 +307,35 @@ export function createExperimentMemoryStore() {
                     state.pendingSave,
                     state.pendingSave,
                 );
+            }),
+
+            deleteIncompatibleEnvelope: () => enqueue(async () => {
+                const state = get();
+                if (state.incompatibleEnvelope === null) return false;
+                try {
+                    const current = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+                    if (current !== state.incompatibleEnvelope.rawJson) {
+                        set({
+                            persistenceError: Object.freeze({
+                                code: 'invalid-field',
+                                path: '$',
+                                message: 'Saved-run storage changed before deletion. Reload before trying again.',
+                            }),
+                        });
+                        return false;
+                    }
+                    window.localStorage.removeItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+                } catch (error) {
+                    set({ persistenceError: storageIssue(error) });
+                    return false;
+                }
+                set({
+                    records: Object.freeze([]),
+                    rejectedRecords: Object.freeze([]),
+                    incompatibleEnvelope: null,
+                    persistenceError: null,
+                });
+                return true;
             }),
 
             dismissLegacyNotice: () => set({ legacyNoticeDismissed: true }),

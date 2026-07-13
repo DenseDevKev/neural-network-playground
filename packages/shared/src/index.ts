@@ -108,6 +108,7 @@ export type {
     ExperimentMemoryEnvelopeV2,
     ExperimentMemoryIssue,
     ExperimentMemoryResult,
+    IncompatibleExperimentMemoryEnvelopeV2,
     RejectedExperimentRunRecordV2,
     ExperimentMemoryReadResultV2,
 } from './experimentMemory.js';

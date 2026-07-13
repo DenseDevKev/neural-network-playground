@@ -76,9 +76,15 @@ export interface RejectedExperimentRunRecordV2 {
     readonly issues: readonly ExperimentMemoryIssue[];
 }
 
+export interface IncompatibleExperimentMemoryEnvelopeV2 {
+    readonly rawJson: string;
+    readonly issues: readonly ExperimentMemoryIssue[];
+}
+
 export interface ExperimentMemoryReadResultV2 {
     readonly records: readonly ExperimentRunRecordV2[];
     readonly rejectedRecords: readonly RejectedExperimentRunRecordV2[];
+    readonly incompatibleEnvelope: IncompatibleExperimentMemoryEnvelopeV2 | null;
     readonly envelopeIssues: readonly ExperimentMemoryIssue[];
 }
 
@@ -546,14 +552,15 @@ export async function validateExperimentRunRecordV2(
 }
 
 function envelopeFailure(rawJson: string, issueValue: ExperimentMemoryIssue): ExperimentMemoryReadResultV2 {
+    const issues = Object.freeze([issueValue]);
     return Object.freeze({
         records: Object.freeze([]),
-        rejectedRecords: Object.freeze([Object.freeze({
-            sourceIndex: -1,
+        rejectedRecords: Object.freeze([]),
+        incompatibleEnvelope: Object.freeze({
             rawJson,
-            issues: Object.freeze([issueValue]),
-        })]),
-        envelopeIssues: Object.freeze([issueValue]),
+            issues,
+        }),
+        envelopeIssues: issues,
     });
 }
 
@@ -637,6 +644,7 @@ export async function parseExperimentMemoryEnvelopeV2(
     return Object.freeze({
         records: Object.freeze(records),
         rejectedRecords: Object.freeze(rejectedRecords),
+        incompatibleEnvelope: null,
         envelopeIssues: Object.freeze([]),
     });
 }

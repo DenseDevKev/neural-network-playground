@@ -252,6 +252,32 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         expect(window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY)).toBeNull();
     });
 
+    it('keeps an incompatible whole envelope recoverable while blocking unrelated saves', async () => {
+        const raw = '{ "kind": "nn-playground-experiment-memory", "schemaVersion": 3, "records": [] }';
+        const prepared = currentPreparedForTest()!;
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, raw);
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
+            makeRecord(prepared, metadata.id, 'Saved after recovery')
+        ));
+        await hydrateSingleton();
+
+        render(<RunHistoryPanel />);
+        expect(screen.getByRole('note', { name: 'Incompatible saved-run file' }))
+            .toHaveTextContent(/bytes.*not.*changed/i);
+        expect(screen.getByRole('button', { name: 'Download incompatible saved-run file' }))
+            .toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        await screen.findByText(/incompatible.*delete/i);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(raw);
+        expect(useExperimentMemoryStore.getState().pendingSave?.title).toBe('Saved after recovery');
+
+        await userEvent.click(screen.getByRole('button', { name: 'Delete incompatible saved-run file' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Retry saving' }));
+        await screen.findByText('Saved after recovery');
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toBe(raw);
+    });
+
     it('offers raw download and explicit deletion for a rejected record', async () => {
         const valid = makeRecord(preset('circle-one-layer'));
         const rejected = { schemaVersion: 1, id: 'rejected' };

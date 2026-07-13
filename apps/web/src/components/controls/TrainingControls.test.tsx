@@ -15,6 +15,50 @@ function createTrainingMock(): TrainingHook {
   };
 }
 
+function liveSignal(revision: number, step: number, epoch: number) {
+  return {
+    model: { generationId: 1, revision, step, epoch },
+    dataset: {
+      generatorVersion: 2,
+      datasetKey: 'test-dataset',
+      trainCount: 150,
+      testCount: 150,
+    },
+    objectiveKey: 'test-objective',
+    basis: {
+      kind: 'mini-batch-ema' as const,
+      alpha: 0.1,
+      latestBatchSize: 10,
+      throughStep: step,
+    },
+    dataLoss: 0.25,
+  };
+}
+
+function fullEvaluation(revision: number, step: number, epoch: number) {
+  return {
+    evaluationId: 12,
+    trigger: 'pause' as const,
+    model: { generationId: 1, revision, step, epoch },
+    dataset: {
+      generatorVersion: 2,
+      datasetKey: 'test-dataset',
+      trainCount: 150,
+      testCount: 150,
+    },
+    objectiveKey: 'test-objective',
+    train: {
+      basis: { kind: 'full-split' as const, split: 'train' as const, sampleCount: 150, populationCount: 150 },
+      values: { dataLoss: 0.2, accuracy: 0.9 },
+    },
+    test: {
+      basis: { kind: 'full-split' as const, split: 'test' as const, sampleCount: 150, populationCount: 150 },
+      values: { dataLoss: 0.3, accuracy: 0.8 },
+    },
+    objective: { regularizationPenalty: 0, trainTotalObjective: 0.2 },
+  };
+}
+
 describe('TrainingControls', () => {
   beforeEach(() => {
     useTrainingStore.getState().resetEvidence();
@@ -141,6 +185,22 @@ describe('TrainingControls', () => {
     expect(screen.getByText('Training...')).toBeInTheDocument();
     expect(screen.getByText('Step 128')).toBeInTheDocument();
     expect(screen.getByText('Epoch 4')).toBeInTheDocument();
+  });
+
+  it('shows the newer forced evaluation model instead of a stale live signal after pause', () => {
+    const training = createTrainingMock();
+    useTrainingStore.setState({
+      status: 'paused',
+      evidenceGenerationId: 1,
+      latestLiveSignal: liveSignal(2_450, 2_450, 163),
+      latestEvaluation: fullEvaluation(2_500, 2_500, 166),
+    });
+
+    render(<TrainingControls training={training} />);
+
+    expect(screen.getByText('Step 2,500')).toBeInTheDocument();
+    expect(screen.getByText('Epoch 166')).toBeInTheDocument();
+    expect(screen.queryByText('Step 2,450')).not.toBeInTheDocument();
   });
 
   it('explains cause and effect in training tooltips', () => {

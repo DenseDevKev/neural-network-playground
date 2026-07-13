@@ -38,7 +38,6 @@ import {
     replaceV2CheckpointForTests,
     workerApi,
 } from './training.worker.ts';
-import { EvaluationRuntime } from './evaluationRuntime.ts';
 
 let nextRequestId = 10_000;
 
@@ -426,7 +425,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(JSON.stringify(timeline)).not.toMatch(/weights|biases|optimizer|cursor/i);
     });
 
-    it('forces explicit and every-five-step checkpoint pairs into a bounded ring', async () => {
+    it('keeps explicit capture immediate and automatic capture on the 50-step cadence', async () => {
         const fixtures = await createScientificTrustFixtures();
         const initialized = await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         const explicit = await workerApi.captureCheckpointV2({
@@ -442,17 +441,52 @@ describe('training worker scientific-trust V2 boundary', () => {
         });
         expect(explicit.checkpointTimeline.checkpoints).toHaveLength(2);
 
-        for (let index = 0; index < 9; index++) {
-            await workerApi.stepExperimentV2(5);
-        }
+        for (let index = 0; index < 4; index++) await workerApi.stepExperimentV2(10);
+        await workerApi.stepExperimentV2(9);
 
-        const timeline = getV2CheckpointTimelineForTests();
-        expect(timeline.checkpoints).toHaveLength(8);
-        expect(timeline.evictedCount).toBeGreaterThan(0);
-        expect(timeline.checkpoints.at(-1)?.step).toBe(45);
-        expect(workerApi.getMetricHistoryV2().evaluationHistory.some(
-            (evaluation) => evaluation.trigger === 'checkpoint' && evaluation.model.step === 45,
-        )).toBe(true);
+        let timeline = getV2CheckpointTimelineForTests();
+        expect(timeline.checkpoints).toHaveLength(2);
+        expect(timeline.checkpoints.at(-1)?.step).toBe(0);
+
+        await workerApi.stepExperimentV2(1);
+
+        timeline = getV2CheckpointTimelineForTests();
+        expect(timeline.checkpoints).toHaveLength(3);
+        expect(timeline.checkpoints.at(-1)?.step).toBe(50);
+        expect(workerApi.getMetricHistoryV2().evaluationHistory.filter(
+            (evaluation) => evaluation.model.step === 50,
+        ).map(({ trigger }) => trigger)).toEqual(['cadence', 'manual-step']);
+        expect(getV2CheckpointForTests(timeline.liveCheckpointId!).evaluation)
+            .toMatchObject({ trigger: 'checkpoint', model: { step: 50 } });
+    });
+
+    it('publishes the authoritative checkpoint ring when pause retires a stale UI selection', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const staleTimeline = getV2CheckpointTimelineForTests();
+        const staleCheckpointId = staleTimeline.checkpoints[0]!.id;
+
+        for (let index = 0; index < 9; index++) {
+            await workerApi.captureCheckpointV2({
+                type: 'capture-checkpoint',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+                requestId: nextRequestId++,
+            });
+        }
+        const authoritativeTimeline = getV2CheckpointTimelineForTests();
+        expect(authoritativeTimeline.checkpoints.map(({ id }) => id)).not.toContain(staleCheckpointId);
+
+        capture.messages.length = 0;
+        capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
+        await flushMicrotasks();
+
+        expect(capture.messages).toContainEqual(expect.objectContaining({
+            type: 'status',
+            status: 'paused',
+            checkpointTimeline: authoritativeTimeline,
+        }));
     });
 
     it('leaves explicit checkpoint evidence atomic when envelope validation fails', async () => {
@@ -498,23 +532,29 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(recovered.checkpointTimeline.checkpoints).toHaveLength(2);
     });
 
-    it('keeps a failed periodic capture out of paired history and continues the FIFO', async () => {
+    it('keeps a failed cadence checkpoint capture out of paired history and continues the FIFO', async () => {
         const fixtures = await createScientificTrustFixtures();
         const capture = createCapturingPort();
         workerApi.setStreamPort(capture.port);
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         capture.messages.length = 0;
-        const evaluationsBefore = workerApi.getMetricHistoryV2().evaluationHistory;
-        const timelineBefore = getV2CheckpointTimelineForTests();
+
+        for (let index = 0; index < 4; index++) await workerApi.stepExperimentV2(10);
+        await workerApi.stepExperimentV2(5);
+        const beforeCadence = workerApi.getMetricHistoryV2();
+        const nextEvaluationId = beforeCadence.evaluationHistory.at(-1)!.evaluationId + 1;
+        const timelineBeforeCadence = getV2CheckpointTimelineForTests();
+        capture.messages.length = 0;
         vi.spyOn(Network.prototype, 'captureSessionState').mockImplementationOnce(() => {
             throw new Error('periodic capture failed');
         });
 
         await expect(workerApi.stepExperimentV2(5)).rejects.toThrow('periodic capture failed');
 
-        expect(workerApi.getMetricHistoryV2().trendHistory).toHaveLength(5);
-        expect(workerApi.getMetricHistoryV2().evaluationHistory).toEqual(evaluationsBefore);
-        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
+        expect(workerApi.getMetricHistoryV2().trendHistory).toHaveLength(50);
+        expect(workerApi.getMetricHistoryV2().evaluationHistory)
+            .toEqual(beforeCadence.evaluationHistory);
+        expect(getV2CheckpointTimelineForTests()).toEqual(timelineBeforeCadence);
         expect(evidenceMessages(capture.messages)).toEqual([]);
 
         const recovered = await workerApi.captureCheckpointV2({
@@ -523,9 +563,9 @@ describe('training worker scientific-trust V2 boundary', () => {
             requestId: nextRequestId++,
         });
         expect(recovered.evidence.latestEvaluation).toMatchObject({
-            evaluationId: 2,
+            evaluationId: nextEvaluationId,
             trigger: 'checkpoint',
-            model: { step: 5 },
+            model: { step: 50 },
         });
     });
 
@@ -556,19 +596,18 @@ describe('training worker scientific-trust V2 boundary', () => {
         const trainSpy = vi.spyOn(Network.prototype, 'trainBatchIndexedV2');
         const recovered = await workerApi.stepExperimentV2(1);
         const history = workerApi.getMetricHistoryV2();
-        const recoveredEvaluations = history.evaluationHistory.slice(-3);
+        const recoveredEvaluations = history.evaluationHistory.slice(-2);
         expect(recoveredEvaluations.map(({ evaluationId, trigger, model }) => ({
             evaluationId,
             trigger,
             step: model.step,
         }))).toEqual([
             { evaluationId: nextEvaluationId, trigger: 'cadence', step: 50 },
-            { evaluationId: nextEvaluationId + 1, trigger: 'checkpoint', step: 50 },
-            { evaluationId: nextEvaluationId + 2, trigger: 'manual-step', step: 51 },
+            { evaluationId: nextEvaluationId + 1, trigger: 'manual-step', step: 51 },
         ]);
         expect(evidenceMessages(capture.messages).map(
             (message) => message.latestEvaluation?.trigger,
-        )).toEqual(['cadence', 'checkpoint', 'manual-step']);
+        )).toEqual(['cadence', 'manual-step']);
         expect(recovered.evidence.liveSignal?.model).toEqual(
             recovered.evidence.latestEvaluation?.model,
         );
@@ -581,7 +620,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         const retriedCheckpointId = recovered.checkpointTimeline.liveCheckpointId!;
         const retriedCheckpoint = getV2CheckpointForTests(retriedCheckpointId);
         expect(retriedCheckpoint.evaluation).toMatchObject({
-            evaluationId: nextEvaluationId + 1,
+            evaluationId: nextEvaluationId,
             trigger: 'checkpoint',
             model: { step: 50 },
         });
@@ -643,7 +682,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         );
     });
 
-    it('commits coincident runtime pairs before publishing either pair', async () => {
+    it('prepares one cadence-backed checkpoint before publishing its reused pair', async () => {
         const fixtures = await createScientificTrustFixtures();
         const capture = createCapturingPort();
         workerApi.setStreamPort(capture.port);
@@ -653,41 +692,37 @@ describe('training worker scientific-trust V2 boundary', () => {
         const historyBefore = workerApi.getMetricHistoryV2();
         const timelineBefore = getV2CheckpointTimelineForTests();
         capture.messages.length = 0;
-        const prepareCheckpoint = EvaluationRuntime.prototype.prepareCheckpointEvaluation;
-        let observedCheckpointCommit = false;
-        vi.spyOn(
-            EvaluationRuntime.prototype,
-            'prepareCheckpointEvaluation',
-        ).mockImplementation(function (
-            this: EvaluationRuntime,
-            ...args: Parameters<EvaluationRuntime['prepareCheckpointEvaluation']>
+        const captureSessionState = Network.prototype.captureSessionState;
+        let observedPreparedCheckpoint = false;
+        vi.spyOn(Network.prototype, 'captureSessionState').mockImplementationOnce(function (
+            this: Network,
+            ...args: Parameters<Network['captureSessionState']>
         ) {
-            const prepared = prepareCheckpoint.apply(this, args);
-            if (args[0] === undefined) return prepared;
-            return Object.freeze({
-                evaluation: prepared.evaluation,
-                commit: () => {
-                    observedCheckpointCommit = true;
-                    expect(workerApi.getMetricHistoryV2().evaluationHistory).toEqual(
-                        historyBefore.evaluationHistory,
-                    );
-                    expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
-                    expect(evidenceMessages(capture.messages)).toEqual([]);
-                    return prepared.commit();
-                },
-            });
+            observedPreparedCheckpoint = true;
+            expect(workerApi.getMetricHistoryV2().evaluationHistory).toEqual(
+                historyBefore.evaluationHistory,
+            );
+            expect(getV2CheckpointTimelineForTests()).toEqual(timelineBefore);
+            expect(evidenceMessages(capture.messages)).toEqual([]);
+            return captureSessionState.apply(this, args);
         });
 
         const completed = await workerApi.stepExperimentV2(5);
 
-        expect(observedCheckpointCommit).toBe(true);
+        expect(observedPreparedCheckpoint).toBe(true);
         expect(completed.evidence.latestEvaluation).toMatchObject({
             trigger: 'manual-step',
             model: { step: 50 },
         });
         expect(evidenceMessages(capture.messages).map(
             (message) => message.latestEvaluation?.trigger,
-        )).toEqual(['cadence', 'checkpoint', 'manual-step']);
+        )).toEqual(['cadence', 'manual-step']);
+        const cadence = workerApi.getMetricHistoryV2().evaluationHistory.find(
+            (evaluation) => evaluation.model.step === 50 && evaluation.trigger === 'cadence',
+        )!;
+        expect(getV2CheckpointForTests(
+            getV2CheckpointTimelineForTests().liveCheckpointId!,
+        ).evaluation).toEqual({ ...cadence, trigger: 'checkpoint' });
     });
 
     it('restores captured parameters, optimizer, cursor, and history in the same generation', async () => {
@@ -863,7 +898,12 @@ describe('training worker scientific-trust V2 boundary', () => {
         const shuffleSpy = vi.spyOn(PRNG.prototype, 'shuffle');
         const previewSpy = vi.spyOn(Network.prototype, 'explainBackpropStepV2');
 
-        const completed = await workerApi.stepExperimentV2(5);
+        await workerApi.stepExperimentV2(5);
+        const completed = await workerApi.captureCheckpointV2({
+            type: 'capture-checkpoint',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            requestId: nextRequestId++,
+        });
         const checkpointId = completed.checkpointTimeline.liveCheckpointId!;
         const boundary = getV2CheckpointForTests(checkpointId);
 
@@ -882,7 +922,12 @@ describe('training worker scientific-trust V2 boundary', () => {
         const fixtures = await createScientificTrustFixtures();
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         await workerApi.stepExperimentV2(10);
-        const completed = await workerApi.stepExperimentV2(5);
+        await workerApi.stepExperimentV2(5);
+        const completed = await workerApi.captureCheckpointV2({
+            type: 'capture-checkpoint',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+            requestId: nextRequestId++,
+        });
         const checkpointId = completed.checkpointTimeline.liveCheckpointId!;
         const boundary = getV2CheckpointForTests(checkpointId);
         expect(boundary.cursor.batchStart).toBe(boundary.evaluation.dataset.trainCount);
@@ -977,10 +1022,8 @@ describe('training worker scientific-trust V2 boundary', () => {
 
         let history = workerApi.getMetricHistoryV2();
         expect(history.trendHistory).toHaveLength(49);
-        expect(history.evaluationHistory.map((point) => point.trigger)).toEqual([
-            'initial',
-            ...Array.from({ length: 9 }, () => 'checkpoint' as const),
-        ]);
+        expect(history.evaluationHistory.map((point) => point.trigger)).toEqual(['initial']);
+        expect(getV2CheckpointTimelineForTests().checkpoints).toHaveLength(1);
 
         capture.dispatch({ type: 'updateSpeed', protocolVersion: WORKER_PROTOCOL_VERSION, stepsPerFrame: 1 });
         capture.dispatch({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
@@ -990,9 +1033,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(history.trendHistory).toHaveLength(50);
         expect(history.evaluationHistory.map((point) => point.trigger)).toEqual([
             'initial',
-            ...Array.from({ length: 9 }, () => 'checkpoint' as const),
             'cadence',
-            'checkpoint',
         ]);
         expect(history.evaluationHistory.find(
             (point) => point.trigger === 'cadence',
@@ -1002,7 +1043,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             .toHaveLength(1);
         expect(beforePause.filter((message) => message.liveSignal)).toHaveLength(2);
         expect(beforePause.filter((message) => message.latestEvaluation?.trigger === 'checkpoint'))
-            .toHaveLength(10);
+            .toHaveLength(0);
         expect(beforePause.length).toBeLessThanOrEqual(15);
         expect(beforePause.every(isWorkerToMainMessage)).toBe(true);
 
@@ -1013,6 +1054,57 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(pause.trigger).toBe('pause');
         expect(pause.model).toEqual(history.trendHistory.at(-1)?.model);
         expect(evidenceMessages(capture.messages).at(-1)?.latestEvaluation).toEqual(pause);
+    });
+
+    it('publishes live batch loss from the exact post-update model revision', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const original = Network.prototype.trainBatchIndexedV2;
+        let observation: {
+            revision: number;
+            step: number;
+            preUpdateDataLoss: number;
+            postUpdateDataLoss: number;
+            evaluatedPostUpdateDataLoss: number;
+        } | undefined;
+        vi.spyOn(Network.prototype, 'trainBatchIndexedV2').mockImplementation(function (
+            this: Network,
+            ...args: Parameters<Network['trainBatchIndexedV2']>
+        ) {
+            const result = original.apply(this, args);
+            const selectedInputs: number[][] = [];
+            const selectedTargets: number[][] = [];
+            for (let ordinal = args[3]; ordinal < args[4]; ordinal++) {
+                const sampleIndex = args[2][ordinal]!;
+                selectedInputs.push(args[0][sampleIndex]!);
+                selectedTargets.push(args[1][sampleIndex]!);
+            }
+            observation = {
+                revision: result.revision,
+                step: result.step,
+                preUpdateDataLoss: result.objective.dataLoss,
+                postUpdateDataLoss: result.postUpdateDataLoss,
+                evaluatedPostUpdateDataLoss: this.evaluateDataLoss(
+                    selectedInputs,
+                    selectedTargets,
+                    args[5].objective,
+                ),
+            };
+            return result;
+        });
+
+        const stepped = await workerApi.stepExperimentV2(1);
+        const live = stepped.evidence.liveSignal!;
+
+        expect(observation).toBeDefined();
+        expect(observation!.postUpdateDataLoss)
+            .toBe(observation!.evaluatedPostUpdateDataLoss);
+        expect(observation!.postUpdateDataLoss).not.toBe(observation!.preUpdateDataLoss);
+        expect(live.dataLoss).toBe(observation!.postUpdateDataLoss);
+        expect(live.model).toMatchObject({
+            revision: observation!.revision,
+            step: observation!.step,
+        });
     });
 
     it('forces current manual-step evidence and resets to a fresh generation', async () => {
@@ -1578,15 +1670,14 @@ describe('training worker scientific-trust V2 boundary', () => {
         );
         expect(step50Pairs.map((evaluation) => evaluation.trigger)).toEqual([
             'cadence',
-            'checkpoint',
         ]);
-        expect(step50Evidence).toHaveLength(2);
+        expect(step50Evidence).toHaveLength(1);
 
         capture.dispatch({ type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION });
         await flushMicrotasks();
     });
 
-    it('stops non-finite batch objectives as structured divergence without evidence or checkpoints', async () => {
+    it('stops non-finite post-update batch loss as structured divergence without evidence or checkpoints', async () => {
         vi.useFakeTimers();
         const fixtures = await createScientificTrustFixtures();
         const capture = createCapturingPort();
@@ -1602,11 +1693,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             const result = original.apply(this, args);
             return {
                 ...result,
-                objective: {
-                    ...result.objective,
-                    dataLoss: Number.NaN,
-                    totalObjective: Number.NaN,
-                },
+                postUpdateDataLoss: Number.NaN,
             };
         });
 

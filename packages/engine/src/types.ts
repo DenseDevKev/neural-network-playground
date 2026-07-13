@@ -81,6 +81,9 @@ export interface BatchTrainingResult {
     revision: number;
     step: number;
     sampleCount: number;
+    /** Data loss for this same batch under the returned post-update revision. */
+    postUpdateDataLoss: number;
+    /** Pre-update objective whose gradient produced this update. */
     objective: ObjectiveBreakdown;
     gradients: GradientDiagnostics;
 }

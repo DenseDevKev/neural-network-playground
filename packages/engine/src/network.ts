@@ -47,6 +47,7 @@ import { categoricalCrossEntropy, categoricalCrossEntropyLogitGradient, getLoss 
 import {
     applyGradientTransformInto,
     buildObjectiveBreakdown,
+    computeGradientTransform,
     gradientNorm,
     validateObjectiveSpec,
 } from './objective.js';
@@ -481,6 +482,65 @@ function assertTrainingHyperparams(training: TrainingConfig): void {
         default:
             throw new RangeError('optimizer must be one of sgd, sgdMomentum, or adam');
     }
+}
+
+interface GradientNormAccumulator {
+    sumSquares: number;
+    scale: number;
+    scaledSumSquares: number;
+    stable: boolean;
+}
+
+function createGradientNormAccumulator(): GradientNormAccumulator {
+    return {
+        sumSquares: 0,
+        scale: 0,
+        scaledSumSquares: 1,
+        stable: false,
+    };
+}
+
+/**
+ * Accumulate the common finite range with one multiply/add. If squaring would
+ * underflow or overflow, retain the prior norm as one scaled component and
+ * continue with the overflow-safe BLAS-style representation.
+ */
+function addGradientNormValue(
+    accumulator: GradientNormAccumulator,
+    value: number,
+): void {
+    const absoluteValue = Math.abs(value);
+    if (absoluteValue === 0) return;
+
+    if (!accumulator.stable) {
+        const square = absoluteValue * absoluteValue;
+        const nextSum = accumulator.sumSquares + square;
+        if (square !== 0 && Number.isFinite(nextSum)) {
+            accumulator.sumSquares = nextSum;
+            return;
+        }
+        accumulator.stable = true;
+        accumulator.scale = Math.sqrt(accumulator.sumSquares);
+        accumulator.scaledSumSquares = 1;
+    }
+
+    if (accumulator.scale < absoluteValue) {
+        const ratio = accumulator.scale / absoluteValue;
+        accumulator.scaledSumSquares = 1
+            + accumulator.scaledSumSquares * ratio * ratio;
+        accumulator.scale = absoluteValue;
+        return;
+    }
+    const ratio = absoluteValue / accumulator.scale;
+    accumulator.scaledSumSquares += ratio * ratio;
+}
+
+function finishGradientNorm(accumulator: GradientNormAccumulator): number {
+    const norm = accumulator.stable
+        ? accumulator.scale * Math.sqrt(accumulator.scaledSumSquares)
+        : Math.sqrt(accumulator.sumSquares);
+    assertFiniteValue(norm, 'gradient norm');
+    return norm;
 }
 
 function assertCompiledObjectiveCompatibility(
@@ -1027,15 +1087,18 @@ export class Network {
         return { loss, count: output.length };
     }
 
-    private evaluateCompiledDataLossPrefix(
+    private evaluateCompiledDataLossSelection(
         inputs: number[][],
         targets: number[][],
-        sampleCount: number,
+        start: number,
+        end: number,
         objective: CompiledObjective,
+        indices?: ArrayLike<number>,
     ): number {
         let dataLossSum = 0;
         const outputLayerIndex = this.preActs.length - 1;
-        for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
+        for (let sampleOrdinal = start; sampleOrdinal < end; sampleOrdinal++) {
+            const sampleIndex = indices == null ? sampleOrdinal : indices[sampleOrdinal];
             const outputs = this.forwardInto(inputs[sampleIndex]);
             const sampleDataLoss = objective.evaluateDataSample(
                 this.preActs[outputLayerIndex],
@@ -1046,6 +1109,7 @@ export class Network {
             dataLossSum += sampleDataLoss;
             assertFiniteValue(dataLossSum, 'dataLoss sum');
         }
+        const sampleCount = end - start;
         const dataLoss = dataLossSum / sampleCount;
         assertFiniteValue(dataLoss, 'dataLoss');
         return dataLoss;
@@ -1062,7 +1126,13 @@ export class Network {
             throw new RangeError('V2 evaluation must contain at least one sample');
         }
         assertCompiledObjectiveCompatibility(objective, this.config);
-        return this.evaluateCompiledDataLossPrefix(inputs, targets, inputs.length, objective);
+        return this.evaluateCompiledDataLossSelection(
+            inputs,
+            targets,
+            0,
+            inputs.length,
+            objective,
+        );
     }
 
     /** Predictive data loss plus one current model-wide penalty. */
@@ -1252,26 +1322,19 @@ export class Network {
         assertFiniteInRange(lr, 'effective learningRate', 0, Number.POSITIVE_INFINITY);
 
         try {
-            this.averageGradientAccumulators(batchSize);
-            const dataGradientNorm = gradientNorm(this.weightGrads, this.biasGrads);
-            const penaltyGradientNorm = this.addLegacyPenaltyGradient(
-                training.regularization,
-                training.regularizationRate,
-            );
-            applyGradientTransformInto(
-                this.weightGrads,
-                this.biasGrads,
-                dataGradientNorm,
-                penaltyGradientNorm,
-                training.gradientClip == null
-                    ? { kind: 'none' }
-                    : {
-                        kind: 'global-norm',
-                        maximumNorm: training.gradientClip,
-                        scope: 'total-objective-gradient',
-                    },
-            );
-            this.captureRecentGradient();
+            const clipScale = this.prepareLegacyObjectiveGradient(training, batchSize);
+            if (training.optimizer === 'sgd') {
+                this.prepareOptimizer(training.optimizer);
+                if (clipScale === 0) {
+                    this.clearRecentGradient();
+                    this.finishTrainingUpdate(true);
+                    return;
+                }
+                this.applyLegacySgdAndCapture(lr, clipScale);
+                this.finishTrainingUpdate(true);
+                return;
+            }
+            this.scaleAndCaptureRecentGradient(clipScale);
             this.prepareOptimizer(training.optimizer);
             this.applyLegacyOptimizerOnly(training, lr);
             this.finishTrainingUpdate();
@@ -1279,6 +1342,121 @@ export class Network {
             this.zeroGradientAccumulators();
             throw error;
         }
+    }
+
+    private applyLegacySgdAndCapture(learningRate: number, scale: number): void {
+        for (let layer = 0; layer < this.weights.length; layer++) {
+            const weights = this.weights[layer];
+            const biases = this.biases[layer];
+            const weightGradients = this.weightGrads[layer];
+            const biasGradients = this.biasGrads[layer];
+            const recentWeightGradients = this.recentWeightGrads[layer];
+            const recentBiasGradients = this.recentBiasGrads[layer];
+
+            for (let index = 0; index < weightGradients.length; index++) {
+                const gradient = weightGradients[index] * scale;
+                recentWeightGradients[index] = gradient;
+                weights[index] -= learningRate * gradient;
+                weightGradients[index] = 0;
+            }
+            for (let index = 0; index < biasGradients.length; index++) {
+                const gradient = biasGradients[index] * scale;
+                recentBiasGradients[index] = gradient;
+                biases[index] -= learningRate * gradient;
+                biasGradients[index] = 0;
+            }
+        }
+    }
+
+    private prepareLegacyObjectiveGradient(
+        training: TrainingConfig,
+        normalizationCount: number,
+    ): number {
+        const inverseCount = 1 / normalizationCount;
+        const regularization = training.regularization;
+        const regularizationRate = training.regularizationRate;
+        const totalNorm = training.gradientClip == null
+            ? null
+            : createGradientNormAccumulator();
+        let hasNonZeroGradient = false;
+
+        if (regularization === 'none') {
+            for (let layer = 0; layer < this.weightGrads.length; layer++) {
+                const gradients = this.weightGrads[layer];
+                for (let index = 0; index < gradients.length; index++) {
+                    const dataGradient = gradients[index] * inverseCount;
+                    if (!Number.isFinite(dataGradient)) {
+                        throw new NonFiniteNumericalError(
+                            `weightGradients[${layer}][${index}]`,
+                            dataGradient,
+                        );
+                    }
+                    gradients[index] = dataGradient;
+                    if (dataGradient !== 0) hasNonZeroGradient = true;
+                    if (totalNorm !== null) addGradientNormValue(totalNorm, dataGradient);
+                }
+            }
+        } else {
+            for (let layer = 0; layer < this.weightGrads.length; layer++) {
+                const weights = this.weights[layer];
+                const gradients = this.weightGrads[layer];
+                for (let index = 0; index < gradients.length; index++) {
+                    const dataGradient = gradients[index] * inverseCount;
+                    if (!Number.isFinite(dataGradient)) {
+                        throw new NonFiniteNumericalError(
+                            `weightGradients[${layer}][${index}]`,
+                            dataGradient,
+                        );
+                    }
+                    const penaltyGradient = regularization === 'l2'
+                        ? regularizationRate * weights[index]
+                        : regularizationRate * Math.sign(weights[index]);
+                    if (!Number.isFinite(penaltyGradient)) {
+                        throw new NonFiniteNumericalError(
+                            `penaltyGradient[${layer}][${index}]`,
+                            penaltyGradient,
+                        );
+                    }
+                    const combinedGradient = dataGradient + penaltyGradient;
+                    if (!Number.isFinite(combinedGradient)) {
+                        throw new NonFiniteNumericalError(
+                            `combinedGradient[${layer}][${index}]`,
+                            combinedGradient,
+                        );
+                    }
+                    gradients[index] = combinedGradient;
+                    if (combinedGradient !== 0) hasNonZeroGradient = true;
+                    if (totalNorm !== null) addGradientNormValue(totalNorm, combinedGradient);
+                }
+            }
+        }
+
+        for (let layer = 0; layer < this.biasGrads.length; layer++) {
+            const gradients = this.biasGrads[layer];
+            for (let index = 0; index < gradients.length; index++) {
+                const dataGradient = gradients[index] * inverseCount;
+                if (!Number.isFinite(dataGradient)) {
+                    throw new NonFiniteNumericalError(
+                        `biasGradients[${layer}][${index}]`,
+                        dataGradient,
+                    );
+                }
+                gradients[index] = dataGradient;
+                if (dataGradient !== 0) hasNonZeroGradient = true;
+                if (totalNorm !== null) addGradientNormValue(totalNorm, dataGradient);
+            }
+        }
+
+        if (!hasNonZeroGradient) return 0;
+        if (totalNorm === null || training.gradientClip == null) return 1;
+        return computeGradientTransform(
+            finishGradientNorm(totalNorm),
+            {
+                kind: 'global-norm',
+                maximumNorm: training.gradientClip,
+                scope: 'total-objective-gradient',
+            },
+        ).clipScale;
     }
 
     private averageGradientAccumulators(normalizationCount: number): void {
@@ -1295,43 +1473,41 @@ export class Network {
         }
     }
 
-    private addLegacyPenaltyGradient(
-        regularization: TrainingConfig['regularization'],
-        regularizationRate: number,
-    ): number {
-        if (regularization === 'none') return 0;
-
-        let penaltyGradientNorm = 0;
-        for (let l = 0; l < this.weights.length; l++) {
-            const weights = this.weights[l];
-            const gradients = this.weightGrads[l];
-            for (let i = 0; i < weights.length; i++) {
-                const penaltyGradient = regularization === 'l2'
-                    ? regularizationRate * weights[i]
-                    : regularizationRate * Math.sign(weights[i]);
-                assertFiniteValue(penaltyGradient, `penaltyGradient[${l}][${i}]`);
-                assertFiniteValue(gradients[i] + penaltyGradient, `combinedGradient[${l}][${i}]`);
-                penaltyGradientNorm = Math.hypot(penaltyGradientNorm, penaltyGradient);
-            }
-        }
-        assertFiniteValue(penaltyGradientNorm, 'penaltyGradientNorm');
-
-        for (let l = 0; l < this.weights.length; l++) {
-            const weights = this.weights[l];
-            const gradients = this.weightGrads[l];
-            for (let i = 0; i < weights.length; i++) {
-                gradients[i] += regularization === 'l2'
-                    ? regularizationRate * weights[i]
-                    : regularizationRate * Math.sign(weights[i]);
-            }
-        }
-        return penaltyGradientNorm;
-    }
-
     private captureRecentGradient(): void {
         for (let l = 0; l < this.weightGrads.length; l++) {
             this.recentWeightGrads[l].set(this.weightGrads[l]);
             this.recentBiasGrads[l].set(this.biasGrads[l]);
+        }
+    }
+
+    private clearRecentGradient(): void {
+        for (let layer = 0; layer < this.recentWeightGrads.length; layer++) {
+            this.recentWeightGrads[layer].fill(0);
+            this.recentBiasGrads[layer].fill(0);
+        }
+    }
+
+    private scaleAndCaptureRecentGradient(scale: number): void {
+        for (let layer = 0; layer < this.weightGrads.length; layer++) {
+            const weightGradients = this.weightGrads[layer];
+            const biasGradients = this.biasGrads[layer];
+            const recentWeightGradients = this.recentWeightGrads[layer];
+            const recentBiasGradients = this.recentBiasGrads[layer];
+            if (scale === 1) {
+                recentWeightGradients.set(weightGradients);
+                recentBiasGradients.set(biasGradients);
+                continue;
+            }
+            for (let index = 0; index < weightGradients.length; index++) {
+                const gradient = weightGradients[index] * scale;
+                weightGradients[index] = gradient;
+                recentWeightGradients[index] = gradient;
+            }
+            for (let index = 0; index < biasGradients.length; index++) {
+                const gradient = biasGradients[index] * scale;
+                biasGradients[index] = gradient;
+                recentBiasGradients[index] = gradient;
+            }
         }
     }
 
@@ -1342,8 +1518,8 @@ export class Network {
         }
     }
 
-    private finishTrainingUpdate(): void {
-        this.zeroGradientAccumulators();
+    private finishTrainingUpdate(gradientsAlreadyCleared = false): void {
+        if (!gradientsAlreadyCleared) this.zeroGradientAccumulators();
         this.currentStep++;
         this.optimizerStep++;
         this.currentRevision++;
@@ -1643,11 +1819,20 @@ export class Network {
             this.prepareOptimizer(optimizerStateKind(training.optimizer));
             this.applyCompiledOptimizerOnly(training.optimizer, learningRate);
             this.finishTrainingUpdate();
+            const postUpdateDataLoss = this.evaluateCompiledDataLossSelection(
+                inputs,
+                targets,
+                start,
+                end,
+                objective,
+                indices,
+            );
 
             return {
                 revision: this.currentRevision,
                 step: this.currentStep,
                 sampleCount,
+                postUpdateDataLoss,
                 objective: objectiveBreakdown,
                 gradients: diagnostics,
             };
@@ -2018,9 +2203,10 @@ export class Network {
                 dryRun.restoreCheckpoint(checkpoint);
                 dryRun.applyLossLandscapeOffset(axisA, offsets[col]);
                 dryRun.applyLossLandscapeOffset(axisB, offsets[row]);
-                const dataLoss = dryRun.evaluateCompiledDataLossPrefix(
+                const dataLoss = dryRun.evaluateCompiledDataLossSelection(
                     inputs,
                     targets,
+                    0,
                     sampleCount,
                     training.objective,
                 );

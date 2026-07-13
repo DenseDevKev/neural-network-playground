@@ -231,6 +231,27 @@ describe('Network V2 objective-gradient updates', () => {
         expect(network.getRecentGradientSnapshot().revision).toBe(4);
     });
 
+    it('measures post-update batch loss for the returned model while preserving pre-update objective evidence', () => {
+        const network = makeNetwork();
+        const training = compileTraining(network, regressionObjective, { learningRate: 1 });
+
+        const result = network.trainBatchV2([[1]], [[1]], training);
+        const postUpdateDataLoss = network.evaluateDataLoss(
+            [[1]],
+            [[1]],
+            training.objective,
+        );
+
+        expect(result.objective.dataLoss).toBe(1);
+        expect(result.postUpdateDataLoss).toBe(9);
+        expect(result.postUpdateDataLoss).toBe(postUpdateDataLoss);
+        expect(result.postUpdateDataLoss).not.toBe(result.objective.dataLoss);
+        expect(result).toMatchObject({
+            revision: network.getRevision(),
+            step: network.getStep(),
+        });
+    });
+
     it('clears partial accumulators when compiled objective validation aborts a batch', () => {
         const failedThenValid = makeNetwork({ outputActivation: 'sigmoid' });
         const clean = makeNetwork({ outputActivation: 'sigmoid' });
@@ -307,6 +328,97 @@ describe('Network V2 objective-gradient updates', () => {
 
         expect(network.getWeight(0, 0, 0)).toBeCloseTo(9.5, 12);
         expect(network.getRecentGradientSnapshot().weightGradients[0][0][0]).toBe(5);
+    });
+
+    it('keeps legacy clipping scoped to the complete data-plus-penalty gradient', () => {
+        const network = makeNetwork();
+        network.setWeight(0, 0, 0, 100);
+        const training: TrainingConfig = {
+            learningRate: 1,
+            batchSize: 1,
+            lossType: 'mse',
+            optimizer: 'sgd',
+            momentum: 0,
+            regularization: 'l2',
+            regularizationRate: 1,
+            gradientClip: 0.01,
+        };
+
+        network.applyGradients(training, 1);
+
+        expect(network.getWeight(0, 0, 0)).toBeCloseTo(99.99, 12);
+        expect(network.getRecentGradientSnapshot().weightGradients[0][0][0])
+            .toBeCloseTo(0.01, 12);
+    });
+
+    it('clears earlier evidence and advances identity for a finite zero-gradient SGD update', () => {
+        const network = makeNetwork();
+        network.setWeight(0, 0, 0, 10);
+        const withPenalty: TrainingConfig = {
+            learningRate: 0.1,
+            batchSize: 1,
+            lossType: 'mse',
+            optimizer: 'sgd',
+            momentum: 0,
+            regularization: 'l2',
+            regularizationRate: 0.5,
+            gradientClip: null,
+        };
+        network.applyGradients(withPenalty, 1);
+        const weightAfterPenalty = network.getWeight(0, 0, 0);
+        expect(network.getRecentGradientSnapshot().weightGradients[0][0][0]).toBe(5);
+
+        network.applyGradients({
+            ...withPenalty,
+            regularization: 'none',
+            regularizationRate: 0,
+        }, 1);
+
+        expect(network.getWeight(0, 0, 0)).toBe(weightAfterPenalty);
+        expect(network.getStep()).toBe(2);
+        expect(network.getRevision()).toBe(3);
+        expect(network.getRecentGradientSnapshot()).toEqual({
+            revision: 3,
+            weightGradients: [[[0]]],
+            biasGradients: [[0]],
+        });
+    });
+
+    it('validates the complete legacy SGD gradient before mutating earlier layers', () => {
+        const network = makeNetwork({ hiddenLayers: [1] });
+        network.setWeight(0, 0, 0, 1);
+        network.setWeight(1, 0, 0, Number.MIN_VALUE);
+        network.setBias(1, 0, 1);
+        network.forward([Number.MAX_VALUE]);
+        network.backward([-1], 'mse');
+        const accumulated = network.getWeightGrads();
+        expect(accumulated[0][0][0]).not.toBe(0);
+        expect(Number.isFinite(accumulated[0][0][0])).toBe(true);
+        expect(accumulated[1][0][0]).toBe(Number.POSITIVE_INFINITY);
+        const before = {
+            weights: network.getWeights(),
+            biases: network.getBiases(),
+            step: network.getStep(),
+            revision: network.getRevision(),
+            recentGradient: network.getRecentGradientSnapshot(),
+        };
+
+        expect(() => network.applyGradients({
+            learningRate: 0.1,
+            batchSize: 1,
+            lossType: 'mse',
+            optimizer: 'sgd',
+            momentum: 0,
+            regularization: 'none',
+            regularizationRate: 0,
+            gradientClip: null,
+        }, 1)).toThrow(/weightGradients\[1\]\[0\]/);
+
+        expect(network.getWeights()).toEqual(before.weights);
+        expect(network.getBiases()).toEqual(before.biases);
+        expect(network.getStep()).toBe(before.step);
+        expect(network.getRevision()).toBe(before.revision);
+        expect(network.getRecentGradientSnapshot()).toEqual(before.recentGradient);
     });
 });
 

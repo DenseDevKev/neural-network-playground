@@ -26,6 +26,36 @@ function withRequestId(
 }
 
 describe('ExperimentRequestGate', () => {
+    it('classifies a recognizable future-version initialize request separately', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const gate = new ExperimentRequestGate();
+        const commit = vi.fn();
+
+        await expect(gate.run({
+            ...fixtures.request,
+            protocolVersion: 3,
+        }, commit)).rejects.toMatchObject({
+            code: 'unsupported-protocol-version',
+            path: '$.protocolVersion',
+            requestId: fixtures.request.requestId,
+        });
+        expect(commit).not.toHaveBeenCalled();
+    });
+
+    it('keeps truly malformed initialize requests classified as malformed', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        const gate = new ExperimentRequestGate();
+        const commit = vi.fn();
+        const { claimedIdentities: _missing, ...malformed } = fixtures.request;
+
+        await expect(gate.run(malformed, commit)).rejects.toMatchObject({
+            code: 'malformed-request',
+            path: '$',
+            requestId: null,
+        });
+        expect(commit).not.toHaveBeenCalled();
+    });
+
     it('prepares and checks every identity before committing allocation work', async () => {
         const fixtures = await createScientificTrustFixtures();
         const order: string[] = [];

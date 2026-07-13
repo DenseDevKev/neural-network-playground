@@ -9,6 +9,7 @@ import {
     type TrainedRecipeSource,
     type TrainingStore,
 } from '../store/useTrainingStore.ts';
+import { selectScientificEvidence } from '../store/evidenceSelectors.ts';
 import {
     getWorkerApi,
     setupStreamChannel,
@@ -1043,6 +1044,20 @@ export function useTraining(): TrainingHook {
                 }
             } else if (msg.type === 'status') {
                 if (msg.status === 'paused') {
+                    if (msg.checkpointTimeline !== undefined) {
+                        try {
+                            ts.applyStreamedFrame({
+                                frameVersions: getFrameVersions(),
+                                checkpointTimeline: parseCheckpointTimelineV2(msg.checkpointTimeline),
+                            });
+                        } catch (error) {
+                            reportWorkerError(
+                                error,
+                                'Received invalid checkpoint metadata from the worker.',
+                            );
+                            return;
+                        }
+                    }
                     const resolveMutationPause = mutationPauseResolveRef.current;
                     if (resolveMutationPause) {
                         mutationPausePromiseRef.current = null;
@@ -1319,10 +1334,14 @@ export function useTraining(): TrainingHook {
             if (configSyncPendingRef.current
                 || ts.pendingConfigSource !== null
                 || result.runId !== ts.evidenceGenerationId) return;
-            const resultRevision = result.evidence.liveSignal?.model.revision
-                ?? result.evidence.latestEvaluation?.model.revision;
-            const currentRevision = ts.latestLiveSignal?.model.revision
-                ?? ts.latestEvaluation?.model.revision;
+            const resultRevision = selectScientificEvidence({
+                latestLiveSignal: result.evidence.liveSignal ?? null,
+                latestEvaluation: result.evidence.latestEvaluation ?? null,
+            }).currentModel?.revision;
+            const currentRevision = selectScientificEvidence({
+                latestLiveSignal: ts.latestLiveSignal,
+                latestEvaluation: ts.latestEvaluation,
+            }).currentModel?.revision;
             if (resultRevision !== undefined
                 && currentRevision !== undefined
                 && resultRevision < currentRevision) return;
@@ -1427,8 +1446,10 @@ export function useTraining(): TrainingHook {
             const restoredPrepared = requirePreparedExperiment();
             const before = useTrainingStore.getState();
             const currentGeneration = before.evidenceGenerationId;
-            const currentRevision = before.latestLiveSignal?.model.revision
-                ?? before.latestEvaluation?.model.revision;
+            const currentRevision = selectScientificEvidence({
+                latestLiveSignal: before.latestLiveSignal,
+                latestEvaluation: before.latestEvaluation,
+            }).currentModel?.revision;
             if (currentGeneration === null || currentRevision === undefined) {
                 throw new Error('checkpoint restore requires current scientific evidence');
             }
