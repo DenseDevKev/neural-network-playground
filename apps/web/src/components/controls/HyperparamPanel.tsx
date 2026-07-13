@@ -1,6 +1,7 @@
 // ── Hyperparameter Panel ──
 import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
     ADAM_BETA1_VALUES,
     ADAM_BETA2_VALUES,
@@ -56,6 +57,14 @@ function scheduleSummary(
     return `Anneals from ${formatLr(learningRate)} to ${formatLr(schedule.minLr)} over ${schedule.totalSteps} updates; midpoint is about ${formatLr(computeLearningRate(learningRate, midStep, schedule))}.`;
 }
 
+function beginTrainingConfigChange() {
+    useTrainingStore.getState().beginConfigChange('training');
+}
+
+function beginNetworkConfigChange() {
+    useTrainingStore.getState().beginConfigChange('network');
+}
+
 export const HyperparamPanel = memo(function HyperparamPanel() {
     // Granular selectors — only re-render when the specific field changes
     const learningRate = usePlaygroundStore((s) => s.training.learningRate);
@@ -90,7 +99,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Learning rate"
                             value={learningRate}
-                            onChange={(e) => usePlaygroundStore.getState().setLearningRate(Number(e.target.value))}
+                            onChange={(e) => {
+                                beginTrainingConfigChange();
+                                usePlaygroundStore.getState().setLearningRate(Number(e.target.value));
+                            }}
                         >
                             {LEARNING_RATES.map((lr) => (
                                 <option key={lr} value={lr}>{lr}</option>
@@ -108,6 +120,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             aria-label="LR schedule"
                             value={scheduleType}
                             onChange={(e) => {
+                                beginTrainingConfigChange();
                                 const type = e.target.value as LRScheduleType;
                                 if (type === 'constant') {
                                     usePlaygroundStore.getState().setLRSchedule(undefined);
@@ -140,6 +153,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                     onChange={(e) => {
                                         const raw = e.target.value;
                                         const stepSize = raw === '' ? 0 : Math.max(1, Math.trunc(Number(raw) || 1));
+                                        beginTrainingConfigChange();
                                         usePlaygroundStore.getState().setLRSchedule({ ...lrSchedule, stepSize });
                                     }}
                                 />
@@ -152,10 +166,13 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                     className="select"
                                     aria-label="Step schedule gamma"
                                     value={lrSchedule.gamma}
-                                    onChange={(e) => usePlaygroundStore.getState().setLRSchedule({
-                                        ...lrSchedule,
-                                        gamma: Number(e.target.value),
-                                    })}
+                                    onChange={(e) => {
+                                        beginTrainingConfigChange();
+                                        usePlaygroundStore.getState().setLRSchedule({
+                                            ...lrSchedule,
+                                            gamma: Number(e.target.value),
+                                        });
+                                    }}
                                 >
                                     {LR_SCHEDULE_GAMMA_VALUES.map((gamma) => (
                                         <option key={gamma} value={gamma}>{gamma}</option>
@@ -181,6 +198,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                     onChange={(e) => {
                                         const raw = e.target.value;
                                         const totalSteps = raw === '' ? 0 : Math.max(1, Math.trunc(Number(raw) || 1));
+                                        beginTrainingConfigChange();
                                         usePlaygroundStore.getState().setLRSchedule({ ...lrSchedule, totalSteps });
                                     }}
                                 />
@@ -193,10 +211,13 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                     className="select"
                                     aria-label="Cosine minimum learning rate"
                                     value={lrSchedule.minLr}
-                                    onChange={(e) => usePlaygroundStore.getState().setLRSchedule({
-                                        ...lrSchedule,
-                                        minLr: Number(e.target.value),
-                                    })}
+                                    onChange={(e) => {
+                                        beginTrainingConfigChange();
+                                        usePlaygroundStore.getState().setLRSchedule({
+                                            ...lrSchedule,
+                                            minLr: Number(e.target.value),
+                                        });
+                                    }}
                                 >
                                     {LEARNING_RATES.map((lr) => (
                                         <option key={lr} value={lr}>{lr}</option>
@@ -218,7 +239,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Loss"
                             value={lossType}
-                            onChange={(e) => usePlaygroundStore.getState().setLossType(e.target.value as LossType)}
+                            onChange={(e) => {
+                                beginTrainingConfigChange();
+                                usePlaygroundStore.getState().setLossType(e.target.value as LossType);
+                            }}
                         >
                             {(Object.keys(LOSS_LABELS) as ScalarLossType[]).map((l) => (
                                 <option key={l} value={l}>{LOSS_LABELS[l]}</option>
@@ -235,7 +259,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                 className="select"
                                 aria-label="Huber delta"
                                 value={huberDelta}
-                                onChange={(e) => usePlaygroundStore.getState().setHuberDelta(Number(e.target.value))}
+                                onChange={(e) => {
+                                    beginTrainingConfigChange();
+                                    usePlaygroundStore.getState().setHuberDelta(Number(e.target.value));
+                                }}
                             >
                                 {HUBER_DELTA_VALUES.map((delta) => (
                                     <option key={delta} value={delta}>{delta}</option>
@@ -257,7 +284,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Optimizer"
                             value={optimizer}
-                            onChange={(e) => usePlaygroundStore.getState().setOptimizer(e.target.value as OptimizerType)}
+                            onChange={(e) => {
+                                beginTrainingConfigChange();
+                                usePlaygroundStore.getState().setOptimizer(e.target.value as OptimizerType);
+                            }}
                         >
                             <option value="sgd">SGD</option>
                             <option value="sgdMomentum">SGD + Momentum</option>
@@ -277,7 +307,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                 className="select"
                                 aria-label="Momentum"
                                 value={momentum}
-                                onChange={(e) => usePlaygroundStore.getState().setMomentum(Number(e.target.value))}
+                                onChange={(e) => {
+                                    beginTrainingConfigChange();
+                                    usePlaygroundStore.getState().setMomentum(Number(e.target.value));
+                                }}
                             >
                                 {MOMENTUM_VALUES.map((m) => (
                                     <option key={m} value={m}>{m}</option>
@@ -296,7 +329,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                     className="select"
                                     aria-label="Adam beta 1"
                                     value={adamBeta1}
-                                    onChange={(e) => usePlaygroundStore.getState().setAdamBetas(Number(e.target.value), adamBeta2)}
+                                    onChange={(e) => {
+                                        beginTrainingConfigChange();
+                                        usePlaygroundStore.getState().setAdamBetas(Number(e.target.value), adamBeta2);
+                                    }}
                                 >
                                     {ADAM_BETA1_VALUES.map((beta) => (
                                         <option key={beta} value={beta}>{beta}</option>
@@ -311,7 +347,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                     className="select"
                                     aria-label="Adam beta 2"
                                     value={adamBeta2}
-                                    onChange={(e) => usePlaygroundStore.getState().setAdamBetas(adamBeta1, Number(e.target.value))}
+                                    onChange={(e) => {
+                                        beginTrainingConfigChange();
+                                        usePlaygroundStore.getState().setAdamBetas(adamBeta1, Number(e.target.value));
+                                    }}
                                 >
                                     {ADAM_BETA2_VALUES.map((beta) => (
                                         <option key={beta} value={beta}>{beta}</option>
@@ -332,6 +371,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             value={gradientClip ?? 'none'}
                             onChange={(e) => {
                                 const value = e.target.value;
+                                beginTrainingConfigChange();
                                 usePlaygroundStore.getState().setGradientClip(value === 'none' ? null : Number(value));
                             }}
                         >
@@ -351,7 +391,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Batch size"
                             value={batchSize}
-                            onChange={(e) => usePlaygroundStore.getState().setBatchSize(Number(e.target.value))}
+                            onChange={(e) => {
+                                beginTrainingConfigChange();
+                                usePlaygroundStore.getState().setBatchSize(Number(e.target.value));
+                            }}
                         >
                             {BATCH_SIZES.map((bs) => (
                                 <option key={bs} value={bs}>{bs}</option>
@@ -372,7 +415,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Weight initialization"
                             value={weightInit}
-                            onChange={(e) => usePlaygroundStore.getState().setWeightInit(e.target.value as WeightInitType)}
+                            onChange={(e) => {
+                                beginNetworkConfigChange();
+                                usePlaygroundStore.getState().setWeightInit(e.target.value as WeightInitType);
+                            }}
                         >
                             {WEIGHT_INITS.map((init) => (
                                 <option key={init.value} value={init.value}>{init.label}</option>
@@ -389,7 +435,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Output activation"
                             value={outputActivation}
-                            onChange={(e) => usePlaygroundStore.getState().setOutputActivation(e.target.value as ActivationType)}
+                            onChange={(e) => {
+                                beginNetworkConfigChange();
+                                usePlaygroundStore.getState().setOutputActivation(e.target.value as ActivationType);
+                            }}
                         >
                             {compatibleOutputActivations.map((act) => (
                                 <option key={act} value={act}>{ACTIVATION_LABELS[act]}</option>
@@ -406,7 +455,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                             className="select"
                             aria-label="Regularization"
                             value={regularization}
-                            onChange={(e) => usePlaygroundStore.getState().setRegularization(e.target.value as RegularizationType)}
+                            onChange={(e) => {
+                                beginTrainingConfigChange();
+                                usePlaygroundStore.getState().setRegularization(e.target.value as RegularizationType);
+                            }}
                         >
                             <option value="none">None</option>
                             <option value="l1">L1</option>
@@ -424,7 +476,10 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                                 className="select"
                                 aria-label="Regularization rate"
                                 value={regularizationRate}
-                                onChange={(e) => usePlaygroundStore.getState().setRegularizationRate(Number(e.target.value))}
+                                onChange={(e) => {
+                                    beginTrainingConfigChange();
+                                    usePlaygroundStore.getState().setRegularizationRate(Number(e.target.value));
+                                }}
                             >
                                 {REGULARIZATION_RATES.map((r) => (
                                     <option key={r} value={r}>{r}</option>

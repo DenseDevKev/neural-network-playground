@@ -107,6 +107,18 @@ describe('experimentMemoryStore', () => {
         expect(store.getState().records[0].title).toBe('Updated');
     });
 
+    it('renames a saved run through the existing title field without changing schema', () => {
+        const store = createExperimentMemoryStore();
+        store.getState().saveRecord(makeRecord('1', '2026-04-26T00:00:01.000Z'));
+
+        store.getState().renameRecord('1', 'Tuned reference', () => new Date('2026-04-26T00:01:00.000Z'));
+
+        const saved = store.getState().records[0];
+        expect(saved.title).toBe('Tuned reference');
+        expect(saved.updatedAt).toBe('2026-04-26T00:01:00.000Z');
+        expect(JSON.parse(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '{}').schemaVersion).toBe(1);
+    });
+
     it('recovers from corrupt persisted storage', () => {
         window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, '{not json');
 

@@ -57,4 +57,24 @@ describe('forge compact dock CSS', () => {
         expect(css).toContain('.guided-lesson--active');
         expect(css).toContain('.guided-lesson:not(.guided-lesson--active)');
     });
+
+    it('defines lab notebook context cards and evidence ownership chrome', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-experiment-context');
+        expect(css).toContain('.forge-context-card');
+        expect(css).toContain('.forge-state-badge');
+        expect(css).toContain('.forge-evidence-context');
+        expect(css).toContain('.forge-evidence-frame');
+        expect(css).toContain('.forge-cockpit-strip');
+        expect(css).toContain('.run-comparison-loop');
+    });
+
+    it('keeps compact active-run transport reachable on mobile', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-dock--compact .forge-dock__bottom');
+        expect(css).toContain('position: sticky');
+        expect(css).toContain('bottom: 0');
+    });
 });

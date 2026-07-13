@@ -145,6 +145,7 @@ describe('RunHistoryPanel', () => {
     it('renders an empty state when no runs are saved', () => {
         render(<RunHistoryPanel onRestore={vi.fn()} />);
 
+        expect(screen.getByText('History is the saved-run record surface.')).toBeInTheDocument();
         expect(screen.getByText('No saved runs')).toBeInTheDocument();
     });
 
@@ -277,10 +278,83 @@ describe('RunHistoryPanel', () => {
 
         expect(screen.getByRole('group', { name: 'Comparison for Tuned model against Baseline' })).toBeInTheDocument();
         expect(screen.getByText('Compared with Baseline')).toBeInTheDocument();
+        expect(screen.getAllByText('Saved run reference')).toHaveLength(2);
+        expect(screen.getAllByText('Restore config to make this saved run the current recipe.')).toHaveLength(2);
         expect(screen.getByText('Train loss -0.1500')).toBeInTheDocument();
         expect(screen.getByText('Test loss -0.1800')).toBeInTheDocument();
         expect(screen.getByText('Gap -0.0300')).toBeInTheDocument();
         expect(screen.getByText('Steps +80')).toBeInTheDocument();
+        expect(screen.getAllByText('Next adjustment: keep the tuned recipe direction; it improved test loss without widening the gap.')).toHaveLength(2);
+    });
+
+    it('compares the current run against previous and best saved runs', () => {
+        useTrainingStore.setState({
+            snapshot: {
+                step: 220,
+                epoch: 4,
+                trainLoss: 0.2,
+                testLoss: 0.36,
+                trainMetrics: { loss: 0.2, accuracy: 0.92 },
+                testMetrics: { loss: 0.36, accuracy: 0.84 },
+                weights: [[[0.1, 0.2]]],
+                biases: [[0.3]],
+                outputGrid: [],
+                gridSize: 50,
+            } as any,
+        });
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'previous',
+                title: 'Previous run',
+                updatedAt: '2026-04-26T00:00:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 180,
+                    trainLoss: 0.25,
+                    testLoss: 0.42,
+                },
+            }));
+            useExperimentMemoryStore.getState().saveRecord(makeRecord({
+                id: 'best',
+                title: 'Best saved',
+                updatedAt: '2026-04-26T00:01:00.000Z',
+                summary: {
+                    ...makeRecord().summary,
+                    step: 160,
+                    trainLoss: 0.21,
+                    testLoss: 0.33,
+                },
+            }));
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+
+        const comparisonLoop = screen.getByRole('region', { name: 'Comparison loop' });
+        expect(comparisonLoop).toHaveTextContent('Current vs previous');
+        expect(comparisonLoop).toHaveTextContent('Best saved vs current');
+        expect(comparisonLoop).toHaveTextContent('What changed?');
+        expect(comparisonLoop).toHaveTextContent('Which performed better?');
+        expect(comparisonLoop).toHaveTextContent('What should I try next?');
+        expect(comparisonLoop).toHaveTextContent('Best saved has lower test loss by 0.0300.');
+        expect(screen.getByRole('button', { name: 'Restore best saved run Best saved' })).toBeInTheDocument();
+    });
+
+    it('lets users title saved runs without changing the saved-run contract', async () => {
+        const user = userEvent.setup();
+        act(() => {
+            useExperimentMemoryStore.getState().saveRecord(makeRecord());
+        });
+
+        render(<RunHistoryPanel onRestore={vi.fn()} />);
+
+        const titleInput = screen.getByLabelText('Title for Saved XOR');
+        await user.clear(titleInput);
+        await user.type(titleInput, 'XOR tuned reference');
+        await user.click(screen.getByRole('button', { name: 'Update title for Saved XOR' }));
+
+        expect(useExperimentMemoryStore.getState().records[0].title).toBe('XOR tuned reference');
+        expect(screen.getByText('XOR tuned reference')).toBeInTheDocument();
+        expect(JSON.parse(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '{}').schemaVersion).toBe(1);
     });
 
     it('renders a side-by-side arena from two saved runs with accessible model regions', async () => {

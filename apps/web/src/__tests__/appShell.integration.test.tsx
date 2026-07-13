@@ -4,7 +4,14 @@ import userEvent from '@testing-library/user-event';
 import type { NetworkSnapshot } from '@nn-playground/engine';
 import App from '../App.tsx';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
+import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
+import {
+    DEFAULT_DATA,
+    DEFAULT_FEATURES,
+    DEFAULT_NETWORK,
+    DEFAULT_TRAINING,
+} from '@nn-playground/shared';
 
 const trainingMock = {
     play: vi.fn(),
@@ -96,9 +103,26 @@ describe('App shell integration', () => {
         trainingMock.step.mockReset();
         trainingMock.reset.mockReset();
 
+        usePlaygroundStore.setState({
+            data: { ...DEFAULT_DATA },
+            network: {
+                ...DEFAULT_NETWORK,
+                inputSize: 2,
+                hiddenLayers: [...DEFAULT_NETWORK.hiddenLayers],
+                outputSize: 1,
+                seed: DEFAULT_DATA.seed,
+            },
+            features: { ...DEFAULT_FEATURES },
+            training: { ...DEFAULT_TRAINING },
+            ui: { showTestData: false, discretizeOutput: false },
+        });
+
         useTrainingStore.setState({
             status: 'idle',
             snapshot: null,
+            trainedRecipeConfig: null,
+            trainedRecipeRecordedAt: null,
+            trainedRecipeSource: null,
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,
@@ -132,6 +156,19 @@ describe('App shell integration', () => {
         expect(screen.getByText('Mock Config Panel')).toBeInTheDocument();
         expect(await screen.findByText('Mock Inspection', undefined, lazyPanelWait)).toBeInTheDocument();
         expect(await screen.findByText('Mock Code Export', undefined, lazyPanelWait)).toBeInTheDocument();
+    });
+
+    it('renders experiment context in dock and focus layouts', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        expect(screen.getByRole('region', { name: 'Recipe summary' })).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Current run' })).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'focus' }));
+
+        expect(screen.getByRole('region', { name: 'Recipe summary' })).toBeInTheDocument();
+        expect(screen.getByRole('region', { name: 'Current run' })).toBeInTheDocument();
     });
 
     it('renders parity-complete controls in the focus layout', async () => {

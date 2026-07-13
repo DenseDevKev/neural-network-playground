@@ -31,6 +31,8 @@ import {
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
 import { GuidedLessonPanel } from './components/controls/GuidedLessonPanel.tsx';
+import { RecipeSummaryCard } from './components/controls/RecipeSummaryCard.tsx';
+import { CurrentRunCard } from './components/controls/CurrentRunCard.tsx';
 import type { LessonTarget } from './lessons/lessonRegistry.ts';
 import { DataPanel } from './components/controls/DataPanel.tsx';
 import { FeaturesPanel } from './components/controls/FeaturesPanel.tsx';
@@ -230,6 +232,13 @@ export default function App() {
         </div>
     );
 
+    const experimentContext = (
+        <div className="forge-experiment-context">
+            <RecipeSummaryCard />
+            <CurrentRunCard />
+        </div>
+    );
+
     const canvasPanel = (
         <Panel title="Network Topology" phase="build" fill>
             <div style={{ display: 'flex', minHeight: 200, height: '100%' }}>
@@ -280,6 +289,7 @@ export default function App() {
 
     const gridConfigPanels = (
         <div className="forge-panel-stack">
+            <Panel title="Experiment" phase="both" panelTargets="experiment" tight>{experimentContext}</Panel>
             <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
             <Panel title="Data" phase="build" className={lessonTargetClass('data')}><DataPanel onReset={stableReset} /></Panel>
             <Panel title="Features" phase="build" className={lessonTargetClass('features')}><FeaturesPanel /></Panel>
@@ -354,6 +364,7 @@ export default function App() {
                             rightTabContent={rightTabContent}
                             canvasContent={canvasPanel}
                             transportContent={transport}
+                            leftContextContent={experimentContext}
                             compact={isCompact}
                         />
                     )}
@@ -364,6 +375,7 @@ export default function App() {
                             rightTabContent={rightTabContent}
                             canvasContent={canvasPanel}
                             transportContent={transport}
+                            leftContextContent={experimentContext}
                         />
                     )}
 
@@ -383,6 +395,7 @@ export default function App() {
                         <SplitShell
                             buildLeft={
                                 <>
+                                    <Panel title="Experiment" phase="both" panelTargets="experiment" tight>{experimentContext}</Panel>
                                     <Panel title="Presets" phase="build" panelTargets="presets"><PresetPanel onReset={stableReset} /></Panel>
                                     <Panel title="Data" phase="build" className={lessonTargetClass('data')} panelTargets="data"><DataPanel onReset={stableReset} /></Panel>
                                 </>
@@ -424,6 +437,7 @@ export default function App() {
                             }
                             runRight={
                                 <>
+                                    <Panel title="Experiment" phase="both" panelTargets="experiment" tight>{experimentContext}</Panel>
                                     {confusionPanel}
                                     <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')} panelTargets="hyperparams"><HyperparamPanel /></Panel>
                                     <Panel title="Config" phase="both" panelTargets="config"><ConfigPanel onReset={stableReset} /></Panel>

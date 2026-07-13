@@ -46,7 +46,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
     const clampCheckpointIndex = (index: number) => Math.min(Math.max(index, 0), Math.max(0, checkpoints.length - 1));
 
     return (
-        <div className="training-bar">
+        <div className="training-bar" role="region" aria-label="Timeline strip">
             <div className="training-bar__controls">
                 <Tooltip
                     content={
