@@ -25,7 +25,119 @@ export type WeightInitType = 'xavier' | 'he' | 'uniform' | 'zeros';
 
 export type RegularizationType = 'none' | 'l1' | 'l2';
 
-export type DatasetType =
+export type DataLossSpecV2 =
+    | { readonly kind: 'binary-cross-entropy-with-logits' }
+    | { readonly kind: 'categorical-cross-entropy-with-logits' }
+    | { readonly kind: 'mean-squared-error' }
+    | { readonly kind: 'huber'; readonly delta: number };
+
+export type PenaltySpecV2 =
+    | { readonly kind: 'none' }
+    | {
+        readonly kind: 'l1' | 'l2';
+        readonly coefficient: number;
+        readonly applyTo: 'weights';
+    };
+
+export interface ObjectiveSpecV2 {
+    readonly dataLoss: DataLossSpecV2;
+    readonly penalty: PenaltySpecV2;
+    readonly reduction: 'mean-per-sample';
+}
+
+export type GradientClipSpecV2 =
+    | { readonly kind: 'none' }
+    | {
+        readonly kind: 'global-norm';
+        readonly maximumNorm: number;
+        readonly scope: 'total-objective-gradient';
+    };
+
+export type OptimizerSpecV2 =
+    | { kind: 'sgd' }
+    | { kind: 'sgd-momentum'; momentum: number }
+    | { kind: 'adam'; beta1: number; beta2: number; epsilon: number };
+
+export type LearningRateScheduleV2 =
+    | { kind: 'constant' }
+    | { kind: 'step'; interval: number; gamma: number }
+    | { kind: 'cosine'; totalSteps: number; minimumRate: number };
+
+export interface ObjectiveBreakdown {
+    dataLoss: number;
+    regularizationPenalty: number;
+    totalObjective: number;
+}
+
+export interface GradientDiagnostics {
+    dataGradientNorm: number;
+    penaltyGradientNorm: number;
+    totalGradientNorm: number;
+    clippedGradientNorm: number;
+    clipScale: number;
+}
+
+export interface BatchTrainingResult {
+    revision: number;
+    step: number;
+    sampleCount: number;
+    /** Data loss for this same batch under the returned post-update revision. */
+    postUpdateDataLoss: number;
+    /** Pre-update objective whose gradient produced this update. */
+    objective: ObjectiveBreakdown;
+    gradients: GradientDiagnostics;
+}
+
+/** Exact complete gradient supplied to the optimizer for the most recent update. */
+export interface RecentGradientSnapshot {
+    revision: number;
+    weightGradients: number[][][];
+    biasGradients: number[][];
+}
+
+export interface ClipResult {
+    totalGradientNorm: number;
+    clippedGradientNorm: number;
+    clipScale: number;
+}
+
+/** Mutable numeric storage accepted by objective kernels without framework coupling. */
+export interface MutableNumericArray extends ArrayLike<number> {
+    [index: number]: number;
+}
+
+/** Network fields needed to compile and validate an objective. */
+export interface ObjectiveNetworkConfig {
+    outputSize: number;
+    outputActivation: ActivationType;
+}
+
+export interface CompiledObjective {
+    readonly spec: ObjectiveSpecV2;
+    evaluateDataSample(
+        logits: ArrayLike<number>,
+        outputs: ArrayLike<number>,
+        target: ArrayLike<number>,
+    ): number;
+    seedOutputDeltaInto(
+        logits: ArrayLike<number>,
+        outputs: ArrayLike<number>,
+        target: ArrayLike<number>,
+        destination: MutableNumericArray,
+    ): void;
+    regularizationPenalty(weights: readonly ArrayLike<number>[]): number;
+    addPenaltyGradientInto(
+        weights: readonly ArrayLike<number>[],
+        weightGradients: readonly MutableNumericArray[],
+    ): number;
+}
+
+export type TaskKind =
+    | 'binary-classification'
+    | 'multiclass-classification'
+    | 'regression';
+
+export type BinaryDatasetId =
     | 'circle'
     | 'xor'
     | 'gauss'
@@ -33,10 +145,49 @@ export type DatasetType =
     | 'moons'
     | 'checkerboard'
     | 'rings'
-    | 'heart'
-    | 'three-class-clusters'
+    | 'heart';
+
+export type MulticlassDatasetId = 'three-class-clusters';
+
+export type RegressionDatasetId =
     | 'reg-plane'
     | 'reg-gauss';
+
+export type DatasetId = BinaryDatasetId | MulticlassDatasetId | RegressionDatasetId;
+
+/** Compatibility alias for the pre-version-2 positional generator API. */
+export type DatasetType = DatasetId;
+
+export interface DatasetContract {
+    id: DatasetId;
+    taskKind: TaskKind;
+    inputDomain: {
+        x: readonly [number, number];
+        y: readonly [number, number];
+    };
+    targetDomain:
+        | { kind: 'binary'; values: readonly [0, 1] }
+        | { kind: 'classes'; classCount: 3 }
+        | {
+            kind: 'continuous';
+            boundsForNoise: (noise: number) => readonly [number, number];
+        };
+    noise: {
+        minimum: number;
+        maximum: number;
+        meaning: 'coordinate-perturbation' | 'target-perturbation';
+    };
+    generatorVersion: number;
+}
+
+/** Strict, validated request accepted by the version-2 dataset generator. */
+export interface DatasetGenerationRequest {
+    dataset: DatasetId;
+    sampleCount: number;
+    noise: number;
+    seed: number;
+    trainFraction?: number;
+}
 
 /** Configuration for the network architecture. */
 export interface NetworkConfig {
@@ -96,6 +247,80 @@ export interface FeatureFlags {
     cosY: boolean;
 }
 
+export type FeatureId = keyof FeatureFlags;
+
+export interface CompilableExperimentRecipe {
+    data: { sampleCount: number; trainFraction: number; noise: number; seed: number };
+    inputs: { featureIds: readonly FeatureId[] };
+    model: {
+        hiddenLayers: readonly number[];
+        hiddenActivation: ScalarActivationType;
+        initialization: WeightInitType;
+        seed: number;
+    };
+    training: {
+        batchSize: number;
+        learningRate: number;
+        schedule: LearningRateScheduleV2;
+        optimizer: OptimizerSpecV2;
+        gradientClipping: GradientClipSpecV2;
+    };
+    task:
+        | { kind: 'binary-classification'; dataset: BinaryDatasetId }
+        | { kind: 'multiclass-classification'; dataset: 'three-class-clusters' }
+        | { kind: 'regression'; dataset: RegressionDatasetId };
+    objective: ObjectiveSpecV2;
+}
+
+export interface CompiledTrainingContractV2 {
+    learningRate: number;
+    batchSize: number;
+    schedule: LearningRateScheduleV2;
+    optimizer: OptimizerSpecV2;
+    gradientClipping: GradientClipSpecV2;
+    objective: CompiledObjective;
+}
+
+export interface CompiledDataConfig {
+    dataset: DatasetId;
+    sampleCount: number;
+    trainFraction: number;
+    noise: number;
+    seed: number;
+}
+
+export type CompiledTaskContract =
+    | {
+        kind: 'binary-classification';
+        dataset: BinaryDatasetId;
+        outputSize: 1;
+        outputActivation: 'sigmoid';
+        target: { kind: 'scalar'; values: readonly [0, 1] };
+    }
+    | {
+        kind: 'multiclass-classification';
+        dataset: 'three-class-clusters';
+        outputSize: 3;
+        outputActivation: 'softmax';
+        target: { kind: 'one-hot'; length: 3 };
+    }
+    | {
+        kind: 'regression';
+        dataset: RegressionDatasetId;
+        outputSize: 1;
+        outputActivation: 'linear';
+        target: { kind: 'scalar'; finite: true };
+    };
+
+export interface CompiledExperimentConfig {
+    network: NetworkConfig;
+    training: CompiledTrainingContractV2;
+    data: CompiledDataConfig;
+    features: FeatureFlags;
+    objective: CompiledObjective;
+    task: CompiledTaskContract;
+}
+
 /** Per-sample data record. */
 export interface DataPoint {
     x: number;
@@ -131,6 +356,13 @@ export interface MulticlassConfusionMatrixData {
     counts: MulticlassConfusionMatrixCounts;
 }
 
+/** Bounded 3-class decision-boundary grid for direct worker snapshots. */
+export interface MulticlassBoundaryData {
+    classGrid: Uint8Array;
+    confidenceGrid: Float32Array;
+    gridSize: number;
+}
+
 /** Metrics for a single evaluation pass. */
 export interface Metrics {
     loss: number;
@@ -145,6 +377,15 @@ export interface LayerStats {
     activationStd: number;
     meanAbsWeight: number;
     meanAbsGradient: number;
+}
+
+/** Deterministic bounded-sample activation statistics for one model revision. */
+export interface LayerStatisticsResult {
+    revision: number;
+    gradientRevision: number;
+    sampleCount: number;
+    populationCount: number;
+    layers: LayerStats[];
 }
 
 /** Runtime-only options for compact activation histogram inspection. */
@@ -178,15 +419,6 @@ export interface ActivationHistogramResult {
     bins: Float32Array;
 }
 
-/** A single training history entry. */
-export interface HistoryPoint {
-    step: number;
-    trainLoss: number;
-    testLoss: number;
-    trainAccuracy?: number;
-    testAccuracy?: number;
-}
-
 /** Per-layer activations captured for one inspected prediction. */
 export interface PredictionTraceLayer {
     layerIndex: number;
@@ -201,6 +433,17 @@ export interface PredictionTrace {
     output: number[];
     prediction: number | number[];
     lossContribution?: number;
+    layers: PredictionTraceLayer[];
+}
+
+/** Objective-aware prediction evidence without attributing the model penalty to one sample. */
+export interface PredictionTraceV2 {
+    input: number[];
+    target: number[];
+    output: number[];
+    prediction: number | number[];
+    sampleDataLoss: number;
+    regularizationPenalty: number;
     layers: PredictionTraceLayer[];
 }
 
@@ -229,6 +472,16 @@ export interface BackpropExplanation {
     globalGradientNorm: number;
     globalClipScale: number;
     clipped: boolean;
+    layers: BackpropExplanationLayer[];
+    summary: string;
+}
+
+/** Objective-aware pure dry-run preview of the next mini-batch update. */
+export interface BackpropExplanationV2 {
+    batchSize: number;
+    learningRate: number;
+    objective: ObjectiveBreakdown;
+    gradients: GradientDiagnostics;
     layers: BackpropExplanationLayer[];
     summary: string;
 }
@@ -282,11 +535,71 @@ export interface LossLandscapeProbe {
     summary: string;
 }
 
+/** Best cell found in a bounded 2D training-objective grid. */
+export interface ObjectiveLandscapeBestCell {
+    row: number;
+    col: number;
+    objective: number;
+    offsetA: number;
+    offsetB: number;
+}
+
+/** Objective-aware local parameter slice evaluated on one deterministic sample prefix. */
+export interface ObjectiveLandscapeProbe {
+    basis: 'training-objective';
+    gridSize: number;
+    sampleCount: number;
+    parameterPositionCount: number;
+    radius: number;
+    axisA: LossLandscapeProbeAxis;
+    axisB: LossLandscapeProbeAxis;
+    objectives: Float32Array;
+    centerObjective: number;
+    minObjective: number;
+    maxObjective: number;
+    best: ObjectiveLandscapeBestCell;
+    summary: string;
+}
+
 /** Serializable network state for save/restore. */
 export interface SerializedNetwork {
     config: NetworkConfig;
     weights: number[][][];
     biases: number[][];
+}
+
+/** Version-2 network parameters and optimizer state for in-session restore. */
+export interface NetworkSessionStateV2 {
+    network: {
+        layers: {
+            inputSize: number;
+            outputSize: number;
+            weights: Float64Array;
+            biases: Float64Array;
+        }[];
+    };
+    optimizer:
+        | { kind: 'sgd'; optimizerStep: number }
+        | {
+            kind: 'sgd-momentum';
+            optimizerStep: number;
+            weightVelocity: Float64Array[];
+            biasVelocity: Float64Array[];
+        }
+        | {
+            kind: 'adam';
+            optimizerStep: number;
+            firstWeightMoment: Float64Array[];
+            firstBiasMoment: Float64Array[];
+            secondWeightMoment: Float64Array[];
+            secondBiasMoment: Float64Array[];
+        };
+}
+
+/** Expected architecture and fixed typed-array budget for V2 session validation. */
+export interface ExpectedNetworkSessionShape {
+    layerSizes: readonly number[];
+    maximumBytes: 262_144;
 }
 
 /** Runtime-only checkpoint state for pausable training timelines. */
@@ -316,11 +629,8 @@ export interface NetworkSnapshot {
     weights: number[][][];
     biases: number[][];
 
-    trainLoss: number;
-    testLoss: number;
     trainMetrics: Metrics;
     testMetrics: Metrics;
-
     /** Flattened prediction grid for decision boundary heatmap. */
     outputGrid: ArrayLike<number>;
     gridSize: number; // width/height of the square grid
@@ -328,11 +638,13 @@ export interface NetworkSnapshot {
     /** Per-neuron heatmap grids (optional, on-demand). */
     neuronGrids?: number[][] | Float32Array[] | Float32Array;
 
+    /** Bounded multiclass boundary payload when the worker computed one for this snapshot. */
+    multiclassBoundary?: MulticlassBoundaryData;
+
     /** Per-layer statistics for inspection panel. */
     layerStats?: LayerStats[];
 
     /** Compact, demand-gated activation histograms for inspection. */
     activationHistograms?: ActivationHistogramResult;
 
-    historyPoint: HistoryPoint;
 }

@@ -15,9 +15,53 @@ function createTrainingMock(): TrainingHook {
   };
 }
 
+function liveSignal(revision: number, step: number, epoch: number) {
+  return {
+    model: { generationId: 1, revision, step, epoch },
+    dataset: {
+      generatorVersion: 2,
+      datasetKey: 'test-dataset',
+      trainCount: 150,
+      testCount: 150,
+    },
+    objectiveKey: 'test-objective',
+    basis: {
+      kind: 'mini-batch-ema' as const,
+      alpha: 0.1,
+      latestBatchSize: 10,
+      throughStep: step,
+    },
+    dataLoss: 0.25,
+  };
+}
+
+function fullEvaluation(revision: number, step: number, epoch: number) {
+  return {
+    evaluationId: 12,
+    trigger: 'pause' as const,
+    model: { generationId: 1, revision, step, epoch },
+    dataset: {
+      generatorVersion: 2,
+      datasetKey: 'test-dataset',
+      trainCount: 150,
+      testCount: 150,
+    },
+    objectiveKey: 'test-objective',
+    train: {
+      basis: { kind: 'full-split' as const, split: 'train' as const, sampleCount: 150, populationCount: 150 },
+      values: { dataLoss: 0.2, accuracy: 0.9 },
+    },
+    test: {
+      basis: { kind: 'full-split' as const, split: 'test' as const, sampleCount: 150, populationCount: 150 },
+      values: { dataLoss: 0.3, accuracy: 0.8 },
+    },
+    objective: { regularizationPenalty: 0, trainTotalObjective: 0.2 },
+  };
+}
+
 describe('TrainingControls', () => {
   beforeEach(() => {
-    useTrainingStore.getState().resetHistory();
+    useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
       status: 'idle',
       snapshot: null,
@@ -115,10 +159,24 @@ describe('TrainingControls', () => {
     act(() => {
       useTrainingStore.setState({
         status: 'running',
-        snapshot: {
-          step: 128,
-          epoch: 4,
-        } as any,
+        evidenceGenerationId: 1,
+        latestLiveSignal: {
+          model: { generationId: 1, revision: 128, step: 128, epoch: 4 },
+          dataset: {
+            generatorVersion: 2,
+            datasetKey: 'test-dataset',
+            trainCount: 1,
+            testCount: 1,
+          },
+          objectiveKey: 'test-objective',
+          basis: {
+            kind: 'mini-batch-ema',
+            alpha: 0.1,
+            latestBatchSize: 1,
+            throughStep: 128,
+          },
+          dataLoss: 0.25,
+        },
       });
     });
 
@@ -127,6 +185,22 @@ describe('TrainingControls', () => {
     expect(screen.getByText('Training...')).toBeInTheDocument();
     expect(screen.getByText('Step 128')).toBeInTheDocument();
     expect(screen.getByText('Epoch 4')).toBeInTheDocument();
+  });
+
+  it('shows the newer forced evaluation model instead of a stale live signal after pause', () => {
+    const training = createTrainingMock();
+    useTrainingStore.setState({
+      status: 'paused',
+      evidenceGenerationId: 1,
+      latestLiveSignal: liveSignal(2_450, 2_450, 163),
+      latestEvaluation: fullEvaluation(2_500, 2_500, 166),
+    });
+
+    render(<TrainingControls training={training} />);
+
+    expect(screen.getByText('Step 2,500')).toBeInTheDocument();
+    expect(screen.getByText('Epoch 166')).toBeInTheDocument();
+    expect(screen.queryByText('Step 2,450')).not.toBeInTheDocument();
   });
 
   it('explains cause and effect in training tooltips', () => {
@@ -162,11 +236,10 @@ describe('TrainingControls', () => {
     const user = userEvent.setup();
     const training = createTrainingMock();
     useTrainingStore.setState({
-      snapshot: { step: 10, epoch: 1 } as any,
       checkpointTimeline: {
         checkpoints: [
-          { id: 1, step: 0, epoch: 0, trainLoss: 0.5, testLoss: 0.6, label: 'Step 0' },
-          { id: 2, step: 10, epoch: 1, trainLoss: 0.3, testLoss: 0.4, label: 'Step 10' },
+          { id: 1, step: 0, epoch: 0, trainDataLoss: 0.5, testDataLoss: 0.6, label: 'Step 0' },
+          { id: 2, step: 10, epoch: 1, trainDataLoss: 0.3, testDataLoss: 0.4, label: 'Step 10' },
         ],
         maxCheckpoints: 8,
         evictedCount: 0,
@@ -179,9 +252,18 @@ describe('TrainingControls', () => {
 
     const slider = screen.getByRole('slider', { name: 'Checkpoint timeline' });
     expect(slider).toHaveValue('1');
-    expect(screen.getByRole('button', { name: 'Restore checkpoint Step 10' })).toBeInTheDocument();
+    const restoreButton = screen.getByRole('button', { name: 'Restore checkpoint Step 10' });
+    expect(restoreButton).toBeInTheDocument();
+    act(() => restoreButton.focus());
+    expect(restoreButton).toHaveAccessibleDescription(
+      'Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.',
+    );
+    expect(screen.getByText('Restore in-session parameters and optimizer state')).toBeInTheDocument();
+    expect(screen.getAllByText(
+      'Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.',
+    ).length).toBeGreaterThan(0);
 
-    slider.focus();
+    act(() => slider.focus());
     await user.keyboard('{ArrowLeft}');
     expect(slider).toHaveValue('0');
 

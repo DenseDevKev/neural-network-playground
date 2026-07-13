@@ -6,13 +6,32 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import { getWorkerApi } from '../../worker/workerBridge.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
+import type { ModelRevision } from '@nn-playground/shared';
 import type {
-    BackpropExplanationResponse,
-    LossLandscapeProbeResponse,
-    PredictionTraceResponse,
+    BackpropExplanationResponseV2,
+    ObjectiveLandscapeResponseV2,
+    PredictionTraceResponseV2,
     PredictionTraceSampleSource,
 } from '../../worker/training.worker.ts';
-import type { ActivationHistogramLayout } from '@nn-playground/shared';
+
+function sameModelRevision(
+    left: ModelRevision | null,
+    right: ModelRevision | null,
+): boolean {
+    return left !== null
+        && right !== null
+        && left.generationId === right.generationId
+        && left.revision === right.revision;
+}
+
+function activeModelRevision(): ModelRevision | null {
+    const state = useTrainingStore.getState();
+    return selectScientificEvidence({
+        latestLiveSignal: state.latestLiveSignal,
+        latestEvaluation: state.latestEvaluation,
+    }).currentModel;
+}
 
 function formatPercent(count: number, total: number): string {
     return total > 0 ? `${((count / total) * 100).toFixed(1)}%` : '0.0%';
@@ -51,28 +70,59 @@ function describeActivationShape(
 }
 
 export const InspectionPanel = memo(function InspectionPanel() {
-    const snapshot = useTrainingStore((s) => s.snapshot);
     const frameVersion = useTrainingStore((s) => s.frameVersion);
     const activationHistogramsVersion = useTrainingStore((s) => s.activationHistogramsVersion);
     const trainPoints = useTrainingStore((s) => s.trainPoints);
     const testPoints = useTrainingStore((s) => s.testPoints);
-    const hiddenLayers = usePlaygroundStore((s) => s.network.hiddenLayers);
+    const hiddenLayers = usePlaygroundStore((s) => s.access.status === 'ready'
+        ? s.access.prepared.compiled.network.hiddenLayers
+        : []);
     const [selectedHistogramLayer, setSelectedHistogramLayer] = useState(0);
     const [traceSource, setTraceSource] = useState<PredictionTraceSampleSource>('train');
     const [sampleIndex, setSampleIndex] = useState(0);
-    const [customX, setCustomX] = useState(0);
-    const [customY, setCustomY] = useState(0);
-    const [traceResult, setTraceResult] = useState<PredictionTraceResponse | null>(null);
+    const [traceResult, setTraceResult] = useState<PredictionTraceResponseV2 | null>(null);
     const [traceError, setTraceError] = useState<string | null>(null);
     const [traceLoading, setTraceLoading] = useState(false);
-    const [backpropResult, setBackpropResult] = useState<BackpropExplanationResponse | null>(null);
+    const [backpropResult, setBackpropResult] = useState<BackpropExplanationResponseV2 | null>(null);
     const [backpropError, setBackpropError] = useState<string | null>(null);
     const [backpropLoading, setBackpropLoading] = useState(false);
-    const backpropRequestInFlightRef = useRef(false);
-    const [lossLandscapeResult, setLossLandscapeResult] = useState<LossLandscapeProbeResponse | null>(null);
+    const [lossLandscapeResult, setLossLandscapeResult] = useState<ObjectiveLandscapeResponseV2 | null>(null);
     const [lossLandscapeError, setLossLandscapeError] = useState<string | null>(null);
     const [lossLandscapeLoading, setLossLandscapeLoading] = useState(false);
-    const lossLandscapeRequestInFlightRef = useRef(false);
+    const traceRequestRef = useRef(0);
+    const backpropRequestRef = useRef(0);
+    const lossLandscapeRequestRef = useRef(0);
+    const traceResultRef = useRef<PredictionTraceResponseV2 | null>(null);
+    const latestLiveSignal = useTrainingStore((state) => state.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((state) => state.latestEvaluation);
+    const evidence = useMemo(() => selectScientificEvidence({
+        latestLiveSignal,
+        latestEvaluation,
+    }), [latestEvaluation, latestLiveSignal]);
+    const currentModel = evidence.currentModel;
+    const currentModelKey = currentModel === null
+        ? 'none'
+        : `${currentModel.generationId}:${currentModel.revision}`;
+    const previousModelKeyRef = useRef(currentModelKey);
+
+    useEffect(() => {
+        if (previousModelKeyRef.current === currentModelKey) return;
+        previousModelKeyRef.current = currentModelKey;
+        traceRequestRef.current++;
+        backpropRequestRef.current++;
+        lossLandscapeRequestRef.current++;
+        const hadTrace = traceResultRef.current !== null;
+        traceResultRef.current = null;
+        setTraceResult(null);
+        setTraceError(hadTrace ? 'Trace cleared because the active model changed.' : null);
+        setTraceLoading(false);
+        setBackpropResult(null);
+        setBackpropError(null);
+        setBackpropLoading(false);
+        setLossLandscapeResult(null);
+        setLossLandscapeError(null);
+        setLossLandscapeLoading(false);
+    }, [currentModelKey]);
 
     useEffect(() => {
         const enableInspectionDemand = (enabled: boolean) => {
@@ -94,13 +144,19 @@ export const InspectionPanel = memo(function InspectionPanel() {
         return () => enableInspectionDemand(false);
     }, []);
 
-    const layerStats = useMemo(
-        () => {
-            void frameVersion;
-            return getFrameBuffer().layerStats ?? snapshot?.layerStats;
-        },
-        [frameVersion, snapshot?.layerStats],
-    );
+    const layerStatsState = useMemo(() => {
+        void frameVersion;
+        const frame = getFrameBuffer();
+        return {
+            values: frame.layerStats,
+            provenance: frame.layerStatsProvenance,
+            gradientRevision: frame.layerStatsGradientRevision,
+        };
+    }, [frameVersion]);
+    const layerStats = layerStatsState.values;
+    const activationBasis = layerStatsState.provenance?.basis.kind === 'bounded-sample'
+        ? layerStatsState.provenance.basis
+        : null;
 
     const activationHistograms = useMemo(
         () => {
@@ -110,20 +166,12 @@ export const InspectionPanel = memo(function InspectionPanel() {
                 return {
                     bins: frame.activationHistogramBins,
                     layout: frame.activationHistogramLayout,
-                };
-            }
-            if (snapshot?.activationHistograms) {
-                return {
-                    bins: snapshot.activationHistograms.bins,
-                    layout: {
-                        binCount: snapshot.activationHistograms.layers[0]?.binCount ?? 0,
-                        layers: snapshot.activationHistograms.layers,
-                    } satisfies ActivationHistogramLayout,
+                    provenance: frame.activationHistogramProvenance,
                 };
             }
             return null;
         },
-        [activationHistogramsVersion, snapshot?.activationHistograms],
+        [activationHistogramsVersion],
     );
 
     const layerNames = useMemo(() => {
@@ -167,75 +215,106 @@ export const InspectionPanel = memo(function InspectionPanel() {
         : 'Activation histograms are not available yet.';
 
     const selectedPoints = traceSource === 'test' ? testPoints : trainPoints;
-    const selectedSample = traceSource === 'custom'
-        ? null
-        : selectedPoints[Math.min(sampleIndex, Math.max(0, selectedPoints.length - 1))];
-    const canTrace = traceSource === 'custom' || selectedSample !== undefined;
+    const selectedSample = selectedPoints[Math.min(sampleIndex, Math.max(0, selectedPoints.length - 1))];
+    const canTrace = selectedSample !== undefined && currentModel !== null;
 
     const handleTrace = async () => {
         if (!canTrace || traceLoading) return;
+        const requestModel = currentModel;
+        const requestId = ++traceRequestRef.current;
         setTraceLoading(true);
         setTraceError(null);
         try {
-            const response = await getWorkerApi().getPredictionTrace(
-                traceSource === 'custom'
-                    ? { source: 'custom', x: customX, y: customY }
-                    : { source: traceSource, index: Math.min(sampleIndex, selectedPoints.length - 1) },
-            );
-            setTraceResult(response);
+            const response = await getWorkerApi().getPredictionTraceV2({
+                source: traceSource,
+                index: Math.min(sampleIndex, selectedPoints.length - 1),
+            });
+            if (traceRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())
+                && sameModelRevision(requestModel, response.model)) {
+                traceResultRef.current = response;
+                setTraceResult(response);
+            }
         } catch (err) {
-            setTraceResult(null);
-            setTraceError(err instanceof Error ? err.message : String(err));
+            if (traceRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())) {
+                traceResultRef.current = null;
+                setTraceResult(null);
+                setTraceError(err instanceof Error ? err.message : String(err));
+            }
         } finally {
-            setTraceLoading(false);
+            if (traceRequestRef.current === requestId) setTraceLoading(false);
         }
     };
 
     const handleBackpropPreview = async () => {
-        if (backpropRequestInFlightRef.current) return;
-        backpropRequestInFlightRef.current = true;
+        if (backpropLoading || currentModel === null) return;
+        const requestModel = currentModel;
+        const requestId = ++backpropRequestRef.current;
         setBackpropLoading(true);
         setBackpropError(null);
         setBackpropResult(null);
         try {
-            const response = await getWorkerApi().getBackpropExplanation();
-            setBackpropResult(response);
+            const response = await getWorkerApi().getBackpropExplanationV2();
+            if (backpropRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())
+                && sameModelRevision(requestModel, response.model)) {
+                setBackpropResult(response);
+            }
         } catch (err) {
-            setBackpropResult(null);
-            setBackpropError(err instanceof Error ? err.message : String(err));
+            if (backpropRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())) {
+                setBackpropResult(null);
+                setBackpropError(err instanceof Error ? err.message : String(err));
+            }
         } finally {
-            backpropRequestInFlightRef.current = false;
-            setBackpropLoading(false);
+            if (backpropRequestRef.current === requestId) setBackpropLoading(false);
         }
     };
 
     const handleLossLandscapeProbe = async () => {
-        if (lossLandscapeRequestInFlightRef.current) return;
-        lossLandscapeRequestInFlightRef.current = true;
+        if (lossLandscapeLoading || currentModel === null) return;
+        const requestModel = currentModel;
+        const requestId = ++lossLandscapeRequestRef.current;
         setLossLandscapeLoading(true);
         setLossLandscapeError(null);
         setLossLandscapeResult(null);
         try {
-            const response = await getWorkerApi().getLossLandscapeProbe();
-            setLossLandscapeResult(response);
+            const response = await getWorkerApi().getObjectiveLandscapeV2();
+            if (lossLandscapeRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())
+                && sameModelRevision(requestModel, response.model)) {
+                setLossLandscapeResult(response);
+            }
         } catch (err) {
-            setLossLandscapeResult(null);
-            setLossLandscapeError(err instanceof Error ? err.message : String(err));
+            if (lossLandscapeRequestRef.current === requestId
+                && sameModelRevision(requestModel, activeModelRevision())) {
+                setLossLandscapeResult(null);
+                setLossLandscapeError(err instanceof Error ? err.message : String(err));
+            }
         } finally {
-            lossLandscapeRequestInFlightRef.current = false;
-            setLossLandscapeLoading(false);
+            if (lossLandscapeRequestRef.current === requestId) setLossLandscapeLoading(false);
         }
     };
 
     const lossLandscapeSummary = lossLandscapeResult
-        ? `Local 2D loss slice: center ${formatBackpropMetric(lossLandscapeResult.probe.centerLoss)}, min ${formatBackpropMetric(lossLandscapeResult.probe.minLoss)}, max ${formatBackpropMetric(lossLandscapeResult.probe.maxLoss)}. Best direction ${lossLandscapeResult.probe.axisA.parameter.label} ${formatSignedOffset(lossLandscapeResult.probe.best.offsetA)}, ${lossLandscapeResult.probe.axisB.parameter.label} ${formatSignedOffset(lossLandscapeResult.probe.best.offsetB)}.`
-        : 'Loss landscape probe has not run yet.';
+        ? `Training-objective parameter grid: center ${formatBackpropMetric(lossLandscapeResult.probe.centerObjective)}, min ${formatBackpropMetric(lossLandscapeResult.probe.minObjective)}, max ${formatBackpropMetric(lossLandscapeResult.probe.maxObjective)}. Best direction ${lossLandscapeResult.probe.axisA.parameter.label} ${formatSignedOffset(lossLandscapeResult.probe.best.offsetA)}, ${lossLandscapeResult.probe.axisB.parameter.label} ${formatSignedOffset(lossLandscapeResult.probe.best.offsetB)}.`
+        : 'Training-objective landscape probe has not run yet.';
     const lossLandscapeSpread = lossLandscapeResult
-        ? Math.max(0.000001, lossLandscapeResult.probe.maxLoss - lossLandscapeResult.probe.minLoss)
+        ? Math.max(0.000001, lossLandscapeResult.probe.maxObjective - lossLandscapeResult.probe.minObjective)
         : 1;
 
     return (
         <div className="inspection-panel">
+            {activationBasis && (
+                <p className="inspection__basis">
+                    <span>{`Activation statistics across ${activationBasis.sampleCount.toLocaleString()} of ${activationBasis.populationCount.toLocaleString()} training examples`}</span>
+                    {layerStatsState.gradientRevision !== null
+                        && layerStatsState.gradientRevision !== layerStatsState.provenance?.model.revision
+                        ? `; gradient summary comes from model revision ${layerStatsState.gradientRevision.toLocaleString()}.`
+                        : '.'}
+                </p>
+            )}
             {!layerStats || layerStats.length === 0 ? (
                 <div className="inspection__empty">Train the model to see stats</div>
             ) : (
@@ -301,6 +380,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                             <label htmlFor="activation-histogram-layer">Histogram layer</label>
                             <select
                                 id="activation-histogram-layer"
+                                className="select"
                                 value={selectedHistogramIndex}
                                 onChange={(event) => {
                                     const next = Number(event.currentTarget.value);
@@ -314,6 +394,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                                 ))}
                             </select>
                         </div>
+
                         <div
                             className="inspection__histogram"
                             role="img"
@@ -348,57 +429,42 @@ export const InspectionPanel = memo(function InspectionPanel() {
                     <label htmlFor="trace-source">Sample</label>
                     <select
                         id="trace-source"
+                        className="select"
                         value={traceSource}
                         onChange={(event) => {
+                            traceRequestRef.current++;
+                            traceResultRef.current = null;
                             setTraceSource(event.currentTarget.value as PredictionTraceSampleSource);
                             setTraceResult(null);
                             setTraceError(null);
+                            setTraceLoading(false);
                         }}
                     >
                         <option value="train">Training</option>
                         <option value="test">Test</option>
-                        <option value="custom">Custom</option>
                     </select>
                 </div>
-                {traceSource === 'custom' ? (
-                    <>
-                        <div className="control-row">
-                            <label htmlFor="trace-x">x</label>
-                            <input
-                                id="trace-x"
-                                type="number"
-                                step="0.1"
-                                value={customX}
-                                onChange={(event) => setCustomX(Number(event.currentTarget.value))}
-                            />
-                        </div>
-                        <div className="control-row">
-                            <label htmlFor="trace-y">y</label>
-                            <input
-                                id="trace-y"
-                                type="number"
-                                step="0.1"
-                                value={customY}
-                                onChange={(event) => setCustomY(Number(event.currentTarget.value))}
-                            />
-                        </div>
-                    </>
-                ) : (
-                    <div className="control-row">
-                        <label htmlFor="trace-index">Index</label>
-                        <input
-                            id="trace-index"
-                            type="number"
-                            min={0}
-                            max={Math.max(0, selectedPoints.length - 1)}
-                            value={sampleIndex}
-                            onChange={(event) => {
-                                const next = Number(event.currentTarget.value);
-                                setSampleIndex(Number.isFinite(next) ? Math.max(0, Math.trunc(next)) : 0);
-                            }}
-                        />
-                    </div>
-                )}
+                <div className="control-row">
+                    <label htmlFor="trace-index">Index</label>
+                    <input
+                        id="trace-index"
+                        className="input"
+                        type="number"
+                        min={0}
+                        max={Math.max(0, selectedPoints.length - 1)}
+                        value={sampleIndex}
+                        onChange={(event) => {
+                            const next = Number(event.currentTarget.value);
+                            traceRequestRef.current++;
+                            traceResultRef.current = null;
+                            setTraceResult(null);
+                            setTraceError(null);
+                            setTraceLoading(false);
+                            setSampleIndex(Number.isFinite(next) ? Math.max(0, Math.trunc(next)) : 0);
+                        }}
+                    />
+                </div>
+
                 {!canTrace ? (
                     <div className="inspection__empty">
                         No {traceSource === 'test' ? 'test' : 'training'} samples are available yet.
@@ -414,32 +480,49 @@ export const InspectionPanel = memo(function InspectionPanel() {
                 </button>
                 <div aria-live="polite">
                     {traceError ? (
-                        <div className="inspection__empty">Trace failed: {traceError}</div>
+                        <div className="inspection__empty">
+                            {traceError.startsWith('Trace cleared') ? traceError : `Trace failed: ${traceError}`}
+                        </div>
                     ) : null}
                     {traceResult ? (
                         <div className="inspection__layers">
+                            <p className="inspection__basis">
+                                {`Trace from ${traceResult.sample.source === 'train' ? 'training' : 'test'} sample ${traceResult.sample.index.toLocaleString()} · model step ${traceResult.model.step.toLocaleString()} · revision ${traceResult.model.revision.toLocaleString()}`}
+                            </p>
                             <div className="inspection__stat-row">
                                 <span className="inspection__stat-label">Output</span>
                                 <span className="inspection__stat-value">
                                     {traceResult.trace.output.map((value) => value.toFixed(4)).join(', ')}
                                 </span>
-                                {traceResult.trace.lossContribution !== undefined ? (
-                                    <>
-                                        <span className="inspection__stat-label" style={{ marginLeft: 8 }}>loss</span>
-                                        <span className="inspection__stat-value">
-                                            {traceResult.trace.lossContribution.toFixed(4)}
-                                        </span>
-                                    </>
-                                ) : null}
+                                <span className="inspection__stat-label" style={{ marginLeft: 8 }}>sample data loss</span>
+                                <span className="inspection__stat-value">
+                                    {traceResult.trace.sampleDataLoss.toFixed(4)}
+                                </span>
+                                <span className="inspection__stat-label" style={{ marginLeft: 8 }}>model penalty</span>
+                                <span className="inspection__stat-value">
+                                    {traceResult.trace.regularizationPenalty.toFixed(4)}
+                                </span>
                             </div>
                             {traceResult.trace.layers.map((layer) => (
-                                <div key={layer.layerIndex} className="inspection__stat-row">
+                                <div key={layer.layerIndex} className="inspection__stat-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
                                     <span className="inspection__stat-label">Layer {layer.layerIndex + 1}</span>
-                                    <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
+                                    <div style={{
+                                        width: '100%',
+                                        background: 'rgba(0,0,0,0.2)',
+                                        padding: '4px 6px',
+                                        borderRadius: 4,
+                                        fontFamily: 'var(--font-mono)',
+                                        fontSize: 9,
+                                        color: 'var(--text-secondary)',
+                                        overflowX: 'auto',
+                                        whiteSpace: 'nowrap',
+                                        border: '1px solid rgba(255,255,255,0.05)',
+                                    }}>
                                         {layer.activations.map((value) => value.toFixed(3)).join(', ')}
-                                    </span>
+                                    </div>
                                 </div>
                             ))}
+
                         </div>
                     ) : null}
                 </div>
@@ -470,13 +553,19 @@ export const InspectionPanel = memo(function InspectionPanel() {
                     <div className="inspection__layers">
                         <div className="inspection__stat-row">
                             <span className="inspection__stat-label">
-                                Preview from step {backpropResult.step} / epoch {backpropResult.epoch}
+                                Preview from step {backpropResult.model.step} / epoch {backpropResult.model.epoch}
                             </span>
                         </div>
                         <div className="inspection__stat-row">
                             <span className="inspection__stat-label">batch {backpropResult.explanation.batchSize}</span>
                             <span className="inspection__stat-value">
-                                loss {formatBackpropMetric(backpropResult.explanation.loss)}
+                                data loss {formatBackpropMetric(backpropResult.explanation.objective.dataLoss)}
+                            </span>
+                            <span className="inspection__stat-value">
+                                penalty {formatBackpropMetric(backpropResult.explanation.objective.regularizationPenalty)}
+                            </span>
+                            <span className="inspection__stat-value">
+                                training objective {formatBackpropMetric(backpropResult.explanation.objective.totalObjective)}
                             </span>
                             <span className="inspection__stat-value">
                                 lr {formatBackpropMetric(backpropResult.explanation.learningRate)}
@@ -484,11 +573,11 @@ export const InspectionPanel = memo(function InspectionPanel() {
                         </div>
                         <div className="inspection__stat-row">
                             <span className="inspection__stat-label">
-                                gradient norm {formatBackpropMetric(backpropResult.explanation.globalGradientNorm)}
+                                complete objective gradient {formatBackpropMetric(backpropResult.explanation.gradients.totalGradientNorm)}
                             </span>
                             <span className="inspection__stat-value">
-                                {backpropResult.explanation.clipped
-                                    ? `clipped ${formatBackpropMetric(backpropResult.explanation.globalClipScale)}x`
+                                {backpropResult.explanation.gradients.clipScale < 1
+                                    ? `clipped ${formatBackpropMetric(backpropResult.explanation.gradients.clipScale)}x to ${formatBackpropMetric(backpropResult.explanation.gradients.clippedGradientNorm)}`
                                     : 'not clipped'}
                             </span>
                         </div>
@@ -549,7 +638,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
                     <div className="inspection__layers">
                         <div className="inspection__stat-row">
                             <span className="inspection__stat-label">
-                                Probe from step {lossLandscapeResult.step} / epoch {lossLandscapeResult.epoch}
+                                Probe from step {lossLandscapeResult.model.step} / epoch {lossLandscapeResult.model.epoch}
                             </span>
                         </div>
                         <div
@@ -560,11 +649,11 @@ export const InspectionPanel = memo(function InspectionPanel() {
                                 gridTemplateColumns: `repeat(${lossLandscapeResult.probe.gridSize}, minmax(0, 1fr))`,
                             }}
                         >
-                            {lossLandscapeResult.probe.losses.map((loss, index) => {
-                                const intensity = 1 - ((loss - lossLandscapeResult.probe.minLoss) / lossLandscapeSpread);
+                            {lossLandscapeResult.probe.objectives.map((objective, index) => {
+                                const intensity = 1 - ((objective - lossLandscapeResult.probe.minObjective) / lossLandscapeSpread);
                                 return (
                                     <span
-                                        key={`${index}-${loss}`}
+                                        key={`${index}-${objective}`}
                                         className="inspection__loss-cell"
                                         style={{ opacity: 0.28 + Math.max(0, Math.min(1, intensity)) * 0.72 }}
                                         aria-hidden="true"
@@ -573,12 +662,12 @@ export const InspectionPanel = memo(function InspectionPanel() {
                             })}
                         </div>
                         <div className="inspection__histogram-summary">
-                            <strong>Local loss slice</strong>
-                            <span>center {formatBackpropMetric(lossLandscapeResult.probe.centerLoss)}</span>
-                            <span>min {formatBackpropMetric(lossLandscapeResult.probe.minLoss)}</span>
-                            <span>max {formatBackpropMetric(lossLandscapeResult.probe.maxLoss)}</span>
+                            <strong>Training objective on a parameter grid</strong>
+                            <span>center {formatBackpropMetric(lossLandscapeResult.probe.centerObjective)}</span>
+                            <span>min {formatBackpropMetric(lossLandscapeResult.probe.minObjective)}</span>
+                            <span>max {formatBackpropMetric(lossLandscapeResult.probe.maxObjective)}</span>
                             <span>
-                                sampled {lossLandscapeResult.probe.sampleCount} points on a {lossLandscapeResult.probe.gridSize} by {lossLandscapeResult.probe.gridSize} grid
+                                sampled {lossLandscapeResult.probe.sampleCount} training examples across {lossLandscapeResult.probe.parameterPositionCount} parameter positions on a {lossLandscapeResult.probe.gridSize} by {lossLandscapeResult.probe.gridSize} grid
                             </span>
                             <span>
                                 best direction {lossLandscapeResult.probe.axisA.parameter.label} {formatSignedOffset(lossLandscapeResult.probe.best.offsetA)}, {lossLandscapeResult.probe.axisB.parameter.label} {formatSignedOffset(lossLandscapeResult.probe.best.offsetB)}

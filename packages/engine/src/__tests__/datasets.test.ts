@@ -1,12 +1,58 @@
 import { describe, it, expect } from 'vitest';
 import {
+    DatasetGenerationError,
     generateDataset,
+    generateDatasetV2,
     generateThreeClassClusters,
     getDefaultProblemType,
     THREE_CLASS_CLUSTER_DATASET_CONTRACT,
 } from '../datasets.js';
+import {
+    DATASET_IDS,
+    getDatasetContract,
+    REGRESSION_DATASET_IDS,
+} from '../datasetContracts.js';
 import * as Engine from '../index.js';
-import type { DatasetType } from '../types.js';
+import type { DataPoint, DatasetContract, DatasetType } from '../types.js';
+
+function allPoints(split: { train: DataPoint[]; test: DataPoint[] }): DataPoint[] {
+    return [...split.train, ...split.test];
+}
+
+function expectPointsToSatisfyContract(
+    points: readonly DataPoint[],
+    contract: DatasetContract,
+    noise: number,
+): void {
+    expect(points).toHaveLength(1_000);
+
+    for (const point of points) {
+        expect(Number.isFinite(point.x)).toBe(true);
+        expect(Number.isFinite(point.y)).toBe(true);
+        expect(Number.isFinite(point.label)).toBe(true);
+        expect(point.x).toBeGreaterThanOrEqual(contract.inputDomain.x[0]);
+        expect(point.x).toBeLessThanOrEqual(contract.inputDomain.x[1]);
+        expect(point.y).toBeGreaterThanOrEqual(contract.inputDomain.y[0]);
+        expect(point.y).toBeLessThanOrEqual(contract.inputDomain.y[1]);
+
+        switch (contract.targetDomain.kind) {
+            case 'binary':
+                expect(contract.targetDomain.values).toContain(point.label);
+                break;
+            case 'classes':
+                expect(Number.isInteger(point.label)).toBe(true);
+                expect(point.label).toBeGreaterThanOrEqual(0);
+                expect(point.label).toBeLessThan(contract.targetDomain.classCount);
+                break;
+            case 'continuous': {
+                const [minimum, maximum] = contract.targetDomain.boundsForNoise(noise);
+                expect(point.label).toBeGreaterThanOrEqual(minimum);
+                expect(point.label).toBeLessThanOrEqual(maximum);
+                break;
+            }
+        }
+    }
+}
 
 describe('generateDataset', () => {
     const DATASETS: DatasetType[] = [
@@ -139,6 +185,109 @@ describe('generateDataset', () => {
             expect(one.train.length + one.test.length).toBe(1);
             expect(two.train.length + two.test.length).toBe(2);
         });
+    });
+});
+
+describe('generateDatasetV2', () => {
+    it.each(DATASET_IDS)('%s stays inside its declared contract at noise extremes', (id) => {
+        const contract = getDatasetContract(id);
+
+        for (const noise of [contract.noise.minimum, contract.noise.maximum]) {
+            const split = generateDatasetV2({ dataset: id, sampleCount: 1_000, noise, seed: 42 });
+            const points = allPoints(split);
+
+            expectPointsToSatisfyContract(points, contract, noise);
+            if (noise === contract.noise.maximum && contract.noise.meaning === 'coordinate-perturbation') {
+                expect(points.some((point) => (
+                    point.x === contract.inputDomain.x[0]
+                    || point.x === contract.inputDomain.x[1]
+                    || point.y === contract.inputDomain.y[0]
+                    || point.y === contract.inputDomain.y[1]
+                ))).toBe(false);
+            }
+        }
+    });
+
+    it.each(DATASET_IDS)('%s is byte-for-byte deterministic for identical settings', (dataset) => {
+        const request = { dataset, sampleCount: 200, noise: 37, seed: 4_294_967_295 } as const;
+
+        expect(JSON.stringify(generateDatasetV2(request))).toBe(JSON.stringify(generateDatasetV2(request)));
+    });
+
+    it.each(REGRESSION_DATASET_IDS)(
+        '%s keeps ordered coordinates stable when only target noise changes',
+        (dataset) => {
+            const request = { dataset, sampleCount: 1_000, seed: 42, trainFraction: 0.5 } as const;
+            const clean = generateDatasetV2({ ...request, noise: 0 });
+            const noisy = generateDatasetV2({ ...request, noise: 100 });
+            const orderedCoordinates = (split: typeof clean) => ({
+                train: split.train.map(({ x, y }) => [x, y]),
+                test: split.test.map(({ x, y }) => [x, y]),
+            });
+            const orderedTargets = (split: typeof clean) => ({
+                train: split.train.map(({ label }) => label),
+                test: split.test.map(({ label }) => label),
+            });
+
+            expect(orderedCoordinates(noisy)).toEqual(orderedCoordinates(clean));
+            expect(orderedTargets(noisy)).not.toEqual(orderedTargets(clean));
+        },
+    );
+
+    it('rejects invalid settings with a structured failure', () => {
+        const requests = [
+            { dataset: 'circle', sampleCount: 1, noise: 0, seed: 42 },
+            { dataset: 'circle', sampleCount: 1_001, noise: 0, seed: 42 },
+            { dataset: 'circle', sampleCount: 100, noise: -1, seed: 42 },
+            { dataset: 'circle', sampleCount: 100, noise: 101, seed: 42 },
+            { dataset: 'circle', sampleCount: 100, noise: 0, seed: 42.9 },
+            { dataset: 'circle', sampleCount: 100, noise: 0, seed: 42, trainFraction: 0.09 },
+            { dataset: 'circle', sampleCount: 100, noise: 0, seed: 42, trainFraction: 0.91 },
+        ] as const;
+
+        for (const request of requests) {
+            try {
+                generateDatasetV2(request);
+                throw new Error('Expected dataset generation to fail');
+            } catch (error) {
+                expect(error).toBeInstanceOf(DatasetGenerationError);
+                expect(error).toMatchObject({
+                    name: 'DatasetGenerationError',
+                    code: 'invalid-settings',
+                });
+            }
+        }
+    });
+
+    it('computes Checkerboard labels before coordinate perturbation', () => {
+        const points = allPoints(generateDatasetV2({
+            dataset: 'checkerboard',
+            sampleCount: 1_000,
+            noise: 100,
+            seed: 42,
+        }));
+        const labelAtFinalCoordinate = ({ x, y }: DataPoint) => (
+            ((x >= 0 ? 1 : 0) + (y >= 0 ? 1 : 0)) % 2
+        );
+
+        expect(points.some((point) => point.label !== labelAtFinalCoordinate(point))).toBe(true);
+    });
+
+    it('computes Heart labels before coordinate perturbation', () => {
+        const points = allPoints(generateDatasetV2({
+            dataset: 'heart',
+            sampleCount: 1_000,
+            noise: 100,
+            seed: 42,
+        }));
+        const labelAtFinalCoordinate = ({ x, y }: DataPoint) => {
+            const x2 = x * x;
+            const y2 = y * y;
+            const inner = x2 + y2 - 0.6;
+            return inner * inner * inner - x2 * y2 * y < 0 ? 1 : 0;
+        };
+
+        expect(points.some((point) => point.label !== labelAtFinalCoordinate(point))).toBe(true);
     });
 });
 

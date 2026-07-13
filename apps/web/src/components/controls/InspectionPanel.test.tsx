@@ -1,446 +1,423 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { PREPARED_PRESETS, DEFAULT_DEMAND } from '@nn-playground/shared';
 import { InspectionPanel } from './InspectionPanel.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { updateFrameBuffer, resetFrameBuffer } from '../../worker/frameBuffer.ts';
-import {
-    DEFAULT_DATA,
-    DEFAULT_DEMAND,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-} from '@nn-playground/shared';
+import { getFrameVersions, resetFrameBuffer, updateFrameBuffer } from '../../worker/frameBuffer.ts';
+import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
+import type { PredictionTraceResponseV2 } from '../../worker/training.worker.ts';
 
 const workerApi = vi.hoisted(() => ({
-    getPredictionTrace: vi.fn(),
-    getBackpropExplanation: vi.fn(),
-    getLossLandscapeProbe: vi.fn(),
+    getPredictionTraceV2: vi.fn(),
+    getBackpropExplanationV2: vi.fn(),
+    getObjectiveLandscapeV2: vi.fn(),
 }));
 
 vi.mock('../../worker/workerBridge.ts', () => ({
     getWorkerApi: () => workerApi,
 }));
 
-describe('InspectionPanel demand', () => {
+const MODEL = { generationId: 1, revision: 12, step: 12, epoch: 1 } as const;
+const DATASET = {
+    generatorVersion: 1,
+    datasetKey: 'dataset-v2',
+    trainCount: 210,
+    testCount: 90,
+} as const;
+
+function oneLayerPrepared() {
+    const result = PREPARED_PRESETS.find((entry) => entry.id === 'circle-one-layer')?.prepared;
+    if (!result) throw new Error('missing circle-one-layer');
+    return result;
+}
+
+function installCurrentEvidence() {
+    useTrainingStore.setState({
+        latestLiveSignal: {
+            model: MODEL,
+            dataset: DATASET,
+            objectiveKey: 'objective-v2',
+            basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 10, throughStep: 12 },
+            dataLoss: 0.4,
+        },
+        latestEvaluation: null,
+    });
+}
+
+function backpropResponse() {
+    return {
+        runId: 1,
+        model: MODEL,
+        dataset: DATASET,
+        objectiveKey: 'objective-v2',
+        basis: { kind: 'next-mini-batch', sampleCount: 5, populationCount: 210 },
+        explanation: {
+            batchSize: 5,
+            learningRate: 0.03,
+            objective: { dataLoss: 0.12, regularizationPenalty: 0.01, totalObjective: 0.13 },
+            gradients: {
+                dataGradientNorm: 0.004,
+                penaltyGradientNorm: 0.002,
+                totalGradientNorm: 0.006,
+                clippedGradientNorm: 0.006,
+                clipScale: 1,
+            },
+            summary: 'Backprop preview found 1 healthy layer update.',
+            layers: [{
+                layerIndex: 0,
+                meanAbsErrorSignal: 0.012,
+                maxAbsErrorSignal: 0.02,
+                meanAbsGradient: 0.003,
+                maxAbsGradient: 0.01,
+                meanAbsUpdate: 0.0009,
+                maxAbsUpdate: 0.002,
+                meanActivation: 0.4,
+                activationStd: 0.1,
+                status: 'healthy',
+                note: 'The previewed update is in a moderate range.',
+            }],
+        },
+    } as const;
+}
+
+function landscapeResponse() {
+    return {
+        runId: 1,
+        model: MODEL,
+        provenance: {
+            model: MODEL,
+            dataset: DATASET,
+            objectiveKey: 'objective-v2',
+            basis: { kind: 'parameter-grid', sampleCount: 12, parameterPositions: 9 },
+        },
+        probe: {
+            basis: 'training-objective',
+            gridSize: 3,
+            sampleCount: 12,
+            parameterPositionCount: 9,
+            radius: 0.1,
+            axisA: { parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 0, inputIndex: 0, label: 'W1[0,0]' }, offsets: [-0.1, 0, 0.1] },
+            axisB: { parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 1, inputIndex: 0, label: 'W1[1,0]' }, offsets: [-0.1, 0, 0.1] },
+            objectives: [0.62, 0.58, 0.5, 0.55, 0.49, 0.45, 0.53, 0.44, 0.4],
+            centerObjective: 0.49,
+            minObjective: 0.4,
+            maxObjective: 0.62,
+            best: { row: 2, col: 2, objective: 0.4, offsetA: 0.1, offsetB: 0.1 },
+            summary: 'Training-objective surface found best objective 0.4000.',
+        },
+    } as const;
+}
+
+function advanceActiveModel(revision = 13) {
+    useTrainingStore.setState((state) => ({
+        latestLiveSignal: state.latestLiveSignal
+            ? {
+                ...state.latestLiveSignal,
+                model: { ...MODEL, revision, step: revision },
+            }
+            : null,
+    }));
+}
+
+describe('InspectionPanel V2 evidence', () => {
     beforeEach(() => {
-        workerApi.getPredictionTrace.mockReset();
-        workerApi.getBackpropExplanation.mockReset();
-        workerApi.getLossLandscapeProbe.mockReset();
+        Object.values(workerApi).forEach((mock) => mock.mockReset());
+        const prepared = oneLayerPrepared();
         usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
+            access: { status: 'ready', prepared },
+            prepared,
             demand: { ...DEFAULT_DEMAND, needLayerStats: false, needActivationHistograms: false },
         });
         useTrainingStore.setState({
             snapshot: null,
-            frameVersion: 0,
-            activationHistogramsVersion: 0,
             trainPoints: [],
             testPoints: [],
+            latestLiveSignal: null,
+            latestEvaluation: null,
         });
         resetFrameBuffer();
+        useTrainingStore.setState(getFrameVersions());
     });
 
-    afterEach(() => {
-        usePlaygroundStore.setState({
-            demand: { ...DEFAULT_DEMAND, needLayerStats: false, needActivationHistograms: false },
-        });
-        resetFrameBuffer();
-    });
+    afterEach(() => resetFrameBuffer());
 
-    it('requests layer stats and activation histograms only while inspection is mounted', () => {
+    it('requests layer statistics only while mounted', () => {
         const { unmount } = render(<InspectionPanel />);
-
         expect(usePlaygroundStore.getState().demand.needLayerStats).toBe(true);
         expect(usePlaygroundStore.getState().demand.needActivationHistograms).toBe(true);
-
         unmount();
-
         expect(usePlaygroundStore.getState().demand.needLayerStats).toBe(false);
-        expect(usePlaygroundStore.getState().demand.needActivationHistograms).toBe(false);
     });
 
-    it('renders an accessible activation histogram summary from the frame buffer', () => {
-        usePlaygroundStore.setState((state) => ({
-            network: { ...state.network, hiddenLayers: [4] },
-        }));
+    it('labels activation statistics as N of M from artifact provenance', () => {
         updateFrameBuffer({
             layerStats: [
                 { meanActivation: 0.25, activationStd: 0.15, meanAbsWeight: 0.2, meanAbsGradient: 0.01 },
                 { meanActivation: 0.75, activationStd: 0.05, meanAbsWeight: 0.3, meanAbsGradient: 0.02 },
             ],
-            activationHistogramBins: new Float32Array([1, 3, 0, 2, 0, 1, 4, 0]),
-            activationHistogramLayout: {
-                binCount: 4,
-                layers: [
-                    {
-                        layerIndex: 0,
-                        binCount: 4,
-                        binStart: -1,
-                        binWidth: 0.5,
-                        minActivation: -1,
-                        maxActivation: 1,
-                        totalCount: 6,
-                        nearZeroCount: 2,
-                        saturatedCount: 1,
-                    },
-                    {
-                        layerIndex: 1,
-                        binCount: 4,
-                        binStart: 0,
-                        binWidth: 0.25,
-                        minActivation: 0,
-                        maxActivation: 1,
-                        totalCount: 5,
-                        nearZeroCount: 1,
-                        saturatedCount: 4,
-                    },
-                ],
+            layerStatsProvenance: {
+                model: MODEL,
+                dataset: DATASET,
+                objectiveKey: 'objective-v2',
+                basis: { kind: 'bounded-sample', split: 'train', sampleCount: 128, populationCount: 210 },
             },
+            layerStatsGradientRevision: 12,
         });
-        useTrainingStore.setState({
-            activationHistogramsVersion: 1,
-            frameVersion: 1,
-        });
+        useTrainingStore.setState(getFrameVersions());
 
         render(<InspectionPanel />);
-
-        expect(screen.getByRole('region', { name: /activation histogram explorer/i })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: /histogram layer/i })).toHaveValue('0');
-        expect(screen.getAllByText(/Hidden 1 activations/i).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(/33\.3% near zero/i).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(/16\.7% near activation limits/i).length).toBeGreaterThan(0);
-
-        fireEvent.change(screen.getByRole('combobox', { name: /histogram layer/i }), {
-            target: { value: '1' },
-        });
-
-        expect(screen.getAllByText(/Output activations/i).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(/80\.0% near activation limits/i).length).toBeGreaterThan(0);
+        expect(screen.getByText('Activation statistics across 128 of 210 training examples'))
+            .toBeInTheDocument();
     });
 
-    it('requests an on-demand prediction trace for the selected training sample', async () => {
-        workerApi.getPredictionTrace.mockResolvedValue({
+    it('renders sample data loss and model penalty from a current V2 prediction trace', async () => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        workerApi.getPredictionTraceV2.mockResolvedValue({
             runId: 1,
-            step: 12,
+            model: MODEL,
+            dataset: DATASET,
+            objectiveKey: 'objective-v2',
             sample: { source: 'train', index: 0, x: 0.25, y: -0.5, label: 1 },
             trace: {
                 input: [0.25, -0.5],
                 target: [1],
                 output: [0.82],
                 prediction: 0.82,
-                lossContribution: 0.19,
-                layers: [
-                    { layerIndex: 0, preActivations: [0.1, -0.2], activations: [0.1, -0.197] },
-                    { layerIndex: 1, preActivations: [1.5], activations: [0.82] },
-                ],
+                sampleDataLoss: 0.19,
+                regularizationPenalty: 0.03,
+                layers: [{ layerIndex: 0, preActivations: [1.5], activations: [0.82] }],
             },
-        });
-        useTrainingStore.setState({
-            trainPoints: [{ x: 0.25, y: -0.5, label: 1 }],
-            testPoints: [],
         });
 
         render(<InspectionPanel />);
         fireEvent.click(screen.getByRole('button', { name: /trace prediction/i }));
 
-        await waitFor(() => {
-            expect(workerApi.getPredictionTrace).toHaveBeenCalledWith({ source: 'train', index: 0 });
-        });
-        expect(await screen.findByText('0.8200')).toBeInTheDocument();
-        expect(screen.getByText('Output')).toBeInTheDocument();
-        expect(screen.getByText(/Layer 1/i)).toBeInTheDocument();
-        expect(screen.getByText('loss')).toBeInTheDocument();
+        expect(await screen.findByText('sample data loss')).toBeInTheDocument();
         expect(screen.getByText('0.1900')).toBeInTheDocument();
+        expect(screen.getByText('model penalty')).toBeInTheDocument();
+        expect(screen.getByText('0.0300')).toBeInTheDocument();
+        expect(screen.getByText('Trace from training sample 0 · model step 12 · revision 12'))
+            .toBeInTheDocument();
     });
 
-    it('requests and renders a one-shot backprop preview', async () => {
-        workerApi.getBackpropExplanation.mockResolvedValue({
+    it('clears an already-rendered trace when the active model advances', async () => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        workerApi.getPredictionTraceV2.mockResolvedValue({
             runId: 1,
-            step: 7,
-            epoch: 2,
-            explanation: {
-                batchSize: 5,
-                loss: 0.1234,
-                learningRate: 0.03,
-                globalGradientNorm: 0.0042,
-                globalClipScale: 1,
-                clipped: false,
-                summary: 'Backprop preview found 2 healthy layer updates.',
-                layers: [
-                    {
-                        layerIndex: 0,
-                        meanAbsErrorSignal: 0.012,
-                        maxAbsErrorSignal: 0.02,
-                        meanAbsGradient: 0.003,
-                        maxAbsGradient: 0.01,
-                        meanAbsUpdate: 0.0009,
-                        maxAbsUpdate: 0.002,
-                        meanActivation: 0.4,
-                        activationStd: 0.1,
-                        status: 'healthy',
-                        note: 'The previewed update is in a moderate range.',
-                    },
-                    {
-                        layerIndex: 1,
-                        meanAbsErrorSignal: 0.02,
-                        maxAbsErrorSignal: 0.05,
-                        meanAbsGradient: 0.004,
-                        maxAbsGradient: 0.015,
-                        meanAbsUpdate: 0.001,
-                        maxAbsUpdate: 0.004,
-                        meanActivation: 0.6,
-                        activationStd: 0.2,
-                        status: 'healthy',
-                        note: 'The previewed update is in a moderate range.',
-                    },
-                ],
+            model: MODEL,
+            dataset: DATASET,
+            objectiveKey: 'objective-v2',
+            sample: { source: 'train', index: 0, x: 0.25, y: -0.5, label: 1 },
+            trace: {
+                input: [0.25, -0.5],
+                target: [1],
+                output: [0.82],
+                prediction: 0.82,
+                sampleDataLoss: 0.19,
+                regularizationPenalty: 0.03,
+                layers: [{ layerIndex: 0, preActivations: [1.5], activations: [0.82] }],
             },
         });
 
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /trace prediction/i }));
+        expect(await screen.findByText(/Trace from training sample 0/)).toBeInTheDocument();
+
+        await act(async () => {
+            useTrainingStore.setState((state) => ({
+                latestLiveSignal: state.latestLiveSignal
+                    ? { ...state.latestLiveSignal, model: { ...MODEL, revision: 13, step: 13 } }
+                    : null,
+            }));
+        });
+
+        expect(screen.queryByText(/Trace from training sample 0/)).not.toBeInTheDocument();
+        expect(screen.getByText('Trace cleared because the active model changed.'))
+            .toBeInTheDocument();
+    });
+
+    it('clears rendered backprop and landscape artifacts when the active model advances', async () => {
+        installCurrentEvidence();
+        workerApi.getBackpropExplanationV2.mockResolvedValue(backpropResponse());
+        workerApi.getObjectiveLandscapeV2.mockResolvedValue(landscapeResponse());
+        render(<InspectionPanel />);
+
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+        fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
+        expect(await screen.findByText(/Preview from step 12/i)).toBeInTheDocument();
+        expect(await screen.findByText('Training objective on a parameter grid')).toBeInTheDocument();
+
+        await act(async () => advanceActiveModel());
+
+        expect(screen.queryByText(/Preview from step 12/i)).not.toBeInTheDocument();
+        expect(screen.queryByText('Training objective on a parameter grid')).not.toBeInTheDocument();
+    });
+
+    it('shows the complete objective and gradient breakdown for backprop', async () => {
+        installCurrentEvidence();
+        workerApi.getBackpropExplanationV2.mockResolvedValue(backpropResponse());
         render(<InspectionPanel />);
         fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
 
-        await waitFor(() => {
-            expect(workerApi.getBackpropExplanation).toHaveBeenCalledTimes(1);
-        });
-        expect(await screen.findByText(/Preview from step 7 \/ epoch 2/i)).toBeInTheDocument();
-        expect(screen.getByRole('region', { name: /slow-motion backprop preview/i })).toBeInTheDocument();
-        expect(screen.getByRole('status', { name: /backprop preview status/i })).toHaveTextContent(
-            /Backprop preview found 2 healthy layer updates/i,
-        );
-        expect(screen.getByRole('list', { name: /backprop layer summaries/i })).toBeInTheDocument();
-        expect(screen.getByText(/batch 5/i)).toBeInTheDocument();
-        expect(screen.getByText(/gradient norm 0\.004/i)).toBeInTheDocument();
-        expect(screen.getByText(/Hidden 1/i)).toBeInTheDocument();
-        expect(screen.getAllByText(/healthy/i).length).toBeGreaterThan(0);
-        expect(screen.getAllByText(/mean update 0\.001/i).length).toBeGreaterThan(0);
+        expect(await screen.findByText(/Preview from step 12 \/ epoch 1/i)).toBeInTheDocument();
+        expect(screen.getByText(/data loss 0\.120/i)).toBeInTheDocument();
+        expect(screen.getByText(/penalty 0\.010/i)).toBeInTheDocument();
+        expect(screen.getByText(/training objective 0\.130/i)).toBeInTheDocument();
+        expect(screen.getByText(/complete objective gradient 0\.006/i)).toBeInTheDocument();
     });
 
-    it('activates backprop preview from the keyboard', async () => {
-        workerApi.getBackpropExplanation.mockResolvedValue({
-            runId: 1,
-            step: 0,
-            epoch: 0,
-            explanation: {
-                batchSize: 1,
-                loss: 0,
-                learningRate: 0.03,
-                globalGradientNorm: 0,
-                globalClipScale: 1,
-                clipped: false,
-                summary: 'Backprop preview found 0 healthy layer updates.',
-                layers: [],
-            },
-        });
+    it('states the training-objective sample and parameter-grid basis', async () => {
+        installCurrentEvidence();
+        workerApi.getObjectiveLandscapeV2.mockResolvedValue(landscapeResponse());
         render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
 
-        const button = screen.getByRole('button', { name: /preview backprop/i });
-        button.focus();
-        expect(button).toHaveFocus();
-        await userEvent.keyboard('{Enter}');
-
-        await waitFor(() => {
-            expect(workerApi.getBackpropExplanation).toHaveBeenCalledTimes(1);
-        });
+        expect(await screen.findByText('Training objective on a parameter grid')).toBeInTheDocument();
+        expect(screen.getByText(/sampled 12 training examples across 9 parameter positions/i))
+            .toBeInTheDocument();
+        expect(screen.getByRole('img', { name: /Training-objective parameter grid/i }))
+            .toBeInTheDocument();
     });
 
-    it('guards duplicate backprop requests while loading', async () => {
-        let resolvePreview: (value: unknown) => void = () => {};
-        workerApi.getBackpropExplanation.mockReturnValue(new Promise((resolve) => {
-            resolvePreview = resolve;
-        }));
-
+    it('drops a diagnostic response when the model revision changed while it was pending', async () => {
+        installCurrentEvidence();
+        let resolve!: (value: ReturnType<typeof backpropResponse>) => void;
+        workerApi.getBackpropExplanationV2.mockReturnValue(new Promise((next) => { resolve = next; }));
         render(<InspectionPanel />);
-        const button = screen.getByRole('button', { name: /preview backprop/i });
-
-        fireEvent.click(button);
-        fireEvent.click(button);
-
-        expect(workerApi.getBackpropExplanation).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('button', { name: /previewing backprop/i })).toBeDisabled();
-
-        resolvePreview({
-            runId: 1,
-            step: 0,
-            epoch: 0,
-            explanation: {
-                batchSize: 1,
-                loss: 0,
-                learningRate: 0.03,
-                globalGradientNorm: 0,
-                globalClipScale: 1,
-                clipped: false,
-                summary: 'Backprop preview found 0 healthy layer updates.',
-                layers: [],
-            },
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+        await act(async () => {
+            useTrainingStore.setState((state) => ({
+                latestLiveSignal: state.latestLiveSignal
+                    ? { ...state.latestLiveSignal, model: { ...MODEL, revision: 13, step: 13 } }
+                    : null,
+            }));
+            resolve(backpropResponse());
         });
 
-        await waitFor(() => {
-            expect(screen.getByRole('button', { name: /preview backprop/i })).not.toBeDisabled();
-        });
+        await waitFor(() => expect(workerApi.getBackpropExplanationV2).toHaveBeenCalledTimes(1));
+        expect(screen.queryByText(/Preview from step 12/i)).not.toBeInTheDocument();
     });
 
-    it('renders backprop worker errors accessibly', async () => {
-        workerApi.getBackpropExplanation.mockRejectedValue(
-            new Error('Backprop preview is unavailable at the epoch shuffle boundary; step once before previewing.'),
-        );
-
+    it('binds a diagnostic response to the model that originated the request', async () => {
+        installCurrentEvidence();
+        let resolve!: (value: ReturnType<typeof backpropResponse>) => void;
+        workerApi.getBackpropExplanationV2.mockReturnValue(new Promise((next) => { resolve = next; }));
         render(<InspectionPanel />);
         fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
 
-        expect(await screen.findByRole('status', { name: /backprop preview status/i })).toHaveTextContent(
-            /Backprop preview failed: Backprop preview is unavailable at the epoch shuffle boundary/i,
-        );
-    });
-
-    it('requests and renders a one-shot loss landscape probe', async () => {
-        workerApi.getLossLandscapeProbe.mockResolvedValue({
-            runId: 2,
-            step: 9,
-            epoch: 1,
-            probe: {
-                gridSize: 3,
-                sampleCount: 12,
-                radius: 0.1,
-                axisA: {
-                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 0, inputIndex: 0, label: 'W1[0,0]' },
-                    offsets: [-0.1, 0, 0.1],
-                },
-                axisB: {
-                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 1, inputIndex: 0, label: 'W1[1,0]' },
-                    offsets: [-0.1, 0, 0.1],
-                },
-                losses: [0.62, 0.58, 0.5, 0.55, 0.49, 0.45, 0.53, 0.44, 0.4],
-                centerLoss: 0.49,
-                minLoss: 0.4,
-                maxLoss: 0.62,
-                best: { row: 2, col: 2, loss: 0.4, offsetA: 0.1, offsetB: 0.1 },
-                summary: 'Loss surface probe found best loss 0.4000 near W1[0,0] 0.100 and W1[1,0] 0.100.',
-            },
+        await act(async () => {
+            advanceActiveModel();
+            resolve({
+                ...backpropResponse(),
+                model: { ...MODEL, revision: 13, step: 13 },
+            });
         });
 
+        expect(screen.queryByText(/Preview from step 13/i)).not.toBeInTheDocument();
+    });
+
+    it('drops a stale prediction trace completion after the active model advances', async () => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        let resolve!: (value: PredictionTraceResponseV2) => void;
+        workerApi.getPredictionTraceV2.mockReturnValue(new Promise((next) => { resolve = next; }));
+        render(<InspectionPanel />);
+        fireEvent.click(screen.getByRole('button', { name: /trace prediction/i }));
+
+        await act(async () => {
+            advanceActiveModel();
+            resolve({
+                runId: 1,
+                model: MODEL,
+                dataset: DATASET,
+                objectiveKey: 'objective-v2',
+                sample: { source: 'train', index: 0, x: 0.25, y: -0.5, label: 1 },
+                trace: {
+                    input: [0.25, -0.5],
+                    target: [1],
+                    output: [0.82],
+                    prediction: 0.82,
+                    sampleDataLoss: 0.19,
+                    regularizationPenalty: 0.03,
+                    layers: [{ layerIndex: 0, preActivations: [1.5], activations: [0.82] }],
+                },
+            });
+        });
+
+        expect(screen.queryByText(/Trace from training sample 0/i)).not.toBeInTheDocument();
+    });
+
+    it('drops a stale landscape completion after the active model advances', async () => {
+        installCurrentEvidence();
+        let resolve!: (value: ReturnType<typeof landscapeResponse>) => void;
+        workerApi.getObjectiveLandscapeV2.mockReturnValue(new Promise((next) => { resolve = next; }));
         render(<InspectionPanel />);
         fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
 
-        await waitFor(() => {
-            expect(workerApi.getLossLandscapeProbe).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            advanceActiveModel();
+            resolve(landscapeResponse());
         });
-        expect(screen.getByRole('region', { name: /loss landscape probe/i })).toBeInTheDocument();
-        expect(await screen.findByRole('img', { name: /local 2d loss slice/i })).toBeInTheDocument();
-        expect(screen.getByRole('status', { name: /loss landscape probe status/i })).toHaveTextContent(
-            /best loss 0\.4000/i,
-        );
-        expect(screen.getByText(/Probe from step 9 \/ epoch 1/i)).toBeInTheDocument();
-        expect(screen.getByText(/center 0\.490/i)).toBeInTheDocument();
-        expect(screen.getByText(/min 0\.400/i)).toBeInTheDocument();
-        expect(screen.getByText(/max 0\.620/i)).toBeInTheDocument();
-        expect(screen.getByText(/sampled 12 points on a 3 by 3 grid/i)).toBeInTheDocument();
-        expect(screen.getByText(/best direction W1\[0,0\] \+0\.100, W1\[1,0\] \+0\.100/i)).toBeInTheDocument();
+
+        expect(screen.queryByText('Training objective on a parameter grid')).not.toBeInTheDocument();
     });
 
-    it('activates loss landscape probing from the keyboard', async () => {
-        workerApi.getLossLandscapeProbe.mockResolvedValue({
-            runId: 1,
-            step: 0,
-            epoch: 0,
-            probe: {
-                gridSize: 3,
-                sampleCount: 1,
-                radius: 0.1,
-                axisA: {
-                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 0, inputIndex: 0, label: 'W1[0,0]' },
-                    offsets: [-0.1, 0, 0.1],
-                },
-                axisB: {
-                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 1, inputIndex: 0, label: 'W1[1,0]' },
-                    offsets: [-0.1, 0, 0.1],
-                },
-                losses: [1, 1, 1, 1, 0.9, 1, 1, 1, 1],
-                centerLoss: 0.9,
-                minLoss: 0.9,
-                maxLoss: 1,
-                best: { row: 1, col: 1, loss: 0.9, offsetA: 0, offsetB: 0 },
-                summary: 'Loss surface probe found best loss 0.9000 at the current weights.',
-            },
-        });
-        render(<InspectionPanel />);
-
-        const button = screen.getByRole('button', { name: /probe loss surface/i });
-        button.focus();
-        expect(button).toHaveFocus();
-        await userEvent.keyboard('{Enter}');
-
-        await waitFor(() => {
-            expect(workerApi.getLossLandscapeProbe).toHaveBeenCalledTimes(1);
-        });
-    });
-
-    it('guards duplicate loss landscape requests while loading', async () => {
-        let resolveProbe: (value: unknown) => void = () => {};
-        workerApi.getLossLandscapeProbe.mockReturnValue(new Promise((resolve) => {
-            resolveProbe = resolve;
+    it.each([
+        ['prediction trace', 'getPredictionTraceV2', /trace prediction/i, /Trace failed:/i],
+        ['backprop', 'getBackpropExplanationV2', /preview backprop/i, /Backprop preview failed:/i],
+        ['landscape', 'getObjectiveLandscapeV2', /probe loss surface/i, /Loss landscape probe failed:/i],
+    ] as const)('drops a stale %s failure after the active model advances', async (
+        _label,
+        method,
+        buttonName,
+        failureText,
+    ) => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        let reject!: (reason: Error) => void;
+        workerApi[method].mockReturnValue(new Promise((_resolve, nextReject) => {
+            reject = nextReject;
         }));
-
         render(<InspectionPanel />);
-        const button = screen.getByRole('button', { name: /probe loss surface/i });
+        fireEvent.click(screen.getByRole('button', { name: buttonName }));
 
-        fireEvent.click(button);
-        fireEvent.click(button);
+        await act(async () => {
+            advanceActiveModel();
+            reject(new Error('stale diagnostic failure'));
+            await Promise.resolve();
+        });
 
-        expect(workerApi.getLossLandscapeProbe).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('button', { name: /probing loss surface/i })).toBeDisabled();
+        expect(screen.queryByText(failureText)).not.toBeInTheDocument();
+    });
 
-        resolveProbe({
-            runId: 1,
-            step: 0,
-            epoch: 0,
-            probe: {
-                gridSize: 3,
-                sampleCount: 1,
-                radius: 0.1,
-                axisA: {
-                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 0, inputIndex: 0, label: 'W1[0,0]' },
-                    offsets: [-0.1, 0, 0.1],
-                },
-                axisB: {
-                    parameter: { kind: 'weight', layerIndex: 0, neuronIndex: 1, inputIndex: 0, label: 'W1[1,0]' },
-                    offsets: [-0.1, 0, 0.1],
-                },
-                losses: [1, 1, 1, 1, 0.9, 1, 1, 1, 1],
-                centerLoss: 0.9,
-                minLoss: 0.9,
-                maxLoss: 1,
-                best: { row: 1, col: 1, loss: 0.9, offsetA: 0, offsetB: 0 },
-                summary: 'Loss surface probe found best loss 0.9000 at the current weights.',
+    it('uses the scientific selector when a newer evaluation supersedes the live signal', async () => {
+        const fixtures = await createScientificTrustFixtures();
+        installCurrentEvidence();
+        useTrainingStore.setState((state) => ({
+            latestLiveSignal: state.latestLiveSignal,
+            latestEvaluation: {
+                ...fixtures.evaluation,
+                model: { ...MODEL, revision: 13, step: 13 },
             },
+        }));
+        workerApi.getBackpropExplanationV2.mockResolvedValue({
+            ...backpropResponse(),
+            model: { ...MODEL, revision: 13, step: 13 },
         });
-
-        await waitFor(() => {
-            expect(screen.getByRole('button', { name: /probe loss surface/i })).not.toBeDisabled();
-        });
-    });
-
-    it('renders loss landscape worker errors accessibly', async () => {
-        workerApi.getLossLandscapeProbe.mockRejectedValue(new Error('Loss landscape probe needs at least two trainable weights.'));
-
-        render(<InspectionPanel />);
-        fireEvent.click(screen.getByRole('button', { name: /probe loss surface/i }));
-
-        expect(await screen.findByRole('status', { name: /loss landscape probe status/i })).toHaveTextContent(
-            /Loss landscape probe failed: Loss landscape probe needs at least two trainable weights/i,
-        );
-    });
-
-    it('shows a deterministic empty state when no selected sample exists', () => {
         render(<InspectionPanel />);
 
-        expect(screen.getByText(/No training samples are available yet/i)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /preview backprop/i }));
+
+        expect(await screen.findByText(/Preview from step 13/i)).toBeInTheDocument();
+    });
+
+    it('keeps trace unavailable without a target-bearing sample', () => {
+        installCurrentEvidence();
+        render(<InspectionPanel />);
         expect(screen.getByRole('button', { name: /trace prediction/i })).toBeDisabled();
+        expect(screen.getByRole('combobox', { name: 'Sample' })).not.toHaveTextContent('Custom');
     });
 });

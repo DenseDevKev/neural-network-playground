@@ -376,12 +376,14 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     const overlayImageDataRef = useRef<ImageData | null>(null);
     const lastGridSizeRef = useRef(0);
 
-    const snapshot = useTrainingStore((s) => s.snapshot);
     const frameVersion = useTrainingStore((s) => s.frameVersion);
     const multiclassBoundaryVersion = useTrainingStore((s) => s.multiclassBoundaryVersion);
-    const problemType = usePlaygroundStore((s) => s.data.problemType);
-    const outputSize = usePlaygroundStore((s) => s.network.outputSize);
-    const outputActivation = usePlaygroundStore((s) => s.network.outputActivation);
+    const task = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.compiled.task : null
+    ));
+    const problemType = task?.kind === 'regression' ? 'regression' : 'classification';
+    const outputSize = task?.outputSize ?? 1;
+    const outputActivation = task?.outputActivation ?? 'sigmoid';
     const supportsMulticlassBoundary =
         problemType === 'classification' &&
         outputSize === 3 &&
@@ -448,8 +450,8 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         // Draw heatmap when grid data exists
         const frameBuffer = getFrameBuffer();
         const currentMulticlassBoundary = supportsMulticlassBoundary ? getMulticlassBoundaryFrame() : null;
-        const grid = frameBuffer.outputGrid ?? snapshot?.outputGrid;
-        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : snapshot?.gridSize ?? 0;
+        const grid = frameBuffer.outputGrid;
+        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : 0;
 
         if (currentMulticlassBoundary) {
             const { classGrid, confidenceGrid, layout } = currentMulticlassBoundary;
@@ -523,7 +525,6 @@ export const DecisionBoundary = memo(function DecisionBoundary({
             drawPoints(ctx, testPoints, logicalW, logicalH, true, Boolean(currentMulticlassBoundary));
         }
     }, [
-        snapshot,
         frameVersion,
         multiclassBoundaryVersion,
         trainPoints,

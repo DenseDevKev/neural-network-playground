@@ -1,8 +1,8 @@
-import { useLayoutStore, type LeftTabId, type RightTabId } from '../store/useLayoutStore.ts';
+import { useLayoutStore, type EvidenceViewId, type RecipeSectionId } from '../store/useLayoutStore.ts';
 import type { RelatedPanelId } from './trainingExplanations.ts';
 
-const LEFT_TARGETS = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'] as const satisfies readonly LeftTabId[];
-const RIGHT_TARGETS = ['boundary', 'loss', 'confusion', 'inspection', 'code', 'history'] as const satisfies readonly RightTabId[];
+const LEFT_TARGETS = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'] as const satisfies readonly RecipeSectionId[];
+const RIGHT_TARGETS = ['boundary', 'loss', 'confusion', 'inspection', 'code', 'history'] as const satisfies readonly EvidenceViewId[];
 
 type ScheduleFocus = (focus: () => void) => void;
 
@@ -11,11 +11,11 @@ interface FocusExplanationActionOptions {
     scheduleFocus?: ScheduleFocus;
 }
 
-function isLeftTarget(panelId: RelatedPanelId): panelId is LeftTabId {
+function isLeftTarget(panelId: RelatedPanelId): panelId is RecipeSectionId {
     return (LEFT_TARGETS as readonly string[]).includes(panelId);
 }
 
-function isRightTarget(panelId: RelatedPanelId): panelId is RightTabId {
+function isRightTarget(panelId: RelatedPanelId): panelId is EvidenceViewId {
     return (RIGHT_TARGETS as readonly string[]).includes(panelId);
 }
 
@@ -52,15 +52,15 @@ export function focusExplanationActionTarget(
     const scheduleFocus = getScheduler(options.scheduleFocus);
 
     if (isLeftTarget(panelId)) {
-        state.setActiveTabLeft(panelId);
-        if (state.layout === 'split') state.setPhase('build');
+        state.setView('build');
+        state.setActiveRecipeSection(panelId);
         scheduleFocus(() => focusPanelTarget(root, 'left', panelId));
         return;
     }
 
     if (isRightTarget(panelId)) {
-        state.setActiveTabRight(panelId);
-        if (state.layout === 'split') state.setPhase('run');
+        state.setView('run');
+        state.setActiveEvidenceView(panelId);
         scheduleFocus(() => focusPanelTarget(root, 'right', panelId));
     }
 }

@@ -1,6 +1,7 @@
 // ── Training Controls ──
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useState } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { getTrainingLifecycleUi } from './trainingLifecycle.ts';
@@ -16,15 +17,22 @@ const SPEED_OPTIONS: { value: number; label: string }[] = [
     { value: 25, label: '25' },
     { value: 50, label: '50' },
 ];
+const RESTORE_GUARANTEE = 'Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.';
 
 export const TrainingControls = memo(function TrainingControls({ training }: Props) {
     const status = useTrainingStore((s) => s.status);
-    const snapshot = useTrainingStore((s) => s.snapshot);
+    const currentModel = useTrainingStore((s) => (
+        selectScientificEvidence({
+            latestLiveSignal: s.latestLiveSignal,
+            latestEvaluation: s.latestEvaluation,
+        }).currentModel
+    ));
     const stepsPerFrame = useTrainingStore((s) => s.stepsPerFrame);
     const setStepsPerFrame = useTrainingStore((s) => s.setStepsPerFrame);
     const pauseReason = useTrainingStore((s) => s.pauseReason);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const checkpointTimeline = useTrainingStore((s) => s.checkpointTimeline);
+    const restoreGuaranteeId = useId();
     const isRunning = status === 'running';
     const lifecycle = getTrainingLifecycleUi({ status, pauseReason, pendingConfigSource });
     const blockConfigAction = lifecycle.isBlocked;
@@ -157,18 +165,34 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     <span className="training-bar__timeline-meta">
                         <strong>{selectedCheckpoint.label}</strong>
                         <span>
-                            train {selectedCheckpoint.trainLoss.toFixed(3)} / test {selectedCheckpoint.testLoss.toFixed(3)}
+                            train {selectedCheckpoint.trainDataLoss.toFixed(3)} / test {selectedCheckpoint.testDataLoss.toFixed(3)}
                         </span>
                     </span>
-                    <button
-                        type="button"
-                        className="btn btn--ghost btn--control training-bar__timeline-restore"
-                        onClick={() => void training.restoreCheckpoint(selectedCheckpoint.id)}
-                        aria-label={`Restore checkpoint ${selectedCheckpoint.label}`}
-                        disabled={checkpointControlsDisabled}
+                    <Tooltip
+                        content={(
+                            <span>
+                                <span>Restore in-session parameters and optimizer state</span>
+                                <br />
+                                <span>
+                                    {RESTORE_GUARANTEE}
+                                </span>
+                            </span>
+                        )}
                     >
-                        Restore
-                    </button>
+                        <button
+                            type="button"
+                            className="btn btn--ghost btn--control training-bar__timeline-restore"
+                            onClick={() => void training.restoreCheckpoint(selectedCheckpoint.id)}
+                            aria-label={`Restore checkpoint ${selectedCheckpoint.label}`}
+                            aria-describedby={restoreGuaranteeId}
+                            disabled={checkpointControlsDisabled}
+                        >
+                            Restore
+                        </button>
+                    </Tooltip>
+                    <span id={restoreGuaranteeId} className="sr-only">
+                        {RESTORE_GUARANTEE}
+                    </span>
                 </div>
             )}
 
@@ -184,10 +208,10 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         {lifecycle.statusText}
                     </span>
                 )}
-                {snapshot && (
+                {currentModel && (
                     <>
-                        <span>Step {snapshot.step.toLocaleString()}</span>
-                        <span>Epoch {snapshot.epoch}</span>
+                        <span>Step {currentModel.step.toLocaleString()}</span>
+                        <span>Epoch {currentModel.epoch}</span>
                     </>
                 )}
             </div>

@@ -10,6 +10,9 @@ import { Tooltip } from '../common/Tooltip.tsx';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 import { unflattenBiases, unflattenWeights } from '../../worker/frameBufferLayout.ts';
 import { useTimedState } from '../../hooks/useTimedState.ts';
+import type { TrainingConfig } from '@nn-playground/engine';
+import type { ValidatedStandardExperimentRecipeV2 } from '@nn-playground/shared';
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 
 const TABS: { id: CodeExportTab; label: string }[] = [
     { id: 'pseudocode', label: 'Pseudocode' },
@@ -17,43 +20,116 @@ const TABS: { id: CodeExportTab; label: string }[] = [
     { id: 'tfjs', label: 'TF.js' },
 ];
 
+function toCodeExportTraining(
+    recipe: ValidatedStandardExperimentRecipeV2,
+): TrainingConfig {
+    const optimizer = recipe.training.optimizer;
+    const dataLoss = recipe.objective.dataLoss;
+    const penalty = recipe.objective.penalty;
+    const clipping = recipe.training.gradientClipping;
+    const schedule = recipe.training.schedule;
+    return {
+        learningRate: recipe.training.learningRate,
+        batchSize: recipe.training.batchSize,
+        lossType: dataLoss.kind === 'binary-cross-entropy-with-logits'
+            ? 'crossEntropy'
+            : dataLoss.kind === 'categorical-cross-entropy-with-logits'
+                ? 'categoricalCrossEntropy'
+                : dataLoss.kind === 'mean-squared-error'
+                    ? 'mse'
+                    : 'huber',
+        optimizer: optimizer.kind === 'sgd-momentum' ? 'sgdMomentum' : optimizer.kind,
+        momentum: optimizer.kind === 'sgd-momentum' ? optimizer.momentum : 0.9,
+        regularization: penalty.kind,
+        regularizationRate: penalty.kind === 'none' ? 0 : penalty.coefficient,
+        gradientClip: clipping.kind === 'none' ? null : clipping.maximumNorm,
+        ...(optimizer.kind === 'adam' ? {
+            adamBeta1: optimizer.beta1,
+            adamBeta2: optimizer.beta2,
+            adamEps: optimizer.epsilon,
+        } : {}),
+        ...(dataLoss.kind === 'huber' ? { huberDelta: dataLoss.delta } : {}),
+        ...(schedule.kind === 'step' ? {
+            lrSchedule: {
+                type: 'step' as const,
+                stepSize: schedule.interval,
+                gamma: schedule.gamma,
+            },
+        } : schedule.kind === 'cosine' ? {
+            lrSchedule: {
+                type: 'cosine' as const,
+                totalSteps: schedule.totalSteps,
+                minLr: schedule.minimumRate,
+            },
+        } : {}),
+    };
+}
+
 export const CodeExportPanel = memo(function CodeExportPanel() {
     const activeTab = useLayoutStore((s) => s.codeExportTab);
     const setActiveTab = useLayoutStore((s) => s.setCodeExportTab);
     const [copied, setCopied] = useTimedState(false, 2000);
     const [copyError, setCopyError] = useTimedState<string | null>(null, 2000);
 
-    const network = usePlaygroundStore((s) => s.network);
-    const training = usePlaygroundStore((s) => s.training);
-    const features = usePlaygroundStore((s) => s.features);
-    const hasSnapshot = useTrainingStore((s) => s.snapshot !== null);
+    const prepared = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared : null
+    ));
+    const trainedRecipeFingerprint = useTrainingStore((s) => s.trainedRecipeFingerprint);
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
     const paramsVersion = useTrainingStore((s) => s.paramsVersion);
+    const evidence = useMemo(
+        () => selectScientificEvidence({ latestLiveSignal, latestEvaluation }),
+        [latestEvaluation, latestLiveSignal],
+    );
 
     const exportSnapshot = useMemo(() => {
-        // These store selectors intentionally drive this mutable frame-buffer read.
-        void hasSnapshot;
+        // This version selector intentionally drives the mutable frame-buffer read.
         void paramsVersion;
-
-        const snapshot = useTrainingStore.getState().snapshot;
-        if (!snapshot) return null;
+        if (!prepared
+            || !evidence.currentModel
+            || trainedRecipeFingerprint === null
+            || trainedRecipeFingerprint !== prepared.identities.recipeFingerprint) {
+            return null;
+        }
 
         const frameBuffer = getFrameBuffer();
-        if (frameBuffer.weights && frameBuffer.biases && frameBuffer.weightLayout) {
+        const parameterProvenance = frameBuffer.parameterProvenance;
+        if (frameBuffer.weights
+            && frameBuffer.biases
+            && frameBuffer.weightLayout
+            && parameterProvenance
+            && parameterProvenance.recipeFingerprint
+                === prepared.identities.recipeFingerprint
+            && parameterProvenance.recipeFingerprint === trainedRecipeFingerprint
+            && parameterProvenance.model.generationId
+                === evidence.currentModel.generationId) {
+            const expectedLayerSizes = [
+                prepared.compiled.network.inputSize,
+                ...prepared.compiled.network.hiddenLayers,
+                prepared.compiled.task.outputSize,
+            ];
+            if (frameBuffer.weightLayout.layerSizes.length !== expectedLayerSizes.length
+                || frameBuffer.weightLayout.layerSizes.some((size, index) => (
+                    size !== expectedLayerSizes[index]
+                ))) {
+                return null;
+            }
             return {
-                ...snapshot,
+                step: parameterProvenance.model.step,
                 weights: unflattenWeights(frameBuffer.weights, frameBuffer.weightLayout.layerSizes),
                 biases: unflattenBiases(frameBuffer.biases, frameBuffer.weightLayout.layerSizes),
             };
         }
 
-        return snapshot;
-    }, [hasSnapshot, paramsVersion]);
+        return null;
+    }, [evidence.currentModel, paramsVersion, prepared, trainedRecipeFingerprint]);
 
     const code = useMemo(() => {
-        const config = {
-            ...network,
-            inputSize: Object.values(features).filter(Boolean).length,
-        };
+        if (!prepared) return '# No compatible version-2 experiment is active.';
+        const config = prepared.compiled.network;
+        const training = toCodeExportTraining(prepared.document.recipe);
+        const features = prepared.compiled.features;
         switch (activeTab) {
             case 'pseudocode':
                 return generatePseudocode(config, training, features, exportSnapshot);
@@ -62,7 +138,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
             case 'tfjs':
                 return generateTFJS(config, training, features, exportSnapshot);
         }
-    }, [activeTab, network, training, features, exportSnapshot]);
+    }, [activeTab, exportSnapshot, prepared]);
 
     const handleCopy = useCallback(async () => {
         try {

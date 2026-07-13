@@ -6,8 +6,14 @@ import {
     resetFrameBuffer,
     updateFrameBuffer,
 } from '../../worker/frameBuffer.ts';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { PREPARED_PRESETS } from '@nn-playground/shared';
+import {
+    installPreparedForTest,
+    updateCompiledForTest,
+} from '../../test/playgroundStoreTestUtils.ts';
+
+const BASE_PREPARED = PREPARED_PRESETS.find((entry) => entry.id === 'single-neuron')!.prepared;
 
 describe('NetworkGraphSVG', () => {
     const originalResizeObserver = window.ResizeObserver;
@@ -43,13 +49,11 @@ describe('NetworkGraphSVG', () => {
             });
             useTrainingStore.getState().setFrameVersions(getFrameVersions());
         });
-        usePlaygroundStore.setState({
-            network: {
-                ...usePlaygroundStore.getState().network,
-                hiddenLayers: [2],
-                activation: 'tanh',
-            },
-        });
+        installPreparedForTest(BASE_PREPARED);
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [2], activation: 'tanh' },
+        }));
     });
 
     afterEach(() => {

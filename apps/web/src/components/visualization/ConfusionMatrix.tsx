@@ -1,521 +1,74 @@
-// ── Confusion Matrix Component ──
-import { Fragment, memo, useMemo } from 'react';
+import { Fragment, memo } from 'react';
+import type {
+    ConfusionMatrixData,
+    MulticlassConfusionMatrixData,
+} from '@nn-playground/engine';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
-import { getActiveFeatures, transformPoint } from '@nn-playground/engine';
-import type {
-    DataPoint,
-    FeatureFlags,
-    MulticlassConfusionMatrixData,
-    NetworkConfig,
-} from '@nn-playground/engine';
-import { getFrameBuffer } from '../../worker/frameBuffer.ts';
 
-const MULTICLASS_LABELS = [0, 1, 2] as const;
-
-interface MulticlassConfusionReadout {
-    matrix: number[][];
-    rowTotals: number[];
-    columnTotals: number[];
-    total: number;
-    correct: number;
-}
-
-interface FrameNetworkParams {
-    weights: number[][][];
-    biases: number[][];
+function formatRatio(numerator: number, denominator: number): string {
+    return denominator > 0 ? `${((numerator / denominator) * 100).toFixed(1)}%` : '0.0%';
 }
 
 function formatPercent(value: number, total: number): string {
-    if (total === 0) return '0.0%';
-    return `${((value / total) * 100).toFixed(1)}%`;
+    return formatRatio(value, total);
 }
 
-function formatRatio(numerator: number, denominator: number): string {
-    if (denominator === 0) return '0.0%';
-    return `${((numerator / denominator) * 100).toFixed(1)}%`;
+function isMulticlass(
+    matrix: ConfusionMatrixData | MulticlassConfusionMatrixData,
+): matrix is MulticlassConfusionMatrixData {
+    return 'classCount' in matrix;
 }
 
-function formatSampleCount(value: number): string {
-    return `${value} test sample${value === 1 ? '' : 's'}`;
+function ProvenanceCaption({
+    evaluationId,
+    step,
+    sampleCount,
+}: {
+    evaluationId: number;
+    step: number;
+    sampleCount: number;
+}) {
+    return (
+        <p className="cm-note">
+            {`Evaluation ${evaluationId} · model step ${step.toLocaleString()} · all ${sampleCount.toLocaleString()} test samples`}
+        </p>
+    );
 }
 
-function readMulticlassConfusionMatrixData(
-    data: MulticlassConfusionMatrixData,
-): MulticlassConfusionReadout {
-    const { counts } = data;
-    const matrix = [
-        [counts[0], counts[1], counts[2]],
-        [counts[3], counts[4], counts[5]],
-        [counts[6], counts[7], counts[8]],
-    ];
-    const rowTotals = matrix.map((row) => row.reduce((sum, value) => sum + value, 0));
-    const columnTotals = MULTICLASS_LABELS.map((predicted) => (
-        matrix.reduce((sum, row) => sum + row[predicted], 0)
-    ));
-    const total = rowTotals.reduce((sum, value) => sum + value, 0);
-    const correct = counts[0] + counts[4] + counts[8];
+function BinaryMatrix({
+    matrix,
+    evaluationId,
+    step,
+    sampleCount,
+}: {
+    matrix: ConfusionMatrixData;
+    evaluationId: number;
+    step: number;
+    sampleCount: number;
+}) {
+    const total = matrix.tp + matrix.tn + matrix.fp + matrix.fn;
+    const actual0Total = matrix.tn + matrix.fp;
+    const actual1Total = matrix.fn + matrix.tp;
+    const predicted0Total = matrix.tn + matrix.fn;
+    const predicted1Total = matrix.fp + matrix.tp;
 
-    return { matrix, rowTotals, columnTotals, total, correct };
-}
-
-function hasNonBinaryLabels(points: DataPoint[]): boolean {
-    return points.some((point) => {
-        const { label } = point;
-        return typeof label === 'number' && label !== 0 && label !== 1;
-    });
-}
-
-function argmax(values: ArrayLike<number>): number {
-    let best = 0;
-    for (let i = 1; i < values.length; i++) {
-        if (values[i] > values[best]) best = i;
-    }
-    return best;
-}
-
-function sameLayerSizes(a: readonly number[], b: readonly number[]): boolean {
-    return a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
-function stableSigmoid(x: number): number {
-    if (x >= 0) {
-        return 1 / (1 + Math.exp(-x));
-    }
-    const ex = Math.exp(x);
-    return ex / (1 + ex);
-}
-
-function stableSoftplus(x: number): number {
-    return x > 0
-        ? x + Math.log1p(Math.exp(-x))
-        : Math.log1p(Math.exp(x));
-}
-
-function activateScalar(value: number, activation: NetworkConfig['activation']): number | null {
-    switch (activation) {
-        case 'relu':
-            return Math.max(0, value);
-        case 'tanh':
-            return Math.tanh(value);
-        case 'sigmoid':
-            return stableSigmoid(value);
-        case 'linear':
-            return value;
-        case 'leakyRelu':
-            return value > 0 ? value : 0.01 * value;
-        case 'elu':
-            return value >= 0 ? value : Math.exp(value) - 1;
-        case 'swish':
-            return value * stableSigmoid(value);
-        case 'softplus':
-            return stableSoftplus(value);
-        case 'softmax':
-            return null;
-    }
-}
-
-function applySoftmax(logits: readonly number[]): number[] | null {
-    if (logits.length === 0) return null;
-
-    let maxLogit = -Infinity;
-    for (const value of logits) {
-        if (!Number.isFinite(value)) return null;
-        if (value > maxLogit) maxLogit = value;
-    }
-
-    const probabilities = new Array<number>(logits.length);
-    let sum = 0;
-    for (let i = 0; i < logits.length; i++) {
-        const expValue = Math.exp(logits[i] - maxLogit);
-        probabilities[i] = expValue;
-        sum += expValue;
-    }
-
-    if (!Number.isFinite(sum) || sum <= 0) return null;
-    for (let i = 0; i < probabilities.length; i++) {
-        probabilities[i] /= sum;
-    }
-    return probabilities;
-}
-
-function unpackWeights(weights: Float32Array, layerSizes: readonly number[]): number[][][] | null {
-    const unpacked: number[][][] = [];
-    let offset = 0;
-
-    for (let layerIndex = 0; layerIndex < layerSizes.length - 1; layerIndex++) {
-        const fanIn = layerSizes[layerIndex];
-        const fanOut = layerSizes[layerIndex + 1];
-        const layer: number[][] = [];
-
-        for (let neuronIndex = 0; neuronIndex < fanOut; neuronIndex++) {
-            const row: number[] = [];
-            for (let inputIndex = 0; inputIndex < fanIn; inputIndex++) {
-                const value = weights[offset++];
-                if (!Number.isFinite(value)) return null;
-                row.push(value);
-            }
-            layer.push(row);
-        }
-
-        unpacked.push(layer);
-    }
-
-    return offset === weights.length ? unpacked : null;
-}
-
-function unpackBiases(biases: Float32Array, layerSizes: readonly number[]): number[][] | null {
-    const unpacked: number[][] = [];
-    let offset = 0;
-
-    for (let layerIndex = 1; layerIndex < layerSizes.length; layerIndex++) {
-        const layer: number[] = [];
-        for (let neuronIndex = 0; neuronIndex < layerSizes[layerIndex]; neuronIndex++) {
-            const value = biases[offset++];
-            if (!Number.isFinite(value)) return null;
-            layer.push(value);
-        }
-        unpacked.push(layer);
-    }
-
-    return offset === biases.length ? unpacked : null;
-}
-
-function getNetworkParamsFromFrame(networkConfig: NetworkConfig): FrameNetworkParams | null {
-    const frame = getFrameBuffer();
-    if (!frame.weights || !frame.biases || !frame.weightLayout) return null;
-
-    const layerSizes = frame.weightLayout.layerSizes;
-    const expectedLayerSizes = [
-        networkConfig.inputSize,
-        ...networkConfig.hiddenLayers,
-        networkConfig.outputSize,
-    ];
-    if (!sameLayerSizes(layerSizes, expectedLayerSizes)) return null;
-    if (layerSizes.at(-1) !== 3) return null;
-
-    const weights = unpackWeights(frame.weights, layerSizes);
-    const biases = unpackBiases(frame.biases, layerSizes);
-    if (!weights || !biases) return null;
-
-    return { weights, biases };
-}
-
-function forwardFromParams(
-    input: readonly number[],
-    params: FrameNetworkParams,
-    networkConfig: NetworkConfig,
-): number[] | null {
-    let activations = [...input];
-
-    for (let layerIndex = 0; layerIndex < params.weights.length; layerIndex++) {
-        const isOutputLayer = layerIndex === params.weights.length - 1;
-        const logits = params.weights[layerIndex].map((row, neuronIndex) => {
-            let sum = params.biases[layerIndex][neuronIndex];
-            for (let inputIndex = 0; inputIndex < row.length; inputIndex++) {
-                sum += row[inputIndex] * activations[inputIndex];
-            }
-            return sum;
-        });
-
-        if (logits.some((value) => !Number.isFinite(value))) return null;
-
-        if (isOutputLayer) {
-            return applySoftmax(logits);
-        }
-
-        const nextActivations = logits.map((value) => activateScalar(value, networkConfig.activation));
-        if (nextActivations.some((value) => value == null || !Number.isFinite(value))) return null;
-        activations = nextActivations as number[];
-    }
-
-    return null;
-}
-
-export function deriveMulticlassConfusionReadout(
-    networkConfig: NetworkConfig,
-    features: FeatureFlags,
-    testPoints: readonly DataPoint[],
-): MulticlassConfusionReadout | null {
-    if (
-        networkConfig.outputSize !== 3 ||
-        networkConfig.outputActivation !== 'softmax' ||
-        testPoints.length === 0
-    ) {
-        return null;
-    }
-
-    const activeFeatures = getActiveFeatures(features);
-    if (activeFeatures.length !== networkConfig.inputSize) return null;
-
-    const params = getNetworkParamsFromFrame(networkConfig);
-    if (!params) return null;
-
-    try {
-        const matrix = MULTICLASS_LABELS.map(() => MULTICLASS_LABELS.map(() => 0));
-        let correct = 0;
-
-        for (const point of testPoints) {
-            if (!Number.isInteger(point.label) || point.label < 0 || point.label > 2) {
-                return null;
-            }
-            const input = transformPoint(point.x, point.y, activeFeatures);
-            const probabilities = forwardFromParams(input, params, networkConfig);
-            if (!probabilities || probabilities.length !== MULTICLASS_LABELS.length) return null;
-            const predicted = argmax(probabilities);
-            matrix[point.label][predicted]++;
-            if (point.label === predicted) correct++;
-        }
-
-        const rowTotals = matrix.map((row) => row.reduce((sum, value) => sum + value, 0));
-        const columnTotals = MULTICLASS_LABELS.map((predicted) => (
-            matrix.reduce((sum, row) => sum + row[predicted], 0)
-        ));
-        const total = rowTotals.reduce((sum, value) => sum + value, 0);
-
-        return { matrix, rowTotals, columnTotals, total, correct };
-    } catch {
-        return null;
-    }
-}
-
-export const ConfusionMatrix = memo(function ConfusionMatrix() {
-    const problemType = usePlaygroundStore((s) => s.data.problemType);
-    const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const network = usePlaygroundStore((s) => s.network);
-    const features = usePlaygroundStore((s) => s.features);
-    const lossType = usePlaygroundStore((s) => s.training.lossType);
-    const trainPoints = useTrainingStore((s) => s.trainPoints);
-    const testPoints = useTrainingStore((s) => s.testPoints);
-    const frameVersion = useTrainingStore((s) => s.frameVersion);
-    const paramsVersion = useTrainingStore((s) => s.paramsVersion);
-    const cm = useTrainingStore((s) => s.snapshot?.testMetrics.confusionMatrix);
-    const status = useTrainingStore((s) => s.status);
-    const isConfigPending = useTrainingStore((s) => (
-        s.pendingConfigSource !== null ||
-        s.dataConfigLoading ||
-        s.networkConfigLoading ||
-        s.featuresConfigLoading ||
-        s.trainingConfigLoading ||
-        s.presetConfigLoading
-    ));
-    const isThreeClassSoftmax =
-        problemType === 'classification' &&
-        network.outputSize === 3 &&
-        network.outputActivation === 'softmax';
-    const canReadWorkerMulticlassReadout =
-        isThreeClassSoftmax &&
-        dataset === 'three-class-clusters' &&
-        lossType === 'categoricalCrossEntropy' &&
-        !isConfigPending;
-    const workerMulticlassReadout = useMemo(() => {
-        void frameVersion;
-        if (!canReadWorkerMulticlassReadout) return null;
-        const matrix = getFrameBuffer().multiclassConfusionMatrix;
-        return matrix ? readMulticlassConfusionMatrixData(matrix) : null;
-    }, [canReadWorkerMulticlassReadout, frameVersion]);
-    const canDeriveMulticlassReadout =
-        isThreeClassSoftmax &&
-        status !== 'running' &&
-        !isConfigPending &&
-        !workerMulticlassReadout;
-    const derivedMulticlassReadout = useMemo(() => {
-        void paramsVersion;
-        if (!canDeriveMulticlassReadout) return null;
-        return deriveMulticlassConfusionReadout(network, features, testPoints);
-    }, [canDeriveMulticlassReadout, features, network, paramsVersion, testPoints]);
-    const multiclassReadout = workerMulticlassReadout ?? derivedMulticlassReadout;
-
-    if (problemType !== 'classification') return null;
-    if (testPoints.length === 0) {
-        return (
-            <div className="panel confusion-matrix">
-                <div className="panel__title">Confusion Matrix (Test Set)</div>
-                <EmptyState
-                    icon="📊"
-                    title="No test data"
-                    description="Train the model to generate test predictions and evaluation metrics."
-                />
-            </div>
-        );
-    }
-
-    if (isThreeClassSoftmax) {
-        if (!multiclassReadout) {
-            const unavailableDescription = isConfigPending
-                ? 'The current configuration is still syncing; wait for the worker to finish applying the active settings.'
-                : status === 'running'
-                    ? 'Pause training to inspect the derived multiclass readout without recomputing it every training frame.'
-                    : 'Current network parameters are still loading or do not match the active 3-class configuration.';
-
-            return (
-                <div className="panel confusion-matrix">
-                    <div className="panel__title">Confusion Matrix (Test Set)</div>
-                    <EmptyState
-                        icon="📊"
-                        title="Multiclass readout unavailable"
-                        description={unavailableDescription}
-                    />
-                </div>
-            );
-        }
-
-        const accuracy = formatRatio(multiclassReadout.correct, multiclassReadout.total);
-
-        const MulticlassCell = ({
-            actual,
-            predicted,
-            value,
-        }: {
-            actual: number;
-            predicted: number;
-            value: number;
-        }) => {
-            const intensity = multiclassReadout.total === 0 ? 0.12 : Math.max(0.12, value / multiclassReadout.total);
-            const backgroundColor = actual === predicted
-                ? `rgba(34, 197, 94, ${intensity.toFixed(2)})`
-                : `rgba(239, 68, 68, ${intensity.toFixed(2)})`;
-            const cellPercent = formatPercent(value, multiclassReadout.total);
-
-            return (
-                <div
-                    aria-label={`${formatSampleCount(value)} (${cellPercent}) with actual Class ${actual} predicted Class ${predicted}`}
-                    className="cm-cell cm-cell--multiclass"
-                    style={{ backgroundColor }}
-                >
-                    <div className="cm-value">{value}</div>
-                    <div className="cm-percentage">{cellPercent}</div>
-                    <div className="cm-label">{`C${actual} -> C${predicted}`}</div>
-                </div>
-            );
-        };
-
-        return (
-            <div className="panel confusion-matrix">
-                <div className="panel__title">Multiclass Confusion Readout (Test Set)</div>
-                <div className="cm-grid-container">
-                    <div className="cm-axis-label">Predicted</div>
-                    <div className="cm-layout">
-                        <div className="cm-axis-label cm-axis-label--side">Actual</div>
-                        <div className="cm-grid cm-grid--multiclass">
-                            <div className="cm-header cm-header--empty" />
-                            {MULTICLASS_LABELS.map((label) => (
-                                <div className="cm-header" key={`pred-${label}`}>Pred Class {label}</div>
-                            ))}
-                            <div className="cm-header">Total</div>
-
-                            {MULTICLASS_LABELS.map((actual) => (
-                                <Fragment key={`actual-${actual}`}>
-                                    <div className="cm-header cm-header--row">Actual Class {actual}</div>
-                                    {MULTICLASS_LABELS.map((predicted) => (
-                                        <MulticlassCell
-                                            actual={actual}
-                                            key={`cell-${actual}-${predicted}`}
-                                            predicted={predicted}
-                                            value={multiclassReadout.matrix[actual][predicted]}
-                                        />
-                                    ))}
-                                    <div
-                                        aria-label={`Actual Class ${actual} total ${multiclassReadout.rowTotals[actual]}`}
-                                        className="cm-total"
-                                    >
-                                        {multiclassReadout.rowTotals[actual]}
-                                    </div>
-                                </Fragment>
-                            ))}
-
-                            <div className="cm-header cm-header--row">Total</div>
-                            {MULTICLASS_LABELS.map((predicted) => (
-                                <div
-                                    aria-label={`Predicted Class ${predicted} total ${multiclassReadout.columnTotals[predicted]}`}
-                                    className="cm-total"
-                                    key={`col-total-${predicted}`}
-                                >
-                                    {multiclassReadout.columnTotals[predicted]}
-                                </div>
-                            ))}
-                            <div
-                                aria-label={`Total test samples ${multiclassReadout.total}`}
-                                className="cm-total cm-total--grand"
-                            >
-                                {multiclassReadout.total}
-                            </div>
-                        </div>
-                    </div>
-                    <p className="sr-only">
-                        {`${multiclassReadout.correct} of ${multiclassReadout.total} test samples land on the diagonal (${accuracy} accuracy). Rows are actual classes and columns are predicted classes.`}
-                    </p>
-                    <div className="cm-metrics">
-                        <div className="cm-metric">
-                            <span className="cm-metric__label">Accuracy</span>
-                            <span className="cm-metric__value">{accuracy}</span>
-                        </div>
-                        <div className="cm-metric">
-                            <span className="cm-metric__label">Classes</span>
-                            <span className="cm-metric__value">3</span>
-                        </div>
-                        <div className="cm-metric">
-                            <span className="cm-metric__label">Samples</span>
-                            <span className="cm-metric__value">{multiclassReadout.total}</span>
-                        </div>
-                    </div>
-                    <p className="cm-note">
-                        {workerMulticlassReadout
-                            ? 'Latest worker-authored test evaluation from the training worker; stored outside React state.'
-                            : 'Derived from current frame-buffer parameters and test points; not a worker-persisted metric.'}
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
-    if (network.outputSize !== 1 || network.outputActivation === 'softmax' || hasNonBinaryLabels(trainPoints) || hasNonBinaryLabels(testPoints)) {
-        return (
-            <div className="panel confusion-matrix">
-                <div className="panel__title">Confusion Matrix (Test Set)</div>
-                <EmptyState
-                    icon="📊"
-                    title="Confusion matrix unavailable"
-                    description="This panel only renders binary classification matrices. Use loss and accuracy while multiclass matrix support is unavailable."
-                />
-            </div>
-        );
-    }
-
-    if (!cm) {
-        return (
-            <div className="panel confusion-matrix">
-                <div className="panel__title">Confusion Matrix (Test Set)</div>
-                <EmptyState
-                    icon="📊"
-                    title="Confusion matrix unavailable"
-                    description="Metrics are still loading, stale, or unavailable for this snapshot. Use loss and accuracy until a fresh binary matrix arrives."
-                />
-            </div>
-        );
-    }
-
-    const total = cm.tp + cm.tn + cm.fp + cm.fn;
-    const actual0Total = cm.tn + cm.fp;
-    const actual1Total = cm.fn + cm.tp;
-    const predicted0Total = cm.tn + cm.fn;
-    const predicted1Total = cm.fp + cm.tp;
-    const accuracy = formatRatio(cm.tp + cm.tn, total);
-    const precision = formatRatio(cm.tp, cm.tp + cm.fp);
-    const recall = formatRatio(cm.tp, cm.tp + cm.fn);
-
-    const Cell = ({ value, label, isCorrect }: { value: number; label: string; isCorrect: boolean }) => {
+    const Cell = ({ value, label, correct }: {
+        value: number;
+        label: string;
+        correct: boolean;
+    }) => {
         const intensity = total === 0 ? 0.12 : Math.max(0.12, value / total);
-        const backgroundColor = isCorrect
-            ? `rgba(34, 197, 94, ${intensity.toFixed(2)})`
-            : `rgba(239, 68, 68, ${intensity.toFixed(2)})`;
-
         return (
             <div
                 aria-label={`${label} cell`}
                 className={`cm-cell cm-${label.toLowerCase()}`}
-                style={{ backgroundColor }}
+                style={{
+                    backgroundColor: correct
+                        ? `rgba(34, 197, 94, ${intensity.toFixed(2)})`
+                        : `rgba(239, 68, 68, ${intensity.toFixed(2)})`,
+                }}
             >
                 <div className="cm-value">{value}</div>
                 <div className="cm-percentage">{formatPercent(value, total)}</div>
@@ -526,27 +79,24 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
 
     return (
         <div className="panel confusion-matrix">
-            <div className="panel__title">Confusion Matrix (Test Set)</div>
+            <div className="panel__title">Binary Confusion Matrix (Full Test Split)</div>
             <div className="cm-grid-container">
                 <div className="cm-axis-label">Predicted</div>
                 <div className="cm-layout">
                     <div className="cm-axis-label cm-axis-label--side">Actual</div>
                     <div className="cm-grid">
                         <div className="cm-header cm-header--empty" />
-                        <div className="cm-header">Pred 0</div>
-                        <div className="cm-header">Pred 1</div>
+                        <div className="cm-header">C0</div>
+                        <div className="cm-header">C1</div>
                         <div className="cm-header">Total</div>
-
-                        <div className="cm-header cm-header--row">Actual 0</div>
-                        <Cell value={cm.tn} label="TN" isCorrect={true} />
-                        <Cell value={cm.fp} label="FP" isCorrect={false} />
+                        <div className="cm-header cm-header--row">C0</div>
+                        <Cell value={matrix.tn} label="TN" correct />
+                        <Cell value={matrix.fp} label="FP" correct={false} />
                         <div className="cm-total">{actual0Total}</div>
-
-                        <div className="cm-header cm-header--row">Actual 1</div>
-                        <Cell value={cm.fn} label="FN" isCorrect={false} />
-                        <Cell value={cm.tp} label="TP" isCorrect={true} />
+                        <div className="cm-header cm-header--row">C1</div>
+                        <Cell value={matrix.fn} label="FN" correct={false} />
+                        <Cell value={matrix.tp} label="TP" correct />
                         <div className="cm-total">{actual1Total}</div>
-
                         <div className="cm-header cm-header--row">Total</div>
                         <div className="cm-total">{predicted0Total}</div>
                         <div className="cm-total">{predicted1Total}</div>
@@ -556,18 +106,136 @@ export const ConfusionMatrix = memo(function ConfusionMatrix() {
                 <div className="cm-metrics">
                     <div className="cm-metric">
                         <span className="cm-metric__label">Accuracy</span>
-                        <span className="cm-metric__value">{accuracy}</span>
+                        <span className="cm-metric__value">{formatRatio(matrix.tp + matrix.tn, total)}</span>
                     </div>
                     <div className="cm-metric">
                         <span className="cm-metric__label">Precision</span>
-                        <span className="cm-metric__value">{precision}</span>
+                        <span className="cm-metric__value">{formatRatio(matrix.tp, matrix.tp + matrix.fp)}</span>
                     </div>
                     <div className="cm-metric">
                         <span className="cm-metric__label">Recall</span>
-                        <span className="cm-metric__value">{recall}</span>
+                        <span className="cm-metric__value">{formatRatio(matrix.tp, matrix.tp + matrix.fn)}</span>
                     </div>
                 </div>
+                <ProvenanceCaption evaluationId={evaluationId} step={step} sampleCount={sampleCount} />
             </div>
         </div>
     );
+}
+
+function MulticlassMatrix({
+    matrix,
+    evaluationId,
+    step,
+    sampleCount,
+}: {
+    matrix: MulticlassConfusionMatrixData;
+    evaluationId: number;
+    step: number;
+    sampleCount: number;
+}) {
+    const labels = matrix.classLabels;
+    const counts = matrix.counts;
+    const rowTotal = (actual: number) => labels.reduce<number>(
+        (sum, _label, predicted) => sum + counts[actual * matrix.classCount + predicted],
+        0,
+    );
+    const columnTotal = (predicted: number) => labels.reduce<number>(
+        (sum, _label, actual) => sum + counts[actual * matrix.classCount + predicted],
+        0,
+    );
+    const total = counts.reduce((sum, count) => sum + count, 0);
+    const correct = labels.reduce<number>(
+        (sum, _label, index) => sum + counts[index * matrix.classCount + index],
+        0,
+    );
+
+    return (
+        <div className="panel confusion-matrix">
+            <div className="panel__title">Multiclass Confusion Matrix (Full Test Split)</div>
+            <div className="cm-grid-container">
+                <div className="cm-axis-label">Predicted</div>
+                <div className="cm-layout">
+                    <div className="cm-axis-label cm-axis-label--side">Actual</div>
+                    <div className="cm-grid cm-grid--multiclass">
+                        <div className="cm-header cm-header--empty" />
+                        {labels.map((label) => <div className="cm-header" key={`pred-${label}`}>C{label}</div>)}
+                        <div className="cm-header">Total</div>
+                        {labels.map((actual, actualIndex) => (
+                            <Fragment key={`actual-${actual}`}>
+                                <div className="cm-header cm-header--row">C{actual}</div>
+                                {labels.map((predicted, predictedIndex) => {
+                                    const value = counts[actualIndex * matrix.classCount + predictedIndex];
+                                    const correctCell = actualIndex === predictedIndex;
+                                    return (
+                                        <div
+                                            key={`${actual}-${predicted}`}
+                                            aria-label={`${value} test samples with actual Class ${actual} predicted Class ${predicted}`}
+                                            className="cm-cell cm-cell--multiclass"
+                                            style={{
+                                                backgroundColor: correctCell
+                                                    ? `rgba(34, 197, 94, ${Math.max(0.12, value / Math.max(1, total)).toFixed(2)})`
+                                                    : `rgba(239, 68, 68, ${Math.max(0.12, value / Math.max(1, total)).toFixed(2)})`,
+                                            }}
+                                        >
+                                            <div className="cm-value">{value}</div>
+                                            <div className="cm-percentage">{formatPercent(value, total)}</div>
+                                        </div>
+                                    );
+                                })}
+                                <div className="cm-total">{rowTotal(actualIndex)}</div>
+                            </Fragment>
+                        ))}
+                        <div className="cm-header cm-header--row">Total</div>
+                        {labels.map((_label, predicted) => (
+                            <div className="cm-total" key={`total-${predicted}`}>{columnTotal(predicted)}</div>
+                        ))}
+                        <div className="cm-total cm-total--grand">{total}</div>
+                    </div>
+                </div>
+                <div className="cm-metrics">
+                    <div className="cm-metric">
+                        <span className="cm-metric__label">Accuracy</span>
+                        <span className="cm-metric__value">{formatRatio(correct, total)}</span>
+                    </div>
+                    <div className="cm-metric">
+                        <span className="cm-metric__label">Classes</span>
+                        <span className="cm-metric__value">{matrix.classCount}</span>
+                    </div>
+                </div>
+                <ProvenanceCaption evaluationId={evaluationId} step={step} sampleCount={sampleCount} />
+            </div>
+        </div>
+    );
+}
+
+export const ConfusionMatrix = memo(function ConfusionMatrix() {
+    const taskKind = usePlaygroundStore((state) => state.access.status === 'ready'
+        ? state.access.prepared.document.recipe.task.kind
+        : null);
+    const evaluation = useTrainingStore((state) => state.latestEvaluation);
+
+    if (taskKind === 'regression' || taskKind === null) return null;
+    const matrix = evaluation?.test.values.confusionMatrix;
+    if (!evaluation || !matrix) {
+        return (
+            <div className="panel confusion-matrix">
+                <div className="panel__title">Confusion Matrix (Full Test Split)</div>
+                <EmptyState
+                    icon="📊"
+                    title="Confusion matrix unavailable"
+                    description="A paired full test evaluation with confusion evidence has not been published yet."
+                />
+            </div>
+        );
+    }
+
+    const props = {
+        evaluationId: evaluation.evaluationId,
+        step: evaluation.model.step,
+        sampleCount: evaluation.test.basis.sampleCount,
+    };
+    return isMulticlass(matrix)
+        ? <MulticlassMatrix matrix={matrix} {...props} />
+        : <BinaryMatrix matrix={matrix} {...props} />;
 });

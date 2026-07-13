@@ -1,24 +1,16 @@
 // ── Root App Component ──
-// Wires the RegionShell layout variants (Dock / Focus / Grid / Split).
-// Layout selection lives in useLayoutStore (persisted to localStorage).
-// Each shell receives typed content props — adding a new panel means
-// adding it to the relevant content map, not editing any layout code.
+// Wires the Build / Run instrument shell. The app keeps training, worker,
+// URL, persistence, and saved-run contracts separate from UI placement.
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useLayoutStore } from './store/useLayoutStore.ts';
-import type { LayoutVariant } from './store/useLayoutStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
+import { selectScientificEvidence } from './store/evidenceSelectors.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
-import { useTraining, type LiveArenaModelInput } from './hooks/useTraining.ts';
-import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
+import { useTraining } from './hooks/useTraining.ts';
 import { Header } from './components/layout/Header.tsx';
 import { Panel } from './components/common/Panel.tsx';
-import {
-    DockShell,
-    FocusShell,
-    GridShell,
-    SplitShell,
-} from './components/layout/RegionShell.tsx';
+import { BuildRunShell } from './components/layout/BuildRunShell.tsx';
 import {
     CanvasContent,
     BoundaryContent,
@@ -42,20 +34,11 @@ import { ConfigPanel } from './components/controls/ConfigPanel.tsx';
 import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
+import { CompatibilityState } from './components/common/CompatibilityState.tsx';
 import { deriveVisualizationDemand } from './components/layout/deriveVisualizationDemand.ts';
 
-const COMPACT_BREAKPOINT = 900;
 const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
-
-function createLiveArenaModel(record: ExperimentRunRecordV1): LiveArenaModelInput {
-    return {
-        label: record.title ?? record.id,
-        network: record.config.network,
-        training: record.config.training,
-        data: record.config.data,
-        features: record.config.features,
-    };
-}
+type SurfaceId = 'presets' | 'lessons' | 'history' | 'more';
 
 function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
     if (!(target instanceof Element)) return false;
@@ -89,10 +72,27 @@ function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
 }
 
 export default function App() {
+    const access = usePlaygroundStore((state) => state.access);
+    const startFresh = usePlaygroundStore((state) => state.startFresh);
+    const recoverWithDefault = useCallback(async () => {
+        const result = await startFresh();
+        if (!result.ok) {
+            throw new Error(result.issues.map((issue) => issue.message).join(' '));
+        }
+    }, [startFresh]);
+
+    if (access.status === 'incompatible') {
+        return <CompatibilityState access={access} onStartFresh={recoverWithDefault} />;
+    }
+
+    return <CompatiblePlayground />;
+}
+
+function CompatiblePlayground() {
     const training = useTraining();
-    const persistedLayout = useLayoutStore((s) => s.layout);
-    const phase = useLayoutStore((s) => s.phase);
-    const activeTabRight = useLayoutStore((s) => s.activeTabRight);
+    const view = useLayoutStore((s) => s.view);
+    const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);
+    const setActiveEvidenceView = useLayoutStore((s) => s.setActiveEvidenceView);
     const status = useTrainingStore((s) => s.status);
     const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
     const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
@@ -102,8 +102,8 @@ export default function App() {
     const demand = usePlaygroundStore((s) => s.demand);
     const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
     const setDemand = usePlaygroundStore((s) => s.setDemand);
-    const [isCompact, setIsCompact] = useState(() => window.innerWidth < COMPACT_BREAKPOINT);
     const [lessonHighlight, setLessonHighlight] = useState<LessonTarget | null>(null);
+    const [openSurface, setOpenSurface] = useState<SurfaceId | null>(null);
 
     // Stable refs so keyboard handler never goes stale
     const trainingRef = useRef(training);
@@ -113,14 +113,12 @@ export default function App() {
     useEffect(() => { statusRef.current = status; }, [status]);
 
     const stableReset = useCallback(() => trainingRef.current.reset(), []);
-    const stableInitializeArena = useCallback((modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => (
-        trainingRef.current.initializeArena(createLiveArenaModel(modelA), createLiveArenaModel(modelB))
-    ), []);
-    const stableStepArena = useCallback(() => trainingRef.current.stepArena(1), []);
     const handleLessonHighlightChange = useCallback((target: LessonTarget | null) => {
         setLessonHighlight(target);
     }, []);
-    const effectiveLayout = isCompact ? 'dock' : persistedLayout;
+    const toggleSurface = useCallback((surface: SurfaceId) => {
+        setOpenSurface((current) => current === surface ? null : surface);
+    }, []);
     const lessonTargetClass = useCallback(
         (target: LessonTarget) => `lesson-target ${lessonHighlight === target ? 'lesson-target--active' : ''}`,
         [lessonHighlight],
@@ -141,19 +139,10 @@ export default function App() {
     }, []);
 
     useEffect(() => {
-        const updateCompactMode = () => {
-            setIsCompact(window.innerWidth < COMPACT_BREAKPOINT);
-        };
-
-        window.addEventListener('resize', updateCompactMode);
-        return () => window.removeEventListener('resize', updateCompactMode);
-    }, []);
-
-    useEffect(() => {
         const nextDemand = deriveVisualizationDemand({
-            layout: effectiveLayout,
-            phase,
-            activeTabRight,
+            view,
+            activeEvidenceView,
+            historyDrawerOpen: openSurface === 'history',
             graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
         });
         if (
@@ -166,13 +155,21 @@ export default function App() {
             return;
         }
         setDemand(nextDemand);
-    }, [effectiveLayout, phase, activeTabRight, canvasNetworkGraph, demand, setDemand]);
+    }, [view, activeEvidenceView, openSurface, canvasNetworkGraph, demand, setDemand]);
 
     useEffect(() => {
         if (workerError) {
             workerErrorDialogRef.current?.focus();
         }
     }, [workerError]);
+
+    useEffect(() => {
+        const handler = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setOpenSurface(null);
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, []);
 
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
@@ -214,13 +211,7 @@ export default function App() {
         confusion: <ConfusionContent />,
         inspection: <InspectContent />,
         code: <CodeContent />,
-        history: (
-            <HistoryContent
-                onRestore={stableReset}
-                onInitializeArena={stableInitializeArena}
-                onStepArena={stableStepArena}
-            />
-        ),
+        history: <HistoryContent />,
     };
 
     const transport = (
@@ -228,82 +219,25 @@ export default function App() {
             <div className={lessonTargetClass('transport')} data-lesson-target="transport">
                 <TrainingControls training={training} />
             </div>
-            <GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} />
         </div>
     );
 
-    const experimentContext = (
-        <div className="forge-experiment-context">
-            <RecipeSummaryCard />
-            <CurrentRunCard />
+    const topologyContent = (
+        <div className="forge-buildrun__topology-stage">
+            <CanvasContent />
         </div>
     );
 
-    const canvasPanel = (
-        <Panel title="Network Topology" phase="build" fill>
-            <div style={{ display: 'flex', minHeight: 200, height: '100%' }}>
-                <CanvasContent />
-            </div>
-        </Panel>
-    );
+    const historyContent = <HistoryContent />;
 
-    const boundaryPanel = (
-        <Panel title="Decision Boundary" phase="run" fill>
-            <BoundaryContent />
-        </Panel>
-    );
-
-    const lossPanel = (
-        <Panel title="Loss / Accuracy" phase="run" fill>
-            <LossContent />
-        </Panel>
-    );
-
-    const confusionPanel = (
-        <Panel title="Confusion Matrix" phase="run">
-            <ConfusionContent />
-        </Panel>
-    );
-
-    const inspectPanel = (
-        <Panel title="Layer Inspection" phase="run" fill>
-            <InspectContent />
-        </Panel>
-    );
-
-    const codePanel = (
-        <Panel title="Code Export" phase="both">
-            <CodeContent />
-        </Panel>
-    );
-
-    const historyPanel = (
-        <Panel title="Run History" phase="both">
-            <HistoryContent
-                onRestore={stableReset}
-                onInitializeArena={stableInitializeArena}
-                onStepArena={stableStepArena}
-            />
-        </Panel>
-    );
-
-    const gridConfigPanels = (
-        <div className="forge-panel-stack">
-            <Panel title="Experiment" phase="both" panelTargets="experiment" tight>{experimentContext}</Panel>
-            <Panel title="Presets" phase="build"><PresetPanel onReset={stableReset} /></Panel>
-            <Panel title="Data" phase="build" className={lessonTargetClass('data')}><DataPanel onReset={stableReset} /></Panel>
-            <Panel title="Features" phase="build" className={lessonTargetClass('features')}><FeaturesPanel /></Panel>
-            <Panel title="Network" phase="build" className={lessonTargetClass('network')}><NetworkConfigPanel /></Panel>
-            <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')}><HyperparamPanel /></Panel>
-            <Panel title="Config" phase="both"><ConfigPanel onReset={stableReset} /></Panel>
-        </div>
-    );
-
-    const gridInspectPanels = (
-        <div className="forge-panel-stack">
-            {inspectPanel}
-            {codePanel}
-            {historyPanel}
+    const moreContent = (
+        <div className="forge-drawer-stack">
+            <Panel title="Configuration" phase="both" panelTargets="config">
+                <ConfigPanel onReset={stableReset} />
+            </Panel>
+            <Panel title="Code Export" phase="both" panelTargets="code">
+                <CodeContent />
+            </Panel>
         </div>
     );
 
@@ -348,7 +282,11 @@ export default function App() {
             )}
 
             <ErrorBoundary title="Header unavailable" description="Header render failed." actionLabel="Reload" onRetry={stableReset}>
-                <Header training={training} effectiveLayout={effectiveLayout} isCompact={isCompact} />
+                <Header
+                    training={training}
+                    openSurface={openSurface}
+                    onToggleSurface={toggleSurface}
+                />
             </ErrorBoundary>
 
             <main
@@ -358,109 +296,45 @@ export default function App() {
                 aria-label="Neural network playground workspace"
             >
                 <ErrorBoundary title="Workspace unavailable" description="Layout shell failed." actionLabel="Reload" onRetry={stableReset}>
-                    {effectiveLayout === 'dock' && (
-                        <DockShell
-                            leftTabContent={leftTabContent}
-                            rightTabContent={rightTabContent}
-                            canvasContent={canvasPanel}
-                            transportContent={transport}
-                            leftContextContent={experimentContext}
-                            compact={isCompact}
-                        />
-                    )}
-
-                    {effectiveLayout === 'focus' && (
-                        <FocusShell
-                            leftTabContent={leftTabContent}
-                            rightTabContent={rightTabContent}
-                            canvasContent={canvasPanel}
-                            transportContent={transport}
-                            leftContextContent={experimentContext}
-                        />
-                    )}
-
-                    {effectiveLayout === 'grid' && (
-                        <GridShell
-                            topologyContent={canvasPanel}
-                            boundaryContent={boundaryPanel}
-                            configContent={gridConfigPanels}
-                            lossContent={lossPanel}
-                            confusionContent={confusionPanel}
-                            inspectContent={gridInspectPanels}
-                            transportContent={transport}
-                        />
-                    )}
-
-                    {effectiveLayout === 'split' && (
-                        <SplitShell
-                            buildLeft={
-                                <>
-                                    <Panel title="Experiment" phase="both" panelTargets="experiment" tight>{experimentContext}</Panel>
-                                    <Panel title="Presets" phase="build" panelTargets="presets"><PresetPanel onReset={stableReset} /></Panel>
-                                    <Panel title="Data" phase="build" className={lessonTargetClass('data')} panelTargets="data"><DataPanel onReset={stableReset} /></Panel>
-                                </>
-                            }
-                            buildCenter={
-                                <>
-                                    <Panel title="Network Topology" phase="build" fill panelTargets="topology">
-                                        <div style={{ display: 'flex', minHeight: 280, height: '100%' }}>
-                                            <CanvasContent />
-                                        </div>
-                                    </Panel>
-                                    <Panel title="Network" phase="build" className={lessonTargetClass('network')} panelTargets="network"><NetworkConfigPanel /></Panel>
-                                </>
-                            }
-                            buildRight={
-                                <>
-                                    <Panel title="Features" phase="build" className={lessonTargetClass('features')} panelTargets="features"><FeaturesPanel /></Panel>
-                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')} panelTargets="hyperparams"><HyperparamPanel /></Panel>
-                                    <Panel title="Config" phase="both" panelTargets="config"><ConfigPanel onReset={stableReset} /></Panel>
-                                    {codePanel}
-                                    {historyPanel}
-                                </>
-                            }
-                            runLeft={
-                                <>
-                                    <Panel title="Network Topology" phase="build" fill panelTargets="topology">
-                                        <div style={{ display: 'flex', minHeight: 240, height: '100%' }}>
-                                            <CanvasContent />
-                                        </div>
-                                    </Panel>
-                                    {inspectPanel}
-                                </>
-                            }
-                            runCenter={
-                                <>
-                                    {boundaryPanel}
-                                    {lossPanel}
-                                </>
-                            }
-                            runRight={
-                                <>
-                                    <Panel title="Experiment" phase="both" panelTargets="experiment" tight>{experimentContext}</Panel>
-                                    {confusionPanel}
-                                    <Panel title="Hyperparameters" phase="both" className={lessonTargetClass('hyperparams')} panelTargets="hyperparams"><HyperparamPanel /></Panel>
-                                    <Panel title="Config" phase="both" panelTargets="config"><ConfigPanel onReset={stableReset} /></Panel>
-                                    {codePanel}
-                                    {historyPanel}
-                                </>
-                            }
-                            transportContent={transport}
-                        />
-                    )}
+                    <BuildRunShell
+                        view={view}
+                        status={status}
+                        activeEvidenceView={activeEvidenceView}
+                        onSelectEvidence={setActiveEvidenceView}
+                        openSurface={openSurface}
+                        onCloseSurface={() => setOpenSurface(null)}
+                        recipeContent={<RecipeSummaryCard />}
+                        runContent={<CurrentRunCard />}
+                        dataContent={leftTabContent.data}
+                        networkContent={leftTabContent.network}
+                        featuresContent={leftTabContent.features}
+                        hyperparamContent={leftTabContent.hyperparams}
+                        topologyContent={topologyContent}
+                        transportContent={transport}
+                        evidenceContent={rightTabContent}
+                        presetContent={<PresetPanel onReset={stableReset} onApplied={() => setOpenSurface(null)} />}
+                        lessonContent={<GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} />}
+                        historyContent={historyContent}
+                        moreContent={moreContent}
+                    />
                 </ErrorBoundary>
             </main>
 
-            <StatusBar effectiveLayout={effectiveLayout} />
+            <StatusBar />
         </div>
     );
 }
 
-function StatusBar({ effectiveLayout }: { effectiveLayout: LayoutVariant }) {
+function StatusBar() {
     const status = useTrainingStore((s) => s.status);
-    const phase = useLayoutStore((s) => s.phase);
-    const dataset = usePlaygroundStore((s) => s.data.dataset);
-    const snapshot = useTrainingStore((s) => s.snapshot);
+    const view = useLayoutStore((s) => s.view);
+    const dataset = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.compiled.data.dataset : 'unavailable'
+    ));
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
+    const step = selectScientificEvidence({ latestLiveSignal, latestEvaluation })
+        .currentModel?.step ?? 0;
 
     return (
         <div
@@ -473,13 +347,10 @@ function StatusBar({ effectiveLayout }: { effectiveLayout: LayoutVariant }) {
                 <span className="forge-statusbar__dot" aria-hidden />
                 {status.toUpperCase()}
             </span>
-            <span>LAYOUT: <span className="forge-statusbar__accent">{effectiveLayout}</span></span>
-            {effectiveLayout === 'split' && (
-                <span>PHASE: <span className="forge-statusbar__accent">{phase}</span></span>
-            )}
+            <span>VIEW: <span className="forge-statusbar__accent">{view}</span></span>
             <span>DATA: <span className="forge-statusbar__accent">{dataset}</span></span>
             <span className="forge-statusbar__spacer" />
-            <span>STEP <span className="forge-statusbar__accent">{(snapshot?.step ?? 0).toLocaleString()}</span></span>
+            <span>STEP <span className="forge-statusbar__accent">{step.toLocaleString()}</span></span>
             <span>
                 Inspired by{' '}
                 <a

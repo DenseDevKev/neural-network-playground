@@ -10,6 +10,12 @@ import {
 } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { PREPARED_PRESETS } from '@nn-playground/shared';
+
+const BINARY_PREPARED = PREPARED_PRESETS.find((entry) => entry.id === 'single-neuron')!.prepared;
+const MULTICLASS_PREPARED = PREPARED_PRESETS.find(
+    (entry) => entry.id === 'three-class-clusters',
+)!.prepared;
 
 const drawImage = vi.fn();
 
@@ -62,17 +68,9 @@ describe('DecisionBoundary', () => {
             testPoints: [],
             multiclassBoundaryVersion: 0,
         });
-        usePlaygroundStore.setState((state) => ({
-            data: {
-                ...state.data,
-                problemType: 'classification',
-            },
-            network: {
-                ...state.network,
-                outputSize: 1,
-                outputActivation: 'sigmoid',
-            },
-        }));
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: BINARY_PREPARED },
+        });
 
         HTMLCanvasElement.prototype.getContext = vi.fn(
             () => createMockContext() as unknown as CanvasRenderingContext2D,
@@ -130,37 +128,6 @@ describe('DecisionBoundary', () => {
 
         expect(drawImage).toHaveBeenCalledTimes(2);
         expect(window.requestAnimationFrame).not.toHaveBeenCalled();
-    });
-
-    it('keeps rendering scalar snapshot grids when no streamed frame is cached', () => {
-        useTrainingStore.setState({
-            snapshot: {
-                step: 1,
-                epoch: 0,
-                weights: [[[0.1, -0.2]]],
-                biases: [[0.05]],
-                trainLoss: 0.3,
-                testLoss: 0.4,
-                trainMetrics: { loss: 0.3, accuracy: 0.8 },
-                testMetrics: { loss: 0.4, accuracy: 0.75 },
-                outputGrid: new Float32Array([0, 0.25, 0.75, 1]),
-                gridSize: 2,
-                historyPoint: { step: 1, trainLoss: 0.3, testLoss: 0.4 },
-            },
-        });
-
-        render(
-            <DecisionBoundary
-                trainPoints={[{ x: -0.5, y: 0.5, label: 0 }]}
-                testPoints={[]}
-                showTestData={false}
-                discretize={false}
-            />,
-        );
-
-        expect(drawImage).toHaveBeenCalledTimes(1);
-        expect(screen.getByText('Negative')).toBeInTheDocument();
-        expect(screen.getByText('Positive')).toBeInTheDocument();
     });
 
     it('renders uncertainty, misclassification, and split overlay badges when requested', () => {
@@ -272,13 +239,9 @@ describe('DecisionBoundary', () => {
     });
 
     it('guards binary boundary copy for multiclass output configs even with binary labels', () => {
-        usePlaygroundStore.setState((state) => ({
-            network: {
-                ...state.network,
-                outputSize: 3,
-                outputActivation: 'softmax' as const,
-            },
-        }));
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: MULTICLASS_PREPARED },
+        });
 
         render(
             <DecisionBoundary
@@ -298,13 +261,9 @@ describe('DecisionBoundary', () => {
     });
 
     it('renders bounded multiclass boundary data with a text confidence summary', () => {
-        usePlaygroundStore.setState((state) => ({
-            network: {
-                ...state.network,
-                outputSize: 3,
-                outputActivation: 'softmax' as const,
-            },
-        }));
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: MULTICLASS_PREPARED },
+        });
         updateFrameBuffer({
             gridSize: 2,
             multiclassClassGrid: new Uint8Array([0, 1, 2, 2]),
@@ -346,13 +305,9 @@ describe('DecisionBoundary', () => {
     });
 
     it('repaints when the multiclass boundary frame version changes', () => {
-        usePlaygroundStore.setState((state) => ({
-            network: {
-                ...state.network,
-                outputSize: 3,
-                outputActivation: 'softmax' as any,
-            },
-        }));
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: MULTICLASS_PREPARED },
+        });
         updateFrameBuffer({
             gridSize: 2,
             multiclassClassGrid: new Uint8Array([0, 1, 2, 2]),

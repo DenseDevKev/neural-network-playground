@@ -1,39 +1,51 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-    type AppConfig,
-} from '@nn-playground/shared';
+import { PREPARED_PRESETS, type PreparedExperimentDocumentV2 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { CurrentRunCard } from './CurrentRunCard.tsx';
 
-function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+function prepared(id = 'xor-hidden'): PreparedExperimentDocumentV2 {
+    const match = PREPARED_PRESETS.find((entry) => entry.id === id)?.prepared;
+    if (!match) throw new Error(`missing prepared preset ${id}`);
+    return match;
+}
+
+function installCurrent(next = prepared()) {
+    usePlaygroundStore.setState({
+        access: { status: 'ready', prepared: next },
+        preparation: { status: 'ready', requestId: 0, issues: [] },
+    });
+}
+
+function installTrained(next = prepared()) {
+    useTrainingStore.getState().markTrainedRecipe(
+        next.document.recipe,
+        'initialize',
+        next.identities.recipeFingerprint,
+    );
+}
+
+function live(step: number, epoch: number) {
     return {
-        data: overrides.data ?? { ...DEFAULT_DATA },
-        features: overrides.features ?? { ...DEFAULT_FEATURES },
-        network: overrides.network ?? {
-            ...DEFAULT_NETWORK,
-            inputSize: 2,
-            hiddenLayers: [...DEFAULT_NETWORK.hiddenLayers],
-            seed: DEFAULT_DATA.seed,
-        },
-        training: overrides.training ?? { ...DEFAULT_TRAINING },
-        ui: overrides.ui ?? { showTestData: false, discretizeOutput: false },
+        model: { generationId: 1, revision: step, step, epoch },
+        dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+        objectiveKey: 'o',
+        basis: { kind: 'mini-batch-ema' as const, alpha: 0.1, latestBatchSize: 10, throughStep: step },
+        dataLoss: 0.2,
     };
 }
 
 describe('CurrentRunCard', () => {
     beforeEach(() => {
-        const config = makeConfig();
-        usePlaygroundStore.setState(config);
+        installCurrent();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: null,
-            trainedRecipeConfig: null,
+            evidenceGenerationId: null,
+            latestLiveSignal: null,
+            latestEvaluation: null,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
             trainedRecipeRecordedAt: null,
             trainedRecipeSource: null,
             pendingConfigSource: null,
@@ -41,97 +53,91 @@ describe('CurrentRunCard', () => {
             configErrorSource: null,
             workerError: null,
             pauseReason: null,
-            testMetricsStale: false,
         });
     });
 
-    it('explains the idle no-snapshot state', () => {
+    it('explains the idle no-evidence state', () => {
         render(<CurrentRunCard />);
-
         expect(screen.getByRole('region', { name: 'Current run' })).toBeInTheDocument();
         expect(screen.getByText('Ready to train')).toBeInTheDocument();
         expect(screen.getByText('No trained snapshot exists yet.')).toBeInTheDocument();
     });
 
-    it('identifies a live run and trained snapshot step', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
+    it('does not treat a contradictory legacy snapshot as scientific model evidence', () => {
+        useTrainingStore.setState({
+            latestLiveSignal: null,
+            latestEvaluation: null,
+            snapshot: { step: 999, epoch: 99, trainLoss: 9, testLoss: 8 },
+        } as never);
+        render(<CurrentRunCard />);
+        expect(screen.getByText('Ready to train')).toBeInTheDocument();
+        expect(screen.getByText('No batch trend')).toBeInTheDocument();
+        expect(screen.queryByText(/999/)).not.toBeInTheDocument();
+    });
+
+    it('identifies live and paired evidence separately', () => {
+        installTrained();
         useTrainingStore.setState({
             status: 'running',
-            snapshot: { step: 128, epoch: 4, trainLoss: 0.2, testLoss: 0.3 } as any,
+            latestLiveSignal: live(128, 4),
+            latestEvaluation: {
+                evaluationId: 3,
+                trigger: 'cadence',
+                model: { generationId: 1, revision: 120, step: 120, epoch: 3 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+                objectiveKey: 'o',
+                train: { basis: { kind: 'full-split', split: 'train', sampleCount: 210, populationCount: 210 }, values: { dataLoss: 0.22, accuracy: 0.9 } },
+                test: { basis: { kind: 'full-split', split: 'test', sampleCount: 90, populationCount: 90 }, values: { dataLoss: 0.31, accuracy: 0.8 } },
+                objective: { regularizationPenalty: 0.01, trainTotalObjective: 0.23 },
+            },
         });
 
         render(<CurrentRunCard />);
-
         expect(screen.getByText('Live run')).toBeInTheDocument();
-        expect(screen.getByText('Snapshot step 128')).toBeInTheDocument();
+        expect(screen.getByText('Batch trend through step 128')).toBeInTheDocument();
+        expect(screen.getByText('Full evaluation 3 at step 120')).toBeInTheDocument();
         expect(screen.getByText('Epoch 4')).toBeInTheDocument();
-        expect(screen.getByText('train 0.2000')).toBeInTheDocument();
-        expect(screen.getByText('test 0.3000')).toBeInTheDocument();
-        expect(screen.getByText('gap +0.1000')).toBeInTheDocument();
+        expect(screen.getByText('Batch trend (EMA) 0.2000')).toBeInTheDocument();
+        expect(screen.getByText('Train data loss (full split) 0.2200')).toBeInTheDocument();
+        expect(screen.getByText('Test data loss (full split) 0.3100')).toBeInTheDocument();
+        expect(screen.getByText('gap +0.0900')).toBeInTheDocument();
     });
 
     it('prioritizes pending config sync over generic idle state', () => {
-        useTrainingStore.setState({
-            pendingConfigSource: 'training',
-            trainingConfigLoading: true,
-            snapshot: { step: 12, epoch: 1 } as any,
-        });
-
+        useTrainingStore.setState({ pendingConfigSource: 'training', trainingConfigLoading: true });
         render(<CurrentRunCard />);
-
         expect(screen.getByText('Updating training config')).toBeInTheDocument();
-        expect(screen.getByText('Evidence still reflects the last trained snapshot until the update completes.')).toBeInTheDocument();
     });
 
     it('explains paused runs with their pause reason', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
-        useTrainingStore.setState({
-            status: 'paused',
-            pauseReason: 'manual',
-            snapshot: { step: 64, epoch: 3 } as any,
-        });
-
+        installTrained();
+        useTrainingStore.setState({ status: 'paused', pauseReason: 'manual', latestLiveSignal: live(64, 3) });
         render(<CurrentRunCard />);
-
         expect(screen.getByText('Paused run')).toBeInTheDocument();
         expect(screen.getByText('Paused manually.')).toBeInTheDocument();
     });
 
-    it('explains stale metrics without treating the recipe as drifted', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
-        useTrainingStore.setState({
-            snapshot: { step: 72, epoch: 4 } as any,
-            testMetricsStale: true,
-        });
-
+    it('states evaluation absence without a global stale flag', () => {
+        installTrained();
+        useTrainingStore.setState({ latestLiveSignal: live(72, 4), latestEvaluation: null });
         render(<CurrentRunCard />);
-
-        expect(screen.getByText('Stale metrics')).toBeInTheDocument();
-        expect(screen.getByText('The latest evidence is reusing cached test metrics until a fresh pass completes.')).toBeInTheDocument();
-        expect(screen.getByText('metrics stale')).toBeInTheDocument();
+        expect(screen.getByText('Awaiting full evaluation')).toBeInTheDocument();
+        expect(screen.getByText(/Batch trend is current through step 72/i)).toBeInTheDocument();
+        expect(screen.queryByText(/metrics stale/i)).not.toBeInTheDocument();
     });
 
     it('surfaces worker failure as the current run state', () => {
         useTrainingStore.setState({ workerError: 'Worker channel closed unexpectedly.' });
-
         render(<CurrentRunCard />);
-
         expect(screen.getByText('Worker connection lost')).toBeInTheDocument();
-        expect(screen.getByText('Worker channel closed unexpectedly. Refresh the page to restart the playground.')).toBeInTheDocument();
     });
 
-    it('shows stale drift when current recipe differs from trained snapshot', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
-        useTrainingStore.setState({ snapshot: { step: 20, epoch: 2 } as any });
-        usePlaygroundStore.setState({
-            ...makeConfig(),
-            training: { ...DEFAULT_TRAINING, learningRate: 0.1 },
-        });
-
+    it('shows recipe drift against the exact trained recipe', () => {
+        installTrained();
+        installCurrent(prepared('regression-plane'));
+        useTrainingStore.setState({ latestLiveSignal: live(20, 2) });
         render(<CurrentRunCard />);
-
         expect(screen.getByText('Recipe drift')).toBeInTheDocument();
         expect(screen.getByText('Current recipe differs from trained snapshot.')).toBeInTheDocument();
-        expect(screen.getByText('Training')).toBeInTheDocument();
     });
 });

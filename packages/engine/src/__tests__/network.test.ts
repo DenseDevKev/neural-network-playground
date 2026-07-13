@@ -741,13 +741,12 @@ describe('Network snapshot', () => {
         );
         expect(snap.step).toBe(0);
         expect(snap.epoch).toBe(0);
-        expect(snap.trainLoss).toBe(0.5);
-        expect(snap.testLoss).toBe(0.55);
+        expect(snap.trainMetrics.loss).toBe(0.5);
+        expect(snap.testMetrics.loss).toBe(0.55);
         expect(snap.weights).toBeDefined();
         expect(snap.biases).toBeDefined();
         expect(snap.outputGrid).toEqual([0.5, 0.5, 0.5, 0.5]);
         expect(snap.gridSize).toBe(2);
-        expect(snap.historyPoint).toBeDefined();
     });
 
     it('snapshot weights are copies (not references)', () => {

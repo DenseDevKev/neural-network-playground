@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-    type AppConfig,
+    PREPARED_PRESETS,
+    type LiveTrainingSignal,
+    type PairedEvaluation,
+    type PreparedExperimentDocumentV2,
 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -17,36 +16,80 @@ import {
     TopologyStateBadge,
 } from './ExperimentStateContext.tsx';
 
-function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
+function prepared(id = 'xor-hidden'): PreparedExperimentDocumentV2 {
+    const match = PREPARED_PRESETS.find((entry) => entry.id === id)?.prepared;
+    if (!match) throw new Error(`missing preset ${id}`);
+    return match;
+}
+
+function installCurrent(next = prepared()) {
+    usePlaygroundStore.setState({
+        access: { status: 'ready', prepared: next },
+        preparation: { status: 'ready', requestId: 0, issues: [] },
+    });
+}
+
+function installTrained(next = prepared()) {
+    useTrainingStore.getState().markTrainedRecipe(
+        next.document.recipe,
+        'initialize',
+        next.identities.recipeFingerprint,
+    );
+}
+
+function live(step: number): LiveTrainingSignal {
     return {
-        data: overrides.data ?? { ...DEFAULT_DATA },
-        features: overrides.features ?? { ...DEFAULT_FEATURES },
-        network: overrides.network ?? {
-            ...DEFAULT_NETWORK,
-            inputSize: 2,
-            hiddenLayers: [...DEFAULT_NETWORK.hiddenLayers],
-            seed: DEFAULT_DATA.seed,
+        model: { generationId: 3, revision: step, step, epoch: 4 },
+        dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+        objectiveKey: 'o',
+        basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 10, throughStep: step },
+        dataLoss: 0.22,
+    };
+}
+
+function evaluation(step: number): PairedEvaluation {
+    return {
+        evaluationId: 3,
+        trigger: 'cadence',
+        model: { generationId: 3, revision: step, step, epoch: 4 },
+        dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+        objectiveKey: 'o',
+        train: {
+            basis: { kind: 'full-split', split: 'train', sampleCount: 210, populationCount: 210 },
+            values: { dataLoss: 0.22, accuracy: 0.9 },
         },
-        training: overrides.training ?? { ...DEFAULT_TRAINING },
-        ui: overrides.ui ?? { showTestData: false, discretizeOutput: false },
+        test: {
+            basis: { kind: 'full-split', split: 'test', sampleCount: 90, populationCount: 90 },
+            values: { dataLoss: 0.31, accuracy: 0.8 },
+        },
+        objective: { regularizationPenalty: 0.01, trainTotalObjective: 0.23 },
     };
 }
 
 describe('ExperimentStateContext', () => {
     beforeEach(() => {
-        usePlaygroundStore.setState(makeConfig());
+        installCurrent();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: null,
-            trainedRecipeConfig: null,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
             trainedRecipeRecordedAt: null,
             trainedRecipeSource: null,
             pendingConfigSource: null,
-            testMetricsStale: false,
+            latestLiveSignal: null,
+            latestEvaluation: null,
             workerError: null,
             configError: null,
         });
-        useLayoutStore.setState({ layout: 'dock', activeTabRight: 'boundary' });
+        useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
+            layout: 'dock',
+            phase: 'build',
+            activeTabLeft: 'data',
+            activeTabRight: 'boundary',
+        });
     });
 
     it('labels topology as a draft blueprint before a snapshot exists', () => {
@@ -58,7 +101,7 @@ describe('ExperimentStateContext', () => {
     it('labels topology as live while training runs', () => {
         useTrainingStore.setState({
             status: 'running',
-            snapshot: { step: 40, epoch: 2 } as any,
+            latestLiveSignal: live(40),
         });
 
         render(<TopologyStateBadge />);
@@ -67,17 +110,9 @@ describe('ExperimentStateContext', () => {
     });
 
     it('labels topology and evidence as drifted when current recipe changes after training', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
-        useTrainingStore.setState({ snapshot: { step: 24, epoch: 1 } as any });
-        usePlaygroundStore.setState({
-            ...makeConfig(),
-            network: {
-                ...DEFAULT_NETWORK,
-                inputSize: 2,
-                hiddenLayers: [8],
-                seed: DEFAULT_DATA.seed,
-            },
-        });
+        installTrained();
+        useTrainingStore.setState({ latestLiveSignal: live(24) });
+        installCurrent(prepared('regression-plane'));
 
         render(
             <>
@@ -87,7 +122,7 @@ describe('ExperimentStateContext', () => {
         );
 
         expect(screen.getByLabelText('Topology state')).toHaveTextContent('Drifted Recipe');
-        expect(screen.getByText('Boundary evidence belongs to trained snapshot step 24; current recipe has drift.')).toBeInTheDocument();
+        expect(screen.getByText('Boundary evidence belongs to trained model step 24; current recipe has drift.')).toBeInTheDocument();
         expect(screen.getByText('Shows decision regions and sample outcomes.')).toBeInTheDocument();
     });
 
@@ -124,46 +159,66 @@ describe('ExperimentStateContext', () => {
     });
 
     it('summarizes the live diagnostic cockpit around the selected evidence view', () => {
-        useLayoutStore.setState({ layout: 'focus', activeTabRight: 'loss' });
+        useLayoutStore.setState({
+            view: 'run',
+            activeEvidenceView: 'loss',
+            phase: 'run',
+            activeTabRight: 'loss',
+        });
         useTrainingStore.setState({
             status: 'running',
-            snapshot: {
-                step: 128,
-                epoch: 4,
-                trainLoss: 0.22,
-                testLoss: 0.31,
-                trainMetrics: { loss: 0.22, accuracy: 0.9 },
-                testMetrics: { loss: 0.31, accuracy: 0.8 },
-            } as any,
+            latestLiveSignal: live(128),
+            latestEvaluation: evaluation(120),
         });
 
         render(<DiagnosticCockpitStrip />);
 
         expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
-            'Topology and Loss are reading live run step 128.',
+            'Loss has batch trend through step 128 and full evaluation 3 at step 120 using all 210 train and 90 test samples.',
         );
-        expect(screen.getByText('focus pair')).toBeInTheDocument();
-        expect(screen.getByText('train 0.2200')).toBeInTheDocument();
-        expect(screen.getByText('test 0.3100')).toBeInTheDocument();
+        expect(screen.queryByText('focus pair')).not.toBeInTheDocument();
+        expect(screen.getByText('Batch trend (EMA) 0.2200')).toBeInTheDocument();
+        expect(screen.getByText('Train data loss (full split) 0.2200')).toBeInTheDocument();
+        expect(screen.getByText('Test data loss (full split) 0.3100')).toBeInTheDocument();
+    });
+
+    it('states exact evaluation age instead of a global stale-metrics claim', () => {
+        installTrained();
+        useLayoutStore.setState({
+            view: 'run',
+            activeEvidenceView: 'confusion',
+            phase: 'run',
+            activeTabRight: 'confusion',
+        });
+        useTrainingStore.setState({
+            status: 'running',
+            latestLiveSignal: live(128),
+            latestEvaluation: evaluation(120),
+        });
+
+        render(
+            <>
+                <EvidenceContextLine view="Confusion" />
+                <DiagnosticCockpitStrip />
+            </>,
+        );
+
+        expect(screen.getAllByText('Evaluation age')).toHaveLength(2);
+        expect(screen.getAllByText('Confusion uses full evaluation 3 at step 120 across all 90 test samples; the current model is at step 128.')).toHaveLength(2);
+        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+            'Confusion uses full evaluation 3 at step 120 across all 90 test samples; the current model is at step 128.',
+        );
     });
 
     it('labels mixed draft and snapshot state in the diagnostic cockpit', () => {
-        useTrainingStore.getState().markTrainedRecipe(makeConfig(), 'initialize');
-        useTrainingStore.setState({ snapshot: { step: 24, epoch: 1, trainLoss: 0.4, testLoss: 0.5 } as any });
-        usePlaygroundStore.setState({
-            ...makeConfig(),
-            network: {
-                ...DEFAULT_NETWORK,
-                inputSize: 2,
-                hiddenLayers: [8],
-                seed: DEFAULT_DATA.seed,
-            },
-        });
+        installTrained();
+        useTrainingStore.setState({ latestLiveSignal: live(24) });
+        installCurrent(prepared('regression-plane'));
 
         render(<DiagnosticCockpitStrip />);
 
         expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
-            'Topology shows the draft recipe while Boundary evidence belongs to trained snapshot step 24.',
+            'Topology shows the draft recipe while Boundary evidence belongs to trained model step 24.',
         );
     });
 });

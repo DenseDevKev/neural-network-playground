@@ -11,9 +11,21 @@ import type {
     WorkerSharedBuffersMessage,
     MainToWorkerCommand,
     WorkerSnapshotMessage,
+    WorkerEvidenceMessageV2,
+    WorkerArtifactProvenanceV2,
+    ArtifactProvenance,
 } from '@nn-playground/shared';
-import { isWorkerToMainMessage } from '@nn-playground/shared';
-import { updateFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
+import {
+    isWorkerToMainMessage,
+    parseArtifactProvenance,
+    parseWorkerToMainMessageV2,
+    WORKER_PROTOCOL_VERSION,
+} from '@nn-playground/shared';
+import {
+    updateFrameBuffer,
+    resetFrameBuffer,
+    type FrameBufferPatch,
+} from './frameBuffer.ts';
 import {
     attachSharedSnapshotViews,
     FLAG_NEURON_GRIDS,
@@ -28,6 +40,7 @@ let _comlinkApi: Comlink.Remote<TrainingWorkerApi> | null = null;
 let _streamPort: MessagePort | null = null;
 let _currentRunId = 0;
 let _latestSnapshotId = -1;
+let _minimumSnapshotRevision = 0;
 let _rafId: number | null = null;
 let _pendingSnapshot: WorkerToMainMessage | null = null;
 
@@ -40,26 +53,39 @@ let _pendingSnapshot: WorkerToMainMessage | null = null;
 // while React is mid-paint.
 let _sharedViews: SharedSnapshotViews | null = null;
 let _sharedViewsRunId: number | null = null;
+/** Staging destinations are never exposed until a complete frame commit. */
 let _sharedOutputReadBuf: Float32Array | null = null;
 let _sharedNeuronReadBuf: Float32Array | null = null;
+/** Previously committed buffers; swapped back to staging after the next commit. */
+let _sharedOutputPublishedBuf: Float32Array | null = null;
+let _sharedNeuronPublishedBuf: Float32Array | null = null;
 let _sharedNeuronGridLayout: { count: number; gridSize: number } | null = null;
 
 function installSharedBuffers(msg: WorkerSharedBuffersMessage): void {
-    _sharedViews = attachSharedSnapshotViews({
+    const nextViews = attachSharedSnapshotViews({
         control: msg.control,
         outputGrid: msg.outputGrid,
         neuronGrids: msg.neuronGrids,
         gridSize: msg.gridSize,
         neuronCount: msg.neuronGridLayout.count,
     });
-    _sharedViewsRunId = msg.runId;
     // Allocate reader-side destination arrays sized to the new shape.
     // These are regular (non-shared) Float32Arrays so downstream renderers
     // work on a stable copy; the cost is a single memcpy per snapshot.
-    _sharedOutputReadBuf = new Float32Array(msg.gridSize * msg.gridSize);
-    _sharedNeuronReadBuf = new Float32Array(
+    const nextOutputReadBuf = new Float32Array(msg.gridSize * msg.gridSize);
+    const nextNeuronReadBuf = new Float32Array(
         Math.max(1, msg.neuronGridLayout.count * msg.gridSize * msg.gridSize),
     );
+    const nextOutputPublishedBuf = new Float32Array(msg.gridSize * msg.gridSize);
+    const nextNeuronPublishedBuf = new Float32Array(
+        Math.max(1, msg.neuronGridLayout.count * msg.gridSize * msg.gridSize),
+    );
+    _sharedViews = nextViews;
+    _sharedViewsRunId = msg.runId;
+    _sharedOutputReadBuf = nextOutputReadBuf;
+    _sharedNeuronReadBuf = nextNeuronReadBuf;
+    _sharedOutputPublishedBuf = nextOutputPublishedBuf;
+    _sharedNeuronPublishedBuf = nextNeuronPublishedBuf;
     _sharedNeuronGridLayout = msg.neuronGridLayout;
 }
 
@@ -68,6 +94,8 @@ function tearDownSharedBuffers(): void {
     _sharedViewsRunId = null;
     _sharedOutputReadBuf = null;
     _sharedNeuronReadBuf = null;
+    _sharedOutputPublishedBuf = null;
+    _sharedNeuronPublishedBuf = null;
     _sharedNeuronGridLayout = null;
 }
 
@@ -86,8 +114,35 @@ let _onSnapshot: SnapshotCallback | null = null;
 // path as worker-emitted errors.
 function emitWorkerError(message: string): void {
     if (_onSnapshot) {
-        _onSnapshot({ type: 'error', runId: _currentRunId, message });
+        _onSnapshot({ type: 'error', protocolVersion: 2, runId: _currentRunId, message });
     }
+}
+
+function deepFreezeArtifact<T>(value: T): Readonly<T> {
+    if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
+    for (const key of Reflect.ownKeys(value)) {
+        deepFreezeArtifact((value as Record<PropertyKey, unknown>)[key]);
+    }
+    return Object.freeze(value);
+}
+
+function snapshotWithFrozenArtifactProvenance(
+    message: WorkerSnapshotMessage,
+): WorkerSnapshotMessage {
+    const model = Object.freeze({ ...message.model });
+    if (message.artifacts === undefined) return { ...message, model };
+    const parsed: Partial<Record<keyof WorkerArtifactProvenanceV2, ArtifactProvenance>> = {};
+    for (const key of Object.keys(message.artifacts) as Array<keyof WorkerArtifactProvenanceV2>) {
+        const provenance = message.artifacts[key];
+        if (provenance !== undefined) {
+            parsed[key] = deepFreezeArtifact(parseArtifactProvenance(provenance));
+        }
+    }
+    return {
+        ...message,
+        model,
+        artifacts: Object.freeze(parsed) as WorkerArtifactProvenanceV2,
+    };
 }
 
 // ── Initialization ──
@@ -145,10 +200,44 @@ export async function setupStreamChannel(): Promise<void> {
 
 // ── Message Handling ──
 
-function handleWorkerMessage(msg: unknown): void {
+function handleWorkerMessage(value: unknown): void {
     // Validate message shape before processing.
-    if (!isWorkerToMainMessage(msg)) {
-        emitWorkerError('Received malformed message from worker: ' + JSON.stringify(msg));
+    let msg: WorkerToMainMessage | null = null;
+    try {
+        if (isWorkerToMainMessage(value)) msg = value;
+    } catch {
+        msg = null;
+    }
+    if (msg === null) {
+        emitWorkerError(
+            'Received malformed message from worker: ' + describeMalformedMessage(value),
+        );
+        return;
+    }
+
+    // Scientific evidence is not visual-frame state: deliver it immediately
+    // so cadence pairs cannot be overwritten by the rAF latest-wins slot.
+    if (msg.type === 'evidence') {
+        const evidence = parseWorkerToMainMessageV2(msg);
+        if (evidence.type !== 'evidence') {
+            emitWorkerError('Received malformed V2 evidence discriminator');
+            return;
+        }
+        const generationId = evidenceGenerationId(evidence);
+        if (generationId !== _currentRunId) return;
+        if (_onSnapshot) _onSnapshot(evidence);
+        return;
+    }
+
+    // Structured errors always surface, even if their originating generation
+    // has already been replaced.
+    if (msg.type === 'worker-error') {
+        const error = parseWorkerToMainMessageV2(msg);
+        if (error.type !== 'worker-error') {
+            emitWorkerError('Received malformed V2 error discriminator');
+            return;
+        }
+        if (_onSnapshot) _onSnapshot(error);
         return;
     }
 
@@ -157,22 +246,66 @@ function handleWorkerMessage(msg: unknown): void {
     if (msg.type !== 'error' && msg.runId < _currentRunId) return;
 
     if (msg.type === 'snapshot') {
+        const snapshot = snapshotWithFrozenArtifactProvenance(msg);
+        if (snapshot.runId === _currentRunId && _minimumSnapshotRevision > 0) {
+            if (snapshot.model === undefined
+                || snapshot.model.generationId !== snapshot.runId
+                || !Number.isSafeInteger(snapshot.model.revision)
+                || snapshot.model.revision < 0) {
+                if (_streamPort) _streamPort.postMessage({
+                    type: 'frameAck',
+                    protocolVersion: WORKER_PROTOCOL_VERSION,
+                });
+                emitWorkerError('Received strict snapshot without a valid current model revision');
+                return;
+            }
+            if (snapshot.model.revision < _minimumSnapshotRevision) {
+                // Comlink replies and stream-port messages use independent
+                // channels. A pre-restore frame can therefore arrive after
+                // the restore RPC; acknowledge it without making it visible.
+                if (_streamPort) _streamPort.postMessage({
+                    type: 'frameAck',
+                    protocolVersion: WORKER_PROTOCOL_VERSION,
+                });
+                return;
+            }
+        }
         // Drop out-of-order snapshots
-        if (msg.snapshotId <= _latestSnapshotId && msg.runId === _currentRunId) return;
-        _latestSnapshotId = msg.snapshotId;
+        if (snapshot.snapshotId <= _latestSnapshotId && snapshot.runId === _currentRunId) return;
+        _latestSnapshotId = snapshot.snapshotId;
 
         // Store as pending — will be applied on next rAF tick (latest-wins)
-        _pendingSnapshot = msg;
+        _pendingSnapshot = snapshot;
     } else if (msg.type === 'sharedBuffers') {
         // Worker (re)allocated its SAB transport. Install views immediately
         // so the very next snapshot can read from them. Never queued to rAF
         // — we need this in place before any snapshot referring to it
         // arrives, and it carries no per-frame data.
-        installSharedBuffers(msg);
+        try {
+            installSharedBuffers(msg);
+        } catch {
+            emitWorkerError('Received malformed shared-buffer handshake from worker');
+        }
     } else {
         // Status/error messages are applied immediately
         if (_onSnapshot) _onSnapshot(msg);
     }
+}
+
+function describeMalformedMessage(value: unknown): string {
+    try {
+        return JSON.stringify(value) ?? String(value);
+    } catch {
+        return '[unserializable message]';
+    }
+}
+
+function evidenceGenerationId(message: WorkerEvidenceMessageV2): number {
+    if (message.liveSignal) return message.liveSignal.model.generationId;
+    if (message.latestEvaluation) return message.latestEvaluation.model.generationId;
+    const artifact = message.artifacts && Object.values(message.artifacts)[0];
+    if (!artifact) throw new Error('validated evidence must contain an identity');
+    return artifact.model.generationId;
 }
 
 // ── rAF Render Loop ──
@@ -181,8 +314,6 @@ function handleWorkerMessage(msg: unknown): void {
 // that are actually present in the message are written — this is essential
 // for the cadence-gated snapshots, where the worker omits the grid on
 // reuse frames and the main thread must retain the previously cached one.
-type FrameBufferPatch = Parameters<typeof updateFrameBuffer>[0];
-
 function buildSnapshotFramePatch(
     msg: WorkerSnapshotMessage,
     currentRunId: number,
@@ -213,7 +344,12 @@ function buildSnapshotFramePatch(
             sharedOutputReadBuf,
             sharedNeuronReadBuf,
         );
-        if (result) {
+        const strictFlags = FLAG_OUTPUT_GRID
+            | (msg.artifacts?.neuronGrids === undefined ? 0 : FLAG_NEURON_GRIDS);
+        const matchesStrictEnvelope = result !== null
+            && result.seq === msg.sharedSeq
+            && result.flags === strictFlags;
+        if (result && matchesStrictEnvelope) {
             if ((result.flags & FLAG_OUTPUT_GRID) !== 0) {
                 patch.outputGrid = sharedOutputReadBuf;
                 patch.gridSize = msg.scalars.gridSize;
@@ -231,11 +367,15 @@ function buildSnapshotFramePatch(
         // update this frame — the UI will pick up the next consistent
         // publish. No inline fallback available (data isn't on the msg).
     } else {
-        // Legacy postMessage path — grids arrived inline.
+        // Transferable postMessage path — grids arrived inline.
         if (msg.outputGrid !== undefined) {
             patch.outputGrid = msg.outputGrid.length > 0 ? msg.outputGrid : null;
             patch.gridSize = msg.outputGrid.length > 0 ? msg.scalars.gridSize : 0;
             if (!hasMulticlassBoundaryPayload && msg.outputGrid.length > 0) {
+                patch.multiclassClassGrid = null;
+                patch.multiclassConfidenceGrid = null;
+                patch.multiclassBoundaryLayout = null;
+            } else if (!hasMulticlassBoundaryPayload && msg.outputGrid.length === 0) {
                 patch.multiclassClassGrid = null;
                 patch.multiclassConfidenceGrid = null;
                 patch.multiclassBoundaryLayout = null;
@@ -268,6 +408,13 @@ function buildSnapshotFramePatch(
     if (msg.weights !== undefined) patch.weights = msg.weights;
     if (msg.biases !== undefined) patch.biases = msg.biases;
     if (msg.weightLayout !== undefined) patch.weightLayout = msg.weightLayout;
+    if (msg.weights !== undefined || msg.biases !== undefined || msg.weightLayout !== undefined) {
+        patch.parameterProvenance = {
+            model: msg.model,
+            recipeFingerprint: msg.recipeFingerprint,
+        };
+        Object.freeze(patch.parameterProvenance);
+    }
     if (msg.layerStats !== undefined) patch.layerStats = msg.layerStats;
     if (msg.activationHistogramBins !== undefined) {
         patch.activationHistogramBins = msg.activationHistogramBins;
@@ -278,16 +425,92 @@ function buildSnapshotFramePatch(
     if (msg.confusionMatrix !== undefined) {
         patch.confusionMatrix = msg.confusionMatrix;
         patch.multiclassConfusionMatrix = null;
-    } else if (msg.scalars.testMetricsStale === false) {
-        patch.confusionMatrix = null;
     }
     if (msg.multiclassConfusionMatrix !== undefined) {
         patch.multiclassConfusionMatrix = msg.multiclassConfusionMatrix;
         patch.confusionMatrix = null;
-    } else if (msg.scalars.testMetricsStale === false) {
-        patch.multiclassConfusionMatrix = null;
     }
+    attachStrictArtifactProvenance(msg, patch);
     return patch;
+}
+
+function rotateCommittedSharedReadBuffers(patch: FrameBufferPatch): void {
+    if (_sharedOutputReadBuf !== null
+        && _sharedOutputPublishedBuf !== null
+        && patch.outputGrid === _sharedOutputReadBuf) {
+        const previousPublished = _sharedOutputPublishedBuf;
+        _sharedOutputPublishedBuf = _sharedOutputReadBuf;
+        _sharedOutputReadBuf = previousPublished;
+    }
+    if (_sharedNeuronReadBuf !== null
+        && _sharedNeuronPublishedBuf !== null
+        && patch.neuronGrids === _sharedNeuronReadBuf) {
+        const previousPublished = _sharedNeuronPublishedBuf;
+        _sharedNeuronPublishedBuf = _sharedNeuronReadBuf;
+        _sharedNeuronReadBuf = previousPublished;
+    }
+}
+
+function patchHasOwn(patch: FrameBufferPatch, key: keyof FrameBufferPatch): boolean {
+    return Object.prototype.hasOwnProperty.call(patch, key);
+}
+
+function attachStrictArtifactProvenance(
+    msg: WorkerSnapshotMessage,
+    patch: FrameBufferPatch,
+): void {
+    const artifacts = msg.artifacts;
+
+    const boundaryMutated = patchHasOwn(patch, 'outputGrid')
+        || patchHasOwn(patch, 'multiclassClassGrid')
+        || patchHasOwn(patch, 'multiclassConfidenceGrid')
+        || patchHasOwn(patch, 'multiclassBoundaryLayout');
+    if (boundaryMutated) {
+        const boundaryPresent = patch.outputGrid != null
+            || patch.multiclassClassGrid != null
+            || patch.multiclassConfidenceGrid != null;
+        patch.decisionBoundaryProvenance = boundaryPresent
+            ? artifacts!.decisionBoundary!
+            : null;
+    }
+
+    const neuronMutated = patchHasOwn(patch, 'neuronGrids')
+        || patchHasOwn(patch, 'neuronGridLayout');
+    if (neuronMutated) {
+        patch.neuronGridsProvenance = patch.neuronGrids != null
+            ? artifacts!.neuronGrids!
+            : null;
+    }
+
+    if (patchHasOwn(patch, 'layerStats')) {
+        patch.layerStatsProvenance = patch.layerStats != null
+            ? artifacts!.activationStatistics!
+            : null;
+        patch.layerStatsGradientRevision = patch.layerStats != null
+            ? msg.layerStatsGradientRevision!
+            : null;
+    }
+
+    const histogramMutated = patchHasOwn(patch, 'activationHistogramBins')
+        || patchHasOwn(patch, 'activationHistogramLayout');
+    if (histogramMutated) {
+        patch.activationHistogramProvenance = patch.activationHistogramBins != null
+            ? artifacts!.activationHistogram!
+            : null;
+    }
+
+    const confusionMutated = patchHasOwn(patch, 'confusionMatrix')
+        || patchHasOwn(patch, 'multiclassConfusionMatrix');
+    if (confusionMutated) {
+        const matrixPresent = patch.confusionMatrix != null
+            || patch.multiclassConfusionMatrix != null;
+        patch.confusionMatrixProvenance = matrixPresent
+            ? artifacts!.confusionMatrix!
+            : null;
+        patch.confusionMatrixEvaluationId = matrixPresent
+            ? msg.confusionMatrixEvaluationId!
+            : null;
+    }
 }
 
 function rafLoop(): void {
@@ -299,7 +522,7 @@ function rafLoop(): void {
 
         // Write heavy arrays to frame buffer
         if (msg.type === 'snapshot') {
-            updateFrameBuffer(buildSnapshotFramePatch(
+            const patch = buildSnapshotFramePatch(
                 msg,
                 _currentRunId,
                 _sharedViews,
@@ -307,7 +530,9 @@ function rafLoop(): void {
                 _sharedOutputReadBuf,
                 _sharedNeuronReadBuf,
                 _sharedNeuronGridLayout,
-            ));
+            );
+            updateFrameBuffer(patch, { requireArtifactProvenance: true });
+            rotateCommittedSharedReadBuffers(patch);
         }
 
         // Notify the subscriber (typically updates useTrainingStore scalars)
@@ -316,7 +541,10 @@ function rafLoop(): void {
         // Ack snapshots to release the worker's back-pressure gate. Status/
         // error messages bypass the gate, so they don't need an ack.
         if (msg.type === 'snapshot' && _streamPort) {
-            _streamPort.postMessage({ type: 'frameAck' });
+            _streamPort.postMessage({
+                type: 'frameAck',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+            });
         }
     }
 
@@ -344,7 +572,7 @@ export function stopRenderLoop(): void {
         const msg = _pendingSnapshot;
         _pendingSnapshot = null;
         if (msg.type === 'snapshot') {
-            updateFrameBuffer(buildSnapshotFramePatch(
+            const patch = buildSnapshotFramePatch(
                 msg,
                 _currentRunId,
                 _sharedViews,
@@ -352,11 +580,16 @@ export function stopRenderLoop(): void {
                 _sharedOutputReadBuf,
                 _sharedNeuronReadBuf,
                 _sharedNeuronGridLayout,
-            ));
+            );
+            updateFrameBuffer(patch, { requireArtifactProvenance: true });
+            rotateCommittedSharedReadBuffers(patch);
         }
         _onSnapshot(msg);
         if (msg.type === 'snapshot' && _streamPort) {
-            _streamPort.postMessage({ type: 'frameAck' });
+            _streamPort.postMessage({
+                type: 'frameAck',
+                protocolVersion: WORKER_PROTOCOL_VERSION,
+            });
         }
     }
 }
@@ -382,6 +615,7 @@ export function postStreamCommand(cmd: MainToWorkerCommand): void {
 export function newRun(): number {
     _currentRunId++;
     _latestSnapshotId = -1;
+    _minimumSnapshotRevision = 0;
     _pendingSnapshot = null;
     clearSharedBuffersIfRunMismatch();
     return _currentRunId;
@@ -393,8 +627,37 @@ export function newRun(): number {
 export function newRunTo(targetRunId: number): void {
     _currentRunId = targetRunId;
     _latestSnapshotId = -1;
+    _minimumSnapshotRevision = 0;
     _pendingSnapshot = null;
     clearSharedBuffersIfRunMismatch();
+}
+
+/**
+ * Drop one visual frame queued before a same-generation restore commit and,
+ * when provided, retain a minimum revision fence for delayed stream frames.
+ * The snapshot ID fence is intentionally retained, and every discarded frame
+ * is acknowledged so worker back-pressure cannot remain stuck.
+ */
+export function discardPendingSnapshot(
+    runId: number,
+    minimumRevision?: number,
+): boolean {
+    if (runId !== _currentRunId) return false;
+    if (minimumRevision !== undefined) {
+        if (!Number.isSafeInteger(minimumRevision) || minimumRevision < 0) {
+            throw new RangeError('minimum snapshot revision must be a non-negative safe integer');
+        }
+        _minimumSnapshotRevision = Math.max(_minimumSnapshotRevision, minimumRevision);
+    }
+    if (_pendingSnapshot?.type !== 'snapshot' || _pendingSnapshot.runId !== runId) {
+        return false;
+    }
+    _pendingSnapshot = null;
+    if (_streamPort) _streamPort.postMessage({
+        type: 'frameAck',
+        protocolVersion: WORKER_PROTOCOL_VERSION,
+    });
+    return true;
 }
 
 /**
@@ -432,6 +695,7 @@ export function terminateWorker(): void {
     }
     _currentRunId = 0;
     _latestSnapshotId = -1;
+    _minimumSnapshotRevision = 0;
     _pendingSnapshot = null;
     _onSnapshot = null;
     // SAB views outlive a single run (they're shared with the worker) but

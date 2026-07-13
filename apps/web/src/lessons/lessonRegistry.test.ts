@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PRESETS } from '@nn-playground/shared';
+import { PREPARED_PRESETS, resolveRecipe } from '@nn-playground/shared';
 import {
     DEFAULT_LESSON_ID,
     getLessonDefinition,
-    getLessonPreset,
+    getLessonRecipe,
     LESSON_DEFINITIONS,
     VALID_LESSON_TARGETS,
 } from './lessonRegistry.ts';
@@ -18,15 +18,16 @@ function hasFunctionValue(value: unknown): boolean {
 }
 
 describe('lesson registry invariants', () => {
-    it('exposes the default XOR hidden-layer lesson', () => {
+    it('exposes the default lesson with an exact revision-pinned XOR recipe', () => {
         const lesson = getLessonDefinition();
 
         expect(DEFAULT_LESSON_ID).toBe('lesson-xor-hidden-layers');
         expect(lesson).toMatchObject({
             id: DEFAULT_LESSON_ID,
-            presetId: 'xor-hidden',
+            recipeRef: { id: 'xor-hidden', revision: 1 },
             title: 'XOR Needs Hidden Layers',
         });
+        expect(lesson).not.toHaveProperty('presetId');
     });
 
     it('keeps the expanded lesson library explicit', () => {
@@ -62,33 +63,50 @@ describe('lesson registry invariants', () => {
         }
     });
 
-    it('references only existing presets', () => {
-        const presetIds = new Set(PRESETS.map((preset) => preset.id));
-
+    it('resolves every lesson through its exact catalog id and revision pair', () => {
         for (const lesson of LESSON_DEFINITIONS) {
-            expect(presetIds.has(lesson.presetId), lesson.id).toBe(true);
-            expect(getLessonPreset(lesson).id).toBe(lesson.presetId);
+            const entry = getLessonRecipe(lesson);
+
+            expect(entry).toBe(resolveRecipe(lesson.recipeRef));
+            expect(entry.id).toBe(lesson.recipeRef.id);
+            expect(entry.revision).toBe(lesson.recipeRef.revision);
+            expect(entry.recipe).toBe(entry.prepared.document.recipe);
+            expect(entry.prepared.compiled.task.dataset).toBe(entry.recipe.task.dataset);
+            expect(entry.prepared.identities.canonicalRecipeKey).not.toBe('');
+            expect(entry.prepared.identities.recipeFingerprint).toMatch(/^r2\.1\./);
         }
     });
 
-    it('exposes exactly one approved multiclass lesson preset', () => {
-        const multiclassLessons = LESSON_DEFINITIONS.filter((lesson) => {
-            const preset = getLessonPreset(lesson);
-            return preset.config.data?.dataset === 'three-class-clusters';
-        });
+    it('reports both id and revision when a lesson reference is missing', () => {
+        const lesson = getLessonDefinition()!;
+        const missingRevision = {
+            ...lesson,
+            recipeRef: { id: lesson.recipeRef.id, revision: 999 },
+        };
+
+        expect(() => getLessonRecipe(missingRevision))
+            .toThrow('Missing guided lesson recipe: xor-hidden@999');
+    });
+
+    it('exposes exactly one approved multiclass lesson recipe', () => {
+        const multiclassLessons = LESSON_DEFINITIONS.filter(
+            (lesson) => getLessonRecipe(lesson).recipe.task.kind === 'multiclass-classification',
+        );
 
         expect(multiclassLessons.map((lesson) => lesson.id)).toEqual([APPROVED_MULTICLASS_LESSON_ID]);
 
-        const preset = getLessonPreset(multiclassLessons[0]);
-        expect(preset.config.data).toMatchObject({
+        const entry = getLessonRecipe(multiclassLessons[0]);
+        expect(entry.recipe.task).toEqual({
+            kind: 'multiclass-classification',
             dataset: 'three-class-clusters',
-            problemType: 'classification',
         });
-        expect(preset.config.network).toMatchObject({
+        expect(entry.recipe.objective.dataLoss.kind).toBe('categorical-cross-entropy-with-logits');
+        expect(entry.prepared.compiled.task).toMatchObject({
+            kind: 'multiclass-classification',
+            dataset: 'three-class-clusters',
             outputSize: 3,
             outputActivation: 'softmax',
         });
-        expect(preset.config.training?.lossType).toBe('categoricalCrossEntropy');
     });
 
     it('keeps the approved multiclass lesson on visible multiclass surfaces', () => {
@@ -103,21 +121,18 @@ describe('lesson registry invariants', () => {
         expect(lesson.steps[2].body).toContain('three outputs, softmax, and categorical cross-entropy');
     });
 
-    it('keeps lesson presets scalar unless they are the approved multiclass lesson', () => {
+    it('keeps every other lesson on a scalar task contract', () => {
         for (const lesson of LESSON_DEFINITIONS) {
-            const preset = getLessonPreset(lesson);
+            const compiled = getLessonRecipe(lesson).prepared.compiled;
 
             if (lesson.id === APPROVED_MULTICLASS_LESSON_ID) {
-                expect(preset.config.data?.dataset, lesson.id).toBe('three-class-clusters');
-                expect(preset.config.network?.outputSize, lesson.id).toBe(3);
-                expect(preset.config.network?.outputActivation, lesson.id).toBe('softmax');
-                expect(preset.config.training?.lossType, lesson.id).toBe('categoricalCrossEntropy');
+                expect(compiled.task.outputSize, lesson.id).toBe(3);
+                expect(compiled.task.outputActivation, lesson.id).toBe('softmax');
                 continue;
             }
 
-            expect(preset.config.network?.outputSize, lesson.id).toBe(1);
-            expect(preset.config.network?.outputActivation, lesson.id).not.toBe('softmax');
-            expect(preset.config.training?.lossType, lesson.id).not.toBe('categoricalCrossEntropy');
+            expect(compiled.task.outputSize, lesson.id).toBe(1);
+            expect(compiled.task.outputActivation, lesson.id).not.toBe('softmax');
         }
     });
 
@@ -131,9 +146,7 @@ describe('lesson registry invariants', () => {
                 expect(step.title.trim(), `${lesson.id}:${step.id}`).not.toBe('');
                 expect(step.body.trim(), `${lesson.id}:${step.id}`).not.toBe('');
                 expect(validTargets.has(step.target), `${lesson.id}:${step.id}`).toBe(true);
-                if (step.phase) {
-                    expect(['build', 'run']).toContain(step.phase);
-                }
+                if (step.phase) expect(['build', 'run']).toContain(step.phase);
             }
         }
     });
@@ -150,12 +163,15 @@ describe('lesson registry invariants', () => {
         }
     });
 
-    it('does not embed functions or config snapshots in lesson content', () => {
+    it('stores only content and a catalog reference, never functions or recipe snapshots', () => {
+        expect(PREPARED_PRESETS).toHaveLength(7);
         for (const lesson of LESSON_DEFINITIONS) {
             expect(hasFunctionValue(lesson), lesson.id).toBe(false);
-            expect('config' in lesson, lesson.id).toBe(false);
+            expect(lesson).not.toHaveProperty('config');
+            expect(lesson).not.toHaveProperty('presetId');
+            expect(Object.keys(lesson.recipeRef).sort()).toEqual(['id', 'revision']);
             for (const step of lesson.steps) {
-                expect('config' in step, `${lesson.id}:${step.id}`).toBe(false);
+                expect(step).not.toHaveProperty('config');
             }
         }
     });

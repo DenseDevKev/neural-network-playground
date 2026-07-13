@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { MainArea } from './MainArea.tsx';
+import { BoundaryContent, MainArea } from './MainArea.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
@@ -58,7 +58,7 @@ describe('MainArea right-panel content', () => {
             ui: { showTestData: false, discretizeOutput: false },
         });
 
-        useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: {
@@ -72,7 +72,6 @@ describe('MainArea right-panel content', () => {
                 biases: [[0.1, 0.2], [0.3]],
                 outputGrid: [],
                 gridSize: 40,
-                historyPoint: { step: 5, trainLoss: 0.5, testLoss: 0.6 },
             } as any,
             frameVersion: 0,
             trainPoints: [],
@@ -86,7 +85,6 @@ describe('MainArea right-panel content', () => {
             configSyncNonce: 0,
             workerError: null,
             pauseReason: null,
-            testMetricsStale: false,
         });
     });
 
@@ -119,6 +117,25 @@ describe('MainArea right-panel content', () => {
 
         await user.click(screen.getByRole('button', { name: 'Errors' }));
         expect(screen.getByText(/training points whose predicted class does not match/i)).toBeInTheDocument();
+    });
+
+    it('publishes decision view toggles through the canonical editView transaction', async () => {
+        const user = userEvent.setup();
+        const editView = vi.spyOn(usePlaygroundStore.getState(), 'editView');
+        render(<BoundaryContent />);
+
+        await user.click(screen.getByRole('checkbox', { name: 'Show test data' }));
+        await user.click(screen.getByRole('checkbox', { name: 'Discretize output' }));
+
+        await waitFor(() => {
+            expect(editView).toHaveBeenCalledTimes(2);
+            const { access } = usePlaygroundStore.getState();
+            expect(access.status === 'ready' ? access.prepared.document.view : null).toEqual({
+                showTestData: true,
+                discretizeOutput: true,
+            });
+        });
+        editView.mockRestore();
     });
 
     it('renders the training explanation surface with the loss chart', () => {

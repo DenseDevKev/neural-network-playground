@@ -1,272 +1,610 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { GuidedLessonPanel } from './GuidedLessonPanel.tsx';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
-import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    DEFAULT_EXPERIMENT_DOCUMENT,
+    PREPARED_PRESETS,
+    type PreparedExperimentDocumentV2,
+    type SchemaResult,
+} from '@nn-playground/shared';
 import {
     getLessonDefinition,
-    getLessonPreset,
+    getLessonRecipe,
     LESSON_DEFINITIONS,
 } from '../../lessons/lessonRegistry.ts';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
-} from '@nn-playground/shared';
+    usePlaygroundStore,
+    type PlaygroundStore,
+} from '../../store/usePlaygroundStore.ts';
+import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
+import { setNoise } from '../../store/recipeEdits.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { GuidedLessonPanel } from './GuidedLessonPanel.tsx';
+
+type ApplyResult = SchemaResult<PreparedExperimentDocumentV2>;
+
+function mockCompactLessonDrawer(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+            matches,
+            media: query,
+            onchange: null,
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+            addListener: vi.fn(),
+            removeListener: vi.fn(),
+            dispatchEvent: vi.fn(),
+        })),
+    });
+}
+
+function resetLayout() {
+    useLayoutStore.setState({
+        view: 'build',
+        activeRecipeSection: 'data',
+        activeEvidenceView: 'boundary',
+        layout: 'dock',
+        phase: 'build',
+        activeTabLeft: 'data',
+        activeTabRight: 'boundary',
+        activeLessonId: null,
+        activeLessonStepIndex: null,
+    });
+}
+
+function resetTrainingTransactionState() {
+    useTrainingStore.setState({
+        dataConfigLoading: false,
+        networkConfigLoading: false,
+        featuresConfigLoading: false,
+        trainingConfigLoading: false,
+        presetConfigLoading: false,
+        pendingConfigSource: null,
+        configError: null,
+        configErrorSource: null,
+        configSyncNonce: 0,
+    });
+}
+
+function deferApplyCompletion(apply: PlaygroundStore['applyRecipe']) {
+    let release!: () => void;
+    let pending: Promise<ApplyResult> | null = null;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const applyRecipe = vi.fn((entry: Parameters<PlaygroundStore['applyRecipe']>[0]) => {
+        pending = (async () => {
+            const result = await apply(entry);
+            await gate;
+            return result;
+        })();
+        return pending;
+    });
+
+    return {
+        applyRecipe,
+        release,
+        wait: async () => {
+            if (!pending) throw new Error('Deferred apply was not started');
+            return pending;
+        },
+    };
+}
 
 describe('GuidedLessonPanel', () => {
-    function mockCompactLessonDrawer(matches: boolean) {
-        Object.defineProperty(window, 'matchMedia', {
-            writable: true,
-            configurable: true,
-            value: vi.fn().mockImplementation((query: string) => ({
-                matches,
-                media: query,
-                onchange: null,
-                addEventListener: vi.fn(),
-                removeEventListener: vi.fn(),
-                addListener: vi.fn(),
-                removeListener: vi.fn(),
-                dispatchEvent: vi.fn(),
-            })),
-        });
-    }
+    let originalApplyRecipe: PlaygroundStore['applyRecipe'];
 
-    beforeEach(() => {
+    beforeEach(async () => {
         mockCompactLessonDrawer(false);
-        usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, seed: DEFAULT_DATA.seed },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
+        originalApplyRecipe = usePlaygroundStore.getState().applyRecipe;
+        const restored = await usePlaygroundStore.getState().replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+        expect(restored.ok).toBe(true);
+        resetLayout();
+        resetTrainingTransactionState();
+    });
+
+    afterEach(() => {
+        act(() => {
+            usePlaygroundStore.setState({ applyRecipe: originalApplyRecipe });
         });
-        useLayoutStore.setState({
-            layout: 'dock',
-            phase: 'build',
+        vi.restoreAllMocks();
+    });
+
+    it('awaits the exact XOR recipe before reset, step activation, layout, and highlight', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const target = getLessonRecipe(getLessonDefinition()!);
+
+        render(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+
+        await waitFor(() => {
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        expect(currentPreparedForTest()?.identities.recipeFingerprint)
+            .toBe(target.prepared.identities.recipeFingerprint);
+        expect(onReset).toHaveBeenCalledTimes(1);
+        expect(onHighlightChange).toHaveBeenLastCalledWith('data');
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: 'lesson-xor-hidden-layers',
+            activeLessonStepIndex: 0,
+            activeRecipeSection: 'data',
             activeTabLeft: 'data',
-            activeTabRight: 'boundary',
+            view: 'build',
+            phase: 'build',
+        });
+        expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
+    });
+
+    it('runs through lesson navigation and clears the highlight on finish', async () => {
+        const user = userEvent.setup();
+        const onHighlightChange = vi.fn();
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={onHighlightChange} />);
+
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await screen.findByText('Step 1 of 4');
+
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        expect(onHighlightChange).toHaveBeenLastCalledWith('network');
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonStepIndex: 1,
+            activeRecipeSection: 'network',
+            activeTabLeft: 'network',
+            view: 'build',
+            phase: 'build',
+        });
+
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        expect(onHighlightChange).toHaveBeenLastCalledWith('hyperparams');
+        expect(screen.getByText('Step 3 of 4')).toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        expect(onHighlightChange).toHaveBeenLastCalledWith('transport');
+        expect(useLayoutStore.getState()).toMatchObject({ view: 'run', phase: 'run' });
+
+        await user.click(screen.getByRole('button', { name: 'Finish guided lesson' }));
+        expect(onHighlightChange).toHaveBeenLastCalledWith(null);
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
+        expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeInTheDocument();
+    });
+
+    it('starts selected regression and multiclass lessons from their compiled contracts', async () => {
+        const user = userEvent.setup();
+        const { unmount } = render(
+            <GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />,
+        );
+
+        const regression = getLessonDefinition('lesson-regression-plane-baseline')!;
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), regression.id);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(currentPreparedForTest()?.compiled.task.kind).toBe('regression');
+        });
+        expect(currentPreparedForTest()?.compiled.task).toMatchObject({
+            dataset: 'reg-plane',
+            outputSize: 1,
+            outputActivation: 'linear',
+        });
+
+        unmount();
+        resetLayout();
+        resetTrainingTransactionState();
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+        const multiclass = getLessonDefinition('lesson-three-class-softmax')!;
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), multiclass.id);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(currentPreparedForTest()?.compiled.task.kind)
+                .toBe('multiclass-classification');
+        });
+        expect(currentPreparedForTest()?.compiled.task).toMatchObject({
+            dataset: 'three-class-clusters',
+            outputSize: 3,
+            outputActivation: 'softmax',
+        });
+        expect(screen.getByText('Three-Class Softmax Lab')).toBeInTheDocument();
+    });
+
+    it('ends at the exact lesson destination for all 70 catalog-source transitions', async () => {
+        const user = userEvent.setup();
+        const viewResult = await usePlaygroundStore.getState().editView(() => ({
+            showTestData: true,
+            discretizeOutput: true,
+        }));
+        expect(viewResult.ok).toBe(true);
+        const canonicalApplyRecipe = vi.fn((entry: Parameters<PlaygroundStore['applyRecipe']>[0]) => (
+            originalApplyRecipe(entry)
+        ));
+        usePlaygroundStore.setState({ applyRecipe: canonicalApplyRecipe });
+
+        for (const source of PREPARED_PRESETS) {
+            for (const lesson of LESSON_DEFINITIONS) {
+                const sourceResult = await usePlaygroundStore.getState().applyRecipe(source);
+                expect(sourceResult.ok, `source ${source.id}`).toBe(true);
+                resetLayout();
+                resetTrainingTransactionState();
+
+                const target = getLessonRecipe(lesson);
+                const onReset = vi.fn();
+                const onHighlightChange = vi.fn();
+                const { unmount } = render(
+                    <GuidedLessonPanel
+                        onReset={onReset}
+                        onHighlightChange={onHighlightChange}
+                    />,
+                );
+                await user.selectOptions(
+                    screen.getByRole('combobox', { name: 'Guided lesson' }),
+                    lesson.id,
+                );
+                await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+
+                await waitFor(() => {
+                    expect(
+                        currentPreparedForTest()?.identities.canonicalRecipeKey,
+                        `${source.id}@${source.revision} -> ${lesson.id} (${target.id}@${target.revision})`,
+                    ).toBe(target.prepared.identities.canonicalRecipeKey);
+                });
+                expect(currentPreparedForTest()?.identities.recipeFingerprint)
+                    .toBe(target.prepared.identities.recipeFingerprint);
+                expect(currentPreparedForTest()?.document.view).toEqual({
+                    showTestData: true,
+                    discretizeOutput: true,
+                });
+                expect(onReset).toHaveBeenCalledTimes(1);
+                expect(onHighlightChange).toHaveBeenLastCalledWith(lesson.steps[0].target);
+                expect(useLayoutStore.getState()).toMatchObject({
+                    activeLessonId: lesson.id,
+                    activeLessonStepIndex: 0,
+                });
+                expect(canonicalApplyRecipe).toHaveBeenLastCalledWith(target);
+
+                unmount();
+                useTrainingStore.getState().finishConfigChange();
+            }
+        }
+    }, 30_000);
+
+    it('deduplicates double start and changes no lesson UI before preparation resolves', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const lesson = getLessonDefinition()!;
+        const target = getLessonRecipe(lesson);
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+        useLayoutStore.setState({
+            view: 'run',
+            phase: 'run',
+            activeRecipeSection: 'features',
+            activeTabLeft: 'features',
+        });
+
+        const { container } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+        );
+        const startButton = screen.getByRole('button', { name: 'Start guided lesson' });
+        await user.click(startButton);
+
+        expect(deferred.applyRecipe).toHaveBeenCalledTimes(1);
+        expect(deferred.applyRecipe).toHaveBeenCalledWith(target);
+        expect(startButton).toBeDisabled();
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: 'preset',
+            presetConfigLoading: true,
+        });
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).not.toHaveBeenCalled();
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+            activeRecipeSection: 'features',
+            view: 'run',
+        });
+        expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
+
+        await user.click(startButton);
+        expect(deferred.applyRecipe).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).toHaveBeenCalledTimes(1);
+        expect(onHighlightChange).toHaveBeenLastCalledWith('data');
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: lesson.id,
+            activeLessonStepIndex: 0,
+            activeRecipeSection: 'data',
+            view: 'build',
+        });
+        expect(container.querySelector('.guided-lesson')).toHaveClass('guided-lesson--active');
+    });
+
+    it('does not activate a stale lesson start after a newer recipe edit wins', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const target = getLessonRecipe(getLessonDefinition()!);
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        const { container } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        let newerEdit!: Awaited<ReturnType<PlaygroundStore['editRecipe']>>;
+        await act(async () => {
+            useTrainingStore.getState().beginConfigChange('network');
+            newerEdit = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setNoise(recipe, recipe.data.noise + 1),
+            );
+        });
+        expect(newerEdit.ok).toBe(true);
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).not.toHaveBeenCalled();
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: 'network',
+            networkConfigLoading: true,
+            configError: null,
+        });
+        expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
+    });
+
+    it('does not activate an older same-target lesson result', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const target = getLessonRecipe(getLessonDefinition()!);
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        const { container } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        await act(async () => {
+            const newerResult = await originalApplyRecipe(target);
+            expect(newerResult.ok).toBe(true);
+        });
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).not.toHaveBeenCalled();
+        expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
+    });
+
+    it('does not report an older failure over a newer config transaction', async () => {
+        const user = userEvent.setup();
+        let resolveApply!: (result: ApplyResult) => void;
+        const pending = new Promise<ApplyResult>((resolve) => {
+            resolveApply = resolve;
+        });
+        usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
+
+        render(<GuidedLessonPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await act(async () => {
+            useTrainingStore.getState().beginConfigChange('network');
+            const newerEdit = await usePlaygroundStore.getState().editRecipe(
+                (recipe) => setNoise(recipe, recipe.data.noise + 1),
+            );
+            expect(newerEdit.ok).toBe(true);
+        });
+
+        await act(async () => {
+            resolveApply({
+                ok: false,
+                issues: [{ code: 'invalid-field', path: 'recipe', message: 'Obsolete failure' }],
+            });
+            await pending;
+        });
+
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: 'network',
+            networkConfigLoading: true,
+            presetConfigLoading: false,
+            configError: null,
+        });
+    });
+
+    it('does not activate or highlight after a pending lesson start unmounts', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        const onHighlightChange = vi.fn();
+        const target = getLessonRecipe(getLessonDefinition()!);
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
+
+        const { unmount } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await waitFor(() => {
+            expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
+                .toBe(target.prepared.identities.canonicalRecipeKey);
+        });
+        unmount();
+
+        await act(async () => {
+            deferred.release();
+            await deferred.wait();
+        });
+
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).toHaveBeenLastCalledWith(null);
+        expect(useLayoutStore.getState()).toMatchObject({
             activeLessonId: null,
             activeLessonStepIndex: null,
         });
     });
 
-    it('runs through the XOR hidden-layer lesson and clears the highlight on finish', async () => {
+    it('records a still-current preparation failure after the lesson panel unmounts', async () => {
+        const user = userEvent.setup();
+        let resolveApply!: (result: ApplyResult) => void;
+        const pending = new Promise<ApplyResult>((resolve) => {
+            resolveApply = resolve;
+        });
+        usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
+
+        const { unmount } = render(<GuidedLessonPanel onReset={vi.fn()} />);
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        unmount();
+
+        await act(async () => {
+            resolveApply({
+                ok: false,
+                issues: [{ code: 'invalid-field', path: 'recipe', message: 'Current failure' }],
+            });
+            await pending;
+        });
+
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: null,
+            presetConfigLoading: false,
+            configErrorSource: 'preset',
+            configError: 'recipe: Current failure',
+        });
+    });
+
+    it('keeps the prior experiment and inactive UI with a persistent accessible error on failure', async () => {
         const user = userEvent.setup();
         const onReset = vi.fn();
         const onHighlightChange = vi.fn();
+        const priorPrepared = currentPreparedForTest();
+        usePlaygroundStore.setState({
+            applyRecipe: vi.fn(async () => ({
+                ok: false as const,
+                issues: [{ code: 'invalid-field' as const, path: 'recipe', message: 'Deliberate failure' }],
+            })),
+        });
+        useLayoutStore.setState({
+            view: 'run',
+            phase: 'run',
+            activeRecipeSection: 'features',
+            activeTabLeft: 'features',
+        });
 
-        render(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
-
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
-
-        expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
-        expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual([4, 4]);
-        expect(onReset).toHaveBeenCalledTimes(1);
-        expect(onHighlightChange).toHaveBeenLastCalledWith('data');
-        expect(useLayoutStore.getState().activeLessonId).toBe('lesson-xor-hidden-layers');
-        expect(useLayoutStore.getState().activeLessonStepIndex).toBe(0);
-        expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
-        expect(screen.getByText('XOR Needs Hidden Layers')).toBeInTheDocument();
-        expect(useLayoutStore.getState().activeTabLeft).toBe('data');
-        expect(useLayoutStore.getState().phase).toBe('build');
-
-        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
-        expect(onHighlightChange).toHaveBeenLastCalledWith('network');
-        expect(useLayoutStore.getState().activeLessonStepIndex).toBe(1);
-        expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
-        expect(useLayoutStore.getState().activeTabLeft).toBe('network');
-        expect(useLayoutStore.getState().phase).toBe('build');
-
-        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
-        expect(onHighlightChange).toHaveBeenLastCalledWith('hyperparams');
-        expect(screen.getByText('Step 3 of 4')).toBeInTheDocument();
-        expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
-        expect(useLayoutStore.getState().phase).toBe('build');
-
-        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
-        expect(onHighlightChange).toHaveBeenLastCalledWith('transport');
-        expect(screen.getByText('Step 4 of 4')).toBeInTheDocument();
-        expect(useLayoutStore.getState().phase).toBe('run');
-
-        await user.click(screen.getByRole('button', { name: 'Finish guided lesson' }));
-        expect(onHighlightChange).toHaveBeenLastCalledWith(null);
-        expect(useLayoutStore.getState().activeLessonId).toBeNull();
-        expect(useLayoutStore.getState().activeLessonStepIndex).toBeNull();
-        expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeInTheDocument();
-    });
-
-    it('marks the lesson panel active only after a lesson starts', async () => {
-        const user = userEvent.setup();
-
-        const { container } = render(
-            <GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />,
+        const { container, rerender } = render(
+            <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
         );
-
-        const panel = container.querySelector('.guided-lesson');
-        expect(panel).toHaveClass('guided-lesson');
-        expect(panel).not.toHaveClass('guided-lesson--active');
-
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
 
-        expect(panel).toHaveClass('guided-lesson--active');
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('Deliberate failure');
+        expect(currentPreparedForTest()).toBe(priorPrepared);
+        expect(useTrainingStore.getState()).toMatchObject({
+            pendingConfigSource: null,
+            presetConfigLoading: false,
+            configErrorSource: 'preset',
+        });
+        expect(onReset).not.toHaveBeenCalled();
+        expect(onHighlightChange).not.toHaveBeenCalled();
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+            activeRecipeSection: 'features',
+            view: 'run',
+        });
+        expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
+
+        rerender(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
+        expect(screen.getByRole('alert')).toHaveTextContent('Deliberate failure');
+        expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeEnabled();
     });
 
-    it('lists registry lessons and starts the selected lesson preset', async () => {
+    it('preserves explicit button semantics and keyboard lesson navigation', async () => {
         const user = userEvent.setup();
-        const onReset = vi.fn();
-        const onHighlightChange = vi.fn();
-        const regressionLesson = getLessonDefinition('lesson-regression-plane-baseline')!;
-
-        render(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
-
-        const selector = screen.getByRole('combobox', { name: 'Guided lesson' });
-        for (const lesson of LESSON_DEFINITIONS) {
-            expect(screen.getByRole('option', { name: lesson.title })).toBeInTheDocument();
-        }
-
-        await user.selectOptions(selector, regressionLesson.id);
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
-
-        expect(usePlaygroundStore.getState().data.dataset).toBe('reg-plane');
-        expect(usePlaygroundStore.getState().training.lossType).toBe('mse');
-        expect(onReset).toHaveBeenCalledTimes(1);
-        expect(onHighlightChange).toHaveBeenLastCalledWith(regressionLesson.steps[0].target);
-        expect(screen.getByText(`Step 1 of ${regressionLesson.steps.length}`)).toBeInTheDocument();
-        expect(screen.getByText(regressionLesson.steps[0].title)).toBeInTheDocument();
-    });
-
-    it('starts the three-class softmax lesson with the approved multiclass tuple', async () => {
-        const user = userEvent.setup();
-        const onReset = vi.fn();
-        const onHighlightChange = vi.fn();
-        const lesson = getLessonDefinition('lesson-three-class-softmax')!;
-
-        expect(lesson).not.toBeNull();
-        if (!lesson) return;
-
-        render(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
-
-        await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), lesson.id);
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
-
-        expect(usePlaygroundStore.getState().data.dataset).toBe('three-class-clusters');
-        expect(usePlaygroundStore.getState().network.outputSize).toBe(3);
-        expect(usePlaygroundStore.getState().network.outputActivation).toBe('softmax');
-        expect(usePlaygroundStore.getState().training.lossType).toBe('categoricalCrossEntropy');
-        expect(onReset).toHaveBeenCalledTimes(1);
-        expect(onHighlightChange).toHaveBeenLastCalledWith('data');
-        expect(useLayoutStore.getState().activeLessonId).toBe(lesson.id);
-        expect(screen.getByText(`Step 1 of ${lesson.steps.length}`)).toBeInTheDocument();
-        expect(screen.getByText('Three-Class Softmax Lab')).toBeInTheDocument();
-    });
-
-    it('uses explicit button semantics and keyboard activation for lesson navigation', async () => {
-        const user = userEvent.setup();
-
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
 
         const startButton = screen.getByRole('button', { name: 'Start guided lesson' });
         expect(startButton).toHaveAttribute('type', 'button');
         await user.click(startButton);
 
-        const backButton = screen.getByRole('button', { name: 'Back' });
-        const nextButton = screen.getByRole('button', { name: 'Next lesson step' });
-        expect(backButton).toHaveAttribute('type', 'button');
-        expect(nextButton).toHaveAttribute('type', 'button');
-
+        const nextButton = await screen.findByRole('button', { name: 'Next lesson step' });
+        expect(screen.getByRole('button', { name: 'Back' })).toHaveAttribute('type', 'button');
         nextButton.focus();
         await user.keyboard('{Enter}');
-
         expect(screen.getByText('Give the model capacity')).toBeInTheDocument();
 
         screen.getByRole('button', { name: 'Next lesson step' }).focus();
         await user.keyboard(' ');
-
         expect(screen.getByText('Use steady updates')).toBeInTheDocument();
     });
 
-    it('starts each registry lesson preset from a fresh selector render', () => {
-        for (const lesson of LESSON_DEFINITIONS) {
-            usePlaygroundStore.setState({
-                data: { ...DEFAULT_DATA },
-                network: { ...DEFAULT_NETWORK, inputSize: 2, seed: DEFAULT_DATA.seed },
-                features: { ...DEFAULT_FEATURES },
-                training: { ...DEFAULT_TRAINING },
-                ui: { showTestData: false, discretizeOutput: false },
-            });
-
-            const onReset = vi.fn();
-            const onHighlightChange = vi.fn();
-            const { unmount } = render(
-                <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
-            );
-
-            fireEvent.change(screen.getByRole('combobox', { name: 'Guided lesson' }), {
-                target: { value: lesson.id },
-            });
-            fireEvent.click(screen.getByRole('button', { name: 'Start guided lesson' }));
-
-            const preset = getLessonPreset(lesson);
-            expect(usePlaygroundStore.getState().data.dataset).toBe(preset.config.data?.dataset);
-            expect(usePlaygroundStore.getState().network.hiddenLayers).toEqual(preset.config.network?.hiddenLayers);
-            expect(onReset).toHaveBeenCalledTimes(1);
-            expect(onHighlightChange).toHaveBeenLastCalledWith(lesson.steps[0].target);
-            expect(useLayoutStore.getState().activeLessonId).toBe(lesson.id);
-            expect(useLayoutStore.getState().activeLessonStepIndex).toBe(0);
-            expect(screen.getByText(`Step 1 of ${lesson.steps.length}`)).toBeInTheDocument();
-            expect(screen.getByText(lesson.steps[0].title)).toBeInTheDocument();
-
-            unmount();
-        }
-    });
-
-    it('collapses and expands the docked lesson drawer without losing selected lesson state', async () => {
+    it('collapses and expands without losing the selected revision-pinned lesson', async () => {
         const user = userEvent.setup();
-
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
 
         await user.selectOptions(
             screen.getByRole('combobox', { name: 'Guided lesson' }),
             'lesson-regression-plane-baseline',
         );
-
         await user.click(screen.getByRole('button', { name: 'Collapse guided lesson drawer' }));
-
-        expect(screen.getByRole('button', { name: 'Expand guided lesson drawer' })).toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('button', { name: 'Start guided lesson' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Expand guided lesson drawer' }))
+            .toHaveAttribute('aria-expanded', 'false');
 
         await user.click(screen.getByRole('button', { name: 'Expand guided lesson drawer' }));
-
-        expect(screen.getByRole('button', { name: 'Collapse guided lesson drawer' })).toHaveAttribute('aria-expanded', 'true');
-        expect(screen.getByRole('combobox', { name: 'Guided lesson' })).toHaveValue('lesson-regression-plane-baseline');
-        expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Guided lesson' }))
+            .toHaveValue('lesson-regression-plane-baseline');
     });
 
-    it('defaults the lesson drawer to collapsed on compact screens', () => {
+    it('defaults to collapsed on compact screens', () => {
         mockCompactLessonDrawer(true);
-
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
 
-        expect(screen.getByRole('button', { name: 'Expand guided lesson drawer' })).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.getByRole('button', { name: 'Expand guided lesson drawer' }))
+            .toHaveAttribute('aria-expanded', 'false');
         expect(screen.queryByRole('button', { name: 'Start guided lesson' })).not.toBeInTheDocument();
     });
 
     it('clears the active highlight when an active lesson unmounts', async () => {
         const user = userEvent.setup();
         const onHighlightChange = vi.fn();
-
         const { unmount } = render(
             <GuidedLessonPanel onReset={vi.fn()} onHighlightChange={onHighlightChange} />,
         );
 
         await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
-        expect(onHighlightChange).toHaveBeenLastCalledWith('data');
-
+        await waitFor(() => expect(onHighlightChange).toHaveBeenLastCalledWith('data'));
         unmount();
 
         expect(onHighlightChange).toHaveBeenLastCalledWith(null);
+        expect(useLayoutStore.getState()).toMatchObject({
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
     });
 });

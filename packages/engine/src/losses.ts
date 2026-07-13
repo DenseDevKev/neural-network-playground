@@ -1,5 +1,7 @@
 // ── Loss functions with output-layer gradients ──
 import type { LossType, ScalarLossType, ActivationType } from './types.js';
+import { meanSquaredErrorScalar, meanSquaredErrorScalarDelta } from './objective.js';
+import { NonFiniteNumericalError } from './numericalError.js';
 
 export interface LossFn {
     /** Compute loss for a single sample. */
@@ -11,19 +13,33 @@ export interface LossFn {
 const EPSILON = 1e-7;
 const DISTRIBUTION_SUM_TOLERANCE = 1e-5;
 
+function assertFinite(value: number, path: string): void {
+    if (!Number.isFinite(value)) {
+        throw new NonFiniteNumericalError(path, value);
+    }
+}
+
 const mse: LossFn = {
-    loss: (p, t) => 0.5 * (p - t) ** 2,
-    dloss: (p, t) => p - t,
+    loss: meanSquaredErrorScalar,
+    dloss: meanSquaredErrorScalarDelta,
 };
 
 const crossEntropy: LossFn = {
     loss: (p, t) => {
+        assertFinite(p, 'crossEntropy.prediction');
+        assertFinite(t, 'crossEntropy.target');
         const clamped = Math.max(EPSILON, Math.min(1 - EPSILON, p));
-        return -(t * Math.log(clamped) + (1 - t) * Math.log(1 - clamped));
+        const result = -(t * Math.log(clamped) + (1 - t) * Math.log(1 - clamped));
+        assertFinite(result, 'crossEntropy.loss');
+        return result;
     },
     dloss: (p, t) => {
+        assertFinite(p, 'crossEntropy.prediction');
+        assertFinite(t, 'crossEntropy.target');
         const clamped = Math.max(EPSILON, Math.min(1 - EPSILON, p));
-        return -(t / clamped) + (1 - t) / (1 - clamped);
+        const result = -(t / clamped) + (1 - t) / (1 - clamped);
+        assertFinite(result, 'crossEntropy.gradient');
+        return result;
     },
 };
 
@@ -40,14 +56,22 @@ function assertCategoricalVectorPair(probabilities: ArrayLike<number>, target: A
     for (let i = 0; i < probabilities.length; i++) {
         const probability = probabilities[i];
         const targetValue = target[i];
-        if (!Number.isFinite(probability) || probability < 0 || probability > 1) {
+        if (!Number.isFinite(probability)) {
+            throw new NonFiniteNumericalError(`probabilities[${i}]`, probability);
+        }
+        if (probability < 0 || probability > 1) {
             throw new RangeError('probabilities must be finite values in [0, 1]');
         }
-        if (!Number.isFinite(targetValue) || targetValue < 0) {
+        if (!Number.isFinite(targetValue)) {
+            throw new NonFiniteNumericalError(`target[${i}]`, targetValue);
+        }
+        if (targetValue < 0) {
             throw new RangeError('target values must be finite and non-negative');
         }
         probabilitySum += probability;
         targetSum += targetValue;
+        assertFinite(probabilitySum, 'probabilities.sum');
+        assertFinite(targetSum, 'target.sum');
     }
 
     if (Math.abs(probabilitySum - 1) > DISTRIBUTION_SUM_TOLERANCE) {
@@ -70,6 +94,7 @@ export function categoricalCrossEntropy(
         if (target[i] === 0) continue;
         const clamped = Math.max(EPSILON, Math.min(1 - EPSILON, probabilities[i]));
         sum -= target[i] * Math.log(clamped);
+        assertFinite(sum, 'categoricalCrossEntropy.loss');
     }
     return sum;
 }
@@ -84,6 +109,7 @@ export function categoricalCrossEntropyLogitGradient(
     const gradient = new Array<number>(probabilities.length);
     for (let i = 0; i < probabilities.length; i++) {
         gradient[i] = probabilities[i] - target[i];
+        assertFinite(gradient[i], `categoricalCrossEntropy.gradient[${i}]`);
     }
     return gradient;
 }
@@ -92,20 +118,31 @@ export const DEFAULT_HUBER_DELTA = 1.0;
 
 /** Build a Huber loss with a configurable transition point δ. */
 function makeHuber(delta: number): LossFn {
-    if (!Number.isFinite(delta) || delta <= 0) {
+    if (!Number.isFinite(delta)) {
+        throw new NonFiniteNumericalError('huberDelta', delta);
+    }
+    if (delta <= 0) {
         throw new RangeError('huberDelta must be finite and greater than 0');
     }
     return {
         loss: (p, t) => {
+            assertFinite(p, 'huber.prediction');
+            assertFinite(t, 'huber.target');
             const a = Math.abs(p - t);
-            return a <= delta
+            const result = a <= delta
                 ? 0.5 * a * a
                 : delta * (a - 0.5 * delta);
+            assertFinite(result, 'huber.loss');
+            return result;
         },
         dloss: (p, t) => {
+            assertFinite(p, 'huber.prediction');
+            assertFinite(t, 'huber.target');
             const diff = p - t;
             const a = Math.abs(diff);
-            return a <= delta ? diff : delta * Math.sign(diff);
+            const result = a <= delta ? diff : delta * Math.sign(diff);
+            assertFinite(result, 'huber.gradient');
+            return result;
         },
     };
 }
@@ -122,7 +159,10 @@ export function getLoss(type: LossType, opts?: { huberDelta?: number }): LossFn 
         throw new RangeError('categoricalCrossEntropy is a vector loss; use categoricalCrossEntropy()');
     }
     if (type === 'huber' && opts?.huberDelta != null) {
-        if (!Number.isFinite(opts.huberDelta) || opts.huberDelta <= 0) {
+        if (!Number.isFinite(opts.huberDelta)) {
+            throw new NonFiniteNumericalError('huberDelta', opts.huberDelta);
+        }
+        if (opts.huberDelta <= 0) {
             throw new RangeError('huberDelta must be finite and greater than 0');
         }
         if (opts.huberDelta !== DEFAULT_HUBER_DELTA) {
@@ -145,9 +185,14 @@ export function batchLoss(
 
     let sum = 0;
     for (let i = 0; i < predictions.length; i++) {
-        sum += fn.loss(predictions[i], targets[i]);
+        const sampleLoss = fn.loss(predictions[i], targets[i]);
+        assertFinite(sampleLoss, `batchLoss[${i}]`);
+        sum += sampleLoss;
+        assertFinite(sum, 'batchLoss.sum');
     }
-    return sum / predictions.length;
+    const result = sum / predictions.length;
+    assertFinite(result, 'batchLoss');
+    return result;
 }
 
 export const LOSS_LABELS: Record<ScalarLossType, string> = {

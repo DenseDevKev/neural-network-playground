@@ -23,6 +23,11 @@ const trainingConfig: TrainingConfig = {
     gradientClip: 1.0,
 };
 
+const BASELINE_120_PERCENT_MAX_MS = {
+    adamL2Clip: 4.76844,
+    sgd: 1.6494,
+} as const;
+
 function expectFiniteArray(values: ArrayLike<number>): void {
     expect(values.length).toBeGreaterThan(0);
     for (let i = 0; i < values.length; i++) {
@@ -68,9 +73,10 @@ describe('Network performance benchmark', () => {
 
         console.log(`Average applyGradients time (Adam, L2, Clip): ${averageTime.toFixed(4)}ms`);
         expectBenchmarkResult(net, averageTime);
+        expect(averageTime).toBeLessThanOrEqual(BASELINE_120_PERCENT_MAX_MS.adamL2Clip);
     });
 
-    it('measures applyGradients execution time (SGD)', { timeout: 60_000 }, () => {
+    it('measures applyGradients execution time (SGD zero-gradient adapter)', { timeout: 60_000 }, () => {
         const net = new Network(largeConfig);
         const batchSize = 32;
         const sgdConfig = { ...trainingConfig, optimizer: 'sgd' as const, regularization: 'none' as const, gradientClip: null };
@@ -88,7 +94,8 @@ describe('Network performance benchmark', () => {
         const end = performance.now();
         const averageTime = (end - start) / iterations;
 
-        console.log(`Average applyGradients time (SGD): ${averageTime.toFixed(4)}ms`);
+        console.log(`Average applyGradients time (SGD zero-gradient adapter): ${averageTime.toFixed(4)}ms`);
         expectBenchmarkResult(net, averageTime);
+        expect(averageTime).toBeLessThanOrEqual(BASELINE_120_PERCENT_MAX_MS.sgd);
     });
 });

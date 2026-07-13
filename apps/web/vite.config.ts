@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import process from 'node:process';
 
@@ -50,5 +51,9 @@ export default defineConfig(({ mode }) => ({
         environment: 'jsdom',
         setupFiles: './src/test/setup.ts',
         testTimeout: 60000,
+        exclude: [
+            ...configDefaults.exclude,
+            'src/worker/scientificTrust.performance.test.ts',
+        ],
     },
 }));

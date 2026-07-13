@@ -2,37 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-describe('forge compact dock CSS', () => {
-    it('keeps the compact dock to rail plus one content column under narrow media rules', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('.forge-dock.forge-dock--compact');
-        expect(css).toContain('grid-template-columns: 40px minmax(0, 1fr)');
-    });
-
-    it('keeps compact dock rows fluid enough for short mobile viewports', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('minmax(140px, 0.8fr)');
-        expect(css).toContain('minmax(170px, 1fr)');
-    });
-
-    it('makes stacked grid panels scrollable instead of forcing every nested panel to full height', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('.forge-panel-stack');
-        expect(css).toContain('overflow-y: auto');
-        expect(css).not.toContain('.forge-grid .forge-panel { height: 100%; }');
-    });
-
-    it('docks the lesson drawer inside the transport cluster with a compact breakpoint', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('.forge-transport-cluster');
-        expect(css).toContain('grid-template-columns: minmax(0, 1fr) minmax(290px, 360px)');
-        expect(css).toContain('grid-template-columns: minmax(0, 1fr)');
-    });
-
+describe('forge Build/Run instrument CSS', () => {
     it('defines local hierarchy polish tokens without overriding base tokens', () => {
         const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
 
@@ -43,6 +13,50 @@ describe('forge compact dock CSS', () => {
         expect(css).toContain('--forge-control-gap');
     });
 
+    it('defines the Build/Run instrument grids and modules', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-buildrun__grid--build');
+        expect(css).toContain('.forge-buildrun__grid--run');
+        expect(css).toContain('.forge-instrument-module');
+        expect(css).toContain('.forge-instrument-module__tag--build');
+        expect(css).toContain('.forge-instrument-module__tag--run');
+    });
+
+    it('keeps menus and history in drawer chrome instead of permanent panels', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-menu-button');
+        expect(css).toContain('.forge-instrument-drawer');
+        expect(css).toContain('.forge-instrument-drawer--history');
+    });
+
+    it('keeps the compact active-run transport reachable on mobile', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-buildrun__transport');
+        expect(css).toContain('position: sticky');
+        expect(css).toContain('bottom: 0');
+    });
+
+    it('defines compact mobile graph and neuron stepper controls', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.neuron-stepper');
+        expect(css).toContain('.neuron-stepper__input');
+        expect(css).toContain('.forge-buildrun__transport[data-status="running"]');
+        expect(css).toContain('.forge-buildrun__topology-stage .network-graph-toolbar');
+        expect(css).toContain('height: 300px');
+    });
+
+    it('styles app scrollbars with dark chrome', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('scrollbar-color');
+        expect(css).toContain('::-webkit-scrollbar-thumb');
+        expect(css).toContain('rgba(137, 132, 170, 0.42)');
+    });
+
     it('keeps topology controls attached to a single graph toolbar surface', () => {
         const css = readFileSync(resolve(__dirname, 'index.css'), 'utf8');
 
@@ -51,11 +65,16 @@ describe('forge compact dock CSS', () => {
         expect(css).toContain('.network-graph-toolbar .network-graph-mode-toggle');
     });
 
-    it('keeps guided lesson visually secondary until active lesson state', () => {
-        const css = readFileSync(resolve(__dirname, 'index.css'), 'utf8');
+    it('defines lab notebook context cards and evidence ownership chrome', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
 
-        expect(css).toContain('.guided-lesson--active');
-        expect(css).toContain('.guided-lesson:not(.guided-lesson--active)');
+        expect(css).toContain('.forge-experiment-context');
+        expect(css).toContain('.forge-context-card');
+        expect(css).toContain('.forge-state-badge');
+        expect(css).toContain('.forge-evidence-context');
+        expect(css).toContain('.forge-evidence-frame');
+        expect(css).toContain('.forge-cockpit-strip');
+        expect(css).toContain('.run-comparison-loop');
     });
 
     it('defines lab notebook context cards and evidence ownership chrome', () => {

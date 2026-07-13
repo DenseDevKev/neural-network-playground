@@ -1,53 +1,71 @@
 import { memo, useMemo } from 'react';
-import type { AppConfig } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getRecipeDrift, summarizeRecipe } from '../../store/recipeIdentity.ts';
-
-function useCurrentRecipeConfig(): AppConfig {
-    const data = usePlaygroundStore((s) => s.data);
-    const features = usePlaygroundStore((s) => s.features);
-    const network = usePlaygroundStore((s) => s.network);
-    const training = usePlaygroundStore((s) => s.training);
-    const ui = usePlaygroundStore((s) => s.ui);
-
-    return useMemo(() => ({ data, features, network, training, ui }), [data, features, network, training, ui]);
-}
+import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 
 export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
-    const currentConfig = useCurrentRecipeConfig();
-    const trainedRecipeConfig = useTrainingStore((s) => s.trainedRecipeConfig);
-    const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
-    const testMetricsStale = useTrainingStore((s) => s.testMetricsStale);
-    const summary = useMemo(() => summarizeRecipe(currentConfig), [currentConfig]);
-    const drift = useMemo(
-        () => getRecipeDrift(trainedRecipeConfig, currentConfig),
-        [trainedRecipeConfig, currentConfig],
+    const currentRecipe = usePlaygroundStore((s) => (
+        s.access.status === 'ready' ? s.access.prepared.document.recipe : null
+    ));
+    const trainedRecipe = useTrainingStore((s) => s.trainedRecipe);
+    const trainedRecipeFingerprint = useTrainingStore((s) => s.trainedRecipeFingerprint);
+    const currentRecipeFingerprint = usePlaygroundStore(
+        (s) => s.access.status === 'ready'
+            ? s.access.prepared.identities.recipeFingerprint
+            : null,
     );
-    const showsStaleEvidence = !drift.hasDrift && testMetricsStale;
+    const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
+    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
+    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
+    const evidence = useMemo(() => selectScientificEvidence({
+        latestLiveSignal,
+        latestEvaluation,
+    }), [latestEvaluation, latestLiveSignal]);
+    const summary = useMemo(
+        () => currentRecipe === null ? null : summarizeRecipe(currentRecipe),
+        [currentRecipe],
+    );
+    const drift = useMemo(
+        () => getRecipeDrift(
+            trainedRecipe,
+            currentRecipe,
+            3,
+            trainedRecipeFingerprint === null ? undefined : {
+                trainedRecipeFingerprint,
+                currentRecipeFingerprint,
+            },
+        ),
+        [trainedRecipe, currentRecipe, trainedRecipeFingerprint, currentRecipeFingerprint],
+    );
+    const showsAgedEvaluation = !drift.hasDrift
+        && evidence.evaluationAgeSteps !== null
+        && evidence.evaluationAgeSteps > 0;
     const pillLabel = pendingConfigSource
         ? 'Updating'
         : drift.hasDrift
             ? 'Drift'
-            : showsStaleEvidence
-                ? 'Stale'
+            : showsAgedEvaluation
+                ? 'Evaluation age'
                 : 'Ready';
-    const noteHeadline = showsStaleEvidence
-        ? 'Current recipe accepted; evidence metrics are stale.'
+    const noteHeadline = showsAgedEvaluation && evidence.fullEvaluation && evidence.batchTrend
+        ? `Full evaluation at step ${evidence.fullEvaluation.step.toLocaleString()}; batch trend through step ${evidence.batchTrend.step.toLocaleString()}.`
         : drift.headline;
-    const noteResolution = showsStaleEvidence
-        ? 'Run, step, or resume to refresh evidence for this recipe.'
+    const noteResolution = showsAgedEvaluation
+        ? `Paired train/test evidence is ${evidence.evaluationAgeSteps} step${evidence.evaluationAgeSteps === 1 ? '' : 's'} behind the current model.`
         : drift.resolution;
     const noteClassName = [
         'forge-drift-note',
         drift.hasDrift ? 'forge-drift-note--active' : '',
-        showsStaleEvidence ? 'forge-drift-note--stale' : '',
+        showsAgedEvaluation ? 'forge-drift-note--stale' : '',
     ].filter(Boolean).join(' ');
     const pillClassName = [
         'forge-context-pill',
         drift.hasDrift ? 'forge-context-pill--drift' : '',
-        showsStaleEvidence ? 'forge-context-pill--stale' : '',
+        showsAgedEvaluation ? 'forge-context-pill--stale' : '',
     ].filter(Boolean).join(' ');
+
+    if (!summary) return null;
 
     return (
         <section className="forge-context-card forge-recipe-card" role="region" aria-label="Recipe summary">

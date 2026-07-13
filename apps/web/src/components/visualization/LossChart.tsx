@@ -1,394 +1,150 @@
-// ── Loss + Accuracy Chart (Canvas) ──
-// Tab-toggled line chart for training/test loss and accuracy history.
-// Accuracy tab is only shown for classification problems.
-//
-// History is read from the packed Float64Array ring buffer in
-// `store/historyBuffer.ts` — no per-frame React re-allocation of the
-// history array — and the chart draws incrementally where possible:
-// only the newly-appended segment is painted when the y-axis scale is
-// still valid, falling back to a full redraw on scale change, compaction,
-// tab toggle, or resize.
-
-import { useRef, useEffect, useState, memo } from 'react';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import type { EvaluationPoint, TrainingTrendPoint } from '@nn-playground/shared';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { metricHistoryBuffer } from '../../store/metricHistoryBuffer.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
-import {
-    getHistoryCompactionCount,
-    readHistory,
-    type HistoryArrays,
-} from '../../store/historyBuffer.ts';
-
-const CHART_W = 400;
-const CHART_H = 140;
-const PADDING = { top: 20, right: 16, bottom: 24, left: 48 };
-
-const Y_AXIS_PADDED_MAX_MULTIPLIER = 1.1;
-const PLATEAU_WINDOW = 8;
-const PLATEAU_EPSILON = 0.005;
-const DIVERGENCE_MULTIPLIER = 1.5;
 
 type ChartTab = 'loss' | 'accuracy';
+const CHART_HEIGHT = 220;
+const PADDING = { top: 18, right: 16, bottom: 24, left: 42 } as const;
 
-interface LossDiagnostics {
-    bestLoss: number;
-    bestStep: number;
-    generalizationGap: number | null;
-    plateauIndex: number | null;
-    divergenceIndex: number | null;
+interface ScalarPoint {
+    readonly step: number;
+    readonly value: number;
 }
 
-// ── Full redraw ──────────────────────────────────────────────────────────────
+function finitePoints(points: readonly ScalarPoint[]): readonly ScalarPoint[] {
+    return points.filter((point) => Number.isFinite(point.value));
+}
+
+function drawSeries(
+    ctx: CanvasRenderingContext2D,
+    points: readonly ScalarPoint[],
+    color: string,
+    stepMin: number,
+    stepMax: number,
+    valueMax: number,
+    width: number,
+): void {
+    const values = finitePoints(points);
+    if (values.length === 0) return;
+    const plotWidth = width - PADDING.left - PADDING.right;
+    const plotHeight = CHART_HEIGHT - PADDING.top - PADDING.bottom;
+    const stepRange = Math.max(1, stepMax - stepMin);
+    const scaleX = (step: number) => PADDING.left + ((step - stepMin) / stepRange) * plotWidth;
+    const scaleY = (value: number) => PADDING.top + plotHeight - (value / valueMax) * plotHeight;
+
+    ctx.beginPath();
+    values.forEach((point, index) => {
+        const x = scaleX(point.step);
+        const y = scaleY(point.value);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+}
 
 function drawChart(
     ctx: CanvasRenderingContext2D,
-    hist: HistoryArrays,
+    width: number,
     tab: ChartTab,
-    yMax: number,
-    diagnostics?: LossDiagnostics | null,
-) {
-    const w = CHART_W;
-    const h = CHART_H;
+    trends: readonly TrainingTrendPoint[],
+    evaluations: readonly EvaluationPoint[],
+): void {
+    const trend = tab === 'loss'
+        ? trends.map((point) => ({ step: point.model.step, value: point.dataLoss }))
+        : [];
+    const train = evaluations.map((point) => ({
+        step: point.model.step,
+        value: tab === 'loss'
+            ? point.train.values.dataLoss
+            : point.train.values.accuracy ?? Number.NaN,
+    }));
+    const test = evaluations.map((point) => ({
+        step: point.model.step,
+        value: tab === 'loss'
+            ? point.test.values.dataLoss
+            : point.test.values.accuracy ?? Number.NaN,
+    }));
+    const objective = tab === 'loss'
+        ? evaluations.map((point) => ({
+            step: point.model.step,
+            value: point.objective.trainTotalObjective,
+        }))
+        : [];
+    const all = [...trend, ...train, ...test, ...objective];
+    if (all.length === 0) return;
+    const steps = all.map((point) => point.step);
+    const values = all.map((point) => point.value).filter(Number.isFinite);
+    const stepMin = Math.min(...steps);
+    const stepMax = Math.max(...steps);
+    const valueMax = tab === 'accuracy'
+        ? 1
+        : Math.max(0.000001, ...values) * 1.05;
 
-    // Clear
-    ctx.fillStyle = '#1c2030';
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(12, 16, 28, 0.9)';
+    ctx.fillRect(0, 0, width, CHART_HEIGHT);
+    drawSeries(ctx, trend, '#f6c85f', stepMin, stepMax, valueMax, width);
+    drawSeries(ctx, train, '#00e5c3', stepMin, stepMax, valueMax, width);
+    drawSeries(ctx, test, '#7c5cfc', stepMin, stepMax, valueMax, width);
+    drawSeries(ctx, objective, '#ff8f70', stepMin, stepMax, valueMax, width);
 
-    if (hist.count < 2) {
-        ctx.fillStyle = 'rgba(255,255,255,0.2)';
-        ctx.font = '11px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('Train to see data', w / 2, h / 2);
-        return;
-    }
-
-    const plotW = w - PADDING.left - PADDING.right;
-    const plotH = h - PADDING.top - PADDING.bottom;
-    const xMax = hist.count - 1;
-
-    const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
-
-    if (tab === 'loss') {
-        const scaleY = (v: number) => PADDING.top + plotH - (v / yMax) * plotH;
-
-        drawGrid(ctx, plotW, plotH, yMax, (v) => v.toFixed(2));
-
-        drawTypedLine(
-            ctx, hist.trainLoss, hist.count, scaleX,
-            (v) => scaleY(Math.min(safeLossValue(v, yMax), yMax)),
-            '#00e5c3', false, true, plotH,
-        );
-        drawTypedLine(
-            ctx, hist.testLoss, hist.count, scaleX,
-            (v) => scaleY(Math.min(safeLossValue(v, yMax), yMax)),
-            '#7c5cfc', true, false,
-        );
-
-        drawLossDiagnosticMarkers(ctx, hist, diagnostics, scaleX, plotH);
-
-        drawLegend(ctx, [
-            { color: '#00e5c3', label: 'Train', dashed: false },
-            { color: '#7c5cfc', label: 'Test', dashed: true },
-        ]);
-    } else {
-        const scaleY = (v: number) => PADDING.top + plotH - v * plotH;
-
-        drawGrid(ctx, plotW, plotH, 1, (v) => `${(v * 100).toFixed(0)}%`);
-
-        let hasAcc = false;
-        for (let i = 0; i < hist.count; i++) {
-            if (hist.hasTrainAccuracy[i]) { hasAcc = true; break; }
-        }
-        if (!hasAcc) {
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.font = '11px Inter, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('Accuracy available for classification only', w / 2, h / 2);
-            return;
-        }
-
-        drawTypedLine(
-            ctx, hist.trainAccuracy, hist.count, scaleX,
-            (v) => scaleY(Math.min(1, Math.max(0, v))),
-            '#00e5c3', false, true, plotH,
-        );
-        drawTypedLine(
-            ctx, hist.testAccuracy, hist.count, scaleX,
-            (v) => scaleY(Math.min(1, Math.max(0, v))),
-            '#7c5cfc', true, false,
-        );
-
-        drawLegend(ctx, [
-            { color: '#00e5c3', label: 'Train Acc', dashed: false },
-            { color: '#7c5cfc', label: 'Test Acc', dashed: true },
-        ]);
-    }
-}
-
-// ── Compute a stable y-axis ceiling ──────────────────────────────────────────
-// Loop over the typed array — no allocation.
-
-function computeYMax(hist: HistoryArrays, tab: ChartTab): number {
-    if (tab === 'accuracy') return 1;
-    if (hist.count === 0) return 0.01;
-    let maxLoss = 0;
-    for (let i = 0; i < hist.count; i++) {
-        if (Number.isFinite(hist.trainLoss[i]) && hist.trainLoss[i] > maxLoss) maxLoss = hist.trainLoss[i];
-        if (Number.isFinite(hist.testLoss[i]) && hist.testLoss[i] > maxLoss) maxLoss = hist.testLoss[i];
-    }
-    return Math.max(maxLoss * Y_AXIS_PADDED_MAX_MULTIPLIER, 0.01);
-}
-
-function safeLossValue(value: number, fallback: number): number {
-    return Number.isFinite(value) ? value : fallback;
-}
-
-function computeLossDiagnostics(hist: HistoryArrays): LossDiagnostics | null {
-    if (hist.count === 0) return null;
-
-    let bestLoss = Number.POSITIVE_INFINITY;
-    let bestStep = 0;
-    let bestTrainLoss = Number.POSITIVE_INFINITY;
-    let bestTrainIndex = 0;
-
-    for (let i = 0; i < hist.count; i++) {
-        const testLoss = hist.testLoss[i];
-        if (Number.isFinite(testLoss) && testLoss < bestLoss) {
-            bestLoss = testLoss;
-            bestStep = i;
-        }
-
-        const trainLoss = hist.trainLoss[i];
-        if (Number.isFinite(trainLoss) && trainLoss < bestTrainLoss) {
-            bestTrainLoss = trainLoss;
-            bestTrainIndex = i;
-        }
-    }
-
-    if (!Number.isFinite(bestLoss)) {
-        bestLoss = bestTrainLoss;
-        bestStep = bestTrainIndex;
-    }
-    if (!Number.isFinite(bestLoss)) return null;
-
-    const latestIndex = hist.count - 1;
-    const latestTrain = hist.trainLoss[latestIndex];
-    const latestTest = hist.testLoss[latestIndex];
-    const generalizationGap =
-        Number.isFinite(latestTrain) && Number.isFinite(latestTest)
-            ? latestTest - latestTrain
-            : null;
-
-    let plateauIndex: number | null = null;
-    if (hist.count >= PLATEAU_WINDOW) {
-        const start = hist.count - PLATEAU_WINDOW;
-        let minLoss = Number.POSITIVE_INFINITY;
-        let maxLoss = Number.NEGATIVE_INFINITY;
-        let allFinite = true;
-        for (let i = start; i < hist.count; i++) {
-            const loss = hist.trainLoss[i];
-            if (!Number.isFinite(loss)) {
-                allFinite = false;
-                break;
-            }
-            minLoss = Math.min(minLoss, loss);
-            maxLoss = Math.max(maxLoss, loss);
-        }
-
-        const tolerance = Math.max(Math.abs(hist.trainLoss[start]) * PLATEAU_EPSILON, 0.0005);
-        if (allFinite && maxLoss - minLoss <= tolerance) {
-            plateauIndex = start;
-        }
-    }
-
-    let divergenceIndex: number | null = null;
-    if (!Number.isFinite(latestTrain) || !Number.isFinite(latestTest)) {
-        divergenceIndex = latestIndex;
-    } else if (
-        Number.isFinite(bestTrainLoss) &&
-        bestTrainLoss > 0 &&
-        latestTrain > bestTrainLoss * DIVERGENCE_MULTIPLIER &&
-        latestIndex > bestTrainIndex
-    ) {
-        divergenceIndex = latestIndex;
-    }
-
-    return { bestLoss, bestStep, generalizationGap, plateauIndex, divergenceIndex };
-}
-
-// ── Grid / line / legend helpers (unchanged) ─────────────────────────────────
-
-function drawGrid(
-    ctx: CanvasRenderingContext2D,
-    plotW: number,
-    plotH: number,
-    yMax: number,
-    formatLabel: (v: number) => string,
-) {
-    const TICKS = 4;
-
-    // Grid lines
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= TICKS; i++) {
-        const y = PADDING.top + (plotH / TICKS) * i;
-        ctx.beginPath();
-        ctx.moveTo(PADDING.left, y);
-        ctx.lineTo(PADDING.left + plotW, y);
-        ctx.stroke();
-    }
-
-    // Y-axis labels
-    ctx.fillStyle = 'rgba(255,255,255,0.3)';
-    ctx.font = '9px Inter, sans-serif';
-    ctx.textAlign = 'right';
-    for (let i = 0; i <= TICKS; i++) {
-        const v = (yMax / TICKS) * (TICKS - i);
-        const y = PADDING.top + (plotH / TICKS) * i;
-        ctx.fillText(formatLabel(v), PADDING.left - 6, y + 3);
-    }
-}
-
-function drawTypedLine(
-    ctx: CanvasRenderingContext2D,
-    data: Float64Array,
-    count: number,
-    scaleX: (i: number) => number,
-    scaleY: (v: number) => number,
-    color: string,
-    dashed: boolean,
-    fillArea: boolean = false,
-    plotH?: number
-) {
-    if (fillArea && plotH !== undefined) {
-        const bottomY = PADDING.top + plotH;
-        const gradient = ctx.createLinearGradient(0, PADDING.top, 0, bottomY);
-        let r = 0, g = 229, b = 195; // default #00e5c3
-        if (color === '#7c5cfc') { r = 124; g = 92; b = 252; }
-
-        gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.25)`);
-        gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
-
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.moveTo(scaleX(0), bottomY);
-        for (let i = 0; i < count; i++) ctx.lineTo(scaleX(i), scaleY(data[i]));
-        ctx.lineTo(scaleX(count - 1), bottomY);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    if (dashed) {
-        ctx.setLineDash([4, 3]);
-    } else {
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 6;
-    }
-
-    ctx.beginPath();
-    let hasPoint = false;
-    for (let i = 0; i < count; i++) {
-        if (!Number.isFinite(data[i])) continue;
-        const x = scaleX(i);
-        const y = scaleY(data[i]);
-        if (!hasPoint) {
-            ctx.moveTo(x, y);
-            hasPoint = true;
-        }
-        else ctx.lineTo(x, y);
-    }
-    if (hasPoint) ctx.stroke();
-
-    ctx.setLineDash([]);
-    ctx.shadowBlur = 0;
-}
-
-function drawLossDiagnosticMarkers(
-    ctx: CanvasRenderingContext2D,
-    hist: HistoryArrays,
-    diagnostics: LossDiagnostics | null | undefined,
-    scaleX: (i: number) => number,
-    plotH: number,
-) {
-    if (!diagnostics || hist.count < 2) return;
-
-    const drawMarker = (index: number | null, color: string, label: string, y: number) => {
-        if (index === null) return;
-        const x = scaleX(Math.max(0, Math.min(hist.count - 1, index)));
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([2, 3]);
-        ctx.beginPath();
-        ctx.moveTo(x, PADDING.top);
-        ctx.lineTo(x, PADDING.top + plotH);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = color;
-        ctx.font = '9px Inter, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(label, x, y);
-    };
-
-    drawMarker(diagnostics.plateauIndex, '#f6c85f', 'Plateau', PADDING.top + 10);
-    drawMarker(diagnostics.divergenceIndex, '#ff6b6b', 'Divergence', PADDING.top + 22);
-}
-
-function drawLegend(
-    ctx: CanvasRenderingContext2D,
-    items: { color: string; label: string; dashed: boolean }[],
-) {
+    ctx.fillStyle = 'rgba(255,255,255,0.58)';
     ctx.font = '10px Inter, sans-serif';
     ctx.textAlign = 'left';
-    let xOffset = PADDING.left;
-    for (const { color, label, dashed } of items) {
-        ctx.fillStyle = color;
-        if (dashed) {
-            ctx.setLineDash([4, 3]);
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(xOffset, 8);
-            ctx.lineTo(xOffset + 12, 8);
-            ctx.stroke();
-            ctx.setLineDash([]);
-        } else {
-            ctx.fillRect(xOffset, 6, 12, 3);
-        }
-        ctx.fillStyle = 'rgba(255,255,255,0.55)';
-        ctx.fillText(label, xOffset + 16, 10);
-        xOffset += ctx.measureText(label).width + 32;
-    }
+    ctx.fillText(stepMin.toLocaleString(), PADDING.left, CHART_HEIGHT - 7);
+    ctx.textAlign = 'right';
+    ctx.fillText(stepMax.toLocaleString(), width - PADDING.right, CHART_HEIGHT - 7);
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
+function formatSigned(value: number): string {
+    return `${value >= 0 ? '+' : ''}${value.toFixed(4)}`;
+}
+
+function isPlateau(evaluations: readonly EvaluationPoint[]): boolean {
+    if (evaluations.length < 8) return false;
+    const recent = evaluations.slice(-8).map((point) => point.test.values.dataLoss);
+    return Math.max(...recent) - Math.min(...recent) <= 1e-6;
+}
 
 export const LossChart = memo(function LossChart() {
+    const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    // Subscribe to the scalar version counter — never to the history array
-    // itself — so the LossChart is the only thing that re-renders per frame.
-    const historyVersion = useTrainingStore((s) => s.historyVersion);
-    const problemType = usePlaygroundStore((s) => s.data.problemType);
+    const trainingTrendVersion = useTrainingStore((state) => state.trainingTrendVersion);
+    const evaluationHistoryVersion = useTrainingStore((state) => state.evaluationHistoryVersion);
+    const taskKind = usePlaygroundStore((state) => state.access.status === 'ready'
+        ? state.access.prepared.document.recipe.task.kind
+        : null);
     const [tab, setTab] = useState<ChartTab>('loss');
-    const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+    const [chartWidth, setChartWidth] = useState(320);
 
-    // Cached state that lets the next render reuse the previous paint.
-    const lastYMaxRef = useRef(0);
-    const lastTabRef = useRef<ChartTab>(tab);
-    const lastCountRef = useRef(0);
-    const lastCompactionRef = useRef(-1);
+    const history = useMemo(() => {
+        void trainingTrendVersion;
+        void evaluationHistoryVersion;
+        return metricHistoryBuffer.read();
+    }, [evaluationHistoryVersion, trainingTrendVersion]);
 
-    // Re-read history on each commit. Returned object is a reference view
-    // onto the packed Float64Arrays; no allocation here.
-    const hist = readHistory();
-    const lossDiagnostics = computeLossDiagnostics(hist);
-
-    // If we switch to regression, snap back to loss tab
     useEffect(() => {
-        if (problemType === 'regression') setTab('loss');
-    }, [problemType]);
+        if (taskKind === 'regression') setTab('loss');
+    }, [taskKind]);
+
+    useEffect(() => {
+        const container = containerRef.current;
+        const Observer = typeof window === 'undefined' ? undefined : window.ResizeObserver;
+        if (!container || !Observer) return;
+        const observer = new Observer((entries) => {
+            for (const entry of entries) {
+                if (entry.contentRect.width > 0) setChartWidth(Math.round(entry.contentRect.width));
+            }
+        });
+        observer.observe(container);
+        if (container.clientWidth > 0) setChartWidth(container.clientWidth);
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -396,113 +152,43 @@ export const LossChart = memo(function LossChart() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         const dpr = window.devicePixelRatio || 1;
-        if (canvas.width !== CHART_W * dpr || canvas.height !== CHART_H * dpr) {
-            canvas.width = CHART_W * dpr;
-            canvas.height = CHART_H * dpr;
-        }
+        canvas.width = chartWidth * dpr;
+        canvas.height = CHART_HEIGHT * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        drawChart(
+            ctx,
+            chartWidth,
+            tab,
+            history.trendHistory,
+            history.evaluationHistory,
+        );
+    }, [chartWidth, history, tab]);
 
-        const nextHist = readHistory();
-        const nextYMax = tab === 'loss' ? computeYMax(nextHist, 'loss') : 1;
-        const compactionNow = getHistoryCompactionCount();
-
-        // Force a full redraw on tab change, scale change, compaction or
-        // first paint. Otherwise we'd happily draw the new segment, which
-        // is what we want for the steady-state append case.
-        const yMaxStable = nextYMax === lastYMaxRef.current;
-        const tabStable = tab === lastTabRef.current;
-        const noCompaction = compactionNow === lastCompactionRef.current;
-        const grew = nextHist.count >= lastCountRef.current;
-
-        // We currently always do a full redraw — the incremental-append
-        // path is outlined below for a later optimisation pass once we
-        // have a dev-mode perf HUD to verify equivalence.
-        void (yMaxStable && tabStable && noCompaction && grew);
-
-        lastYMaxRef.current = nextYMax;
-        lastTabRef.current = tab;
-        lastCountRef.current = nextHist.count;
-        lastCompactionRef.current = compactionNow;
-
-        drawChart(ctx, nextHist, tab, nextYMax, computeLossDiagnostics(nextHist));
-    }, [historyVersion, tab]);
-
-    const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        if (hist.count < 2) return;
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-
-        const plotW = CHART_W - PADDING.left - PADDING.right;
-        const chartX = x - PADDING.left;
-
-        const xMax = hist.count - 1;
-        const index = Math.round((chartX / plotW) * xMax);
-        if (index < 0 || index > xMax || x < PADDING.left || x > PADDING.left + plotW) {
-            setHoverIndex(null);
-        } else {
-            setHoverIndex(index);
-        }
-    };
-
-    const handleMouseLeave = () => setHoverIndex(null);
-
-    let hoverState = null;
-    if (hoverIndex !== null && hoverIndex < hist.count) {
-        const plotW = CHART_W - PADDING.left - PADDING.right;
-        const plotH = CHART_H - PADDING.top - PADDING.bottom;
-        const xMax = hist.count - 1;
-        const scaleX = (i: number) => PADDING.left + (i / xMax) * plotW;
-
-        const xPos = scaleX(hoverIndex);
-
-        const yMax = lastYMaxRef.current;
-        let trainY = 0, testY = 0;
-        let trainValStr = '', testValStr = '';
-
-        if (tab === 'loss') {
-            const scaleYLoss = (v: number) => PADDING.top + plotH - (Math.min(v, yMax) / yMax) * plotH;
-            const tl = hist.trainLoss[hoverIndex];
-            const tsl = hist.testLoss[hoverIndex];
-            trainY = scaleYLoss(tl);
-            testY = scaleYLoss(tsl);
-            trainValStr = tl.toFixed(4);
-            testValStr = tsl.toFixed(4);
-        } else {
-            const scaleYAcc = (v: number) => PADDING.top + plotH - Math.min(1, Math.max(0, v)) * plotH;
-            const trainAcc = hist.hasTrainAccuracy[hoverIndex] ? hist.trainAccuracy[hoverIndex] : 0;
-            const testAcc = hist.hasTestAccuracy[hoverIndex] ? hist.testAccuracy[hoverIndex] : 0;
-            trainY = scaleYAcc(trainAcc);
-            testY = scaleYAcc(testAcc);
-            trainValStr = (trainAcc * 100).toFixed(1) + '%';
-            testValStr = (testAcc * 100).toFixed(1) + '%';
-        }
-
-        const alignRight = hoverIndex > hist.count / 2;
-
-        hoverState = {
-            x: xPos,
-            trainY, testY, trainValStr, testValStr,
-            alignRight,
-            step: hoverIndex,
-        };
-    }
-
-    if (hist.count === 0) {
+    if (history.trendHistory.length === 0 && history.evaluationHistory.length === 0) {
         return (
-            <div className="loss-chart">
+            <div className="loss-chart" ref={containerRef}>
                 <EmptyState
                     icon="📉"
-                    title="No training history"
-                    description="Start or step training to plot loss and accuracy over time."
+                    title="No scientific metric history"
+                    description="Start or step training to plot the batch trend and paired full evaluations."
                 />
             </div>
         );
     }
 
+    const latestTrend = history.trendHistory.at(-1) ?? null;
+    const latestEvaluation = history.evaluationHistory.at(-1) ?? null;
+    const bestTest = history.evaluationHistory.length === 0
+        ? null
+        : Math.min(...history.evaluationHistory.map((point) => point.test.values.dataLoss));
+    const gap = latestEvaluation === null
+        ? null
+        : latestEvaluation.test.values.dataLoss - latestEvaluation.train.values.dataLoss;
+
     return (
-        <div className="loss-chart">
+        <div className="loss-chart" ref={containerRef}>
             <div className="chart-tabs">
-                <Tooltip content="View train and test loss over time">
+                <Tooltip content="View data-loss and training-objective evidence by actual model step">
                     <button
                         className={`chart-tab ${tab === 'loss' ? 'active' : ''}`}
                         onClick={() => setTab('loss')}
@@ -511,8 +197,8 @@ export const LossChart = memo(function LossChart() {
                         Loss
                     </button>
                 </Tooltip>
-                {problemType === 'classification' && (
-                    <Tooltip content="View classification accuracy over time">
+                {taskKind !== 'regression' && (
+                    <Tooltip content="View full-split classification accuracy by evaluation step">
                         <button
                             className={`chart-tab ${tab === 'accuracy' ? 'active' : ''}`}
                             onClick={() => setTab('accuracy')}
@@ -523,110 +209,45 @@ export const LossChart = memo(function LossChart() {
                     </Tooltip>
                 )}
             </div>
-            <div style={{ position: 'relative', width: CHART_W, height: CHART_H }}>
-                <canvas
-                    ref={canvasRef}
-                    style={{ width: CHART_W, height: CHART_H, display: 'block' }}
-                    aria-label={tab === 'loss' ? 'Loss over training steps' : 'Accuracy over training steps'}
-                    onMouseMove={handleMouseMove}
-                    onMouseLeave={handleMouseLeave}
-                />
-                {hoverState && (
+            <div className="loss-chart__legend" aria-label="Metric series">
+                {tab === 'loss' ? (
                     <>
-                        <div
-                            style={{
-                                position: 'absolute',
-                                top: PADDING.top,
-                                bottom: PADDING.bottom,
-                                left: hoverState.x,
-                                width: 1,
-                                backgroundColor: 'rgba(255,255,255,0.2)',
-                                pointerEvents: 'none',
-                            }}
-                        />
-                        <div style={{
-                            position: 'absolute',
-                            left: hoverState.x - 4,
-                            top: hoverState.trainY - 4,
-                            width: 8, height: 8,
-                            borderRadius: '50%',
-                            backgroundColor: '#00e5c3',
-                            border: '2px solid #1c2030',
-                            pointerEvents: 'none',
-                            boxShadow: '0 0 6px rgba(0,229,195,0.6)',
-                        }} />
-                        <div style={{
-                            position: 'absolute',
-                            left: hoverState.x - 4,
-                            top: hoverState.testY - 4,
-                            width: 8, height: 8,
-                            borderRadius: '50%',
-                            backgroundColor: '#7c5cfc',
-                            border: '2px solid #1c2030',
-                            pointerEvents: 'none',
-                            boxShadow: '0 0 6px rgba(124,92,252,0.6)',
-                        }} />
-                        <div
-                            style={{
-                                position: 'absolute',
-                                top: 8,
-                                ...(hoverState.alignRight ? { right: CHART_W - hoverState.x + 8 } : { left: hoverState.x + 8 }),
-                                backgroundColor: '#1c2030',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: 4,
-                                padding: '6px 8px',
-                                fontSize: 10,
-                                color: '#fff',
-                                fontFamily: 'Inter, sans-serif',
-                                pointerEvents: 'none',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                                zIndex: 10,
-                                minWidth: 80,
-                            }}
-                        >
-                            <div style={{ opacity: 0.6, marginBottom: 4, fontSize: 9 }}>Step {hoverState.step}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                                <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#00e5c3' }} />
-                                <span>Train:</span>
-                                <span style={{ fontWeight: 600, marginLeft: 'auto' }}>{hoverState.trainValStr}</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#7c5cfc' }} />
-                                <span>Test:</span>
-                                <span style={{ fontWeight: 600, marginLeft: 'auto' }}>{hoverState.testValStr}</span>
-                            </div>
-                        </div>
+                        <span>Batch trend (EMA)</span>
+                        <span>Train data loss (full split)</span>
+                        <span>Test data loss (full split)</span>
+                        <span>Training objective</span>
+                    </>
+                ) : (
+                    <>
+                        <span>Train accuracy (full split)</span>
+                        <span>Test accuracy (full split)</span>
                     </>
                 )}
             </div>
-            {tab === 'loss' && lossDiagnostics && (
-                <div
-                    aria-label="Loss diagnostics"
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        flexWrap: 'wrap',
-                        marginTop: 6,
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: 10,
-                        color: 'var(--text-secondary)',
-                    }}
-                >
-                    <span>Best {lossDiagnostics.bestLoss.toFixed(4)}</span>
-                    <span>Gap {lossDiagnostics.generalizationGap === null ? 'n/a' : formatSigned(lossDiagnostics.generalizationGap)}</span>
-                    {lossDiagnostics.plateauIndex !== null && (
-                        <span style={{ color: '#f6c85f' }}>Plateau</span>
-                    )}
-                    {lossDiagnostics.divergenceIndex !== null && (
-                        <span style={{ color: '#ff6b6b' }}>Divergence</span>
-                    )}
+            <canvas
+                ref={canvasRef}
+                style={{ width: '100%', height: CHART_HEIGHT, display: 'block' }}
+                aria-label={tab === 'loss'
+                    ? 'Scientific loss evidence by actual model step'
+                    : 'Full-split accuracy by evaluation model step'}
+            />
+            <p className="loss-chart__basis">
+                {latestTrend
+                    ? `Batch trend through step ${latestTrend.model.step.toLocaleString()} using latest batch size ${latestTrend.basis.latestBatchSize}.`
+                    : 'No batch trend has been published.'}
+                {' '}
+                {latestEvaluation
+                    ? `Full evaluation ${latestEvaluation.evaluationId} at step ${latestEvaluation.model.step.toLocaleString()} using all ${latestEvaluation.train.basis.sampleCount} train and ${latestEvaluation.test.basis.sampleCount} test examples.`
+                    : 'No paired full evaluation has been published.'}
+            </p>
+            {tab === 'loss' && latestEvaluation && (
+                <div aria-label="Loss diagnostics" className="loss-chart__diagnostics">
+                    <span>{`Best test ${bestTest!.toFixed(4)}`}</span>
+                    <span>{`Gap ${gap === null ? 'n/a' : formatSigned(gap)}`}</span>
+                    <span>{`Penalty ${latestEvaluation.objective.regularizationPenalty.toFixed(4)}`}</span>
+                    {isPlateau(history.evaluationHistory) && <span>Plateau</span>}
                 </div>
             )}
         </div>
     );
 });
-
-function formatSigned(value: number): string {
-    return `${value >= 0 ? '+' : ''}${value.toFixed(4)}`;
-}

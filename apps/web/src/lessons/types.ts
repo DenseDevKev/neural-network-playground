@@ -1,4 +1,4 @@
-import type { Preset } from '@nn-playground/shared';
+import type { RecipeRef } from '@nn-playground/shared';
 import type { LeftTabId, PhaseMode } from '../store/useLayoutStore.ts';
 
 export type LessonTarget = 'data' | 'features' | 'network' | 'hyperparams' | 'transport';
@@ -18,7 +18,7 @@ export interface LessonDefinition {
     id: string;
     title: string;
     summary: string;
-    presetId: Preset['id'];
+    recipeRef: RecipeRef;
     estimatedMinutes?: number;
     steps: readonly LessonStep[];
 }

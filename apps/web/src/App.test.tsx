@@ -5,6 +5,13 @@ import type { ReactNode } from 'react';
 import App from './App';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { useLayoutStore } from './store/useLayoutStore.ts';
+import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
+import {
+    DEFAULT_EXPERIMENT_DOCUMENT,
+    prepareExperimentDocument,
+} from '@nn-playground/shared';
+
+const useTrainingMount = vi.hoisted(() => vi.fn());
 
 const trainingMock = {
     play: vi.fn(),
@@ -14,27 +21,92 @@ const trainingMock = {
     restoreCheckpoint: vi.fn(),
 };
 
+function liveSignal(revision: number, step: number, epoch: number) {
+    return {
+        model: { generationId: 1, revision, step, epoch },
+        dataset: {
+            generatorVersion: 2,
+            datasetKey: 'test-dataset',
+            trainCount: 150,
+            testCount: 150,
+        },
+        objectiveKey: 'test-objective',
+        basis: {
+            kind: 'mini-batch-ema' as const,
+            alpha: 0.1,
+            latestBatchSize: 10,
+            throughStep: step,
+        },
+        dataLoss: 0.25,
+    };
+}
+
+function fullEvaluation(revision: number, step: number, epoch: number) {
+    return {
+        evaluationId: 12,
+        trigger: 'pause' as const,
+        model: { generationId: 1, revision, step, epoch },
+        dataset: {
+            generatorVersion: 2,
+            datasetKey: 'test-dataset',
+            trainCount: 150,
+            testCount: 150,
+        },
+        objectiveKey: 'test-objective',
+        train: {
+            basis: { kind: 'full-split' as const, split: 'train' as const, sampleCount: 150, populationCount: 150 },
+            values: { dataLoss: 0.2, accuracy: 0.9 },
+        },
+        test: {
+            basis: { kind: 'full-split' as const, split: 'test' as const, sampleCount: 150, populationCount: 150 },
+            values: { dataLoss: 0.3, accuracy: 0.8 },
+        },
+        objective: { regularizationPenalty: 0, trainTotalObjective: 0.2 },
+    };
+}
+
 vi.mock('./hooks/useTraining.ts', () => ({
-    useTraining: () => trainingMock,
+    useTraining: () => {
+        useTrainingMount();
+        return trainingMock;
+    },
 }));
 
 vi.mock('./components/layout/Header.tsx', () => ({
     Header: () => <header>Header</header>,
 }));
 
-vi.mock('./components/layout/RegionShell.tsx', () => ({
-    DockShell:  () => <section aria-label="Dock workspace">Workspace</section>,
-    FocusShell: () => <section aria-label="Focus workspace">Workspace</section>,
-    GridShell:  () => <section aria-label="Grid workspace">Workspace</section>,
-    SplitShell: ({ buildLeft, buildCenter, buildRight }: {
-        buildLeft?: ReactNode;
-        buildCenter?: ReactNode;
-        buildRight?: ReactNode;
+vi.mock('./components/layout/BuildRunShell.tsx', () => ({
+    BuildRunShell: ({
+        view,
+        recipeContent,
+        runContent,
+        dataContent,
+        networkContent,
+        featuresContent,
+        hyperparamContent,
+        topologyContent,
+        transportContent,
+    }: {
+        view: string;
+        recipeContent?: ReactNode;
+        runContent?: ReactNode;
+        dataContent?: ReactNode;
+        networkContent?: ReactNode;
+        featuresContent?: ReactNode;
+        hyperparamContent?: ReactNode;
+        topologyContent?: ReactNode;
+        transportContent?: ReactNode;
     }) => (
-        <section aria-label="Split workspace">
-            {buildLeft}
-            {buildCenter}
-            {buildRight}
+        <section aria-label={`${view} workspace`} data-testid="build-run-shell">
+            <div data-forge-panel-targets="experiment">{recipeContent}</div>
+            <div data-forge-panel-targets="run">{runContent}</div>
+            <div data-forge-panel-targets="data">{dataContent}</div>
+            <div data-forge-panel-targets="network">{networkContent}</div>
+            <div data-forge-panel-targets="features">{featuresContent}</div>
+            <div data-forge-panel-targets="hyperparams">{hyperparamContent}</div>
+            <div data-forge-panel-targets="topology">{topologyContent}</div>
+            <div data-forge-panel-targets="transport">{transportContent}</div>
         </section>
     ),
 }));
@@ -62,13 +134,22 @@ vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel:
 vi.mock('./components/controls/RunHistoryPanel.tsx',   () => ({ RunHistoryPanel: () => <div>RunHistory</div> }));
 
 describe('App accessibility shell', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         window.localStorage.clear();
         trainingMock.play.mockReset();
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();
         trainingMock.reset.mockReset();
         trainingMock.restoreCheckpoint.mockReset();
+        useTrainingMount.mockClear();
+
+        const prepared = await prepareExperimentDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+        if (!prepared.ok) throw new Error('default experiment fixture did not prepare');
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: prepared.value },
+            prepared: prepared.value,
+            preparation: { status: 'ready', requestId: 0, issues: [] },
+        });
 
         useTrainingStore.setState({
             status: 'idle',
@@ -81,11 +162,32 @@ describe('App accessibility shell', () => {
         });
 
         useLayoutStore.setState({
+            view: 'build',
+            activeRecipeSection: 'data',
+            activeEvidenceView: 'boundary',
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
             activeTabRight: 'boundary',
         });
+    });
+
+    it('renders durable compatibility recovery without mounting the training hook', () => {
+        usePlaygroundStore.getState().markIncompatible(
+            { kind: 'url', rawHash: '#d=xor&n=0.2' },
+            [{
+                code: 'legacy-state',
+                path: 'schemaVersion',
+                message: 'unversioned experiment documents are incompatible',
+            }],
+        );
+
+        render(<App />);
+
+        expect(useTrainingMount).not.toHaveBeenCalled();
+        expect(screen.getByRole('main', { name: 'Experiment compatibility' }))
+            .toBeInTheDocument();
+        expect(screen.getByText('#d=xor&n=0.2')).toBeInTheDocument();
     });
 
     it('renders a skip link to the main content', () => {
@@ -109,8 +211,8 @@ describe('App accessibility shell', () => {
 
         render(<App />);
 
-        expect(screen.getByText('Worker connection lost')).toBeInTheDocument();
-        expect(screen.getByText('Worker channel closed unexpectedly. Refresh the page to restart the playground.')).toBeInTheDocument();
+        expect(screen.getAllByText('Worker connection lost').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Worker channel closed unexpectedly. Refresh the page to restart the playground.').length).toBeGreaterThan(0);
         expect(screen.getByRole('button', { name: 'Refresh page' })).toBeInTheDocument();
     });
 
@@ -198,40 +300,49 @@ describe('App accessibility shell', () => {
         expect(screen.getByRole('status', { name: 'Status bar' })).toBeInTheDocument();
     });
 
-    it('switches layout variants through the store', () => {
+    it('shows the newest scientific model in the status bar after a forced pause evaluation', () => {
+        useTrainingStore.setState({
+            status: 'paused',
+            evidenceGenerationId: 1,
+            latestLiveSignal: liveSignal(2_450, 2_450, 163),
+            latestEvaluation: fullEvaluation(2_500, 2_500, 166),
+        });
+
+        render(<App />);
+
+        const statusBar = screen.getByRole('status', { name: 'Status bar' });
+        expect(statusBar).toHaveTextContent('STEP 2,500');
+        expect(statusBar).not.toHaveTextContent('STEP 2,450');
+    });
+
+    it('switches Build and Run views through the store', () => {
         render(<App />);
 
         act(() => {
-            useLayoutStore.getState().setLayout('grid');
+            useLayoutStore.getState().setView('run');
         });
-        expect(useLayoutStore.getState().layout).toBe('grid');
+        expect(useLayoutStore.getState().view).toBe('run');
 
         act(() => {
-            useLayoutStore.getState().setLayout('focus');
+            useLayoutStore.getState().setView('build');
         });
-        expect(useLayoutStore.getState().layout).toBe('focus');
-
-        act(() => {
-            useLayoutStore.getState().setLayout('split');
-        });
-        expect(useLayoutStore.getState().layout).toBe('split');
+        expect(useLayoutStore.getState().view).toBe('build');
     });
 
-    it('passes target hooks to split layout configuration panels', () => {
-        useLayoutStore.setState({ layout: 'split', phase: 'build' });
+    it('passes target hooks to Build/Run workspace panels', () => {
+        useLayoutStore.setState({ view: 'build', phase: 'build' });
 
         const { container } = render(<App />);
-        const targets = Array.from(container.querySelectorAll('.forge-panel[data-forge-panel-targets]'))
+        const targets = Array.from(container.querySelectorAll('[data-forge-panel-targets]'))
             .map((panel) => panel.getAttribute('data-forge-panel-targets'));
 
         expect(targets).toEqual(expect.arrayContaining([
-            'presets',
             'data',
             'topology',
             'network',
             'features',
             'hyperparams',
-            'config',
+            'transport',
         ]));
     });
 });

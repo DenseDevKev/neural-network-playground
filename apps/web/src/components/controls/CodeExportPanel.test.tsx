@@ -9,10 +9,12 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore';
 import { useLayoutStore } from '../../store/useLayoutStore';
 import { resetFrameBuffer, updateFrameBuffer } from '../../worker/frameBuffer';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
+    DEFAULT_EXPERIMENT_DOCUMENT,
+    PREPARED_PRESETS,
+    prepareExperimentDocument,
+    type ExperimentDocumentV2,
+    type PreparedExperimentDocumentV2,
+    type ModelRevision,
 } from '@nn-playground/shared';
 
 const fakeSnapshot = {
@@ -26,22 +28,46 @@ const fakeSnapshot = {
     biases: [[0.1, 0.2], [0.3]],
     outputGrid: [],
     gridSize: 40,
-    historyPoint: { step: 5, trainLoss: 0.5, testLoss: 0.6 },
 };
 
+async function prepareWithHiddenLayers(
+    hiddenLayers: number[],
+): Promise<PreparedExperimentDocumentV2> {
+    const document = structuredClone(DEFAULT_EXPERIMENT_DOCUMENT) as ExperimentDocumentV2;
+    document.recipe.model.hiddenLayers = hiddenLayers;
+    const result = await prepareExperimentDocument(document);
+    if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join('; '));
+    return result.value;
+}
+
+function installPrepared(prepared: PreparedExperimentDocumentV2) {
+    usePlaygroundStore.setState({
+        access: { status: 'ready', prepared },
+        prepared,
+    });
+}
+
+function installParameters(
+    prepared: PreparedExperimentDocumentV2,
+    model: ModelRevision = { generationId: 1, revision: 5, step: 5, epoch: 0 },
+    recipeFingerprint = prepared.identities.recipeFingerprint,
+) {
+    updateFrameBuffer({
+        weights: new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]),
+        biases: new Float32Array([0.1, 0.2, 0.3]),
+        weightLayout: { layerSizes: [2, 2, 1] },
+        parameterProvenance: { model, recipeFingerprint },
+    });
+}
+
 describe('CodeExportPanel', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         resetFrameBuffer();
 
-        usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed, hiddenLayers: [2] },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
-        });
+        const prepared = await prepareWithHiddenLayers([2]);
+        installPrepared(prepared);
 
-        useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: fakeSnapshot as any,
@@ -56,7 +82,26 @@ describe('CodeExportPanel', () => {
             configErrorSource: null,
             configSyncNonce: 0,
             workerError: null,
-            testMetricsStale: false,
+            trainedRecipe: prepared.document.recipe,
+            trainedRecipeFingerprint: prepared.identities.recipeFingerprint,
+            latestLiveSignal: {
+                model: { generationId: 1, revision: 5, step: 5, epoch: 0 },
+                dataset: {
+                    generatorVersion: 1,
+                    datasetKey: prepared.identities.datasetKey,
+                    trainCount: 150,
+                    testCount: 150,
+                },
+                objectiveKey: prepared.identities.objectiveKey,
+                basis: {
+                    kind: 'mini-batch-ema',
+                    alpha: 0.1,
+                    latestBatchSize: 10,
+                    throughStep: 5,
+                },
+                dataLoss: 0.5,
+            },
+            latestEvaluation: null,
         });
 
         useLayoutStore.setState({
@@ -68,12 +113,8 @@ describe('CodeExportPanel', () => {
         } as any);
 
         // Seed the frame buffer with weights
-        const weights = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
-        const biases = new Float32Array([0.1, 0.2, 0.3]);
+        installParameters(prepared);
         updateFrameBuffer({
-            weights,
-            biases,
-            weightLayout: { layerSizes: [2, 2, 1] },
             outputGrid: null,
             gridSize: 40,
             neuronGrids: null,
@@ -103,27 +144,70 @@ describe('CodeExportPanel', () => {
     });
 
     it('preserves an existing multiclass output size in generated code', () => {
-        usePlaygroundStore.setState((state) => ({
-            network: {
-                ...state.network,
-                outputSize: 3,
-                outputActivation: 'softmax',
-            },
-            training: {
-                ...state.training,
-                lossType: 'categoricalCrossEntropy',
-            },
-        }));
-        useTrainingStore.setState({ snapshot: null });
+        const multiclass = PREPARED_PRESETS.find((entry) => entry.id === 'three-class-clusters')!.prepared;
+        installPrepared(multiclass);
+        useTrainingStore.setState({
+            snapshot: null,
+            trainedRecipe: null,
+            trainedRecipeFingerprint: null,
+            latestLiveSignal: null,
+        });
         resetFrameBuffer();
 
         render(<CodeExportPanel />);
 
         const code = document.querySelector('.code-export__code')?.textContent ?? '';
-        expect(code).toContain('Architecture: 2 → 2 → 3');
+        expect(code).toContain('Architecture: 2 → 6 → 6 → 3');
         expect(code).toContain('activation = Softmax');
         expect(code).toContain('loss = Categorical Cross-Entropy');
         expect(code).not.toContain('Architecture: 2 → 2 → 1');
+    });
+
+    it('never pairs learned parameters with a different current recipe fingerprint', async () => {
+        render(<CodeExportPanel />);
+
+        expect(document.querySelector('.code-export__code')?.textContent).toContain(
+            '# Trained weights (step 5)',
+        );
+
+        const changed = await prepareWithHiddenLayers([3]);
+        act(() => installPrepared(changed));
+
+        expect(document.querySelector('.code-export__code')?.textContent).toContain(
+            '# Architecture: 2 → 3 → 1',
+        );
+        expect(document.querySelector('.code-export__code')?.textContent).not.toContain(
+            '# Trained weights',
+        );
+    });
+
+    it('labels parameters with their own revision when newer evidence arrives first', () => {
+        useTrainingStore.setState({
+            latestLiveSignal: {
+                ...useTrainingStore.getState().latestLiveSignal!,
+                model: { generationId: 1, revision: 6, step: 6, epoch: 0 },
+            },
+        });
+
+        render(<CodeExportPanel />);
+
+        const code = document.querySelector('.code-export__code')?.textContent ?? '';
+        expect(code).toContain('# Trained weights (step 5)');
+        expect(code).not.toContain('# Trained weights (step 6)');
+    });
+
+    it.each([
+        ['generation', { generationId: 2, revision: 5, step: 5, epoch: 0 }, null],
+        ['fingerprint', { generationId: 1, revision: 5, step: 5, epoch: 0 }, `r2.1.${'Z'.repeat(43)}`],
+    ] as const)('suppresses parameters on a %s mismatch', (_kind, model, fingerprint) => {
+        const prepared = usePlaygroundStore.getState().access;
+        if (prepared.status !== 'ready') throw new Error('expected prepared experiment');
+        installParameters(prepared.prepared, model, fingerprint ?? prepared.prepared.identities.recipeFingerprint);
+
+        render(<CodeExportPanel />);
+
+        expect(document.querySelector('.code-export__code')?.textContent)
+            .not.toContain('# Trained weights');
     });
 
     it('switches to NumPy tab and shows numpy code', async () => {

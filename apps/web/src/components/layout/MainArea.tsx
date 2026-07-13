@@ -12,7 +12,6 @@ import { LossChart } from '../visualization/LossChart.tsx';
 import { TrainingExplanationPanel } from '../visualization/TrainingExplanationPanel.tsx';
 import { ConfusionMatrix } from '../visualization/ConfusionMatrix.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
-import type { ExperimentRunRecordV1 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { Panel } from '../common/Panel.tsx';
@@ -76,8 +75,13 @@ export const CanvasContent = memo(function CanvasContent() {
 
 // ── Right-panel tab contents ──────────────────────────────────────────────
 export const BoundaryContent = memo(function BoundaryContent() {
-    const showTestData = usePlaygroundStore((s) => s.ui.showTestData);
-    const discretize   = usePlaygroundStore((s) => s.ui.discretizeOutput);
+    const showTestData = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.showTestData
+    ));
+    const discretize = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.discretizeOutput
+    ));
+    const editView     = usePlaygroundStore((s) => s.editView);
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
     const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');
@@ -95,12 +99,18 @@ export const BoundaryContent = memo(function BoundaryContent() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
                     <label className="checkbox-row">
                         <input type="checkbox" checked={showTestData}
-                            onChange={(e) => usePlaygroundStore.getState().setShowTestData(e.target.checked)} />
+                            onChange={async (event) => {
+                                const checked = event.currentTarget.checked;
+                                await editView((view) => ({ ...view, showTestData: checked }));
+                            }} />
                         Show test data
                     </label>
                     <label className="checkbox-row">
                         <input type="checkbox" checked={discretize}
-                            onChange={(e) => usePlaygroundStore.getState().setDiscretize(e.target.checked)} />
+                            onChange={async (event) => {
+                                const checked = event.currentTarget.checked;
+                                await editView((view) => ({ ...view, discretizeOutput: checked }));
+                            }} />
                         Discretize output
                     </label>
                     <div className="decision-overlay-controls" aria-label="Decision overlay controls">
@@ -165,25 +175,11 @@ export const CodeContent = memo(function CodeContent() {
     );
 });
 
-interface HistoryContentProps {
-    onRestore: () => void;
-    onInitializeArena?: (modelA: ExperimentRunRecordV1, modelB: ExperimentRunRecordV1) => void | Promise<void>;
-    onStepArena?: () => void | Promise<void>;
-}
-
-export const HistoryContent = memo(function HistoryContent({
-    onRestore,
-    onInitializeArena,
-    onStepArena,
-}: HistoryContentProps) {
+export const HistoryContent = memo(function HistoryContent() {
     return (
         <EvidenceFrame view="History">
             <Suspense fallback={<Fallback msg="Loading run history…" />}>
-                <RunHistoryPanel
-                    onRestore={onRestore}
-                    onInitializeArena={onInitializeArena}
-                    onStepArena={onStepArena}
-                />
+                <RunHistoryPanel />
             </Suspense>
         </EvidenceFrame>
     );
@@ -191,8 +187,12 @@ export const HistoryContent = memo(function HistoryContent({
 
 // ── Legacy MainArea (for direct-render tests and fallback contexts) ────────
 export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
-    const showTestData = usePlaygroundStore((s) => s.ui.showTestData);
-    const discretize   = usePlaygroundStore((s) => s.ui.discretizeOutput);
+    const showTestData = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.showTestData
+    ));
+    const discretize = usePlaygroundStore((s) => (
+        s.access.status === 'ready' && s.access.prepared.document.view.discretizeOutput
+    ));
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
     const [overlayMode, setOverlayMode] = useState<DecisionOverlayMode>('none');
@@ -259,26 +259,7 @@ export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
                 <Panel title="Run History" phase="both">
                     <EvidenceFrame view="History">
                         <Suspense fallback={<Fallback msg="Loading run history…" />}>
-                            <RunHistoryPanel
-                                onRestore={training.reset}
-                                onInitializeArena={(modelA, modelB) => training.initializeArena(
-                                    {
-                                        label: modelA.title ?? modelA.id,
-                                        network: modelA.config.network,
-                                        training: modelA.config.training,
-                                        data: modelA.config.data,
-                                        features: modelA.config.features,
-                                    },
-                                    {
-                                        label: modelB.title ?? modelB.id,
-                                        network: modelB.config.network,
-                                        training: modelB.config.training,
-                                        data: modelB.config.data,
-                                        features: modelB.config.features,
-                                    },
-                                )}
-                                onStepArena={() => training.stepArena(1)}
-                            />
+                            <RunHistoryPanel />
                         </Suspense>
                     </EvidenceFrame>
                 </Panel>

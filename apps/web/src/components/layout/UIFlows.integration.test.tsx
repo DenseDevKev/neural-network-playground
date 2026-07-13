@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Header } from './Header';
 import { TrainingControls } from '../controls/TrainingControls';
@@ -8,10 +8,7 @@ import { DataPanel } from '../controls/DataPanel';
 import { useTrainingStore } from '../../store/useTrainingStore';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
+    DEFAULT_EXPERIMENT_DOCUMENT,
 } from '@nn-playground/shared';
 
 const trainingMock = {
@@ -23,22 +20,18 @@ const trainingMock = {
 };
 
 describe('UI integration flows', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         trainingMock.play.mockReset();
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();
         trainingMock.reset.mockReset();
         trainingMock.restoreCheckpoint.mockReset();
 
-        usePlaygroundStore.setState({
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
-        });
+        const restored = await usePlaygroundStore.getState()
+            .replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+        expect(restored.ok).toBe(true);
 
-        useTrainingStore.getState().resetHistory();
+        useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
             snapshot: {
@@ -52,7 +45,6 @@ describe('UI integration flows', () => {
                 biases: [],
                 outputGrid: [],
                 gridSize: 40,
-                historyPoint: { step: 0, trainLoss: 0.5, testLoss: 0.6 },
             } as any,
             trainPoints: [],
             testPoints: [],
@@ -77,8 +69,9 @@ describe('UI integration flows', () => {
         const presetButton = screen.getByRole('button', { name: 'Apply preset: XOR Needs Hidden Layers' });
         await user.click(presetButton);
 
-        expect(onReset).toHaveBeenCalledTimes(1);
-        expect(usePlaygroundStore.getState().data.dataset).toBe('xor');
+        await waitFor(() => expect(onReset).toHaveBeenCalledTimes(1));
+        const { access } = usePlaygroundStore.getState();
+        expect(access.status === 'ready' ? access.prepared.compiled.task.dataset : null).toBe('xor');
         expect(presetButton).toHaveClass('preset-card--selected');
     });
 
@@ -87,7 +80,7 @@ describe('UI integration flows', () => {
 
         const { container, rerender } = render(
             <>
-                <Header training={trainingMock} effectiveLayout="dock" isCompact={false} />
+                <Header training={trainingMock} openSurface={null} onToggleSurface={vi.fn()} />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );
@@ -110,7 +103,7 @@ describe('UI integration flows', () => {
 
         rerender(
             <>
-                <Header training={trainingMock} effectiveLayout="dock" isCompact={false} />
+                <Header training={trainingMock} openSurface={null} onToggleSurface={vi.fn()} />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );
