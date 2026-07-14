@@ -10,7 +10,16 @@ import type {
     WorkerExperimentRequestV2,
 } from '@nn-playground/shared';
 
-vi.mock('comlink', () => ({ expose: vi.fn() }));
+const workerBootstrap = vi.hoisted(() => {
+    Object.defineProperty(globalThis, 'postMessage', {
+        configurable: true,
+        writable: true,
+        value: vi.fn(),
+    });
+    return { expose: vi.fn() };
+});
+
+vi.mock('comlink', () => ({ expose: workerBootstrap.expose }));
 
 import { workerApi } from './training.worker.ts';
 
