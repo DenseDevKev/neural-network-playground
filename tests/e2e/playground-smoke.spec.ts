@@ -3,7 +3,11 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 interface RecipeExpectation {
     data: string;
     network: string;
+    training: string;
     loss: string;
+    features: string;
+    featureCount: string;
+    datasetSettings: string;
 }
 
 const RECIPES = {
@@ -11,19 +15,31 @@ const RECIPES = {
         title: 'Regression with No Hidden Layer',
         data: 'Regression plane regression',
         network: '2 -> none -> 1, tanh',
+        training: 'SGD, lr 0.01',
         loss: 'mean squared error, batch 10',
+        features: 'x, y',
+        featureCount: '2 features',
+        datasetSettings: 'Dataset settings: 300 samples, 5 noise, 50% train',
     },
     xor: {
         title: 'XOR Needs Hidden Layers',
         data: 'XOR classification',
         network: '2 -> 4 x 4 -> 1, tanh',
+        training: 'SGD, lr 0.03',
         loss: 'binary cross entropy, batch 10',
+        features: 'x, y',
+        featureCount: '2 features',
+        datasetSettings: 'Dataset settings: 300 samples, 0 noise, 50% train',
     },
     threeClass: {
         title: 'Three-Class Softmax Lab',
         data: 'Three-class clusters classification',
         network: '2 -> 6 x 6 -> 3, tanh',
+        training: 'SGD, lr 0.03',
         loss: 'categorical cross entropy, batch 10',
+        features: 'x, y',
+        featureCount: '2 features',
+        datasetSettings: 'Dataset settings: 300 samples, 0.05 noise, 50% train',
     },
 } as const;
 
@@ -132,8 +148,19 @@ async function expectRecipe(page: Page, recipe: RecipeExpectation): Promise<void
     await expect(summary).toBeVisible();
     await expect(summary.getByText(recipe.data, { exact: true })).toBeVisible();
     await expect(summary.getByText(recipe.network, { exact: true })).toBeVisible();
+    await expect(summary.getByText(recipe.training, { exact: true })).toBeVisible();
     await expect(summary.getByText(recipe.loss, { exact: true })).toBeVisible();
+    await expect(summary.getByText(recipe.features, { exact: true })).toBeVisible();
+    await expect(summary.getByText(recipe.featureCount, { exact: true })).toBeVisible();
     await expect(summary.getByText('Ready', { exact: true })).toBeVisible();
+
+    const workspaceView = page.getByRole('group', { name: 'Workspace view' });
+    await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
+    const dataConfiguration = page.getByRole('region', { name: 'Data', exact: true });
+    await expect(dataConfiguration.getByLabel(recipe.datasetSettings, { exact: true })).toBeVisible();
+
+    await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
+    await expect(currentRun(page)).toBeVisible();
 }
 
 async function applyPreset(
@@ -235,6 +262,8 @@ test('saved runs survive reload and reapply their complete recipe', async ({ pag
     const savedRun = history.getByRole('article');
     await expect(savedRun).toHaveCount(1);
     await savedRun.getByRole('button', { name: 'Apply saved recipe' }).click();
+    await history.getByRole('button', { name: 'Close History' }).click();
+    await expect(history).toBeHidden();
 
     await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');
     await expectModelAndEvaluationToConverge(page, 0);
