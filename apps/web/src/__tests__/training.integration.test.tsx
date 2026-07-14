@@ -173,7 +173,7 @@ const fakeWorkerApi = {
 };
 
 vi.mock('../worker/workerBridge.ts', () => ({
-    getWorkerApi: () => fakeWorkerApi,
+    getWorkerApi: async () => fakeWorkerApi,
     setupStreamChannel: vi.fn().mockResolvedValue(undefined),
     postStreamCommand: (...args: unknown[]) => fakePostStreamCommand(...args),
     onSnapshot: (cb: (msg: unknown) => void) => {

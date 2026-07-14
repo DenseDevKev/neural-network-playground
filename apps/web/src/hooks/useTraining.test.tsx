@@ -52,7 +52,7 @@ const bridge = vi.hoisted(() => {
 });
 
 vi.mock('../worker/workerBridge.ts', () => ({
-    getWorkerApi: () => bridge.workerApi,
+    getWorkerApi: async () => bridge.workerApi,
     setupStreamChannel: bridge.setupStreamChannel,
     postStreamCommand: bridge.postStreamCommand,
     startRenderLoop: bridge.startRenderLoop,

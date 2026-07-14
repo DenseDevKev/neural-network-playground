@@ -23,7 +23,7 @@ const workerApi = vi.hoisted(() => ({
 }));
 
 vi.mock('../../worker/workerBridge.ts', () => ({
-    getWorkerApi: () => workerApi,
+    getWorkerApi: async () => workerApi,
 }));
 
 const IDS = [

@@ -136,7 +136,8 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
         setActionError(null);
         try {
             const timestamp = new Date().toISOString();
-            const record = await getWorkerApi().captureRunArtifact({
+            const api = await getWorkerApi();
+            const record = await api.captureRunArtifact({
                 id: createUuid(),
                 createdAt: timestamp,
                 updatedAt: timestamp,

@@ -225,7 +225,8 @@ export const InspectionPanel = memo(function InspectionPanel() {
         setTraceLoading(true);
         setTraceError(null);
         try {
-            const response = await getWorkerApi().getPredictionTraceV2({
+            const api = await getWorkerApi();
+            const response = await api.getPredictionTraceV2({
                 source: traceSource,
                 index: Math.min(sampleIndex, selectedPoints.length - 1),
             });
@@ -255,7 +256,8 @@ export const InspectionPanel = memo(function InspectionPanel() {
         setBackpropError(null);
         setBackpropResult(null);
         try {
-            const response = await getWorkerApi().getBackpropExplanationV2();
+            const api = await getWorkerApi();
+            const response = await api.getBackpropExplanationV2();
             if (backpropRequestRef.current === requestId
                 && sameModelRevision(requestModel, activeModelRevision())
                 && sameModelRevision(requestModel, response.model)) {
@@ -280,7 +282,8 @@ export const InspectionPanel = memo(function InspectionPanel() {
         setLossLandscapeError(null);
         setLossLandscapeResult(null);
         try {
-            const response = await getWorkerApi().getObjectiveLandscapeV2();
+            const api = await getWorkerApi();
+            const response = await api.getObjectiveLandscapeV2();
             if (lossLandscapeRequestRef.current === requestId
                 && sameModelRevision(requestModel, activeModelRevision())
                 && sameModelRevision(requestModel, response.model)) {

@@ -9,6 +9,7 @@ const comlinkStub = vi.hoisted(() => ({
         setStreamPort: vi.fn().mockResolvedValue(undefined),
         initialize: vi.fn(),
         updateConfig: vi.fn(),
+        updateDemand: vi.fn().mockResolvedValue(undefined),
     },
     transfer: vi.fn((value: unknown) => value),
 }));
@@ -128,7 +129,7 @@ import type {
     WorkerSnapshotMessage,
     WorkerToMainMessage,
 } from '@nn-playground/shared';
-import { WORKER_PROTOCOL_VERSION } from '@nn-playground/shared';
+import { DEFAULT_DEMAND, WORKER_PROTOCOL_VERSION } from '@nn-playground/shared';
 import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.ts';
 
 let artifactDataset: DatasetRevision;
@@ -148,6 +149,7 @@ describe('workerBridge readiness gating', () => {
         autoAnnounceWorkerReady = false;
         messageChannelConstructCount = 0;
         comlinkStub.api.setStreamPort.mockReset().mockResolvedValue(undefined);
+        comlinkStub.api.updateDemand.mockReset().mockResolvedValue(undefined);
         comlinkStub.transfer.mockClear();
     });
 
@@ -157,8 +159,31 @@ describe('workerBridge readiness gating', () => {
         vi.useRealTimers();
     });
 
+    it('does not expose a non-stream RPC proxy before valid READY', async () => {
+        const access = getWorkerApi();
+        const accessPromise = Promise.resolve(
+            access as unknown as typeof comlinkStub.api,
+        );
+        void accessPromise.catch(() => undefined);
+
+        expect(access).toBeInstanceOf(Promise);
+        let resolvedApi: typeof comlinkStub.api | null = null;
+        void accessPromise.then((api) => {
+            resolvedApi = api;
+        });
+        await Promise.resolve();
+
+        expect(resolvedApi).toBeNull();
+        expect(comlinkStub.api.updateDemand).not.toHaveBeenCalled();
+
+        fakeWorkerInstance!.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        const api = await accessPromise;
+        await api.updateDemand(DEFAULT_DEMAND);
+
+        expect(comlinkStub.api.updateDemand).toHaveBeenCalledWith(DEFAULT_DEMAND);
+    });
+
     it('does not create or transfer the stream channel before a valid READY message', async () => {
-        getWorkerApi();
         const setup = setupStreamChannel();
         await Promise.resolve();
 
@@ -175,7 +200,6 @@ describe('workerBridge readiness gating', () => {
 
     it('ignores malformed and unrelated worker messages until readiness times out', async () => {
         vi.useFakeTimers();
-        getWorkerApi();
         const setup = setupStreamChannel();
         const outcome = setup.then(
             () => ({ error: null }),
@@ -197,9 +221,8 @@ describe('workerBridge readiness gating', () => {
     });
 
     it('rejects pending readiness on termination and lets a fresh worker retry', async () => {
-        getWorkerApi();
-        const firstWorker = fakeWorkerInstance!;
         const firstSetup = setupStreamChannel();
+        const firstWorker = fakeWorkerInstance!;
         const firstRejection = expect(firstSetup).rejects.toThrow(
             'Training worker terminated before becoming ready',
         );
@@ -209,10 +232,9 @@ describe('workerBridge readiness gating', () => {
         expect(firstWorker.removeEventListener).toHaveBeenCalled();
         expect(comlinkStub.api.setStreamPort).not.toHaveBeenCalled();
 
-        getWorkerApi();
+        const secondSetup = setupStreamChannel();
         const secondWorker = fakeWorkerInstance!;
         expect(secondWorker).not.toBe(firstWorker);
-        const secondSetup = setupStreamChannel();
         secondWorker.dispatchMessage(VALID_WORKER_READY_MESSAGE);
         await secondSetup;
 
@@ -220,7 +242,6 @@ describe('workerBridge readiness gating', () => {
     });
 
     it('rejects and cleans pending readiness when the worker errors', async () => {
-        getWorkerApi();
         const setup = setupStreamChannel();
         const rejection = expect(setup).rejects.toThrow(
             'Training worker failed before readiness: boot failed',
@@ -234,7 +255,6 @@ describe('workerBridge readiness gating', () => {
     });
 
     it('rejects and cleans pending readiness on message deserialization errors', async () => {
-        getWorkerApi();
         const setup = setupStreamChannel();
         const rejection = expect(setup).rejects.toThrow(
             'Training worker message deserialization failed before readiness',
@@ -245,6 +265,36 @@ describe('workerBridge readiness gating', () => {
         await rejection;
         expect(fakeWorkerInstance!.removeEventListener).toHaveBeenCalled();
         expect(messageChannelConstructCount).toBe(0);
+    });
+
+    it('ignores late error events from a terminated worker after a replacement is created', async () => {
+        const firstAccess = Promise.resolve(getWorkerApi()).catch(() => undefined);
+        const firstWorker = fakeWorkerInstance!;
+        const lateError = firstWorker.onerror!;
+        const lateMessageError = firstWorker.onmessageerror!;
+
+        terminateWorker();
+        await firstAccess;
+
+        const secondAccess = Promise.resolve(getWorkerApi());
+        void secondAccess.catch(() => undefined);
+        const secondWorker = fakeWorkerInstance!;
+        const received: WorkerToMainMessage[] = [];
+        const unsubscribe = onSnapshot((message) => received.push(message));
+        const setup = setupStreamChannel();
+        void setup.catch(() => undefined);
+
+        lateError({ message: 'late worker A error' } as ErrorEvent);
+        lateMessageError();
+
+        expect(received).toEqual([]);
+        expect(messageChannelConstructCount).toBe(0);
+
+        secondWorker.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        await secondAccess;
+        await setup;
+        expect(comlinkStub.api.setStreamPort).toHaveBeenCalledTimes(1);
+        unsubscribe();
     });
 });
 
@@ -262,7 +312,7 @@ describe('workerBridge error paths', () => {
         });
 
         // Trigger worker creation
-        getWorkerApi();
+        void getWorkerApi().catch(() => undefined);
     });
 
     afterEach(() => {
@@ -626,7 +676,6 @@ describe('workerBridge streamed snapshots', () => {
             });
         });
 
-        getWorkerApi();
         await setupStreamChannel();
         newRunTo(1);
     });

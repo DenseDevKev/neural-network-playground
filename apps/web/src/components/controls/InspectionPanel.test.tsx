@@ -15,7 +15,7 @@ const workerApi = vi.hoisted(() => ({
 }));
 
 vi.mock('../../worker/workerBridge.ts', () => ({
-    getWorkerApi: () => workerApi,
+    getWorkerApi: async () => workerApi,
 }));
 
 const MODEL = { generationId: 1, revision: 12, step: 12, epoch: 1 } as const;

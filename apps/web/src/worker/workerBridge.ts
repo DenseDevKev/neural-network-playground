@@ -258,6 +258,7 @@ function ensureWorker(): Worker {
         // before Comlink can send the first RPC message.
         _workerReadiness = createWorkerReadiness(worker);
         worker.onerror = (event: ErrorEvent) => {
+            if (_worker !== worker) return;
             const message = event.message || 'unknown';
             if (_workerReadiness?.worker === worker) {
                 rejectWorkerReadiness(
@@ -268,6 +269,7 @@ function ensureWorker(): Worker {
             emitWorkerError(`Worker error: ${event.message ?? 'unknown'}`);
         };
         worker.onmessageerror = () => {
+            if (_worker !== worker) return;
             if (_workerReadiness?.worker === worker) {
                 rejectWorkerReadiness(
                     _workerReadiness,
@@ -283,12 +285,17 @@ function ensureWorker(): Worker {
 /**
  * Get the Comlink proxy for RPC-style commands.
  */
-export function getWorkerApi(): Comlink.Remote<TrainingWorkerApi> {
+export async function getWorkerApi(): Promise<Comlink.Remote<TrainingWorkerApi>> {
+    const worker = ensureWorker();
     if (!_comlinkApi) {
-        const worker = ensureWorker();
         _comlinkApi = Comlink.wrap<TrainingWorkerApi>(worker);
     }
-    return _comlinkApi;
+    const api = _comlinkApi;
+    await waitForWorkerReadiness(worker);
+    if (_worker !== worker || _comlinkApi !== api) {
+        throw new Error('Training worker terminated before becoming ready');
+    }
+    return api;
 }
 
 /**
@@ -298,9 +305,7 @@ export function getWorkerApi(): Comlink.Remote<TrainingWorkerApi> {
 export async function setupStreamChannel(): Promise<void> {
     if (_streamPort) return; // Already set up
 
-    const worker = ensureWorker();
-    const api = getWorkerApi();
-    await waitForWorkerReadiness(worker);
+    const api = await getWorkerApi();
     if (_streamPort) return;
 
     const channel = new MessageChannel();

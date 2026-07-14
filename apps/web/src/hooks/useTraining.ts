@@ -58,6 +58,11 @@ import {
 } from '@nn-playground/shared';
 import type { WorkerExperimentResultV2 } from '../worker/training.worker.ts';
 
+type TrainingWorkerRemote = Awaited<ReturnType<typeof getWorkerApi>>;
+type InitializeExperimentResult = Awaited<
+    ReturnType<TrainingWorkerRemote['initializeExperimentV2']>
+>;
+
 export interface TrainingHook {
     play: () => void;
     pause: () => void;
@@ -859,7 +864,7 @@ export function useTraining(): TrainingHook {
     }, []);
 
     const applyFreshV2Run = useCallback((
-        result: Awaited<ReturnType<ReturnType<typeof getWorkerApi>['initializeExperimentV2']>>,
+        result: InitializeExperimentResult,
         owner: PreparedExperimentDocumentV2,
     ) => {
         // Preflight both strict boundaries before changing the active bridge
@@ -885,7 +890,7 @@ export function useTraining(): TrainingHook {
     }, []);
 
     const publishCommittedV2Run = useCallback((
-        result: Awaited<ReturnType<ReturnType<typeof getWorkerApi>['initializeExperimentV2']>>,
+        result: InitializeExperimentResult,
         owner: PreparedExperimentDocumentV2,
         source: TrainedRecipeSource,
     ): boolean => {
@@ -912,9 +917,10 @@ export function useTraining(): TrainingHook {
         const lifecycleEpoch = lifecycleEpochRef.current;
         prevPreparedRef.current = requestedPrepared;
         const request = nextRequest(requestedPrepared);
-        const api = getWorkerApi();
-        let result;
+        let api: TrainingWorkerRemote;
+        let result: InitializeExperimentResult;
         try {
+            api = await getWorkerApi();
             await ensureStreamChannel();
             if (!mountedRef.current
                 || lifecycleEpochRef.current !== lifecycleEpoch
@@ -1143,10 +1149,11 @@ export function useTraining(): TrainingHook {
                 || lifecycleEpochRef.current !== lifecycleEpoch
                 || !isCurrentConfigSync(seq)) return;
 
-            const api = getWorkerApi();
             const ts = useTrainingStore.getState();
-            let result: Awaited<ReturnType<typeof api.initializeExperimentV2>>;
+            let api: TrainingWorkerRemote;
+            let result: InitializeExperimentResult;
             try {
+                api = await getWorkerApi();
                 await ensureStreamChannel();
                 if (!mountedRef.current
                     || lifecycleEpochRef.current !== lifecycleEpoch
@@ -1242,9 +1249,11 @@ export function useTraining(): TrainingHook {
             postStreamCommand({ type: 'updateDemand', protocolVersion: WORKER_PROTOCOL_VERSION, demand });
             return;
         }
-        void getWorkerApi().updateDemand(demand).catch((error: unknown) => {
-            reportWorkerError(error, 'Failed to update visualization demand.');
-        });
+        void getWorkerApi()
+            .then((api) => api.updateDemand(demand))
+            .catch((error: unknown) => {
+                reportWorkerError(error, 'Failed to update visualization demand.');
+            });
     }, [demand, reportWorkerError]);
 
     // AS-4: live-toggle the WebGPU grid path when the user flips the
@@ -1253,13 +1262,14 @@ export function useTraining(): TrainingHook {
     // re-allocate.
     useEffect(() => {
         if (!initializedRef.current) return;
-        const api = getWorkerApi();
-        api.setWebGpuEnabled(webgpuGrid).catch(() => {
-            // Ignore — capability detection inside the worker handles
-            // any per-device fallback. A toggle that doesn't reach the
-            // worker just means the next snapshot still uses whatever
-            // path the worker last knew about.
-        });
+        void getWorkerApi()
+            .then((api) => api.setWebGpuEnabled(webgpuGrid))
+            .catch(() => {
+                // Ignore — capability detection inside the worker handles
+                // any per-device fallback. A toggle that doesn't reach the
+                // worker just means the next snapshot still uses whatever
+                // path the worker last knew about.
+            });
     }, [webgpuGrid]);
 
     const play = useCallback(() => {
@@ -1327,7 +1337,7 @@ export function useTraining(): TrainingHook {
                 await initializeWorker();
                 if (!initializedRef.current) return;
             }
-            const api = getWorkerApi();
+            const api = await getWorkerApi();
             const result = await api.stepExperimentV2(1);
             if (!mountedRef.current) return;
             const ts = useTrainingStore.getState();
@@ -1393,7 +1403,7 @@ export function useTraining(): TrainingHook {
                 finishConfigSyncIfCurrent(seq);
                 return;
             }
-            const api = getWorkerApi();
+            const api = await getWorkerApi();
             const resetPrepared = requirePreparedExperiment();
             const result = await api.resetExperimentV2();
             if (!mountedRef.current) return;
@@ -1455,7 +1465,8 @@ export function useTraining(): TrainingHook {
             }
             const requestId = requestIdRef.current + 1;
             requestIdRef.current = requestId;
-            const result = await getWorkerApi().restoreCheckpointV2({
+            const api = await getWorkerApi();
+            const result = await api.restoreCheckpointV2({
                 type: 'restore-checkpoint',
                 protocolVersion: WORKER_PROTOCOL_VERSION,
                 requestId,
