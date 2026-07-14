@@ -33,3 +33,19 @@ jobs:
 
       - name: Build production bundle
         run: pnpm build
+
+      - name: Install browser runtimes
+        run: pnpm exec playwright install --with-deps chromium webkit
+
+      - name: Run browser smoke tests
+        run: pnpm test:e2e
+
+      - name: Upload browser smoke artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
