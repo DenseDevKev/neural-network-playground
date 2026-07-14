@@ -39,5 +39,9 @@ yarn-error.log*
 # Playwright CLI artifacts
 .playwright-cli/
 
+# Playwright test artifacts
+playwright-report/
+test-results/
+
 # Local agent worktree state
 .claude/worktrees/
