@@ -12,6 +12,7 @@ import process from 'node:process';
 const crossOriginIsolationHeaders = {
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Embedder-Policy': 'require-corp',
+    'Cache-Control': 'no-store',
 };
 
 export default defineConfig(({ mode }) => ({
