@@ -4,21 +4,34 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Stub out Comlink before importing workerBridge ──
-vi.mock('comlink', () => ({
-    wrap: vi.fn(() => ({
+const comlinkStub = vi.hoisted(() => ({
+    api: {
         setStreamPort: vi.fn().mockResolvedValue(undefined),
         initialize: vi.fn(),
         updateConfig: vi.fn(),
-    })),
-    transfer: vi.fn((_val: unknown, _t: Transferable[]) => _val),
+    },
+    transfer: vi.fn((value: unknown) => value),
+}));
+
+vi.mock('comlink', () => ({
+    wrap: vi.fn(() => comlinkStub.api),
+    transfer: comlinkStub.transfer,
 }));
 
 // ── Stub global Worker ──
+const VALID_WORKER_READY_MESSAGE = Object.freeze({
+    type: 'nn-playground:worker-ready',
+    protocolVersion: 1,
+});
+let autoAnnounceWorkerReady = true;
 let fakeWorkerInstance: {
     onerror: ((e: ErrorEvent) => void) | null;
     onmessageerror: (() => void) | null;
     terminate: ReturnType<typeof vi.fn>;
     postMessage: ReturnType<typeof vi.fn>;
+    addEventListener: ReturnType<typeof vi.fn>;
+    removeEventListener: ReturnType<typeof vi.fn>;
+    dispatchMessage(data: unknown): void;
 } | null = null;
 
 vi.stubGlobal('Worker', class FakeWorker {
@@ -26,13 +39,38 @@ vi.stubGlobal('Worker', class FakeWorker {
     onmessageerror: (() => void) | null = null;
     terminate = vi.fn();
     postMessage = vi.fn();
+    private readonly messageListeners = new Set<(event: MessageEvent<unknown>) => void>();
+    addEventListener = vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+        if (type !== 'message') return;
+        const callback = typeof listener === 'function'
+            ? listener as (event: MessageEvent<unknown>) => void
+            : listener.handleEvent.bind(listener);
+        this.messageListeners.add(callback);
+    });
+    removeEventListener = vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+        if (type !== 'message' || typeof listener !== 'function') return;
+        this.messageListeners.delete(listener as (event: MessageEvent<unknown>) => void);
+    });
+    dispatchMessage(data: unknown): void {
+        for (const listener of this.messageListeners) {
+            listener({ data } as MessageEvent<unknown>);
+        }
+    }
     constructor() {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         fakeWorkerInstance = this;
+        if (autoAnnounceWorkerReady) {
+            queueMicrotask(() => {
+                if (fakeWorkerInstance === this) {
+                    this.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+                }
+            });
+        }
     }
 });
 
 // ── Stub MessageChannel ──
+let messageChannelConstructCount = 0;
 let fakePort1: {
     addEventListener: ReturnType<typeof vi.fn>;
     onmessageerror: (() => void) | null;
@@ -46,6 +84,7 @@ vi.stubGlobal('MessageChannel', class FakeMessageChannel {
     port1: typeof fakePort1;
     port2: typeof fakePort2;
     constructor() {
+        messageChannelConstructCount++;
         fakePort1 = {
             addEventListener: vi.fn(),
             onmessageerror: null,
@@ -99,6 +138,114 @@ beforeAll(async () => {
     const fixtures = await createScientificTrustFixtures();
     artifactDataset = fixtures.evaluation.dataset;
     artifactObjectiveKey = fixtures.evaluation.objectiveKey;
+});
+
+describe('workerBridge readiness gating', () => {
+    beforeEach(() => {
+        vi.useRealTimers();
+        terminateWorker();
+        fakeWorkerInstance = null;
+        autoAnnounceWorkerReady = false;
+        messageChannelConstructCount = 0;
+        comlinkStub.api.setStreamPort.mockReset().mockResolvedValue(undefined);
+        comlinkStub.transfer.mockClear();
+    });
+
+    afterEach(() => {
+        terminateWorker();
+        autoAnnounceWorkerReady = true;
+        vi.useRealTimers();
+    });
+
+    it('does not create or transfer the stream channel before a valid READY message', async () => {
+        getWorkerApi();
+        const setup = setupStreamChannel();
+        await Promise.resolve();
+
+        expect(messageChannelConstructCount).toBe(0);
+        expect(comlinkStub.api.setStreamPort).not.toHaveBeenCalled();
+
+        fakeWorkerInstance!.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        await setup;
+
+        expect(messageChannelConstructCount).toBe(1);
+        expect(comlinkStub.transfer).toHaveBeenCalledWith(fakePort2, [fakePort2]);
+        expect(comlinkStub.api.setStreamPort).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores malformed and unrelated worker messages until readiness times out', async () => {
+        vi.useFakeTimers();
+        getWorkerApi();
+        const setup = setupStreamChannel();
+        const outcome = setup.then(
+            () => ({ error: null }),
+            (error: unknown) => ({ error }),
+        );
+
+        fakeWorkerInstance!.dispatchMessage({ ...VALID_WORKER_READY_MESSAGE, extra: true });
+        fakeWorkerInstance!.dispatchMessage({ type: 'APPLY', path: [] });
+        await vi.runAllTimersAsync();
+
+        const { error } = await outcome;
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toBe(
+            'Training worker did not become ready within 5000ms',
+        );
+        expect(messageChannelConstructCount).toBe(0);
+        expect(comlinkStub.api.setStreamPort).not.toHaveBeenCalled();
+        expect(fakeWorkerInstance!.removeEventListener).toHaveBeenCalled();
+    });
+
+    it('rejects pending readiness on termination and lets a fresh worker retry', async () => {
+        getWorkerApi();
+        const firstWorker = fakeWorkerInstance!;
+        const firstSetup = setupStreamChannel();
+        const firstRejection = expect(firstSetup).rejects.toThrow(
+            'Training worker terminated before becoming ready',
+        );
+
+        terminateWorker();
+        await firstRejection;
+        expect(firstWorker.removeEventListener).toHaveBeenCalled();
+        expect(comlinkStub.api.setStreamPort).not.toHaveBeenCalled();
+
+        getWorkerApi();
+        const secondWorker = fakeWorkerInstance!;
+        expect(secondWorker).not.toBe(firstWorker);
+        const secondSetup = setupStreamChannel();
+        secondWorker.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        await secondSetup;
+
+        expect(comlinkStub.api.setStreamPort).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects and cleans pending readiness when the worker errors', async () => {
+        getWorkerApi();
+        const setup = setupStreamChannel();
+        const rejection = expect(setup).rejects.toThrow(
+            'Training worker failed before readiness: boot failed',
+        );
+
+        fakeWorkerInstance!.onerror!({ message: 'boot failed' } as ErrorEvent);
+
+        await rejection;
+        expect(fakeWorkerInstance!.removeEventListener).toHaveBeenCalled();
+        expect(messageChannelConstructCount).toBe(0);
+    });
+
+    it('rejects and cleans pending readiness on message deserialization errors', async () => {
+        getWorkerApi();
+        const setup = setupStreamChannel();
+        const rejection = expect(setup).rejects.toThrow(
+            'Training worker message deserialization failed before readiness',
+        );
+
+        fakeWorkerInstance!.onmessageerror!();
+
+        await rejection;
+        expect(fakeWorkerInstance!.removeEventListener).toHaveBeenCalled();
+        expect(messageChannelConstructCount).toBe(0);
+    });
 });
 
 describe('workerBridge error paths', () => {

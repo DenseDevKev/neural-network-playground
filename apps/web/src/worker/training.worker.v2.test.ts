@@ -22,8 +22,27 @@ import type {
 } from '@nn-playground/shared';
 import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.ts';
 
+const workerBootstrap = vi.hoisted(() => {
+    const order: string[] = [];
+    const postMessage = vi.fn(() => {
+        order.push('ready');
+    });
+    Object.defineProperty(globalThis, 'postMessage', {
+        configurable: true,
+        writable: true,
+        value: postMessage,
+    });
+    return {
+        order,
+        postMessage,
+        expose: vi.fn(() => {
+            order.push('expose');
+        }),
+    };
+});
+
 vi.mock('comlink', () => ({
-    expose: vi.fn(),
+    expose: workerBootstrap.expose,
 }));
 
 import {
@@ -40,6 +59,17 @@ import {
 } from './training.worker.ts';
 
 let nextRequestId = 10_000;
+
+describe('worker bootstrap readiness', () => {
+    it('installs the Comlink handler before announcing exact READY', () => {
+        expect(workerBootstrap.order.slice(0, 2)).toEqual(['expose', 'ready']);
+        expect(workerBootstrap.expose).toHaveBeenCalledTimes(1);
+        expect(workerBootstrap.postMessage).toHaveBeenCalledWith({
+            type: 'nn-playground:worker-ready',
+            protocolVersion: 1,
+        });
+    });
+});
 
 function deferred<T>() {
     let resolve!: (value: T) => void;

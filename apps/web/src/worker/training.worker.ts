@@ -113,6 +113,7 @@ import {
     ExperimentTransactionError,
     type ExperimentRequestGateDependencies,
 } from './experimentTransaction.ts';
+import { exposeWorkerApiAndAnnounceReady } from './workerReadiness.ts';
 
 interface WorkerState {
     /** Canonical V2 preparation. Null means the worker is not initialized. */
@@ -3130,4 +3131,7 @@ export const workerApi = {
 
 export type TrainingWorkerApi = typeof workerApi;
 
-Comlink.expose(workerApi);
+exposeWorkerApiAndAnnounceReady(
+    () => Comlink.expose(workerApi),
+    self as unknown as { postMessage(message: unknown): void },
+);

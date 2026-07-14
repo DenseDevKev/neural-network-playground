@@ -33,11 +33,26 @@ import {
     readSharedSnapshot,
     type SharedSnapshotViews,
 } from './sharedSnapshot.ts';
+import { isWorkerReadyMessage } from './workerReadiness.ts';
 
 // ── Singleton state ──
 let _worker: Worker | null = null;
 let _comlinkApi: Comlink.Remote<TrainingWorkerApi> | null = null;
 let _streamPort: MessagePort | null = null;
+const WORKER_READINESS_TIMEOUT_MS = 5_000;
+
+interface WorkerReadinessState {
+    worker: Worker;
+    ready: boolean;
+    error: Error | null;
+    promise: Promise<void> | null;
+    resolve: (() => void) | null;
+    reject: ((error: Error) => void) | null;
+    listener: ((event: MessageEvent<unknown>) => void) | null;
+    timeoutId: ReturnType<typeof setTimeout> | null;
+}
+
+let _workerReadiness: WorkerReadinessState | null = null;
 let _currentRunId = 0;
 let _latestSnapshotId = -1;
 let _minimumSnapshotRevision = 0;
@@ -147,16 +162,118 @@ function snapshotWithFrozenArtifactProvenance(
 
 // ── Initialization ──
 
+function clearPendingWorkerReadiness(state: WorkerReadinessState): void {
+    if (state.listener) {
+        state.worker.removeEventListener('message', state.listener);
+        state.listener = null;
+    }
+    if (state.timeoutId !== null) {
+        clearTimeout(state.timeoutId);
+        state.timeoutId = null;
+    }
+    state.promise = null;
+    state.resolve = null;
+    state.reject = null;
+}
+
+function resolveWorkerReadiness(state: WorkerReadinessState): void {
+    if (_workerReadiness !== state || state.ready || state.error) return;
+    state.ready = true;
+    const resolve = state.resolve;
+    clearPendingWorkerReadiness(state);
+    resolve?.();
+}
+
+function rejectWorkerReadiness(state: WorkerReadinessState, error: Error): void {
+    if (_workerReadiness !== state || state.ready || state.error) return;
+    state.error = error;
+    const reject = state.reject;
+    clearPendingWorkerReadiness(state);
+    reject?.(error);
+}
+
+function createWorkerReadiness(worker: Worker): WorkerReadinessState {
+    let resolvePromise: (() => void) | null = null;
+    let rejectPromise: ((error: Error) => void) | null = null;
+    const promise = new Promise<void>((resolve, reject) => {
+        resolvePromise = resolve;
+        rejectPromise = reject;
+    });
+    // A worker can fail before setupStreamChannel() consumes readiness. Keep
+    // that failure observable to callers without producing an unhandled
+    // rejection in the interim.
+    void promise.catch(() => undefined);
+
+    const state: WorkerReadinessState = {
+        worker,
+        ready: false,
+        error: null,
+        promise,
+        resolve: resolvePromise,
+        reject: rejectPromise,
+        listener: null,
+        timeoutId: null,
+    };
+    state.listener = (event: MessageEvent<unknown>) => {
+        if (isWorkerReadyMessage(event.data)) resolveWorkerReadiness(state);
+    };
+    worker.addEventListener('message', state.listener);
+    state.timeoutId = setTimeout(() => {
+        rejectWorkerReadiness(
+            state,
+            new Error(
+                `Training worker did not become ready within ${WORKER_READINESS_TIMEOUT_MS}ms`,
+            ),
+        );
+    }, WORKER_READINESS_TIMEOUT_MS);
+    return state;
+}
+
+async function waitForWorkerReadiness(worker: Worker): Promise<void> {
+    const state = _workerReadiness;
+    if (!state || state.worker !== worker) {
+        throw new Error('Training worker terminated before becoming ready');
+    }
+    if (state.ready) return;
+    if (state.error) throw state.error;
+    const promise = state.promise;
+    if (!promise) throw new Error('Training worker readiness state is unavailable');
+
+    await promise;
+    if (_worker !== worker || _workerReadiness !== state) {
+        throw new Error('Training worker terminated before becoming ready');
+    }
+    if (state.error) throw state.error;
+    if (!state.ready) throw new Error('Training worker readiness state is unavailable');
+}
+
 function ensureWorker(): Worker {
     if (!_worker) {
-        _worker = new Worker(
+        const worker = new Worker(
             new URL('./training.worker.ts', import.meta.url),
             { type: 'module' },
         );
-        _worker.onerror = (event: ErrorEvent) => {
+        _worker = worker;
+        // Install readiness observation immediately after construction and
+        // before Comlink can send the first RPC message.
+        _workerReadiness = createWorkerReadiness(worker);
+        worker.onerror = (event: ErrorEvent) => {
+            const message = event.message || 'unknown';
+            if (_workerReadiness?.worker === worker) {
+                rejectWorkerReadiness(
+                    _workerReadiness,
+                    new Error(`Training worker failed before readiness: ${message}`),
+                );
+            }
             emitWorkerError(`Worker error: ${event.message ?? 'unknown'}`);
         };
-        _worker.onmessageerror = () => {
+        worker.onmessageerror = () => {
+            if (_workerReadiness?.worker === worker) {
+                rejectWorkerReadiness(
+                    _workerReadiness,
+                    new Error('Training worker message deserialization failed before readiness'),
+                );
+            }
             emitWorkerError('Worker message deserialization error');
         };
     }
@@ -181,7 +298,11 @@ export function getWorkerApi(): Comlink.Remote<TrainingWorkerApi> {
 export async function setupStreamChannel(): Promise<void> {
     if (_streamPort) return; // Already set up
 
+    const worker = ensureWorker();
     const api = getWorkerApi();
+    await waitForWorkerReadiness(worker);
+    if (_streamPort) return;
+
     const channel = new MessageChannel();
     _streamPort = channel.port1;
 
@@ -689,6 +810,14 @@ export function terminateWorker(): void {
         _streamPort = null;
     }
     if (_worker) {
+        if (_workerReadiness?.worker === _worker && !_workerReadiness.ready) {
+            rejectWorkerReadiness(
+                _workerReadiness,
+                new Error('Training worker terminated before becoming ready'),
+            );
+        }
+        if (_workerReadiness) clearPendingWorkerReadiness(_workerReadiness);
+        _workerReadiness = null;
         _worker.terminate();
         _worker = null;
         _comlinkApi = null;
