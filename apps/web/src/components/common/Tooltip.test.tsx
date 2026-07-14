@@ -184,6 +184,7 @@ describe('Tooltip', () => {
   describe('Hover Delay Timing', () => {
     it('starts performance timing after the intentional hover delay', () => {
       const mark = vi.spyOn(performance, 'mark');
+      const measure = vi.spyOn(performance, 'measure');
 
       render(
         <Tooltip content="Test tooltip" delay={500}>
@@ -201,6 +202,11 @@ describe('Tooltip', () => {
       });
 
       expect(mark).toHaveBeenCalledTimes(2);
+      expect(measure).toHaveBeenCalledWith(
+        expect.stringMatching(/^nn-playground:tooltip-show:/),
+        expect.stringMatching(/^nn-playground:tooltip-show:.*:start$/),
+        expect.stringMatching(/^nn-playground:tooltip-show:.*:end$/),
+      );
     });
 
     it('should not show tooltip immediately on hover', () => {

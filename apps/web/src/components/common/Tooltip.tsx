@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useId } from 'react';
 import { createPortal } from 'react-dom';
+import { createAppMeasureName } from '../../performance/interactionMeasures.ts';
 
 interface TooltipProps {
   content: string | React.ReactNode;
@@ -88,7 +89,9 @@ export function Tooltip({
   const show = useCallback(() => {
     timeoutRef.current = window.setTimeout(() => {
       if (import.meta.env.DEV && typeof performance !== 'undefined') {
-        const measurementId = `tooltip-show:${generatedId}:${performance.now()}`;
+        const measurementId = createAppMeasureName(
+          `tooltip-show:${generatedId}:${performance.now()}`,
+        );
         measurementIdRef.current = measurementId;
         performance.mark(`${measurementId}:start`);
       }

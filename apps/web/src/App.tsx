@@ -36,6 +36,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
 import { CompatibilityState } from './components/common/CompatibilityState.tsx';
 import { deriveVisualizationDemand } from './components/layout/deriveVisualizationDemand.ts';
+import { shouldReportSlowInteraction } from './performance/interactionMeasures.ts';
 
 const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
 type SurfaceId = 'presets' | 'lessons' | 'history' | 'more';
@@ -129,7 +130,7 @@ function CompatiblePlayground() {
         if (!import.meta.env.DEV || typeof PerformanceObserver === 'undefined') return;
         const obs = new PerformanceObserver((list) => {
             for (const e of list.getEntriesByType('measure')) {
-                if (e.duration > 16) {
+                if (shouldReportSlowInteraction(e)) {
                     console.warn(`[perf] Slow interaction: ${e.name} (${e.duration.toFixed(2)}ms)`);
                 }
             }

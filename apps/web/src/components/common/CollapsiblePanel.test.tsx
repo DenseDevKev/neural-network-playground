@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CollapsiblePanel } from './CollapsiblePanel';
 
@@ -56,6 +56,27 @@ describe('CollapsiblePanel', () => {
         await user.click(screen.getByRole('button', { name: /Hyperparameters/ }));
 
         expect(window.localStorage.getItem('panel-hyperparameters')).toBe('false');
+    });
+
+    it('records panel toggles with an app-owned performance measure name', async () => {
+        const user = userEvent.setup();
+        const measure = vi.spyOn(performance, 'measure');
+
+        render(
+            <CollapsiblePanel title="Data">
+                <div>Panel content</div>
+            </CollapsiblePanel>,
+        );
+
+        await user.click(screen.getByRole('button', { name: /Data/ }));
+
+        await waitFor(() => {
+            expect(measure).toHaveBeenCalledWith(
+                expect.stringMatching(/^nn-playground:panel-toggle:Data:/),
+                expect.stringMatching(/^nn-playground:panel-toggle:Data:.*:start$/),
+                expect.stringMatching(/^nn-playground:panel-toggle:Data:.*:end$/),
+            );
+        });
     });
 
     it('restores the saved state from localStorage on mount', () => {

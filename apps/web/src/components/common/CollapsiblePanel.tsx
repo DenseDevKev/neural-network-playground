@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useId, useRef, useState } from 'react';
 import { Tooltip } from './Tooltip.tsx';
+import { createAppMeasureName } from '../../performance/interactionMeasures.ts';
 
 interface CollapsiblePanelProps {
     title: string;
@@ -125,7 +126,9 @@ export function CollapsiblePanel({
             const next = !previous;
 
             if (import.meta.env.DEV && typeof performance !== 'undefined') {
-                const measurementId = `panel-toggle:${title}:${performance.now()}`;
+                const measurementId = createAppMeasureName(
+                    `panel-toggle:${title}:${performance.now()}`,
+                );
                 measurementIdRef.current = measurementId;
                 performance.mark(`${measurementId}:start`);
                 requestAnimationFrame(() => {
