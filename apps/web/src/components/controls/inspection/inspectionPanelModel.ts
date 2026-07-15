@@ -262,6 +262,13 @@ export function normalizeInspectionSampleIndex(value: number): number {
     return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
 }
 
+export function resolveInspectionEffectiveSampleIndex(
+    sampleIndex: number,
+    pointCount: number,
+): number {
+    return Math.min(sampleIndex, Math.max(0, pointCount - 1));
+}
+
 export function createInspectionPanelDisplayModel(
     input: InspectionPanelModelInput,
 ): InspectionPanelDisplayModel {
@@ -330,7 +337,10 @@ export function createInspectionPanelDisplayModel(
         ? input.testPointCount
         : input.trainPointCount;
     const maxSampleIndex = Math.max(0, pointCount - 1);
-    const effectiveSampleIndex = Math.min(input.sampleIndex, maxSampleIndex);
+    const effectiveSampleIndex = resolveInspectionEffectiveSampleIndex(
+        input.sampleIndex,
+        pointCount,
+    );
     const canRequestTrace = pointCount > 0 && input.hasCurrentModel;
     const traceResult = input.traceResult
         ? {

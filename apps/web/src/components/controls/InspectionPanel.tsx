@@ -17,6 +17,7 @@ import { InspectionPanelView } from './inspection/InspectionPanelView.tsx';
 import {
     createInspectionPanelDisplayModel,
     normalizeInspectionSampleIndex,
+    resolveInspectionEffectiveSampleIndex,
     type InspectionPanelCommands,
     type InspectionTraceSource,
 } from './inspection/inspectionPanelModel.ts';
@@ -142,9 +143,11 @@ export const InspectionPanel = memo(function InspectionPanel() {
     }, [activationHistogramsVersion]);
 
     const selectedPoints = traceSource === 'test' ? testPoints : trainPoints;
-    const selectedSample = selectedPoints[
-        Math.min(sampleIndex, Math.max(0, selectedPoints.length - 1))
-    ];
+    const effectiveSampleIndex = resolveInspectionEffectiveSampleIndex(
+        sampleIndex,
+        selectedPoints.length,
+    );
+    const selectedSample = selectedPoints[effectiveSampleIndex];
     const canTrace = selectedSample !== undefined && currentModel !== null;
 
     const handleTrace = async () => {
@@ -157,7 +160,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
             const api = await getWorkerApi();
             const response = await api.getPredictionTraceV2({
                 source: traceSource,
-                index: Math.min(sampleIndex, selectedPoints.length - 1),
+                index: effectiveSampleIndex,
             });
             if (
                 traceRequestRef.current === requestId
