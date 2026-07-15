@@ -16,6 +16,7 @@ import type {
 import { InspectionPanelView } from './inspection/InspectionPanelView.tsx';
 import {
     createInspectionPanelDisplayModel,
+    normalizeInspectionSampleIndex,
     type InspectionPanelCommands,
     type InspectionTraceSource,
 } from './inspection/inspectionPanelModel.ts';
@@ -333,7 +334,7 @@ export const InspectionPanel = memo(function InspectionPanel() {
             setTraceResult(null);
             setTraceError(null);
             setTraceLoading(false);
-            setSampleIndex(index);
+            setSampleIndex(normalizeInspectionSampleIndex(index));
         },
         requestTrace: handleTrace,
         requestBackprop: handleBackpropPreview,

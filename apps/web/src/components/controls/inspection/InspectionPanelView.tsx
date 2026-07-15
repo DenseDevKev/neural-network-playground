@@ -1,6 +1,5 @@
 import { memo } from 'react';
 import {
-    normalizeInspectionSampleIndex,
     type InspectionPanelCommands,
     type InspectionPanelDisplayModel,
     type InspectionTraceSource,
@@ -148,9 +147,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                         max={model.trace.maxSampleIndex}
                         value={model.trace.sampleIndex}
                         onChange={(event) => {
-                            commands.selectSampleIndex(normalizeInspectionSampleIndex(
-                                Number(event.currentTarget.value),
-                            ));
+                            commands.selectSampleIndex(event.currentTarget.valueAsNumber);
                         }}
                     />
                 </div>

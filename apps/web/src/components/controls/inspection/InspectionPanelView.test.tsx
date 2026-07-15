@@ -188,7 +188,7 @@ describe('InspectionPanelView', () => {
             target: { value: 'test' },
         });
         fireEvent.change(screen.getByRole('spinbutton', { name: 'Index' }), {
-            target: { value: '7' },
+            target: { value: '-3' },
         });
         fireEvent.click(screen.getByRole('button', { name: 'Trace prediction' }));
         fireEvent.click(screen.getByRole('button', { name: 'Preview backprop' }));
@@ -196,7 +196,7 @@ describe('InspectionPanelView', () => {
 
         expect(viewCommands.selectHistogramLayer).toHaveBeenCalledWith(0);
         expect(viewCommands.selectTraceSource).toHaveBeenCalledWith('test');
-        expect(viewCommands.selectSampleIndex).toHaveBeenCalledWith(7);
+        expect(viewCommands.selectSampleIndex).toHaveBeenCalledWith(-3);
         expect(viewCommands.requestTrace).toHaveBeenCalledTimes(1);
         expect(viewCommands.requestBackprop).toHaveBeenCalledTimes(1);
         expect(viewCommands.requestLandscape).toHaveBeenCalledTimes(1);
