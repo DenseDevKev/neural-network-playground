@@ -3,13 +3,17 @@
 // with training/test data points overlaid.
 
 import { useRef, useEffect, useCallback, useState, memo, useId } from 'react';
-import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { writeGridToImageData, HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
-import type { MulticlassBoundaryLayout } from '@nn-playground/shared';
 import type { DataPoint } from '@nn-playground/engine';
 import { EmptyState } from '../common/EmptyState.tsx';
-import { getFrameBuffer } from '../../worker/frameBuffer.ts';
+import { useDecisionBoundaryModel } from './useDecisionBoundaryModel.ts';
+import type { DecisionOverlayMode } from './decisionBoundaryModel.ts';
+
+export {
+    getDecisionOverlayCopy,
+    type DecisionOverlayCopy,
+    type DecisionOverlayMode,
+} from './decisionBoundaryModel.ts';
 
 // ── Constants ──
 const BG_COLOR = '#151822';
@@ -19,76 +23,18 @@ const POINT_STROKE_DARK = 'rgba(0,0,0,0.5)';
 const POINT_STROKE_LIGHT = '#fff';
 const HEATMAP_ALPHA = 255;
 const UNCERTAINTY_THRESHOLD = 0.12;
-const MULTICLASS_LOW_CONFIDENCE_THRESHOLD = 0.6;
 const MULTICLASS_PALETTE = [
     { label: 'Class 0', color: '#4f8cff', rgb: [79, 140, 255] },
     { label: 'Class 1', color: '#ff9f43', rgb: [255, 159, 67] },
     { label: 'Class 2', color: '#52d273', rgb: [82, 210, 115] },
 ] as const;
 
-interface Props {
+export interface DecisionBoundaryProps {
     trainPoints: DataPoint[];
     testPoints: DataPoint[];
     showTestData: boolean;
     discretize: boolean;
     overlayMode?: DecisionOverlayMode;
-}
-
-export type DecisionOverlayMode = 'none' | 'uncertainty' | 'misclassification' | 'split';
-
-export interface DecisionOverlayCopy {
-    label: string;
-    description: string;
-}
-
-interface MulticlassBoundaryFrame {
-    classGrid: Uint8Array;
-    confidenceGrid: Float32Array;
-    layout: MulticlassBoundaryLayout;
-}
-
-interface MulticlassBoundarySummary {
-    dominantLabel: string;
-    dominantShare: number;
-    averageConfidence: number;
-    lowConfidenceShare: number;
-    description: string;
-}
-
-export function getDecisionOverlayCopy(
-    mode: DecisionOverlayMode,
-    showTestData: boolean,
-    discretize: boolean,
-): DecisionOverlayCopy {
-    switch (mode) {
-        case 'uncertainty':
-            return {
-                label: 'Uncertainty',
-                description:
-                    'Uncertainty mode brightens regions near 50% probability, where the model is least sure which class to predict.',
-            };
-        case 'misclassification':
-            return {
-                label: 'Misclassified',
-                description: showTestData
-                    ? 'Errors mode marks training and visible test points whose predicted class does not match the label.'
-                    : 'Errors mode marks training points whose predicted class does not match the label.',
-            };
-        case 'split':
-            return {
-                label: 'Train/test split',
-                description:
-                    'Split mode keeps held-out test points visible beside training points so you can compare fit against generalization.',
-            };
-        case 'none':
-        default:
-            return {
-                label: 'Output',
-                description: discretize
-                    ? 'Output mode shows hard class regions: blue for negative predictions and orange for positive predictions.'
-                    : 'Output mode shows predicted probability as a smooth field from negative blue to positive orange.',
-            };
-    }
 }
 
 // ── Drawing helpers (pure functions, no hooks) ──
@@ -289,71 +235,8 @@ function drawPoints(
     }
 }
 
-function hasNonBinaryLabels(points: DataPoint[]): boolean {
-    return points.some((point) => point.label !== 0 && point.label !== 1);
-}
-
-function getMulticlassBoundaryFrame(): MulticlassBoundaryFrame | null {
-    const frame = getFrameBuffer();
-    if (
-        !frame.multiclassClassGrid ||
-        !frame.multiclassConfidenceGrid ||
-        !frame.multiclassBoundaryLayout
-    ) {
-        return null;
-    }
-    return {
-        classGrid: frame.multiclassClassGrid,
-        confidenceGrid: frame.multiclassConfidenceGrid,
-        layout: frame.multiclassBoundaryLayout,
-    };
-}
-
 function formatPercent(value: number): string {
     return `${Math.round(value * 100)}%`;
-}
-
-function summarizeMulticlassBoundary(frame: MulticlassBoundaryFrame): MulticlassBoundarySummary | null {
-    const { classGrid, confidenceGrid, layout } = frame;
-    const expectedLength = layout.gridSize * layout.gridSize;
-    if (classGrid.length !== expectedLength || confidenceGrid.length !== expectedLength || expectedLength === 0) {
-        return null;
-    }
-
-    const counts = new Array(layout.classCount).fill(0) as number[];
-    let confidenceTotal = 0;
-    let lowConfidenceCount = 0;
-
-    for (let i = 0; i < expectedLength; i++) {
-        const classIndex = classGrid[i];
-        if (classIndex >= layout.classCount) return null;
-        counts[classIndex]++;
-        confidenceTotal += confidenceGrid[i];
-        if (confidenceGrid[i] < MULTICLASS_LOW_CONFIDENCE_THRESHOLD) {
-            lowConfidenceCount++;
-        }
-    }
-
-    let dominantIndex = 0;
-    for (let i = 1; i < counts.length; i++) {
-        if (counts[i] > counts[dominantIndex]) {
-            dominantIndex = i;
-        }
-    }
-
-    const dominantLabel = `Class ${layout.classLabels[dominantIndex]}`;
-    const dominantShare = counts[dominantIndex] / expectedLength;
-    const averageConfidence = confidenceTotal / expectedLength;
-    const lowConfidenceShare = lowConfidenceCount / expectedLength;
-    const description = `Multiclass decision boundary. ${dominantLabel} covers ${formatPercent(dominantShare)} of sampled cells with ${formatPercent(averageConfidence)} average winning confidence. ${formatPercent(lowConfidenceShare)} of cells are below ${formatPercent(MULTICLASS_LOW_CONFIDENCE_THRESHOLD)} confidence.`;
-
-    return {
-        dominantLabel,
-        dominantShare,
-        averageConfidence,
-        lowConfidenceShare,
-        description,
-    };
 }
 
 // ── Component ──
@@ -364,32 +247,23 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     showTestData,
     discretize,
     overlayMode = 'none',
-}: Props) {
+}: DecisionBoundaryProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const descriptionId = useId();
-    const overlayCopy = getDecisionOverlayCopy(overlayMode, showTestData, discretize);
+    const model = useDecisionBoundaryModel({
+        trainPoints,
+        testPoints,
+        showTestData,
+        discretize,
+        overlayMode,
+    });
 
     // Off-screen resources (reused between frames)
     const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const imageDataRef = useRef<ImageData | null>(null);
     const overlayImageDataRef = useRef<ImageData | null>(null);
     const lastGridSizeRef = useRef(0);
-
-    const frameVersion = useTrainingStore((s) => s.frameVersion);
-    const multiclassBoundaryVersion = useTrainingStore((s) => s.multiclassBoundaryVersion);
-    const task = usePlaygroundStore((s) => (
-        s.access.status === 'ready' ? s.access.prepared.compiled.task : null
-    ));
-    const problemType = task?.kind === 'regression' ? 'regression' : 'classification';
-    const outputSize = task?.outputSize ?? 1;
-    const outputActivation = task?.outputActivation ?? 'sigmoid';
-    const supportsMulticlassBoundary =
-        problemType === 'classification' &&
-        outputSize === 3 &&
-        outputActivation === 'softmax';
-    const multiclassBoundary = supportsMulticlassBoundary ? getMulticlassBoundaryFrame() : null;
-    const multiclassSummary = multiclassBoundary ? summarizeMulticlassBoundary(multiclassBoundary) : null;
 
     // Track container size for responsive canvas
     const [canvasSize, setCanvasSize] = useState(320);
@@ -420,8 +294,6 @@ export const DecisionBoundary = memo(function DecisionBoundary({
 
     // Main paint callback – extracted so useEffect stays clean
     const paint = useCallback(() => {
-        void frameVersion;
-        void multiclassBoundaryVersion;
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -447,28 +319,21 @@ export const DecisionBoundary = memo(function DecisionBoundary({
         ctx.fillStyle = BG_COLOR;
         ctx.fillRect(0, 0, logicalW, logicalH);
 
-        // Draw heatmap when grid data exists
-        const frameBuffer = getFrameBuffer();
-        const currentMulticlassBoundary = supportsMulticlassBoundary ? getMulticlassBoundaryFrame() : null;
-        const grid = frameBuffer.outputGrid;
-        const gridSize = frameBuffer.outputGrid ? frameBuffer.gridSize : 0;
-
-        if (currentMulticlassBoundary) {
-            const { classGrid, confidenceGrid, layout } = currentMulticlassBoundary;
-            if (!tempCanvasRef.current || lastGridSizeRef.current !== layout.gridSize) {
+        if (model.kind === 'multiclass') {
+            if (!tempCanvasRef.current || lastGridSizeRef.current !== model.layout.gridSize) {
                 const tc = document.createElement('canvas');
-                tc.width = layout.gridSize;
-                tc.height = layout.gridSize;
+                tc.width = model.layout.gridSize;
+                tc.height = model.layout.gridSize;
                 tempCanvasRef.current = tc;
-                imageDataRef.current = tc.getContext('2d')!.createImageData(layout.gridSize, layout.gridSize);
-                overlayImageDataRef.current = tc.getContext('2d')!.createImageData(layout.gridSize, layout.gridSize);
-                lastGridSizeRef.current = layout.gridSize;
+                imageDataRef.current = tc.getContext('2d')!.createImageData(model.layout.gridSize, model.layout.gridSize);
+                overlayImageDataRef.current = tc.getContext('2d')!.createImageData(model.layout.gridSize, model.layout.gridSize);
+                lastGridSizeRef.current = model.layout.gridSize;
             }
 
             drawMulticlassHeatmap(
                 ctx,
-                classGrid,
-                confidenceGrid,
+                model.classGrid,
+                model.confidenceGrid,
                 logicalW,
                 logicalH,
                 tempCanvasRef.current!,
@@ -476,32 +341,32 @@ export const DecisionBoundary = memo(function DecisionBoundary({
             );
         }
 
-        if (!currentMulticlassBoundary && grid && gridSize > 0) {
+        if (model.kind === 'scalar' && model.grid && model.gridSize > 0) {
             // Allocate / reuse offscreen canvas + ImageData
-            if (!tempCanvasRef.current || lastGridSizeRef.current !== gridSize) {
+            if (!tempCanvasRef.current || lastGridSizeRef.current !== model.gridSize) {
                 const tc = document.createElement('canvas');
-                tc.width = gridSize;
-                tc.height = gridSize;
+                tc.width = model.gridSize;
+                tc.height = model.gridSize;
                 tempCanvasRef.current = tc;
-                imageDataRef.current = tc.getContext('2d')!.createImageData(gridSize, gridSize);
-                overlayImageDataRef.current = tc.getContext('2d')!.createImageData(gridSize, gridSize);
-                lastGridSizeRef.current = gridSize;
+                imageDataRef.current = tc.getContext('2d')!.createImageData(model.gridSize, model.gridSize);
+                overlayImageDataRef.current = tc.getContext('2d')!.createImageData(model.gridSize, model.gridSize);
+                lastGridSizeRef.current = model.gridSize;
             }
 
             drawHeatmap(
                 ctx,
-                grid,
+                model.grid,
                 logicalW,
                 logicalH,
-                discretize,
+                model.discretize,
                 tempCanvasRef.current!,
                 imageDataRef.current!,
             );
 
-            if (overlayMode === 'uncertainty' && overlayImageDataRef.current) {
+            if (model.overlayMode === 'uncertainty' && overlayImageDataRef.current) {
                 drawUncertaintyOverlay(
                     ctx,
-                    grid,
+                    model.grid,
                     logicalW,
                     logicalH,
                     tempCanvasRef.current!,
@@ -509,32 +374,20 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                 );
             }
 
-            if (overlayMode === 'misclassification') {
-                drawMisclassificationOverlay(ctx, trainPoints, grid, gridSize, logicalW, logicalH, false);
-                if (showTestData && testPoints.length > 0) {
-                    drawMisclassificationOverlay(ctx, testPoints, grid, gridSize, logicalW, logicalH, true);
+            if (model.overlayMode === 'misclassification') {
+                drawMisclassificationOverlay(ctx, model.trainPoints, model.grid, model.gridSize, logicalW, logicalH, false);
+                if (model.misclassificationTestPoints.length > 0) {
+                    drawMisclassificationOverlay(ctx, model.misclassificationTestPoints, model.grid, model.gridSize, logicalW, logicalH, true);
                 }
             }
         }
 
         // Draw data points on top
-        if (trainPoints.length > 0) {
-            drawPoints(ctx, trainPoints, logicalW, logicalH, false, Boolean(currentMulticlassBoundary));
+        if (model.kind === 'scalar' || model.kind === 'multiclass') {
+            drawPoints(ctx, model.trainPoints, logicalW, logicalH, false, model.kind === 'multiclass');
+            drawPoints(ctx, model.visibleTestPoints, logicalW, logicalH, true, model.kind === 'multiclass');
         }
-        if ((showTestData || overlayMode === 'split') && testPoints.length > 0) {
-            drawPoints(ctx, testPoints, logicalW, logicalH, true, Boolean(currentMulticlassBoundary));
-        }
-    }, [
-        frameVersion,
-        multiclassBoundaryVersion,
-        trainPoints,
-        testPoints,
-        showTestData,
-        discretize,
-        canvasSize,
-        overlayMode,
-        supportsMulticlassBoundary,
-    ]);
+    }, [canvasSize, model]);
 
     // Paint immediately after React commits the latest frame. Snapshot delivery
     // is already rAF-gated in workerBridge, so an extra rAF here can keep
@@ -544,38 +397,19 @@ export const DecisionBoundary = memo(function DecisionBoundary({
     }, [paint]);
 
     // ── Early-return AFTER all hooks ──
-    if (trainPoints.length === 0) {
+    if (model.kind === 'empty' || model.kind === 'unavailable') {
         return (
             <div className="decision-boundary" ref={containerRef}>
                 <EmptyState
                     icon="🎯"
-                    title="No training data"
-                    description="Generate data or reset the playground to populate the decision boundary."
+                    title={model.title}
+                    description={model.description}
                 />
             </div>
         );
     }
 
-    const isNonBinaryClassification =
-        problemType === 'classification' &&
-        (outputSize !== 1 ||
-            outputActivation === 'softmax' ||
-            hasNonBinaryLabels(trainPoints) ||
-            hasNonBinaryLabels(testPoints));
-
-    if (isNonBinaryClassification && !multiclassSummary) {
-        return (
-            <div className="decision-boundary" ref={containerRef}>
-                <EmptyState
-                    icon="🎯"
-                    title="Binary decision boundary unavailable"
-                    description="This visualization supports two-class outputs unless bounded multiclass boundary data is available from the worker."
-                />
-            </div>
-        );
-    }
-
-    if (multiclassSummary && multiclassBoundary) {
+    if (model.kind === 'multiclass') {
         return (
             <div className="decision-boundary" ref={containerRef}>
                 <canvas
@@ -586,20 +420,20 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                     aria-describedby={descriptionId}
                 />
                 <p id={descriptionId} className="sr-only">
-                    {multiclassSummary.description}
+                    {model.accessibleDescription}
                 </p>
                 <div className="decision-boundary__overlay-badge" data-overlay-mode="multiclass">
                     3 classes
                 </div>
                 <div className="decision-boundary__summary" aria-hidden="true">
-                    <span>Dominant class: {multiclassSummary.dominantLabel}</span>
-                    <span>Average confidence: {formatPercent(multiclassSummary.averageConfidence)}</span>
+                    <span>Dominant class: {model.summary.dominantLabel}</span>
+                    <span>Average confidence: {formatPercent(model.summary.averageConfidence)}</span>
                 </div>
                 <div className="decision-boundary__legend">
                     {MULTICLASS_PALETTE.map((entry, index) => (
                         <div className="decision-boundary__legend-item" key={entry.label}>
                             <div className="decision-boundary__swatch" style={{ background: entry.color }} />
-                            <span>Class {multiclassBoundary.layout.classLabels[index]}</span>
+                            <span>Class {model.layout.classLabels[index]}</span>
                         </div>
                     ))}
                 </div>
@@ -617,10 +451,10 @@ export const DecisionBoundary = memo(function DecisionBoundary({
                 aria-describedby={descriptionId}
             />
             <p id={descriptionId} className="sr-only">
-                {overlayCopy.description}
+                {model.accessibleDescription}
             </p>
-            <div className="decision-boundary__overlay-badge" data-overlay-mode={overlayMode}>
-                {overlayCopy.label}
+            <div className="decision-boundary__overlay-badge" data-overlay-mode={model.overlayMode}>
+                {model.overlayCopy.label}
             </div>
             <div className="decision-boundary__legend">
                 <div className="decision-boundary__legend-item">

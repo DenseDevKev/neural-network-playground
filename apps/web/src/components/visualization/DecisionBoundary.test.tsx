@@ -5,7 +5,6 @@ import { classifyPointFromGrid } from './DecisionBoundary.tsx';
 import {
     resetFrameBuffer,
     updateFrameBuffer,
-    getFrameVersion,
     getFrameVersions,
 } from '../../worker/frameBuffer.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -18,6 +17,7 @@ const MULTICLASS_PREPARED = PREPARED_PRESETS.find(
 )!.prepared;
 
 const drawImage = vi.fn();
+const putImageData = vi.fn();
 
 function createMockContext() {
     return {
@@ -26,7 +26,7 @@ function createMockContext() {
             height,
             data: new Uint8ClampedArray(width * height * 4),
         }),
-        putImageData: vi.fn(),
+        putImageData,
         drawImage,
         fillRect: vi.fn(),
         beginPath: vi.fn(),
@@ -60,6 +60,7 @@ describe('DecisionBoundary', () => {
 
     beforeEach(() => {
         drawImage.mockClear();
+        putImageData.mockClear();
         resetFrameBuffer();
         useTrainingStore.setState({
             snapshot: null,
@@ -105,7 +106,7 @@ describe('DecisionBoundary', () => {
             outputGrid: new Float32Array([0, 0.25, 0.75, 1]),
             gridSize: 2,
         });
-        useTrainingStore.setState({ frameVersion: getFrameVersion() });
+        useTrainingStore.setState(getFrameVersions());
 
         render(
             <DecisionBoundary
@@ -123,11 +124,45 @@ describe('DecisionBoundary', () => {
                 outputGrid: new Float32Array([1, 0.75, 0.25, 0]),
                 gridSize: 2,
             });
-            useTrainingStore.setState({ frameVersion: getFrameVersion() });
+            useTrainingStore.setState(getFrameVersions());
         });
 
         expect(drawImage).toHaveBeenCalledTimes(2);
         expect(window.requestAnimationFrame).not.toHaveBeenCalled();
+    });
+
+    it('paints scalar grids in smooth and discrete modes', () => {
+        updateFrameBuffer({
+            outputGrid: new Float32Array([0.25, 0.75, 0.25, 0.75]),
+            gridSize: 2,
+        });
+        useTrainingStore.setState(getFrameVersions());
+        const { rerender } = render(
+            <DecisionBoundary
+                trainPoints={[{ x: -0.5, y: 0.5, label: 0 }]}
+                testPoints={[]}
+                showTestData={false}
+                discretize={false}
+            />,
+        );
+        const smoothPixels = Array.from(
+            (putImageData.mock.calls.at(-1)?.[0] as ImageData).data,
+        );
+
+        rerender(
+            <DecisionBoundary
+                trainPoints={[{ x: -0.5, y: 0.5, label: 0 }]}
+                testPoints={[]}
+                showTestData={false}
+                discretize
+            />,
+        );
+        const discretePixels = Array.from(
+            (putImageData.mock.calls.at(-1)?.[0] as ImageData).data,
+        );
+
+        expect(smoothPixels).not.toEqual(discretePixels);
+        expect(drawImage).toHaveBeenCalledTimes(2);
     });
 
     it('renders uncertainty, misclassification, and split overlay badges when requested', () => {
