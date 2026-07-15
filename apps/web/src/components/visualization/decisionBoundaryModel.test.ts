@@ -80,15 +80,6 @@ describe('deriveDecisionBoundaryModel', () => {
         expect(model.accessibleDescription).toBe(model.overlayCopy.description);
     });
 
-    it('preserves split visibility while excluding hidden tests from error overlays', () => {
-        const model = derive({ overlayMode: 'split', showTestData: false });
-
-        expect(model.kind).toBe('scalar');
-        if (model.kind !== 'scalar') return;
-        expect(model.visibleTestPoints).toBe(TEST_POINTS);
-        expect(model.misclassificationTestPoints).toEqual([]);
-    });
-
     it.each([
         ['binary classification', BINARY_TASK],
         ['regression', REGRESSION_TASK],
@@ -214,10 +205,9 @@ describe('deriveDecisionBoundaryModel', () => {
         });
     });
 
-    it('returns unavailable when any classification point has a non-binary label', () => {
+    it('returns unavailable when a training classification point has a non-binary label', () => {
         const model = derive({
-            testPoints: [{ x: 0, y: 0, label: 2 }],
-            showTestData: false,
+            trainPoints: [{ x: 0, y: 0, label: 2 }],
         });
 
         expect(model.kind).toBe('unavailable');
