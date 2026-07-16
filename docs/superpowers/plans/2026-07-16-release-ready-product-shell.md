@@ -18,7 +18,7 @@
 
 - Modify: `docs/architecture/state-ownership.md`
 - Create: `docs/qa/2026-07-16-product-shell-baseline.md`
-- Verify: `playwright.config.ts`, `e2e/playground-smoke.spec.ts`, `.github/workflows/ci.yml`
+- Verify: `playwright.config.ts`, `tests/e2e/playground-smoke.spec.ts`, `.github/workflows/ci.yml`
 
 **Steps:**
 
@@ -148,7 +148,7 @@
 
 **Files:**
 
-- Modify: `e2e/playground-smoke.spec.ts`
+- Modify: `tests/e2e/playground-smoke.spec.ts`
 - Create or modify: `apps/web/src/__tests__/productShell.accessibility.test.tsx`
 - Modify: `apps/web/src/styles/forge.css`
 - Modify: `.github/workflows/ci.yml` only if the normal command does not already execute new coverage
