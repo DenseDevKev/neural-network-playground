@@ -1,4 +1,4 @@
-import type { EvidenceViewId, RecipeSectionId } from '../store/useLayoutStore.ts';
+import type { EvidenceViewId, RecipeSectionId } from './shellTypes.ts';
 import {
     ALL_BUILD_MODULES,
     ALL_EVIDENCE_VIEWS,

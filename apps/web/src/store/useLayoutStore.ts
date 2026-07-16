@@ -8,6 +8,20 @@ import { useStore } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createStore } from 'zustand/vanilla';
 import {
+    CODE_EXPORT_TABS,
+    EVIDENCE_VIEW_IDS,
+    RECIPE_SECTION_IDS,
+    WORKSPACE_VIEWS,
+    type CodeExportTab,
+    type EvidenceViewId,
+    type LayoutVariant,
+    type LeftTabId,
+    type PhaseMode,
+    type RecipeSectionId,
+    type RightTabId,
+    type WorkspaceView,
+} from '../productShell/shellTypes.ts';
+import {
     getAudienceProfile,
     isAudienceMode,
     type AudienceMode,
@@ -21,15 +35,16 @@ import {
 
 export const LAYOUT_STORAGE_KEY = 'nn-playground-layout';
 
-export type WorkspaceView = 'build' | 'run';
-export type LayoutVariant = 'dock' | 'focus' | 'grid' | 'split';
-export type PhaseMode = 'build' | 'run';
-
-export type RecipeSectionId = 'presets' | 'data' | 'features' | 'network' | 'hyperparams' | 'config';
-export type EvidenceViewId = 'boundary' | 'loss' | 'confusion' | 'inspection' | 'code' | 'history';
-export type LeftTabId = RecipeSectionId;
-export type RightTabId = EvidenceViewId;
-export type CodeExportTab = 'pseudocode' | 'numpy' | 'tfjs';
+export type {
+    CodeExportTab,
+    EvidenceViewId,
+    LayoutVariant,
+    LeftTabId,
+    PhaseMode,
+    RecipeSectionId,
+    RightTabId,
+    WorkspaceView,
+} from '../productShell/shellTypes.ts';
 
 const DEFAULT_LAYOUT_STATE = {
     view: 'build' as WorkspaceView,
@@ -48,12 +63,12 @@ const DEFAULT_LAYOUT_STATE = {
     activeLessonStepIndex: null as number | null,
 };
 
-const VALID_PHASES: readonly PhaseMode[] = ['build', 'run'];
-const VALID_RECIPE_SECTIONS: readonly RecipeSectionId[] = ['presets', 'data', 'features', 'network', 'hyperparams', 'config'];
-const VALID_EVIDENCE_VIEWS: readonly EvidenceViewId[] = ['boundary', 'loss', 'confusion', 'inspection', 'code', 'history'];
+const VALID_PHASES = WORKSPACE_VIEWS;
+const VALID_RECIPE_SECTIONS = RECIPE_SECTION_IDS;
+const VALID_EVIDENCE_VIEWS = EVIDENCE_VIEW_IDS;
 const VALID_LEFT_TABS = VALID_RECIPE_SECTIONS;
 const VALID_RIGHT_TABS = VALID_EVIDENCE_VIEWS;
-const VALID_CODE_EXPORT_TABS: readonly CodeExportTab[] = ['pseudocode', 'numpy', 'tfjs'];
+const VALID_CODE_EXPORT_TABS = CODE_EXPORT_TABS;
 
 export interface LayoutStore {
     view: WorkspaceView;

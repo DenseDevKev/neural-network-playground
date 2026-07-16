@@ -1,4 +1,4 @@
-import type { EvidenceViewId, RecipeSectionId } from '../store/useLayoutStore.ts';
+import type { EvidenceViewId, RecipeSectionId } from './shellTypes.ts';
 
 export const AUDIENCE_MODES = Object.freeze(['beginner', 'explore', 'lab'] as const);
 
