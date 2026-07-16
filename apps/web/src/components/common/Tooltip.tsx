@@ -157,9 +157,8 @@ export function Tooltip({
         onMouseLeave={hide}
         onFocusCapture={showImmediately}
         onBlurCapture={hide}
-        onKeyDownCapture={(event) => {
+        onKeyDown={(event) => {
           if (event.key !== 'Escape' || !isVisible) return;
-          event.preventDefault();
           event.stopPropagation();
           hide();
         }}

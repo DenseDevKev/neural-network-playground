@@ -666,13 +666,14 @@ describe('Tooltip', () => {
     expect(removeEventListenerSpy).toHaveBeenCalledWith('scroll', expect.any(Function), true);
   });
 
-  it('consumes Escape only while dismissing a visible tooltip', () => {
+  it('lets the child receive Escape without preventing its default before dismissing a visible tooltip', () => {
     const windowKeydown = vi.fn();
+    const childKeydown = vi.fn();
     window.addEventListener('keydown', windowKeydown);
     try {
       render(
         <Tooltip content="Test tooltip">
-          <button>Focus me</button>
+          <button onKeyDown={childKeydown}>Focus me</button>
         </Tooltip>
       );
 
@@ -691,7 +692,9 @@ describe('Tooltip', () => {
       });
 
       expect(tooltip).toHaveStyle({ visibility: 'hidden' });
-      expect(visibleEscape.defaultPrevented).toBe(true);
+      expect(childKeydown).toHaveBeenCalledTimes(1);
+      expect(childKeydown.mock.calls[0]?.[0].defaultPrevented).toBe(false);
+      expect(visibleEscape.defaultPrevented).toBe(false);
       expect(windowKeydown).not.toHaveBeenCalled();
 
       const hiddenEscape = new KeyboardEvent('keydown', {
@@ -704,6 +707,7 @@ describe('Tooltip', () => {
       });
 
       expect(hiddenEscape.defaultPrevented).toBe(false);
+      expect(childKeydown).toHaveBeenCalledTimes(2);
       expect(windowKeydown).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener('keydown', windowKeydown);

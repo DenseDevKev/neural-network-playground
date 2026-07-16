@@ -41,7 +41,16 @@ vi.mock('../components/controls/DataPanel.tsx', async () => {
             <div>
                 Mock Data
                 <Tooltip content="Nested data help">
-                    <button type="button">Nested tooltip trigger</button>
+                    <button
+                        type="button"
+                        onKeyDown={(event) => {
+                            if (event.key !== 'Escape') return;
+                            event.currentTarget.dataset.escapeReceived = 'true';
+                            event.currentTarget.dataset.escapeDefaultPrevented = String(event.defaultPrevented);
+                        }}
+                    >
+                        Nested tooltip trigger
+                    </button>
                 </Tooltip>
             </div>
         ),
@@ -306,12 +315,15 @@ describe('App shell integration', () => {
 
         const advancedTrigger = screen.getByRole('button', { name: 'Advanced Tools' });
         await user.click(advancedTrigger);
-        await user.click(screen.getByRole('button', { name: 'Nested tooltip trigger' }));
+        const nestedTrigger = screen.getByRole('button', { name: 'Nested tooltip trigger' });
+        await user.click(nestedTrigger);
         const tooltip = screen.getByRole('tooltip', { name: 'Nested data help' });
         expect(tooltip).toHaveStyle({ visibility: 'visible' });
 
         await user.keyboard('{Escape}');
 
+        expect(nestedTrigger).toHaveAttribute('data-escape-received', 'true');
+        expect(nestedTrigger).toHaveAttribute('data-escape-default-prevented', 'false');
         expect(tooltip).toHaveStyle({ visibility: 'hidden' });
         expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
 
