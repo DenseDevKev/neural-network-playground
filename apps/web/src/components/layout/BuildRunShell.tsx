@@ -283,7 +283,7 @@ export const BuildRunShell = memo(function BuildRunShell({
                                         role="tab"
                                         id={`forge-right-tab-${tab.id}`}
                                         aria-selected={visibleEvidenceView === tab.id}
-                                        aria-controls={`forge-right-panel-${tab.id}`}
+                                        aria-controls="forge-right-panel"
                                         tabIndex={visibleEvidenceView === tab.id ? 0 : -1}
                                         className={`forge-evidence-tab ${visibleEvidenceView === tab.id ? 'forge-evidence-tab--active' : ''}`}
                                         onClick={() => onSelectEvidence(tab.id)}
@@ -296,7 +296,7 @@ export const BuildRunShell = memo(function BuildRunShell({
                             <div
                                 className="forge-buildrun__evidence-body"
                                 role="tabpanel"
-                                id={`forge-right-panel-${visibleEvidenceView}`}
+                                id="forge-right-panel"
                                 aria-labelledby={`forge-right-tab-${visibleEvidenceView}`}
                                 data-forge-panel-targets={visibleEvidenceView}
                                 tabIndex={-1}

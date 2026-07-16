@@ -160,6 +160,41 @@ describe('BuildRunShell', () => {
         expect(screen.queryByText('History evidence')).not.toBeInTheDocument();
     });
 
+    it('keeps every evidence tab associated with the one mounted tabpanel', async () => {
+        const user = userEvent.setup();
+
+        function Harness() {
+            const [activeEvidenceView, setActiveEvidenceView] = useState<EvidenceViewId>('boundary');
+            return (
+                <BuildRunShell
+                    {...shellProps({
+                        view: 'run',
+                        activeEvidenceView,
+                        onSelectEvidence: setActiveEvidenceView,
+                    })}
+                />
+            );
+        }
+
+        render(<Harness />);
+
+        const tabs = screen.getAllByRole('tab');
+        const controlledIds = tabs.map((tab) => tab.getAttribute('aria-controls'));
+        expect(new Set(controlledIds).size).toBe(1);
+        expect(controlledIds[0]).toBeTruthy();
+        expect(document.getElementById(controlledIds[0]!)).toBe(
+            screen.getByRole('tabpanel', { name: 'Boundary' }),
+        );
+
+        await user.click(screen.getByRole('tab', { name: 'Loss' }));
+
+        expect(screen.getByRole('tabpanel', { name: 'Loss' })).toHaveAttribute(
+            'id',
+            controlledIds[0],
+        );
+        expect(screen.queryByText('Boundary evidence')).not.toBeInTheDocument();
+    });
+
     it('uses roving tab focus with arrows, Home, End, and wrapping', async () => {
         const user = userEvent.setup();
         const onSelectEvidence = vi.fn();
