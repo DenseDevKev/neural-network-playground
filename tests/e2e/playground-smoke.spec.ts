@@ -533,6 +533,14 @@ test.describe('320px touch shell', () => {
 
         await touchTap(page, advancedTools(page));
         await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
+        const codeTab = page.getByRole('tab', { name: 'Code', exact: true });
+        await expectMinimumTouchTarget(codeTab);
+        await codeTab.click();
+        await expect(page.getByRole('tabpanel', { name: 'Code' })).toBeVisible();
+        const codeFormatList = page.getByRole('tablist', { name: 'Code format' });
+        await expect(codeFormatList).toBeVisible();
+        const codeFormats = codeFormatList.getByRole('tab');
+        await expectMinimumTouchTarget(codeFormats);
         await page.keyboard.press('Escape');
         await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
         await expect(advancedTools(page)).toBeFocused();

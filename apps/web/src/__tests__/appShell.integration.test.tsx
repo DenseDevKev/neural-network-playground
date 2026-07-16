@@ -246,13 +246,19 @@ describe('App shell integration', () => {
 
     it.each([
         ['beginner', 'build', false],
+        ['beginner', 'build', true],
         ['beginner', 'run', false],
+        ['beginner', 'run', true],
         ['explore', 'build', false],
+        ['explore', 'build', true],
         ['explore', 'run', false],
+        ['explore', 'run', true],
+        ['lab', 'build', false],
         ['lab', 'build', true],
+        ['lab', 'run', false],
         ['lab', 'run', true],
     ] as const)(
-        'has no axe violations in the %s %s shell',
+        'has no axe violations in the %s %s shell with Advanced Tools %s',
         async (audienceMode, view, advancedToolsOpen) => {
             useLayoutStore.setState({
                 audienceMode,
@@ -283,6 +289,32 @@ describe('App shell integration', () => {
             ).toHaveLength(0);
         },
     );
+
+    it('keeps the global shell controls in a logical keyboard focus order', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        const header = within(screen.getByRole('banner'));
+        const expectedOrder = [
+            screen.getByRole('link', { name: 'Skip to main content' }),
+            header.getByRole('button', { name: 'build' }),
+            header.getByRole('button', { name: 'run' }),
+            header.getByRole('combobox', { name: 'Audience mode' }),
+            header.getByRole('button', { name: 'Presets' }),
+            header.getByRole('button', { name: 'Lessons' }),
+            header.getByRole('button', { name: 'History' }),
+            header.getByRole('button', { name: 'Advanced Tools' }),
+            header.getByRole('button', { name: 'Start training' }),
+        ];
+
+        for (const control of expectedOrder) {
+            await user.tab();
+            expect(control).toHaveFocus();
+        }
+
+        await user.tab({ shift: true });
+        expect(header.getByRole('button', { name: 'Advanced Tools' })).toHaveFocus();
+    });
 
     it('exposes only Build and Run as global workspace views', () => {
         render(<App />);
