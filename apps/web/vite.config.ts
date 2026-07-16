@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => ({
     },
     build: {
         target: 'es2022',
+        minify: 'terser',
         sourcemap: mode === 'development',
         rollupOptions: {
             output: {
