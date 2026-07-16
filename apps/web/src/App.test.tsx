@@ -119,6 +119,7 @@ vi.mock('./components/layout/MainArea.tsx', () => ({
     InspectContent:  () => <div>Inspect</div>,
     CodeContent:     () => <div>Code</div>,
     HistoryContent:  () => <div>History</div>,
+    ConfigurationContent: () => <div>Config</div>,
 }));
 
 vi.mock('./components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
@@ -165,6 +166,8 @@ describe('App accessibility shell', () => {
             view: 'build',
             activeRecipeSection: 'data',
             activeEvidenceView: 'boundary',
+            audienceMode: 'explore',
+            advancedToolsOpen: false,
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',

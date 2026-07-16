@@ -6,18 +6,24 @@ import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { TrainingProgressBar } from './TrainingProgressBar.tsx';
 import { getTrainingLifecycleUi } from '../controls/trainingLifecycle.ts';
 import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
+import {
+    ADVANCED_TOOLS_REGION_ID,
+    ADVANCED_TOOLS_TRIGGER_ID,
+    type DrawerSurfaceId,
+} from '../../productShell/shellTypes.ts';
 
 interface HeaderProps {
     training: Pick<TrainingHook, 'play' | 'pause'>;
-    openSurface: 'presets' | 'lessons' | 'history' | 'more' | null;
-    onToggleSurface: (surface: 'presets' | 'lessons' | 'history' | 'more') => void;
+    openSurface: DrawerSurfaceId | null;
+    onToggleSurface: (surface: DrawerSurfaceId) => void;
+    advancedToolsOpen: boolean;
+    onToggleAdvancedTools: () => void;
 }
 
 const SURFACE_LABELS = {
     presets: 'Presets',
     lessons: 'Lessons',
     history: 'History',
-    more: 'More',
 } as const;
 
 function useFlash(value: string) {
@@ -35,7 +41,13 @@ function useFlash(value: string) {
     return flash;
 }
 
-export const Header = memo(function Header({ training, openSurface, onToggleSurface }: HeaderProps) {
+export const Header = memo(function Header({
+    training,
+    openSurface,
+    onToggleSurface,
+    advancedToolsOpen,
+    onToggleAdvancedTools,
+}: HeaderProps) {
     const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
     const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
     const status = useTrainingStore((s) => s.status);
@@ -132,18 +144,35 @@ export const Header = memo(function Header({ training, openSurface, onToggleSurf
             <span className="forge-topbar__spacer" />
 
             <div className="forge-topbar__kit">
-                {(['presets', 'lessons', 'history', 'more'] as const).map((surface) => (
+                {(['presets', 'lessons', 'history'] as const).map((surface) => (
                     <button
                         key={surface}
                         type="button"
+                        id={`forge-surface-trigger-${surface}`}
                         className={`forge-menu-button ${openSurface === surface ? 'forge-menu-button--active' : ''}`}
                         aria-pressed={openSurface === surface}
                         aria-haspopup="dialog"
+                        aria-controls={`forge-surface-${surface}`}
                         onClick={() => onToggleSurface(surface)}
                     >
                         {SURFACE_LABELS[surface]}
                     </button>
                 ))}
+
+                <span id="forge-advanced-tools-description" className="sr-only">
+                    Shows configuration and diagnostic tools without changing the experiment.
+                </span>
+                <button
+                    type="button"
+                    id={ADVANCED_TOOLS_TRIGGER_ID}
+                    className={`forge-menu-button forge-menu-button--advanced ${advancedToolsOpen ? 'forge-menu-button--active' : ''}`}
+                    aria-expanded={advancedToolsOpen}
+                    aria-controls={ADVANCED_TOOLS_REGION_ID}
+                    aria-describedby="forge-advanced-tools-description"
+                    onClick={onToggleAdvancedTools}
+                >
+                    Advanced Tools
+                </button>
 
                 <button
                     type="button"

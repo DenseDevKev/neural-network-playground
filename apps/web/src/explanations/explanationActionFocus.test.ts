@@ -7,6 +7,8 @@ function resetLayout() {
         view: 'build',
         activeRecipeSection: 'data',
         activeEvidenceView: 'boundary',
+        audienceMode: 'explore',
+        advancedToolsOpen: false,
         layout: 'dock',
         phase: 'build',
         activeTabLeft: 'data',
@@ -65,5 +67,20 @@ describe('focusExplanationActionTarget', () => {
 
         expect(useLayoutStore.getState().view).toBe('build');
         expect(document.activeElement).toBe(document.querySelector('[data-forge-panel-targets~="hyperparams"]'));
+    });
+
+    it('opens a hidden Beginner tool without changing audience mode', () => {
+        useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
+        document.body.innerHTML = '<button id="forge-right-tab-inspection">Inspect</button>';
+
+        focusExplanationActionTarget('inspection', { scheduleFocus: (focus) => focus() });
+
+        expect(useLayoutStore.getState()).toMatchObject({
+            view: 'run',
+            activeEvidenceView: 'inspection',
+            advancedToolsOpen: true,
+            audienceMode: 'beginner',
+        });
+        expect(document.activeElement).toBe(document.getElementById('forge-right-tab-inspection'));
     });
 });

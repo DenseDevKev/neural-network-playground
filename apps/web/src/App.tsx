@@ -9,7 +9,6 @@ import { selectScientificEvidence } from './store/evidenceSelectors.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import { useTraining } from './hooks/useTraining.ts';
 import { Header } from './components/layout/Header.tsx';
-import { Panel } from './components/common/Panel.tsx';
 import { BuildRunShell } from './components/layout/BuildRunShell.tsx';
 import {
     CanvasContent,
@@ -19,6 +18,7 @@ import {
     InspectContent,
     CodeContent,
     HistoryContent,
+    ConfigurationContent,
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
@@ -30,16 +30,18 @@ import { DataPanel } from './components/controls/DataPanel.tsx';
 import { FeaturesPanel } from './components/controls/FeaturesPanel.tsx';
 import { NetworkConfigPanel } from './components/controls/NetworkConfigPanel.tsx';
 import { HyperparamPanel } from './components/controls/HyperparamPanel.tsx';
-import { ConfigPanel } from './components/controls/ConfigPanel.tsx';
 import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
 import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { EmptyState } from './components/common/EmptyState.tsx';
 import { CompatibilityState } from './components/common/CompatibilityState.tsx';
 import { deriveVisualizationDemand } from './components/layout/deriveVisualizationDemand.ts';
 import { shouldReportSlowInteraction } from './performance/interactionMeasures.ts';
+import {
+    ADVANCED_TOOLS_TRIGGER_ID,
+    type DrawerSurfaceId,
+} from './productShell/shellTypes.ts';
 
 const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
-type SurfaceId = 'presets' | 'lessons' | 'history' | 'more';
 
 function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
     if (!(target instanceof Element)) return false;
@@ -96,6 +98,7 @@ function CompatiblePlayground() {
     const audienceMode = useLayoutStore((s) => s.audienceMode);
     const advancedToolsOpen = useLayoutStore((s) => s.advancedToolsOpen);
     const setActiveEvidenceView = useLayoutStore((s) => s.setActiveEvidenceView);
+    const setAdvancedToolsOpen = useLayoutStore((s) => s.setAdvancedToolsOpen);
     const status = useTrainingStore((s) => s.status);
     const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
     const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
@@ -106,7 +109,7 @@ function CompatiblePlayground() {
     const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
     const setDemand = usePlaygroundStore((s) => s.setDemand);
     const [lessonHighlight, setLessonHighlight] = useState<LessonTarget | null>(null);
-    const [openSurface, setOpenSurface] = useState<SurfaceId | null>(null);
+    const [openSurface, setOpenSurface] = useState<DrawerSurfaceId | null>(null);
 
     // Stable refs so keyboard handler never goes stale
     const trainingRef = useRef(training);
@@ -119,9 +122,21 @@ function CompatiblePlayground() {
     const handleLessonHighlightChange = useCallback((target: LessonTarget | null) => {
         setLessonHighlight(target);
     }, []);
-    const toggleSurface = useCallback((surface: SurfaceId) => {
+    const toggleSurface = useCallback((surface: DrawerSurfaceId) => {
         setOpenSurface((current) => current === surface ? null : surface);
     }, []);
+    const closeSurface = useCallback(() => {
+        if (openSurface) {
+            document.getElementById(`forge-surface-trigger-${openSurface}`)?.focus();
+        }
+        setOpenSurface(null);
+    }, [openSurface]);
+    const toggleAdvancedTools = useCallback(() => {
+        if (advancedToolsOpen) {
+            document.getElementById(ADVANCED_TOOLS_TRIGGER_ID)?.focus();
+        }
+        setAdvancedToolsOpen(!advancedToolsOpen);
+    }, [advancedToolsOpen, setAdvancedToolsOpen]);
     const lessonTargetClass = useCallback(
         (target: LessonTarget) => `lesson-target ${lessonHighlight === target ? 'lesson-target--active' : ''}`,
         [lessonHighlight],
@@ -177,11 +192,22 @@ function CompatiblePlayground() {
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') setOpenSurface(null);
+            if (event.key !== 'Escape') return;
+            if (openSurface) {
+                event.preventDefault();
+                document.getElementById(`forge-surface-trigger-${openSurface}`)?.focus();
+                setOpenSurface(null);
+                return;
+            }
+            if (advancedToolsOpen) {
+                event.preventDefault();
+                document.getElementById(ADVANCED_TOOLS_TRIGGER_ID)?.focus();
+                setAdvancedToolsOpen(false);
+            }
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, []);
+    }, [advancedToolsOpen, openSurface, setAdvancedToolsOpen]);
 
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
@@ -214,7 +240,7 @@ function CompatiblePlayground() {
         features: <div className={lessonTargetClass('features')} data-lesson-target="features"><FeaturesPanel /></div>,
         network: <div className={lessonTargetClass('network')} data-lesson-target="network"><NetworkConfigPanel /></div>,
         hyperparams: <div className={lessonTargetClass('hyperparams')} data-lesson-target="hyperparams"><HyperparamPanel /></div>,
-        config: <ConfigPanel onReset={stableReset} />,
+        config: <ConfigurationContent onReset={stableReset} />,
     };
 
     const rightTabContent = {
@@ -241,17 +267,6 @@ function CompatiblePlayground() {
     );
 
     const historyContent = <HistoryContent />;
-
-    const moreContent = (
-        <div className="forge-drawer-stack">
-            <Panel title="Configuration" phase="both" panelTargets="config">
-                <ConfigPanel onReset={stableReset} />
-            </Panel>
-            <Panel title="Code Export" phase="both" panelTargets="code">
-                <CodeContent />
-            </Panel>
-        </div>
-    );
 
     const workerErrorDescription = workerError
         ? `${workerError} Refresh the page to restart the playground.`
@@ -298,6 +313,8 @@ function CompatiblePlayground() {
                     training={training}
                     openSurface={openSurface}
                     onToggleSurface={toggleSurface}
+                    advancedToolsOpen={advancedToolsOpen}
+                    onToggleAdvancedTools={toggleAdvancedTools}
                 />
             </ErrorBoundary>
 
@@ -312,22 +329,24 @@ function CompatiblePlayground() {
                         view={view}
                         status={status}
                         activeEvidenceView={activeEvidenceView}
+                        audienceMode={audienceMode}
+                        advancedToolsOpen={advancedToolsOpen}
                         onSelectEvidence={setActiveEvidenceView}
                         openSurface={openSurface}
-                        onCloseSurface={() => setOpenSurface(null)}
+                        onCloseSurface={closeSurface}
                         recipeContent={<RecipeSummaryCard />}
                         runContent={<CurrentRunCard />}
                         dataContent={leftTabContent.data}
                         networkContent={leftTabContent.network}
                         featuresContent={leftTabContent.features}
                         hyperparamContent={leftTabContent.hyperparams}
+                        configurationContent={leftTabContent.config}
                         topologyContent={topologyContent}
                         transportContent={transport}
                         evidenceContent={rightTabContent}
-                        presetContent={<PresetPanel onReset={stableReset} onApplied={() => setOpenSurface(null)} />}
+                        presetContent={<PresetPanel onReset={stableReset} onApplied={closeSurface} />}
                         lessonContent={<GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} />}
                         historyContent={historyContent}
-                        moreContent={moreContent}
                     />
                 </ErrorBoundary>
             </main>

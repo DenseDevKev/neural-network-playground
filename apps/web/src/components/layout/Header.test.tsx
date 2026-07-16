@@ -5,6 +5,11 @@ import { Header } from './Header';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
+import {
+    ADVANCED_TOOLS_REGION_ID,
+    ADVANCED_TOOLS_TRIGGER_ID,
+    type DrawerSurfaceId,
+} from '../../productShell/shellTypes.ts';
 
 function createTrainingMock(): Pick<TrainingHook, 'play' | 'pause'> {
     return {
@@ -17,16 +22,22 @@ function renderHeader({
     training = createTrainingMock(),
     openSurface = null,
     onToggleSurface = vi.fn(),
+    advancedToolsOpen = false,
+    onToggleAdvancedTools = vi.fn(),
 }: {
     training?: Pick<TrainingHook, 'play' | 'pause'>;
-    openSurface?: 'presets' | 'lessons' | 'history' | 'more' | null;
-    onToggleSurface?: (surface: 'presets' | 'lessons' | 'history' | 'more') => void;
+    openSurface?: DrawerSurfaceId | null;
+    onToggleSurface?: (surface: DrawerSurfaceId) => void;
+    advancedToolsOpen?: boolean;
+    onToggleAdvancedTools?: () => void;
 } = {}) {
     return render(
         <Header
             training={training}
             openSurface={openSurface}
             onToggleSurface={onToggleSurface}
+            advancedToolsOpen={advancedToolsOpen}
+            onToggleAdvancedTools={onToggleAdvancedTools}
         />,
     );
 }
@@ -119,6 +130,8 @@ describe('Header', () => {
                 training={training}
                 openSurface={null}
                 onToggleSurface={vi.fn()}
+                advancedToolsOpen={false}
+                onToggleAdvancedTools={vi.fn()}
             />,
         );
 
@@ -166,7 +179,7 @@ describe('Header', () => {
         expect(useLayoutStore.getState().view).toBe('build');
     });
 
-    it('opens instrument menu surfaces through the top bar', async () => {
+    it('opens only the retained drawer surfaces through stable top-bar controls', async () => {
         const user = userEvent.setup();
         const onToggleSurface = vi.fn();
         renderHeader({ onToggleSurface, openSurface: 'history' });
@@ -175,11 +188,45 @@ describe('Header', () => {
 
         await user.click(screen.getByRole('button', { name: 'Presets' }));
         await user.click(screen.getByRole('button', { name: 'Lessons' }));
-        await user.click(screen.getByRole('button', { name: 'More' }));
 
         expect(onToggleSurface).toHaveBeenNthCalledWith(1, 'presets');
         expect(onToggleSurface).toHaveBeenNthCalledWith(2, 'lessons');
-        expect(onToggleSurface).toHaveBeenNthCalledWith(3, 'more');
+        expect(screen.getByRole('button', { name: 'Presets' })).toHaveAttribute(
+            'id',
+            'forge-surface-trigger-presets',
+        );
+        expect(screen.getByRole('button', { name: 'History' })).toHaveAttribute(
+            'aria-controls',
+            'forge-surface-history',
+        );
+        expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
+    });
+
+    it('exposes Advanced Tools as a described controlled disclosure', async () => {
+        const user = userEvent.setup();
+        const onToggleAdvancedTools = vi.fn();
+        const { rerender } = renderHeader({ onToggleAdvancedTools });
+
+        const trigger = screen.getByRole('button', { name: 'Advanced Tools' });
+        expect(trigger).toHaveAttribute('id', ADVANCED_TOOLS_TRIGGER_ID);
+        expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        expect(trigger).toHaveAttribute('aria-controls', ADVANCED_TOOLS_REGION_ID);
+        expect(trigger).toHaveAccessibleDescription(/shows configuration and diagnostic tools/i);
+
+        await user.click(trigger);
+        expect(onToggleAdvancedTools).toHaveBeenCalledTimes(1);
+
+        rerender(
+            <Header
+                training={createTrainingMock()}
+                openSurface={null}
+                onToggleSurface={vi.fn()}
+                advancedToolsOpen
+                onToggleAdvancedTools={onToggleAdvancedTools}
+            />,
+        );
+        expect(screen.getByRole('button', { name: 'Advanced Tools' }))
+            .toHaveAttribute('aria-expanded', 'true');
     });
 
     it('shows the NN·FORGE brand name', () => {

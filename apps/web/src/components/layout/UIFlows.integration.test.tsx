@@ -70,6 +70,8 @@ describe('UI integration flows', () => {
         await user.click(presetButton);
 
         await waitFor(() => expect(onReset).toHaveBeenCalledTimes(1));
+        await screen.findByText('Learning rate');
+        await screen.findByRole('button', { name: /Export JSON/ });
         const { access } = usePlaygroundStore.getState();
         expect(access.status === 'ready' ? access.prepared.compiled.task.dataset : null).toBe('xor');
         expect(presetButton).toHaveClass('preset-card--selected');
@@ -80,7 +82,13 @@ describe('UI integration flows', () => {
 
         const { container, rerender } = render(
             <>
-                <Header training={trainingMock} openSurface={null} onToggleSurface={vi.fn()} />
+                <Header
+                    training={trainingMock}
+                    openSurface={null}
+                    onToggleSurface={vi.fn()}
+                    advancedToolsOpen={false}
+                    onToggleAdvancedTools={vi.fn()}
+                />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );
@@ -103,7 +111,13 @@ describe('UI integration flows', () => {
 
         rerender(
             <>
-                <Header training={trainingMock} openSurface={null} onToggleSurface={vi.fn()} />
+                <Header
+                    training={trainingMock}
+                    openSurface={null}
+                    onToggleSurface={vi.fn()}
+                    advancedToolsOpen={false}
+                    onToggleAdvancedTools={vi.fn()}
+                />
                 <TrainingControls training={trainingMock as any} />
             </>,
         );

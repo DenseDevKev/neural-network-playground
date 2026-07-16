@@ -46,6 +46,8 @@ function resetLayout() {
         view: 'build',
         activeRecipeSection: 'data',
         activeEvidenceView: 'boundary',
+        audienceMode: 'explore',
+        advancedToolsOpen: false,
         layout: 'dock',
         phase: 'build',
         activeTabLeft: 'data',
@@ -174,6 +176,27 @@ describe('GuidedLessonPanel', () => {
             activeLessonStepIndex: null,
         });
         expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeInTheDocument();
+    });
+
+    it('opens a hidden Beginner lesson target without changing audience mode', async () => {
+        const user = userEvent.setup();
+        useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        await user.selectOptions(
+            screen.getByRole('combobox', { name: 'Guided lesson' }),
+            'lesson-feature-engineering-circle',
+        );
+        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+
+        await waitFor(() => {
+            expect(useLayoutStore.getState()).toMatchObject({
+                activeRecipeSection: 'features',
+                activeTabLeft: 'features',
+                advancedToolsOpen: true,
+                audienceMode: 'beginner',
+            });
+        });
     });
 
     it('starts selected regression and multiclass lessons from their compiled contracts', async () => {

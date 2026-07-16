@@ -205,6 +205,7 @@ vi.mock('../components/layout/MainArea.tsx', () => ({
     InspectContent:  () => <div>Inspect</div>,
     CodeContent:     () => <div>Code</div>,
     HistoryContent:  () => <div>History</div>,
+    ConfigurationContent: () => <div>Config</div>,
 }));
 vi.mock('../components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
 vi.mock('../components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));

@@ -17,6 +17,10 @@ export const EVIDENCE_VIEW_IDS = Object.freeze([
     'history',
 ] as const);
 export const CODE_EXPORT_TABS = Object.freeze(['pseudocode', 'numpy', 'tfjs'] as const);
+export const DRAWER_SURFACE_IDS = Object.freeze(['presets', 'lessons', 'history'] as const);
+
+export const ADVANCED_TOOLS_TRIGGER_ID = 'forge-advanced-tools-trigger';
+export const ADVANCED_TOOLS_REGION_ID = 'forge-advanced-tools-region';
 
 export type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 export type LayoutVariant = (typeof LAYOUT_VARIANTS)[number];
@@ -26,3 +30,4 @@ export type EvidenceViewId = (typeof EVIDENCE_VIEW_IDS)[number];
 export type LeftTabId = RecipeSectionId;
 export type RightTabId = EvidenceViewId;
 export type CodeExportTab = (typeof CODE_EXPORT_TABS)[number];
+export type DrawerSurfaceId = (typeof DRAWER_SURFACE_IDS)[number];

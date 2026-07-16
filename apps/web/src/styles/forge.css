@@ -293,11 +293,6 @@
     padding: 12px;
     overflow: auto;
 }
-.forge-drawer-stack {
-    display: grid;
-    gap: 12px;
-}
-
 @media (max-width: 1000px) {
     .forge-shell {
         grid-template-rows: auto 1fr 24px;
@@ -2247,6 +2242,26 @@
         linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px) 0 0 / 32px 32px,
         var(--forge-instrument-bg);
 }
+.forge-buildrun__workspace-tools {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+.forge-buildrun__workspace-tools--advanced {
+    grid-template-rows: auto minmax(0, 1fr);
+}
+.forge-buildrun__advanced-note {
+    margin: 0;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(155, 137, 255, 0.24);
+    background: rgba(155, 137, 255, 0.09);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.45;
+}
 .forge-buildrun__grid {
     min-height: 0;
     min-width: 0;
@@ -2255,6 +2270,9 @@
 .forge-buildrun__grid--build {
     display: grid;
     grid-template-columns: minmax(240px, 0.78fr) minmax(460px, 1.72fr) minmax(260px, 0.86fr);
+}
+.forge-buildrun__grid--build-core {
+    grid-template-columns: minmax(240px, 0.78fr) minmax(460px, 2.58fr);
 }
 .forge-buildrun__grid--run {
     display: grid;
@@ -2485,14 +2503,12 @@
     padding: 12px;
     overflow: auto;
 }
-.forge-drawer-stack {
-    display: grid;
-    gap: 12px;
-}
-
 @media (max-width: 1180px) {
     .forge-buildrun__grid--build {
         grid-template-columns: minmax(220px, 0.76fr) minmax(380px, 1.34fr) minmax(240px, 0.84fr);
+    }
+    .forge-buildrun__grid--build-core {
+        grid-template-columns: minmax(220px, 0.76fr) minmax(380px, 2.18fr);
     }
     .forge-buildrun__grid--run {
         grid-template-columns: minmax(220px, 0.62fr) minmax(420px, 1.18fr) minmax(320px, 0.94fr);
@@ -2527,7 +2543,7 @@
     }
     .forge-topbar__kit {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr)) 42px;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) 44px;
         flex: 1 0 100%;
         gap: 6px;
         max-width: none;
@@ -2535,14 +2551,16 @@
     }
     .forge-menu-button {
         min-width: 0;
-        height: 30px;
+        min-height: 44px;
+        height: 44px;
         padding-inline: 6px;
         font-size: 9px;
+        line-height: 1.2;
     }
     .header__mobile-play {
-        width: 42px;
-        min-width: 42px;
-        height: 42px;
+        width: 44px;
+        min-width: 44px;
+        height: 44px;
         padding: 0;
         justify-self: end;
     }
@@ -2587,6 +2605,14 @@
     .forge-buildrun__evidence-body {
         height: auto;
         min-height: 260px;
+    }
+    .forge-evidence-tab,
+    .forge-instrument-drawer__close {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    .forge-buildrun__advanced-note {
+        padding: 8px;
     }
     .forge-buildrun__transport {
         position: static;

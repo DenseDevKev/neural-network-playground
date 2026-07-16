@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App.tsx';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
@@ -27,7 +27,12 @@ vi.mock('../components/controls/TrainingControls.tsx', () => ({
     TrainingControls: () => <div>Mock Transport</div>,
 }));
 vi.mock('../components/controls/PresetPanel.tsx', () => ({
-    PresetPanel: () => <div>Mock Presets</div>,
+    PresetPanel: ({ onApplied }: { onApplied?: () => void }) => (
+        <div>
+            Mock Presets
+            {onApplied && <button type="button" onClick={onApplied}>Apply mock preset</button>}
+        </div>
+    ),
 }));
 vi.mock('../components/controls/DataPanel.tsx', () => ({
     DataPanel: () => <div>Mock Data</div>,
@@ -172,6 +177,8 @@ describe('App shell integration', () => {
             view: 'build',
             activeRecipeSection: 'data',
             activeEvidenceView: 'boundary',
+            audienceMode: 'explore',
+            advancedToolsOpen: false,
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
@@ -192,7 +199,8 @@ describe('App shell integration', () => {
         expect(screen.getByRole('button', { name: 'Presets' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Lessons' })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'History' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'More' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Advanced Tools' })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
     });
 
     it('renders Build as recipe, topology, features, and hyperparameters without permanent drawers', () => {
@@ -204,11 +212,12 @@ describe('App shell integration', () => {
         expect(screen.getByText('Mock Network Config')).toBeInTheDocument();
         expect(screen.getByText('Mock Features')).toBeInTheDocument();
         expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
+        expect(screen.queryByText('Mock Config Panel')).not.toBeInTheDocument();
         expect(screen.queryByText('Mock Presets')).not.toBeInTheDocument();
         expect(screen.queryByText('Mock Run History')).not.toBeInTheDocument();
     });
 
-    it('opens Presets, Lessons, History, and More as drawer surfaces', async () => {
+    it('opens Presets, Lessons, and History as drawer surfaces', async () => {
         const user = userEvent.setup();
         render(<App />);
 
@@ -223,11 +232,92 @@ describe('App shell integration', () => {
         await user.click(screen.getByRole('button', { name: 'History' }));
         expect(screen.getByRole('dialog', { name: 'History' })).toBeInTheDocument();
         expect(await screen.findByText('Mock Run History')).toBeInTheDocument();
+    });
 
-        await user.click(screen.getByRole('button', { name: 'More' }));
-        expect(screen.getByRole('dialog', { name: 'More / Commands' })).toBeInTheDocument();
-        expect(screen.getByText('Mock Config Panel')).toBeInTheDocument();
-        expect(await screen.findByText('Mock Code Export')).toBeInTheDocument();
+    it('opens Advanced Tools without requesting diagnostics and collapses hidden Build targets atomically', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        const trigger = screen.getByRole('button', { name: 'Advanced Tools' });
+        expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+        await user.click(trigger);
+
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+        expect(await screen.findByText('Mock Config Panel')).toBeInTheDocument();
+        expect(screen.getByText(/advanced tools are visible/i)).toBeInTheDocument();
+        expect(usePlaygroundStore.getState().demand).toMatchObject({
+            needLayerStats: false,
+            needActivationHistograms: false,
+            needConfusionMatrix: false,
+        });
+
+        act(() => {
+            useLayoutStore.getState().setActiveRecipeSection('config');
+        });
+        await user.click(trigger);
+
+        expect(trigger).toHaveFocus();
+        expect(useLayoutStore.getState()).toMatchObject({
+            advancedToolsOpen: false,
+            activeRecipeSection: 'data',
+            activeTabLeft: 'data',
+        });
+        expect(screen.queryByText('Mock Config Panel')).not.toBeInTheDocument();
+    });
+
+    it('restores drawer focus and closes a drawer before Advanced Tools on Escape', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        const advancedTrigger = screen.getByRole('button', { name: 'Advanced Tools' });
+        await user.click(advancedTrigger);
+        const historyTrigger = screen.getByRole('button', { name: 'History' });
+        await user.click(historyTrigger);
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Close History' })).toHaveFocus();
+        });
+        await user.keyboard('{Escape}');
+
+        expect(screen.queryByRole('dialog', { name: 'History' })).not.toBeInTheDocument();
+        expect(historyTrigger).toHaveFocus();
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+
+        await user.keyboard('{Escape}');
+
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
+        expect(advancedTrigger).toHaveFocus();
+    });
+
+    it('restores drawer-trigger focus after applying a preset', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        const presetTrigger = screen.getByRole('button', { name: 'Presets' });
+        await user.click(presetTrigger);
+        await user.click(screen.getByRole('button', { name: 'Apply mock preset' }));
+
+        expect(screen.queryByRole('dialog', { name: 'Presets' })).not.toBeInTheDocument();
+        expect(presetTrigger).toHaveFocus();
+    });
+
+    it('does not steal focus when persisted Advanced Tools state is already open', () => {
+        useLayoutStore.setState({ advancedToolsOpen: true });
+        const outside = document.createElement('button');
+        outside.textContent = 'Outside focus';
+        document.body.append(outside);
+        try {
+            outside.focus();
+
+            render(<App />);
+
+            expect(outside).toHaveFocus();
+            expect(screen.getByRole('button', { name: 'Advanced Tools' }))
+                .toHaveAttribute('aria-expanded', 'true');
+        } finally {
+            outside.remove();
+        }
     });
 
     it('renders Run with transport and one active evidence view', async () => {
@@ -249,6 +339,30 @@ describe('App shell integration', () => {
         expect(screen.queryByText('Mock Boundary')).not.toBeInTheDocument();
     });
 
+    it('renders the same visible evidence view that drives demand for a hidden target', async () => {
+        useLayoutStore.setState({
+            view: 'run',
+            phase: 'run',
+            audienceMode: 'beginner',
+            advancedToolsOpen: false,
+            activeEvidenceView: 'inspection',
+            activeTabRight: 'inspection',
+        });
+
+        render(<App />);
+
+        expect(screen.getByText('Mock Boundary')).toBeInTheDocument();
+        expect(screen.queryByText('Mock Inspection')).not.toBeInTheDocument();
+        expect(screen.queryByRole('tab', { name: 'Inspect' })).not.toBeInTheDocument();
+        await waitFor(() => {
+            expect(usePlaygroundStore.getState().demand).toMatchObject({
+                needDecisionBoundary: true,
+                needLayerStats: false,
+                needActivationHistograms: false,
+            });
+        });
+    });
+
     it('starts a lesson from the lesson menu and focuses the Build/Run target section', async () => {
         const user = userEvent.setup();
         render(<App />);
@@ -262,6 +376,7 @@ describe('App shell integration', () => {
 
         expect(useLayoutStore.getState().view).toBe('build');
         expect(useLayoutStore.getState().activeRecipeSection).toBe('features');
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
         expect(screen.getByText('Mock Features')).toBeInTheDocument();
         expect(screen.getByText('Feature Engineering Helps')).toBeInTheDocument();
     });
@@ -281,6 +396,7 @@ describe('App shell integration', () => {
 
         expect(useLayoutStore.getState().view).toBe('build');
         expect(useLayoutStore.getState().activeRecipeSection).toBe('hyperparams');
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
         expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
 
         await user.click(screen.getByRole('button', { name: /run/i }));

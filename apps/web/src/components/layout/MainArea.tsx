@@ -30,6 +30,9 @@ const CodeExportPanel = lazy(() =>
 const RunHistoryPanel = lazy(() =>
     import('../controls/RunHistoryPanel.tsx').then((m) => ({ default: m.RunHistoryPanel })),
 );
+const ConfigPanel = lazy(() =>
+    import('../controls/ConfigPanel.tsx').then((m) => ({ default: m.ConfigPanel })),
+);
 
 const DECISION_OVERLAY_MODES: readonly DecisionOverlayMode[] = [
     'none',
@@ -182,6 +185,18 @@ export const HistoryContent = memo(function HistoryContent() {
                 <RunHistoryPanel />
             </Suspense>
         </EvidenceFrame>
+    );
+});
+
+export const ConfigurationContent = memo(function ConfigurationContent({
+    onReset,
+}: {
+    onReset: () => void;
+}) {
+    return (
+        <Suspense fallback={<Fallback msg="Loading configuration…" />}>
+            <ConfigPanel onReset={onReset} />
+        </Suspense>
     );
 });
 

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { BoundaryContent, MainArea } from './MainArea.tsx';
+import { BoundaryContent, ConfigurationContent, MainArea } from './MainArea.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
@@ -32,6 +32,12 @@ vi.mock('../visualization/LossChart.tsx', () => ({
 
 vi.mock('../visualization/ConfusionMatrix.tsx', () => ({
     ConfusionMatrix: () => <div>Confusion matrix</div>,
+}));
+
+vi.mock('../controls/ConfigPanel.tsx', () => ({
+    ConfigPanel: ({ onReset }: { onReset: () => void }) => (
+        <button type="button" onClick={onReset}>Lazy configuration controls</button>
+    ),
 }));
 
 vi.mock('../common/ErrorBoundary.tsx', () => ({
@@ -95,6 +101,17 @@ describe('MainArea right-panel content', () => {
         // CodeExportPanel owns detailed tab/code assertions in its component tests.
         expect(screen.getByText('Code Export')).toBeInTheDocument();
         expect(screen.getByText('Loading code export…')).toBeInTheDocument();
+    });
+
+    it('loads Configuration through the advanced lazy boundary and forwards reset', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+
+        render(<ConfigurationContent onReset={onReset} />);
+
+        expect(screen.getByText('Loading configuration…')).toBeInTheDocument();
+        await user.click(await screen.findByRole('button', { name: 'Lazy configuration controls' }));
+        expect(onReset).toHaveBeenCalledTimes(1);
     });
 
     it('renders all main visualization sections', () => {
