@@ -187,7 +187,12 @@ describe('Header', () => {
 
         const mode = screen.getByRole('combobox', { name: 'Audience mode' });
         expect(mode).toHaveValue('explore');
-        expect(mode).toHaveAccessibleDescription('Mode changes visible tools only.');
+        expect(mode).toHaveAccessibleDescription(
+            'Adds feature, hyperparameter, and confusion tools for guided experimentation. Mode changes visible tools only.',
+        );
+        expect(screen.getByText(
+            'Adds feature, hyperparameter, and confusion tools for guided experimentation.',
+        )).toBeInTheDocument();
         expect(screen.getByText('Mode changes visible tools only.')).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Beginner' })).toHaveValue('beginner');
         expect(screen.getByRole('option', { name: 'Explore' })).toHaveValue('explore');
@@ -212,6 +217,9 @@ describe('Header', () => {
         });
         expect(screen.getByRole('status', { name: 'Audience mode change' }))
             .toHaveTextContent('Mode: Beginner. Mode changes visible tools only.');
+        expect(screen.getByText(
+            'Keeps the core data, network, boundary, and loss tools visible with more guidance.',
+        )).toBeInTheDocument();
     });
 
     it('opens only the retained drawer surfaces through stable top-bar controls', async () => {

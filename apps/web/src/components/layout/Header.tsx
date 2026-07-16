@@ -63,6 +63,7 @@ export const Header = memo(function Header({
     const setView = useLayoutStore((s) => s.setView);
     const setAudienceMode = useLayoutStore((s) => s.setAudienceMode);
     const [modeAnnouncement, setModeAnnouncement] = useState('');
+    const audienceProfile = getAudienceProfile(audienceMode);
 
     const evidence = useMemo(() => selectScientificEvidence({
         latestLiveSignal,
@@ -114,7 +115,7 @@ export const Header = memo(function Header({
                     <select
                         className="select forge-audience-mode__select"
                         aria-label="Audience mode"
-                        aria-describedby="forge-audience-mode-description"
+                        aria-describedby="forge-audience-mode-profile-description forge-audience-mode-description"
                         value={audienceMode}
                         onChange={(event) => {
                             const nextMode = event.currentTarget.value;
@@ -132,6 +133,12 @@ export const Header = memo(function Header({
                         ))}
                     </select>
                 </label>
+                <span
+                    id="forge-audience-mode-profile-description"
+                    className="forge-audience-mode__note"
+                >
+                    {audienceProfile.description}
+                </span>
                 <span id="forge-audience-mode-description" className="forge-audience-mode__note">
                     Mode changes visible tools only.
                 </span>
