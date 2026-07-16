@@ -18,7 +18,7 @@ Build, train, and visualize neural networks in real time. Experiment with differ
 - **Advanced Tools** — Reveal specialist configuration, diagnostics, and export surfaces on demand
 - **Contextual concept help** — Consistent definitions for loss, objectives, boundaries, activations, gradients, and checkpoints
 - **Presets** — One-click configurations for common learning scenarios
-- **URL sharing** — Share your exact playground state via URL
+- **URL sharing** — Share the exact experiment recipe and shareable view settings via URL
 - **Config import/export** — Save and load configurations as JSON
 - **Responsive design** — Works on desktop, tablet, and mobile
 
@@ -141,7 +141,7 @@ Engine coverage includes:
 - **Activations** — All 8 activation functions and their derivatives
 - **Losses** — MSE, cross-entropy, Huber loss
 - **Optimizers** — SGD, SGD+Momentum, Adam
-- **Datasets** — All 10 dataset generators
+- **Datasets** — All 11 dataset generators
 - **Features** — Feature transform pipeline
 - **PRNG** — Deterministic random number generation
 

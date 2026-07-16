@@ -15,12 +15,13 @@ secrets — the entire app runs in the browser.
 ### Fork-and-deploy flow
 
 1. **Fork** the repository on GitHub.
-2. Go to your fork's **Settings → Pages**.
-3. Under **Source**, select **GitHub Actions**.
-4. Push a commit to `main`. The `CI` workflow must pass lint, tests, build, and
+2. Open your fork's **Actions** tab and enable workflows for the fork.
+3. Go to your fork's **Settings → Pages**.
+4. Under **Source**, select **GitHub Actions**.
+5. Push a commit to `main`. The `CI` workflow must pass lint, tests, build, and
    Chromium/WebKit smoke for that commit.
-5. A successful CI push run triggers `.github/workflows/deploy.yml`, which
-   checks out the exact tested SHA and will:
+6. A successful CI push run allows `.github/workflows/deploy.yml` to build and
+   deploy. It checks out the exact tested SHA and will:
    - Install dependencies with pnpm 9
    - Build the app (`pnpm build` → `apps/web/dist/`)
    - Upload the `dist` folder as a Pages artifact

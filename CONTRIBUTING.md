@@ -50,9 +50,8 @@ pnpm --filter @nn-playground/web exec tsc --noEmit
 # Run all tests
 pnpm test
 
-# Run engine tests with watch mode
-cd packages/engine
-pnpm test:watch
+# Run engine tests with watch mode without leaving the repository root
+pnpm --filter @nn-playground/engine test:watch
 
 # Run a focused web test directly (do not use `pnpm test -- <file>`;
 # that package command still selects the complete web suite)
@@ -98,7 +97,8 @@ Merging to `main` automatically triggers the release pipeline:
 
 1. `.github/workflows/ci.yml` runs lint, the complete test suite, a production
    build, and Chromium/WebKit smoke tests for the pushed `main` SHA.
-2. Only a successful CI push run triggers `.github/workflows/deploy.yml`.
+2. Only a successful CI push run allows the build and deploy jobs in
+   `.github/workflows/deploy.yml` to run.
 3. Deployment checks out that exact tested SHA, rebuilds `apps/web/dist/`, and
    publishes it to GitHub Pages.
 
