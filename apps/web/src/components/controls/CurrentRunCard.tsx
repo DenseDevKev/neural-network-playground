@@ -4,6 +4,8 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
 import { getRecipeDrift } from '../../store/recipeIdentity.ts';
 import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
+import { ConceptHelp } from '../common/ConceptHelp.tsx';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 function formatMetric(value: number | undefined): string {
     return value === undefined || !Number.isFinite(value) ? 'n/a' : value.toFixed(4);
@@ -148,6 +150,7 @@ function getRunStateCopy(args: {
 }
 
 export const CurrentRunCard = memo(function CurrentRunCard() {
+    const guidanceLevel = useAudienceGuidanceLevel();
     const currentRecipe = usePlaygroundStore((s) => (
         s.access.status === 'ready' ? s.access.prepared.document.recipe : null
     ));
@@ -218,7 +221,10 @@ export const CurrentRunCard = memo(function CurrentRunCard() {
             {evidence.currentModel && (
                 <div className="forge-run-card__metrics" aria-label="Run metrics">
                     <span>{`Batch trend (EMA) ${formatMetric(evidence.batchTrend?.dataLoss)}`}</span>
-                    <span>{`Train data loss (full split) ${formatMetric(evidence.fullEvaluation?.trainDataLoss)}`}</span>
+                    <span className="forge-context-card__concept-label">
+                        <span>{`Train data loss (full split) ${formatMetric(evidence.fullEvaluation?.trainDataLoss)}`}</span>
+                        <ConceptHelp conceptId="data-loss" guidanceLevel={guidanceLevel} />
+                    </span>
                     <span>{`Test data loss (full split) ${formatMetric(evidence.fullEvaluation?.testDataLoss)}`}</span>
                     <span>{`Training objective ${formatMetric(evidence.fullEvaluation?.trainingObjective)}`}</span>
                     <span>{`gap ${formatSignedMetric(evidence.generalizationGap ?? undefined)}`}</span>

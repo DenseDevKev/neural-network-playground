@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { PREPARED_PRESETS, type PreparedExperimentDocumentV2 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { getConceptById } from '../../concepts/conceptCatalog.ts';
 import { CurrentRunCard } from './CurrentRunCard.tsx';
 
 function prepared(id = 'xor-hidden'): PreparedExperimentDocumentV2 {
@@ -54,6 +57,36 @@ describe('CurrentRunCard', () => {
             workerError: null,
             pauseReason: null,
         });
+        useLayoutStore.setState({ audienceMode: 'beginner' });
+    });
+
+    it('opens the catalog data-loss definition without replacing the current-run label', async () => {
+        const user = userEvent.setup();
+        installTrained();
+        useTrainingStore.setState({
+            latestLiveSignal: live(128, 4),
+            latestEvaluation: {
+                evaluationId: 3,
+                trigger: 'cadence',
+                model: { generationId: 1, revision: 128, step: 128, epoch: 4 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+                objectiveKey: 'o',
+                train: { basis: { kind: 'full-split', split: 'train', sampleCount: 210, populationCount: 210 }, values: { dataLoss: 0.22, accuracy: 0.9 } },
+                test: { basis: { kind: 'full-split', split: 'test', sampleCount: 90, populationCount: 90 }, values: { dataLoss: 0.31, accuracy: 0.8 } },
+                objective: { regularizationPenalty: 0.01, trainTotalObjective: 0.23 },
+            },
+        });
+        render(<CurrentRunCard />);
+
+        expect(screen.getByText('Current run')).toBeInTheDocument();
+        expect(screen.getByText('Train data loss (full split) 0.2200')).toBeInTheDocument();
+        expect(screen.getByText('Training objective 0.2300')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Learn about Data loss' }));
+
+        expect(screen.getByText(getConceptById('data-loss')?.plainDefinition ?? ''))
+            .toBeInTheDocument();
+        expect(screen.getByText(getConceptById('data-loss')?.examples?.[0] ?? ''))
+            .toBeInTheDocument();
     });
 
     it('explains the idle no-evidence state', () => {

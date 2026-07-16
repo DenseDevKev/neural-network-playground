@@ -18,6 +18,8 @@ import { Panel } from '../common/Panel.tsx';
 import { ErrorBoundary } from '../common/ErrorBoundary.tsx';
 import { LoadingState } from '../common/LoadingState.tsx';
 import { DiagnosticCockpitStrip, EvidenceFrame, TopologyStateBadge } from './ExperimentStateContext.tsx';
+import { ConceptHelp } from '../common/ConceptHelp.tsx';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 interface MainAreaProps { training: TrainingHook }
 
@@ -78,6 +80,7 @@ export const CanvasContent = memo(function CanvasContent() {
 
 // ── Right-panel tab contents ──────────────────────────────────────────────
 export const BoundaryContent = memo(function BoundaryContent() {
+    const guidanceLevel = useAudienceGuidanceLevel();
     const showTestData = usePlaygroundStore((s) => (
         s.access.status === 'ready' && s.access.prepared.document.view.showTestData
     ));
@@ -100,6 +103,14 @@ export const BoundaryContent = memo(function BoundaryContent() {
                     overlayMode={overlayMode}
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+                    <div className="decision-boundary-concept">
+                        <span>Decision boundary</span>
+                        <ConceptHelp
+                            conceptId="decision-boundary"
+                            guidanceLevel={guidanceLevel}
+                            className="concept-help--block"
+                        />
+                    </div>
                     <label className="checkbox-row">
                         <input type="checkbox" checked={showTestData}
                             onChange={async (event) => {

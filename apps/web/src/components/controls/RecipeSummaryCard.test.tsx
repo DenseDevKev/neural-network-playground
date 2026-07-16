@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { PREPARED_PRESETS, type PreparedExperimentDocumentV2 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { RecipeSummaryCard } from './RecipeSummaryCard.tsx';
 
 function prepared(id = 'xor-hidden'): PreparedExperimentDocumentV2 {
@@ -26,6 +28,34 @@ function installTrained(next = prepared()) {
     );
 }
 
+function withAdvancedSettings(): PreparedExperimentDocumentV2 {
+    const base = prepared('regression-plane');
+    return {
+        ...base,
+        document: {
+            ...base.document,
+            recipe: {
+                ...base.document.recipe,
+                training: {
+                    ...base.document.recipe.training,
+                    schedule: { kind: 'step', interval: 17, gamma: 0.63 },
+                    optimizer: { kind: 'sgd-momentum', momentum: 0.81 },
+                    gradientClipping: {
+                        kind: 'global-norm',
+                        maximumNorm: 2.5,
+                        scope: 'total-objective-gradient',
+                    },
+                },
+                objective: {
+                    ...base.document.recipe.objective,
+                    dataLoss: { kind: 'huber', delta: 1.75 },
+                    penalty: { kind: 'l2', coefficient: 0.012, applyTo: 'weights' },
+                },
+            },
+        },
+    } as PreparedExperimentDocumentV2;
+}
+
 describe('RecipeSummaryCard', () => {
     beforeEach(() => {
         installCurrent();
@@ -37,6 +67,12 @@ describe('RecipeSummaryCard', () => {
             pendingConfigSource: null,
             latestLiveSignal: null,
             latestEvaluation: null,
+        });
+        useLayoutStore.setState({
+            audienceMode: 'explore',
+            advancedToolsOpen: false,
+            activeRecipeSection: 'data',
+            activeTabLeft: 'data',
         });
     });
 
@@ -82,5 +118,42 @@ describe('RecipeSummaryCard', () => {
         render(<RecipeSummaryCard />);
         expect(screen.getByText('Full evaluation at step 40; batch trend through step 42.')).toBeInTheDocument();
         expect(screen.getByText('Paired train/test evidence is 2 steps behind the current model.')).toBeInTheDocument();
+    });
+
+    it('recovers active advanced settings hidden by Beginner without changing the recipe', async () => {
+        const user = userEvent.setup();
+        installCurrent(withAdvancedSettings());
+        useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
+        const recipe = usePlaygroundStore.getState().access.status === 'ready'
+            ? usePlaygroundStore.getState().access.prepared.document.recipe
+            : null;
+
+        render(<RecipeSummaryCard />);
+
+        const note = screen.getByRole('note', { name: 'Advanced settings active' });
+        expect(note).toHaveTextContent('Step interval17');
+        expect(note).toHaveTextContent('Step gamma0.63');
+        expect(note).toHaveTextContent('Momentum0.81');
+        expect(note).toHaveTextContent('Huber delta1.75');
+        expect(note).toHaveTextContent('L2 coefficient (weights)0.012');
+        expect(note).toHaveTextContent('Global norm clip (total objective gradient)2.5');
+
+        await user.click(screen.getByRole('button', { name: 'Open Advanced Tools' }));
+
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+        expect(usePlaygroundStore.getState().access.status).toBe('ready');
+        if (usePlaygroundStore.getState().access.status === 'ready') {
+            expect(usePlaygroundStore.getState().access.prepared.document.recipe).toBe(recipe);
+        }
+    });
+
+    it('does not warn when Hyperparameters is already visible', () => {
+        installCurrent(withAdvancedSettings());
+        useLayoutStore.setState({ audienceMode: 'explore', advancedToolsOpen: false });
+
+        render(<RecipeSummaryCard />);
+
+        expect(screen.queryByRole('note', { name: 'Advanced settings active' }))
+            .not.toBeInTheDocument();
     });
 });

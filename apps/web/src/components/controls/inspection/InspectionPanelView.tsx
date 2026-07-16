@@ -4,15 +4,19 @@ import {
     type InspectionPanelDisplayModel,
     type InspectionTraceSource,
 } from './inspectionPanelModel.ts';
+import { ConceptHelp } from '../../common/ConceptHelp.tsx';
+import type { GuidanceLevel } from '../../../productShell/audienceProfiles.ts';
 
 export interface InspectionPanelViewProps {
     readonly model: InspectionPanelDisplayModel;
     readonly commands: InspectionPanelCommands;
+    readonly guidanceLevel: GuidanceLevel;
 }
 
 export const InspectionPanelView = memo(function InspectionPanelView({
     model,
     commands,
+    guidanceLevel,
 }: InspectionPanelViewProps) {
     return (
         <div className="inspection-panel">
@@ -214,7 +218,10 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                 </div>
             </div>
             <section className="inspection__layer" aria-label="Slow-motion backprop preview">
-                <div className="inspection__layer-name">Slow-Motion Backprop</div>
+                <div className="inspection__layer-name inspection__layer-name--concept">
+                    <span>Slow-Motion Backprop</span>
+                    <ConceptHelp conceptId="gradient" guidanceLevel={guidanceLevel} />
+                </div>
                 <button
                     type="button"
                     className="btn"

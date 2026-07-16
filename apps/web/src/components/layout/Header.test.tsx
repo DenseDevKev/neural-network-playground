@@ -67,6 +67,8 @@ describe('Header', () => {
             view: 'build',
             activeRecipeSection: 'data',
             activeEvidenceView: 'boundary',
+            audienceMode: 'explore',
+            advancedToolsOpen: false,
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
@@ -177,6 +179,39 @@ describe('Header', () => {
 
         await user.click(screen.getByRole('button', { name: /build/i }));
         expect(useLayoutStore.getState().view).toBe('build');
+    });
+
+    it('changes audience mode through a described native select and announces only explicit choices', async () => {
+        const user = userEvent.setup();
+        renderHeader();
+
+        const mode = screen.getByRole('combobox', { name: 'Audience mode' });
+        expect(mode).toHaveValue('explore');
+        expect(mode).toHaveAccessibleDescription('Mode changes visible tools only.');
+        expect(screen.getByText('Mode changes visible tools only.')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: 'Beginner' })).toHaveValue('beginner');
+        expect(screen.getByRole('option', { name: 'Explore' })).toHaveValue('explore');
+        expect(screen.getByRole('option', { name: 'Lab' })).toHaveValue('lab');
+        expect(screen.getByRole('status', { name: 'Audience mode change' })).toBeEmptyDOMElement();
+
+        await user.selectOptions(mode, 'lab');
+
+        expect(useLayoutStore.getState()).toMatchObject({
+            audienceMode: 'lab',
+            advancedToolsOpen: true,
+        });
+        expect(screen.getByRole('status', { name: 'Audience mode change' }))
+            .toHaveTextContent('Mode: Lab. Mode changes visible tools only.');
+        const stored = JSON.parse(window.localStorage.getItem('nn-playground-layout') ?? '{}');
+        expect(stored.state).toMatchObject({ audienceMode: 'lab', advancedToolsOpen: true });
+
+        await user.selectOptions(mode, 'beginner');
+        expect(useLayoutStore.getState()).toMatchObject({
+            audienceMode: 'beginner',
+            advancedToolsOpen: false,
+        });
+        expect(screen.getByRole('status', { name: 'Audience mode change' }))
+            .toHaveTextContent('Mode: Beginner. Mode changes visible tools only.');
     });
 
     it('opens only the retained drawer surfaces through stable top-bar controls', async () => {

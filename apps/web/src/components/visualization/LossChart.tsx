@@ -5,6 +5,8 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { metricHistoryBuffer } from '../../store/metricHistoryBuffer.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
+import { ConceptHelp } from '../common/ConceptHelp.tsx';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 type ChartTab = 'loss' | 'accuracy';
 const CHART_HEIGHT = 220;
@@ -112,6 +114,7 @@ function isPlateau(evaluations: readonly EvaluationPoint[]): boolean {
 }
 
 export const LossChart = memo(function LossChart() {
+    const guidanceLevel = useAudienceGuidanceLevel();
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const trainingTrendVersion = useTrainingStore((state) => state.trainingTrendVersion);
@@ -215,7 +218,14 @@ export const LossChart = memo(function LossChart() {
                         <span>Batch trend (EMA)</span>
                         <span>Train data loss (full split)</span>
                         <span>Test data loss (full split)</span>
-                        <span>Training objective</span>
+                        <span className="loss-chart__legend-concept">
+                            <span>Training objective</span>
+                            <ConceptHelp
+                                conceptId="training-objective"
+                                guidanceLevel={guidanceLevel}
+                                className="concept-help--end"
+                            />
+                        </span>
                     </>
                 ) : (
                     <>

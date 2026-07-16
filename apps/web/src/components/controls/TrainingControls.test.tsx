@@ -3,6 +3,8 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TrainingControls } from './TrainingControls';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { getConceptById } from '../../concepts/conceptCatalog.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 
 function createTrainingMock(): TrainingHook {
@@ -86,6 +88,7 @@ describe('TrainingControls', () => {
         restoredCheckpointId: null,
       },
     });
+    useLayoutStore.setState({ audienceMode: 'beginner' });
   });
 
   it('should display visible keyboard shortcut hints on control buttons', () => {
@@ -249,6 +252,13 @@ describe('TrainingControls', () => {
     });
 
     render(<TrainingControls training={training} />);
+
+    expect(screen.getByText('Timeline')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Learn about Checkpoint' }));
+    expect(screen.getByText(getConceptById('checkpoint')?.plainDefinition ?? ''))
+      .toBeInTheDocument();
+    expect(screen.getByText(getConceptById('checkpoint')?.examples?.[0] ?? ''))
+      .toBeInTheDocument();
 
     const slider = screen.getByRole('slider', { name: 'Checkpoint timeline' });
     expect(slider).toHaveValue('1');

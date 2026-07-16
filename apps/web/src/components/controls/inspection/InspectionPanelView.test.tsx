@@ -1,10 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { InspectionPanelView } from './InspectionPanelView.tsx';
 import type {
     InspectionPanelCommands,
     InspectionPanelDisplayModel,
 } from './inspectionPanelModel.ts';
+import { getConceptById } from '../../../concepts/conceptCatalog.ts';
 
 function displayModel(): InspectionPanelDisplayModel {
     return {
@@ -110,7 +112,7 @@ function commands(): InspectionPanelCommands {
 describe('InspectionPanelView', () => {
     it('renders the complete prepared model with semantic labels and live regions', () => {
         const { container } = render(
-            <InspectionPanelView model={displayModel()} commands={commands()} />,
+            <InspectionPanelView model={displayModel()} commands={commands()} guidanceLevel="standard" />,
         );
 
         expect(screen.getByText('Activation statistics across 128 of 210 training examples'))
@@ -165,6 +167,7 @@ describe('InspectionPanelView', () => {
                 },
             }}
             commands={commands()}
+            guidanceLevel="compact"
         />);
 
         expect(screen.getByText('Train the model to see stats')).toBeInTheDocument();
@@ -179,7 +182,11 @@ describe('InspectionPanelView', () => {
 
     it('forwards selection and request events to explicit commands', () => {
         const viewCommands = commands();
-        render(<InspectionPanelView model={displayModel()} commands={viewCommands} />);
+        render(<InspectionPanelView
+            model={displayModel()}
+            commands={viewCommands}
+            guidanceLevel="standard"
+        />);
 
         fireEvent.change(screen.getByRole('combobox', { name: 'Histogram layer' }), {
             target: { value: '0' },
@@ -200,5 +207,22 @@ describe('InspectionPanelView', () => {
         expect(viewCommands.requestTrace).toHaveBeenCalledTimes(1);
         expect(viewCommands.requestBackprop).toHaveBeenCalledTimes(1);
         expect(viewCommands.requestLandscape).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders gradient help from the catalog without requiring a store', async () => {
+        const user = userEvent.setup();
+        render(<InspectionPanelView
+            model={displayModel()}
+            commands={commands()}
+            guidanceLevel="high"
+        />);
+
+        expect(screen.getByText('Slow-Motion Backprop')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Learn about Gradient' }));
+
+        expect(screen.getByText(getConceptById('gradient')?.plainDefinition ?? ''))
+            .toBeInTheDocument();
+        expect(screen.getByText(getConceptById('gradient')?.examples?.[0] ?? ''))
+            .toBeInTheDocument();
     });
 });

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {
     PREPARED_PRESETS,
     type LiveTrainingSignal,
@@ -15,6 +16,7 @@ import {
     EvidenceFrame,
     TopologyStateBadge,
 } from './ExperimentStateContext.tsx';
+import { getConceptById } from '../../concepts/conceptCatalog.ts';
 
 function prepared(id = 'xor-hidden'): PreparedExperimentDocumentV2 {
     const match = PREPARED_PRESETS.find((entry) => entry.id === id)?.prepared;
@@ -158,6 +160,19 @@ describe('ExperimentStateContext', () => {
         expect(screen.getByText('Plot-based')).toBeInTheDocument();
         expect(screen.getByText('Shows decision regions and sample outcomes.')).toBeInTheDocument();
         expect(screen.getByText('Boundary plot content')).toBeInTheDocument();
+    });
+
+    it('opens activation guidance beside the unchanged Inspection explanation', async () => {
+        const user = userEvent.setup();
+        useLayoutStore.setState({ audienceMode: 'explore' });
+        render(<EvidenceFrame view="Inspection"><div>Inspection body</div></EvidenceFrame>);
+
+        expect(screen.getByText('Shows layer activations, gradients, and probes.'))
+            .toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Learn about Activation' }));
+
+        expect(screen.getByText(getConceptById('activation')?.plainDefinition ?? ''))
+            .toBeInTheDocument();
     });
 
     it('summarizes the live diagnostic cockpit around the selected evidence view', () => {

@@ -11,6 +11,11 @@ import {
     ADVANCED_TOOLS_TRIGGER_ID,
     type DrawerSurfaceId,
 } from '../../productShell/shellTypes.ts';
+import {
+    AUDIENCE_MODES,
+    getAudienceProfile,
+    isAudienceMode,
+} from '../../productShell/audienceProfiles.ts';
 
 interface HeaderProps {
     training: Pick<TrainingHook, 'play' | 'pause'>;
@@ -54,7 +59,10 @@ export const Header = memo(function Header({
     const pauseReason = useTrainingStore((s) => s.pauseReason);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const view = useLayoutStore((s) => s.view);
+    const audienceMode = useLayoutStore((s) => s.audienceMode);
     const setView = useLayoutStore((s) => s.setView);
+    const setAudienceMode = useLayoutStore((s) => s.setAudienceMode);
+    const [modeAnnouncement, setModeAnnouncement] = useState('');
 
     const evidence = useMemo(() => selectScientificEvidence({
         latestLiveSignal,
@@ -96,6 +104,46 @@ export const Header = memo(function Header({
                         <i aria-hidden /><span>{nextView}</span>
                     </button>
                 ))}
+            </div>
+
+            <div className="forge-topbar__divider" aria-hidden />
+
+            <div className="forge-audience-mode">
+                <label className="forge-audience-mode__control">
+                    <span>Mode</span>
+                    <select
+                        className="select forge-audience-mode__select"
+                        aria-label="Audience mode"
+                        aria-describedby="forge-audience-mode-description"
+                        value={audienceMode}
+                        onChange={(event) => {
+                            const nextMode = event.currentTarget.value;
+                            if (!isAudienceMode(nextMode)) return;
+                            setAudienceMode(nextMode);
+                            setModeAnnouncement(
+                                `Mode: ${getAudienceProfile(nextMode).label}. Mode changes visible tools only.`,
+                            );
+                        }}
+                    >
+                        {AUDIENCE_MODES.map((mode) => (
+                            <option key={mode} value={mode}>
+                                {getAudienceProfile(mode).label}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+                <span id="forge-audience-mode-description" className="forge-audience-mode__note">
+                    Mode changes visible tools only.
+                </span>
+                <span
+                    className="sr-only"
+                    role="status"
+                    aria-label="Audience mode change"
+                    aria-live="polite"
+                    aria-atomic="true"
+                >
+                    {modeAnnouncement}
+                </span>
             </div>
 
             <div className="forge-topbar__divider" aria-hidden />

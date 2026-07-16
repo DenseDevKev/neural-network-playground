@@ -5,7 +5,14 @@ import App from '../App.tsx';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
-import type { LiveTrainingSignal, PairedEvaluation } from '@nn-playground/shared';
+import { useExperimentMemoryStore } from '../store/experimentMemoryStore.ts';
+import {
+    encodeExperimentUrl,
+    prepareExperimentDocument,
+    type LiveTrainingSignal,
+    type PairedEvaluation,
+    type PreparedExperimentDocumentV2,
+} from '@nn-playground/shared';
 
 const trainingMock = {
     play: vi.fn(),
@@ -158,6 +165,27 @@ function makeEvaluation(step = 20): PairedEvaluation {
     };
 }
 
+async function makeAdvancedPrepared(): Promise<PreparedExperimentDocumentV2> {
+    const result = await prepareExperimentDocument({
+        ...INITIAL_PREPARED.document,
+        recipe: {
+            ...INITIAL_PREPARED.document.recipe,
+            training: {
+                ...INITIAL_PREPARED.document.recipe.training,
+                schedule: { kind: 'step', interval: 17, gamma: 0.63 },
+                optimizer: { kind: 'sgd-momentum', momentum: 0.81 },
+                gradientClipping: {
+                    kind: 'global-norm',
+                    maximumNorm: 2.5,
+                    scope: 'total-objective-gradient',
+                },
+            },
+        },
+    });
+    if (!result.ok) throw new Error('advanced app-shell fixture must prepare');
+    return result.value;
+}
+
 describe('App shell integration', () => {
     beforeEach(() => {
         window.localStorage.clear();
@@ -202,6 +230,16 @@ describe('App shell integration', () => {
             phase: 'build',
             activeTabLeft: 'data',
             activeTabRight: 'boundary',
+        });
+        useExperimentMemoryStore.setState({
+            hydrationStatus: 'ready',
+            records: Object.freeze([]),
+            rejectedRecords: Object.freeze([]),
+            incompatibleEnvelope: null,
+            legacyRaw: null,
+            legacyNoticeDismissed: false,
+            persistenceError: null,
+            pendingSave: null,
         });
     });
 
@@ -449,5 +487,137 @@ describe('App shell integration', () => {
         expect(useLayoutStore.getState().view).toBe('run');
         expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
         expect(screen.getByText('Mock Loss Chart')).toBeInTheDocument();
+    });
+
+    it('cycles every profile and disclosure state without mutating paused scientific state', async () => {
+        const user = userEvent.setup();
+        const prepared = await makeAdvancedPrepared();
+        const liveSignal: LiveTrainingSignal = {
+            ...makeLiveSignal(20),
+            dataset: {
+                ...makeLiveSignal(20).dataset,
+                datasetKey: prepared.identities.datasetKey,
+            },
+            objectiveKey: prepared.identities.objectiveKey,
+        };
+        const latestEvaluation: PairedEvaluation = {
+            ...makeEvaluation(20),
+            dataset: liveSignal.dataset,
+            objectiveKey: prepared.identities.objectiveKey,
+        };
+        const checkpointTimeline = {
+            checkpoints: [{
+                id: 11,
+                step: 20,
+                epoch: 2,
+                trainDataLoss: 0.2,
+                testDataLoss: 0.6,
+                label: 'Step 20',
+            }],
+            maxCheckpoints: 12,
+            evictedCount: 0,
+            liveCheckpointId: 11,
+            restoredCheckpointId: 11,
+        };
+        const savedRecords = Object.freeze([{ id: 'saved-run-sentinel' }]) as never;
+
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared },
+            prepared,
+            preparation: { status: 'ready', requestId: 0, issues: [] },
+        });
+        useTrainingStore.setState({
+            status: 'paused',
+            pauseReason: 'manual',
+            trainedRecipe: prepared.document.recipe,
+            trainedRecipeFingerprint: prepared.identities.recipeFingerprint,
+            trainedRecipeRecordedAt: 1,
+            trainedRecipeSource: 'initialize',
+            latestLiveSignal: liveSignal,
+            latestEvaluation,
+            checkpointTimeline,
+        });
+        useLayoutStore.setState({
+            view: 'build',
+            phase: 'build',
+            audienceMode: 'beginner',
+            advancedToolsOpen: false,
+            activeRecipeSection: 'data',
+            activeTabLeft: 'data',
+            activeEvidenceView: 'boundary',
+            activeTabRight: 'boundary',
+            codeExportTab: 'numpy',
+        });
+        useExperimentMemoryStore.setState({ records: savedRecords });
+        window.history.replaceState(null, '', encodeExperimentUrl(prepared.document));
+
+        const preparedRef = prepared;
+        const recipeRef = prepared.document.recipe;
+        const liveRef = liveSignal;
+        const evaluationRef = latestEvaluation;
+        const timelineRef = checkpointTimeline;
+        const recordsRef = savedRecords;
+        const hash = window.location.hash;
+
+        const assertScientificState = () => {
+            const playground = usePlaygroundStore.getState();
+            expect(playground.access.status).toBe('ready');
+            if (playground.access.status === 'ready') {
+                expect(playground.access.prepared).toBe(preparedRef);
+                expect(playground.access.prepared.document.recipe).toBe(recipeRef);
+            }
+            const training = useTrainingStore.getState();
+            expect(training.status).toBe('paused');
+            expect(training.pauseReason).toBe('manual');
+            expect(training.latestLiveSignal).toBe(liveRef);
+            expect(training.latestEvaluation).toBe(evaluationRef);
+            expect(training.latestLiveSignal?.model.step).toBe(20);
+            expect(training.trainedRecipe).toBe(recipeRef);
+            expect(training.trainedRecipeFingerprint).toBe(prepared.identities.recipeFingerprint);
+            expect(training.checkpointTimeline).toBe(timelineRef);
+            expect(useExperimentMemoryStore.getState().records).toBe(recordsRef);
+            expect(useExperimentMemoryStore.getState().records).toHaveLength(1);
+            expect(useLayoutStore.getState().codeExportTab).toBe('numpy');
+            expect(window.location.hash).toBe(hash);
+            expect(trainingMock.play).not.toHaveBeenCalled();
+            expect(trainingMock.pause).not.toHaveBeenCalled();
+            expect(trainingMock.step).not.toHaveBeenCalled();
+            expect(trainingMock.reset).not.toHaveBeenCalled();
+            expect(trainingMock.restoreCheckpoint).not.toHaveBeenCalled();
+        };
+
+        render(<App />);
+        expect(screen.getByRole('note', { name: 'Advanced settings active' }))
+            .toBeInTheDocument();
+        assertScientificState();
+
+        const disclosure = screen.getByRole('button', { name: 'Advanced Tools' });
+        await user.click(disclosure);
+        expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
+        expect(screen.queryByRole('note', { name: 'Advanced settings active' }))
+            .not.toBeInTheDocument();
+        assertScientificState();
+        await user.click(disclosure);
+        assertScientificState();
+
+        const mode = screen.getByRole('combobox', { name: 'Audience mode' });
+        await user.selectOptions(mode, 'explore');
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
+        expect(screen.queryByRole('note', { name: 'Advanced settings active' }))
+            .not.toBeInTheDocument();
+        assertScientificState();
+        await user.click(disclosure);
+        assertScientificState();
+        await user.click(disclosure);
+        assertScientificState();
+
+        await user.selectOptions(mode, 'lab');
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+        assertScientificState();
+        await user.click(disclosure);
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
+        assertScientificState();
+        await user.click(disclosure);
+        assertScientificState();
     });
 });

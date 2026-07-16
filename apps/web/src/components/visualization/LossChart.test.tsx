@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { LiveTrainingSignal, PairedEvaluation } from '@nn-playground/shared';
 import { LossChart } from './LossChart.tsx';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { getConceptById } from '../../concepts/conceptCatalog.ts';
 
 const fillRect = vi.fn();
 
@@ -82,6 +85,7 @@ describe('LossChart scientific evidence series', () => {
             liveSignal: live,
             latestEvaluation: pair,
         });
+        useLayoutStore.setState({ audienceMode: 'explore' });
     });
 
     it('uses actual model steps and keeps live/evaluation labels distinct', () => {
@@ -93,6 +97,19 @@ describe('LossChart scientific evidence series', () => {
         expect(screen.getByText('Training objective')).toBeInTheDocument();
         expect(screen.getByText(/Batch trend through step 1,240/i)).toBeInTheDocument();
         expect(screen.getByText(/Full evaluation 31 at step 1,230/i)).toBeInTheDocument();
+    });
+
+    it('opens the catalog training-objective definition beside the unchanged legend label', async () => {
+        const user = userEvent.setup();
+        render(<LossChart />);
+
+        expect(screen.getByText('Training objective')).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Learn about Training objective' }));
+
+        expect(screen.getByText(getConceptById('training-objective')?.plainDefinition ?? ''))
+            .toBeInTheDocument();
+        expect(screen.queryByText(getConceptById('training-objective')?.examples?.[0] ?? ''))
+            .not.toBeInTheDocument();
     });
 
     it('does not move paired best-test or gap diagnostics when only live evidence advances', () => {

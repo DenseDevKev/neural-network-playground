@@ -8,6 +8,8 @@ import {
     selectScientificEvidence,
     type ScientificEvidence,
 } from '../../store/evidenceSelectors.ts';
+import { ConceptHelp } from '../common/ConceptHelp.tsx';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 type EvidenceViewName = 'Boundary' | 'Loss' | 'Confusion' | 'Inspection' | 'Code' | 'History';
 
@@ -161,6 +163,7 @@ function exactEvidenceCopy(view: string, evidence: ScientificEvidence): string {
 }
 
 export const EvidenceContextLine = memo(function EvidenceContextLine({ view }: { view: string }) {
+    const guidanceLevel = useAudienceGuidanceLevel();
     const { drift, status, evidence, pendingConfigSource, workerError, configError } = useExperimentContext();
     const currentModel = evidence.currentModel;
 
@@ -198,6 +201,13 @@ export const EvidenceContextLine = memo(function EvidenceContextLine({ view }: {
             <span className="forge-evidence-context__state">{stateLabel}</span>
             <span>{copy}</span>
             <small>{explanation}</small>
+            {view === 'Inspection' ? (
+                <ConceptHelp
+                    conceptId="activation"
+                    guidanceLevel={guidanceLevel}
+                    className="concept-help--end"
+                />
+            ) : null}
         </p>
     );
 });

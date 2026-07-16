@@ -5,6 +5,8 @@ import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { getTrainingLifecycleUi } from './trainingLifecycle.ts';
+import { ConceptHelp } from '../common/ConceptHelp.tsx';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 interface Props {
     training: TrainingHook;
@@ -20,6 +22,7 @@ const SPEED_OPTIONS: { value: number; label: string }[] = [
 const RESTORE_GUARANTEE = 'Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.';
 
 export const TrainingControls = memo(function TrainingControls({ training }: Props) {
+    const guidanceLevel = useAudienceGuidanceLevel();
     const status = useTrainingStore((s) => s.status);
     const currentModel = useTrainingStore((s) => (
         selectScientificEvidence({
@@ -134,7 +137,10 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     className="training-bar__timeline"
                     aria-label="Checkpoint timeline controls"
                 >
-                    <span className="training-bar__timeline-label">Timeline</span>
+                    <span className="training-bar__timeline-label training-bar__timeline-label--concept">
+                        <span>Timeline</span>
+                        <ConceptHelp conceptId="checkpoint" guidanceLevel={guidanceLevel} />
+                    </span>
                     <input
                         className="training-bar__timeline-range"
                         type="range"

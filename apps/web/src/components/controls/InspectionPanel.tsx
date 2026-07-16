@@ -4,8 +4,10 @@
 import { memo } from 'react';
 import { InspectionPanelView } from './inspection/InspectionPanelView.tsx';
 import { useInspectionPanelController } from './inspection/useInspectionPanelController.ts';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 export const InspectionPanel = memo(function InspectionPanel() {
     const controller = useInspectionPanelController();
-    return <InspectionPanelView {...controller} />;
+    const guidanceLevel = useAudienceGuidanceLevel();
+    return <InspectionPanelView {...controller} guidanceLevel={guidanceLevel} />;
 });

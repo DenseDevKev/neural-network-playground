@@ -57,6 +57,19 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).toContain('rgba(137, 132, 170, 0.42)');
     });
 
+    it('keeps concept disclosures focus-visible, contained, and touch-sized', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-shell .concept-help__trigger:focus-visible');
+        expect(css).toContain('outline: 2px solid var(--color-primary)');
+        expect(css).toContain('.forge-shell .concept-help--end .concept-help__content');
+        expect(css).toContain('overflow-wrap: anywhere');
+        expect(css).toMatch(
+            /@media \(max-width: 900px\)[\s\S]*?\.forge-shell \.concept-help__trigger,[\s\S]*?\.forge-shell \.concept-help__target \{[\s\S]*?min-width: 44px/,
+        );
+        expect(css).not.toContain('var(--accent-cyan)');
+    });
+
     it('keeps topology controls attached to a single graph toolbar surface', () => {
         const css = readFileSync(resolve(__dirname, 'index.css'), 'utf8');
 

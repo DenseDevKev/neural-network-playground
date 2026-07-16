@@ -66,6 +66,144 @@
     background: rgba(129, 236, 255, 0.08);
 }
 
+.forge-audience-mode {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.forge-audience-mode__control {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.forge-audience-mode__select {
+    min-width: 92px;
+    height: 28px;
+    font-size: 10px;
+}
+
+.forge-audience-mode__note {
+    max-width: 108px;
+    color: var(--text-tertiary);
+    font-size: 9px;
+    line-height: 1.25;
+}
+
+.forge-shell .concept-help {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: 4px;
+    vertical-align: middle;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: normal;
+    line-height: 1.4;
+    text-align: left;
+    text-transform: none;
+}
+.forge-shell .concept-help__trigger,
+.forge-shell .concept-help__target {
+    min-width: 26px;
+    min-height: 26px;
+    border: 1px solid var(--forge-border-active);
+    color: var(--text-secondary);
+    background: rgba(129, 236, 255, 0.06);
+    cursor: pointer;
+}
+.forge-shell .concept-help__trigger {
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border-radius: 999px;
+    font: 800 11px/1 var(--font-mono);
+}
+.forge-shell .concept-help__trigger:focus-visible,
+.forge-shell .concept-help__target:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+.forge-shell .concept-help__content {
+    position: absolute;
+    z-index: 1200;
+    top: calc(100% + 6px);
+    left: 0;
+    display: grid;
+    gap: 7px;
+    width: min(320px, calc(100vw - 32px));
+    max-height: min(420px, 70vh);
+    overflow: auto;
+    padding: 11px;
+    border: 1px solid var(--forge-border-active);
+    border-radius: 6px;
+    box-sizing: border-box;
+    color: var(--text-secondary);
+    background: rgba(10, 12, 17, 0.98);
+    box-shadow: var(--forge-shadow-muted);
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.forge-shell .concept-help__title {
+    color: var(--text-primary);
+}
+.forge-shell .concept-help__difficulty {
+    color: var(--text-tertiary);
+    font: 800 9px/1.3 var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.forge-shell .concept-help__examples,
+.forge-shell .concept-help__related,
+.forge-shell .concept-help__examples [role="list"],
+.forge-shell .concept-help__related [role="list"] {
+    display: grid;
+    gap: 4px;
+}
+.forge-shell .concept-help__target {
+    justify-self: start;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+.forge-shell .concept-help--end .concept-help__content {
+    right: 0;
+    left: auto;
+}
+.forge-shell .concept-help--block {
+    display: grid;
+    justify-items: start;
+}
+.forge-shell .concept-help--block .concept-help__content {
+    position: static;
+    width: min(100%, 320px);
+    margin-top: 6px;
+}
+.forge-shell .forge-context-card__concept-label,
+.forge-shell .loss-chart__legend-concept,
+.forge-shell .inspection__layer-name--concept,
+.forge-shell .training-bar__timeline-label--concept,
+.forge-shell .decision-boundary-concept {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.forge-shell .decision-boundary-concept {
+    align-items: start;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+}
+
 .forge-workspace {
     min-height: 0;
     overflow: hidden;
@@ -870,6 +1008,39 @@
     font-size: 11px;
     line-height: 1.35;
     overflow-wrap: anywhere;
+}
+
+.forge-advanced-settings-note {
+    display: grid;
+    gap: 7px;
+    padding: 8px;
+    border: 1px solid rgba(234, 179, 8, 0.18);
+    border-radius: 5px;
+    color: var(--text-secondary);
+    background: rgba(234, 179, 8, 0.04);
+    font-size: 10px;
+}
+.forge-advanced-settings-note > strong {
+    color: color-mix(in srgb, var(--color-warning) 52%, var(--text-secondary));
+}
+.forge-advanced-settings-note ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.forge-advanced-settings-note li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+.forge-advanced-settings-note li strong {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+.forge-advanced-settings-note .btn {
+    justify-self: start;
 }
 
 .forge-drift-note {
@@ -2610,6 +2781,15 @@
     .forge-instrument-drawer__close {
         min-width: 44px;
         min-height: 44px;
+    }
+    .forge-shell .concept-help__trigger,
+    .forge-shell .concept-help__target {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    .forge-shell .concept-help__content {
+        width: min(320px, calc(100vw - 24px));
+        max-height: 60vh;
     }
     .forge-buildrun__advanced-note {
         padding: 8px;

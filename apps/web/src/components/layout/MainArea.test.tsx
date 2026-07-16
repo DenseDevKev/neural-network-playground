@@ -12,6 +12,8 @@ import {
     DEFAULT_TRAINING,
 } from '@nn-playground/shared';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { getConceptById } from '../../concepts/conceptCatalog.ts';
 
 vi.mock('../controls/TrainingControls.tsx', () => ({
     TrainingControls: () => <div>Training controls</div>,
@@ -92,6 +94,7 @@ describe('MainArea right-panel content', () => {
             workerError: null,
             pauseReason: null,
         });
+        useLayoutStore.setState({ audienceMode: 'explore' });
     });
 
     it('renders the code export panel in the right panel without requiring a toggle', () => {
@@ -153,6 +156,18 @@ describe('MainArea right-panel content', () => {
             });
         });
         editView.mockRestore();
+    });
+
+    it('places decision-boundary guidance above the existing controls', async () => {
+        const user = userEvent.setup();
+        render(<BoundaryContent />);
+
+        expect(screen.getByLabelText('Decision overlay controls'))
+            .toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Learn about Decision boundary' }));
+
+        expect(screen.getByText(getConceptById('decision-boundary')?.plainDefinition ?? ''))
+            .toBeInTheDocument();
     });
 
     it('renders the training explanation surface with the loss chart', () => {
