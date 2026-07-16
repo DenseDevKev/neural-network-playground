@@ -49,7 +49,7 @@
 4. Run:
 
    ```bash
-   NODE_OPTIONS=--experimental-require-module pnpm --filter @nn-playground/web exec vitest run apps/web/src/productShell/audienceProfiles.test.ts apps/web/src/productShell/visibleShell.test.ts apps/web/src/store/useLayoutStore.test.ts --pool=forks --reporter=dot
+   NODE_OPTIONS=--experimental-require-module pnpm --filter @nn-playground/web exec vitest run src/productShell/audienceProfiles.test.ts src/productShell/visibleShell.test.ts src/store/useLayoutStore.test.ts --pool=forks --reporter=dot
    ```
 
 5. Implement the smallest pure tables/resolvers and additive sanitized store fields/actions. Do not touch experiment or runtime stores.
@@ -122,6 +122,8 @@
 - Modify: `apps/web/src/components/layout/Header.test.tsx`
 - Modify: `apps/web/src/components/controls/CurrentRunCard.tsx`
 - Modify: `apps/web/src/components/controls/CurrentRunCard.test.tsx`
+- Modify: `apps/web/src/components/controls/TrainingControls.tsx`
+- Modify: `apps/web/src/components/controls/TrainingControls.test.tsx`
 - Modify: `apps/web/src/components/visualization/LossChart.tsx`
 - Modify: `apps/web/src/components/visualization/LossChart.test.tsx`
 - Modify: `apps/web/src/components/controls/inspection/InspectionPanelView.tsx`
