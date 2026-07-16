@@ -1,6 +1,6 @@
 // ── Sidebar ── left-column wrapper using Panel primitives
-// Used in legacy/fallback layout paths. In Dock layout, RegionShell
-// renders the left tab pane directly without this wrapper.
+// Retained for legacy/fallback tests. The production shell composes its
+// configuration modules through BuildRunShell without this wrapper.
 
 import { lazy, memo, Suspense } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';

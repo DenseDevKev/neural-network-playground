@@ -4,6 +4,13 @@
 **Status:** Approved implementation design  
 **Scope:** Advanced Tools, terminology, audience profiles, and release validation
 
+> **Implementation handoff:** This is the approved design, not a release-result
+> record. Current behavior and extension rules live in
+> [`../../architecture/product-shell.md`](../../architecture/product-shell.md),
+> implementation gates remain in
+> [`../plans/2026-07-16-release-ready-product-shell.md`](../plans/2026-07-16-release-ready-product-shell.md),
+> and final measurements are added only after release verification.
+
 ## Intent
 
 Make NN·FORGE easier to enter without splitting it into separate products. Beginner, Explore, and Lab are visibility and guidance profiles over one shell, one experiment document, and one training runtime. Advanced Tools is a progressive-disclosure boundary within that shared shell. The terminology catalog supplies the same accurate definitions wherever the shell explains a concept.
@@ -80,7 +87,7 @@ Advanced Tools is an inline shell disclosure, not the old miscellaneous More dra
 - Motion is optional and disabled under `prefers-reduced-motion: reduce`.
 - Responsive layouts keep the disclosure and profile switch reachable at 200% zoom and narrow viewports.
 
-`resolveVisibleEvidenceView` is the single resolver for rendering, accessibility context, and visualization demand. Legacy `history` resolves to Boundary. The unused history-drawer demand argument is removed. Once searches and tests prove the legacy direct InspectionPanel path has no production consumer, the App shell becomes the sole visibility-demand owner.
+`resolveVisibleEvidenceView` is the single resolver for rendering, accessibility context, and visualization demand. Legacy `history` resolves to Boundary. The unused history-drawer demand argument is removed. Production-consumer searches found no legacy direct InspectionPanel path outside the App shell, so App is the sole visibility-demand owner.
 
 ## Terminology catalog
 

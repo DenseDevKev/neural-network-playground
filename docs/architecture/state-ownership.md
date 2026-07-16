@@ -2,7 +2,7 @@
 
 This contract fixes the state boundaries for the staged product-shell refactor. The refactor must preserve the V2 experiment document, URL behavior, engine and worker protocols, checkpoints, and saved runs.
 
-The release continuation is specified in `docs/superpowers/specs/2026-07-16-release-ready-product-shell-design.md`. Its measured pre-change evidence and browser diagnosis are recorded in `docs/qa/2026-07-16-product-shell-baseline.md`.
+The release continuation is specified in `docs/superpowers/specs/2026-07-16-release-ready-product-shell-design.md`. Its measured pre-change evidence and browser diagnosis are recorded in `docs/qa/2026-07-16-product-shell-baseline.md`. The implemented shell rules and extension points are documented in `docs/architecture/product-shell.md`.
 
 ## Ownership
 
@@ -19,12 +19,19 @@ The release continuation is specified in `docs/superpowers/specs/2026-07-16-rele
 
 Rendered visibility is authoritative for visualization demand. `usePlaygroundStore.demand` is only the delivery cache, and `useTraining` is the sender to the worker.
 
-## Current exceptions
+## Current adapter and compatibility boundaries
 
-- `App` derives demand from shell visibility while `InspectionPanel` also toggles layer-stat and histogram demand on mount. This temporary dual-writer arrangement remains through the two pilots; Task 4 makes the shell the sole writer after direct/legacy consumers are proven non-production.
-- `InspectionPanel` and `DecisionBoundary` still read stores, `frameBuffer`, selectors, and worker bridges directly. Tasks 2 and 3 confine those dependencies to their feature adapters without changing ownership.
+- `App` is the sole production writer of visualization demand. It derives demand from resolved shell visibility, writes the delivery cache, and `useTraining` remains the only sender to the worker. `InspectionPanel` no longer mutates demand on mount.
+- Inspection store, frame-buffer, selector, and worker-bridge access is confined to `useInspectionPanelController`; `inspectionPanelModel` is React-free and `InspectionPanelView` consumes display-safe model data and commands.
+- Decision-boundary store and frame-buffer access is confined to `useDecisionBoundaryModel`; `deriveDecisionBoundaryModel` is React-free and the canvas component owns only painting and responsive sizing.
 - `usePlaygroundStore.featuresUI` remains an existing renderer/capability-switch location; this roadmap does not relocate it.
 - Ephemeral `App` drawers remain local. Request lifecycle and selection state remain local to feature hooks.
+
+## Resolved transition searches
+
+- Production imports and JSX usage of `RegionShell` are absent. The file and deprecated layout aliases remain temporarily for compatibility tests and historical fallback coverage, not because `RegionShell` has a live production consumer.
+- The unused `deriveVisualizationDemand.historyDrawerOpen` argument has been removed.
+- The legacy/default `MainArea` and `Sidebar` paths have no production consumer. App uses their named content exports through `BuildRunShell`; the defaults remain until a dedicated removal slice proves all fallback and test consumers can migrate.
 
 ## Baseline evidence
 
@@ -69,10 +76,9 @@ Idle-machine performance medians:
 These are candidates only; do not delete or relocate them in this slice.
 
 - `usePlaygroundStore.dataset` and `regenerateData`: baseline searches find only the store implementation and its unit test, but removal requires a dedicated consumer search and compatibility proof.
-- Deprecated layout aliases (`layout`, `phase`, `activeTabLeft`, `activeTabRight`, and their setters): persisted-state sanitization accepts them, and `RegionShell` still has production consumers. Retain until consumers and compatibility tests migrate.
-- The default legacy `MainArea` and `Sidebar` render paths: retained for direct-render tests and fallback contexts until production-consumer searches and replacement tests prove removal safe.
+- Deprecated layout aliases (`layout`, `phase`, `activeTabLeft`, `activeTabRight`, and their setters): persisted-state sanitization and compatibility tests still accept them. Retain until a dedicated compatibility migration proves older local layout state remains safe without them.
+- `RegionShell` and the default legacy `MainArea` and `Sidebar` render paths: no production imports remain, but retain them for direct-render/fallback tests until a separate removal slice migrates those consumers and reruns compatibility coverage.
 - `NetworkGraphSVG`: a live runtime fallback selected by `featuresUI.canvasNetworkGraph`, not a dead path.
-- `deriveVisualizationDemand.historyDrawerOpen`: currently accepted but does not affect demand; Task 4 removes it with its tests.
 
 ## Exact verification commands
 

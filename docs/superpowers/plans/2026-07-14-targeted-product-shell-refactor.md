@@ -1,5 +1,14 @@
 # Targeted Product-Shell Refactor — Full Staged Roadmap
 
+> **Historical roadmap:** This document records the original staged contract.
+> Current release execution is tracked in
+> [`2026-07-16-release-ready-product-shell.md`](2026-07-16-release-ready-product-shell.md),
+> and current runtime boundaries are documented in
+> [`../../architecture/product-shell.md`](../../architecture/product-shell.md).
+> References below to an App/InspectionPanel dual demand writer and live
+> `RegionShell` consumers describe the pre-shell baseline, not current
+> production ownership.
+
 ## Summary
 
 Refactor the UI through two behavior-preserving pilots, then build progressive disclosure, a bounded terminology catalog, and shared Beginner/Explore/Lab profiles.

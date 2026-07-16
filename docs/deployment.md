@@ -17,20 +17,30 @@ secrets — the entire app runs in the browser.
 1. **Fork** the repository on GitHub.
 2. Go to your fork's **Settings → Pages**.
 3. Under **Source**, select **GitHub Actions**.
-4. Push any commit to `main` (or trigger the workflow manually via
-   **Actions → Deploy to GitHub Pages → Run workflow**).
-5. The `.github/workflows/deploy.yml` workflow will:
+4. Push a commit to `main`. The `CI` workflow must pass lint, tests, build, and
+   Chromium/WebKit smoke for that commit.
+5. A successful CI push run triggers `.github/workflows/deploy.yml`, which
+   checks out the exact tested SHA and will:
    - Install dependencies with pnpm 9
    - Build the app (`pnpm build` → `apps/web/dist/`)
    - Upload the `dist` folder as a Pages artifact
    - Deploy to `https://<your-username>.github.io/<repo-name>/`
 
-The deploy workflow runs automatically on every push to `main`.
+Maintainers can also trigger **Actions → Deploy to GitHub Pages → Run
+workflow**. A manual dispatch builds the explicitly selected ref and is the
+intentional escape hatch for forks or recovery; it does not claim a preceding
+CI result.
+
+Automatic deployment does not race CI: failed, cancelled, pull-request, and
+non-`main` CI runs cannot start the deploy job. A completed CI run for a stale
+`main` SHA is also ignored when a newer commit has already reached `main`.
 
 ### Notes
 
 - The workflow uses **Node 20** and **pnpm 9** — these match the declared
   `engines` in `package.json`.
+- Automatic deploys rebuild the exact `workflow_run.head_sha` that passed CI;
+  they never silently deploy a newer untested `main` commit.
 - No secrets are needed.
 - The `vite.config.ts` uses `VITE_BASE` when provided and defaults to
   `base: './'`, so all asset paths are relative and the app works correctly

@@ -1,5 +1,14 @@
 # Release-Ready Product Shell Implementation Plan
 
+> **Execution record, not final evidence:** This plan remains authoritative for
+> implementation order and acceptance criteria. Pre-change measurements live in
+> [`../../qa/2026-07-16-product-shell-baseline.md`](../../qa/2026-07-16-product-shell-baseline.md),
+> while current architecture is documented in
+> [`../../architecture/product-shell.md`](../../architecture/product-shell.md).
+> Final pass counts, bundle sizes, performance medians, browser results, and
+> limitations must be recorded separately during Task 7 after the exact commands
+> run; task text alone is not proof of completion.
+
 > **For Codex:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` to execute this plan task by task, with test-first implementation and an independent review after each slice.
 
 **Goal:** Ship accessible Advanced Tools, a typed terminology catalog, and shared Beginner/Explore/Lab profiles without changing experiment or training semantics, then prove the result release-ready in Chromium and WebKit.

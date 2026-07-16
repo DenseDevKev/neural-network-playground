@@ -1,5 +1,12 @@
 # Product-Shell Release Baseline
 
+> **Historical pre-change evidence:** Preserve the commands, measurements, and
+> known gaps below as the comparison baseline. They are not current release
+> results. Current behavior is documented in
+> [`../architecture/product-shell.md`](../architecture/product-shell.md); final
+> verified results belong in `docs/qa/2026-07-16-product-shell-release.md` after
+> the complete release matrix runs.
+
 **Recorded:** 2026-07-16  
 **Commit:** `97ce506` (`codex/refactor-decision-boundary`)  
 **Worktree:** `/private/tmp/neural-network-playground-targeted-product-shell-refactor`

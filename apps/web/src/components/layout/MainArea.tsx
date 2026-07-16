@@ -1,6 +1,6 @@
 // ── MainArea ── canvas + right-panel content
 // Named exports (CanvasContent, BoundaryContent, etc.) are the primary
-// integration points consumed by App.tsx via RegionShell.
+// integration points composed by App.tsx through BuildRunShell.
 // The legacy MainArea default export is preserved for tests and fallback contexts.
 
 import { lazy, memo, Suspense, useState } from 'react';
