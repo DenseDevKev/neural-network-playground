@@ -512,6 +512,7 @@ test.describe('320px touch shell', () => {
             page.getByRole('button', { name: 'History', exact: true }),
             advancedTools(page),
             page.getByRole('button', { name: 'Start training' }),
+            timeline(page).getByRole('button', { name: '10 steps per frame' }),
             timeline(page).getByRole('button', { name: 'Run one training step' }),
             timeline(page).getByRole('button', { name: 'Reset model and data' }),
             page.getByRole('tab', { name: 'Boundary', exact: true }),

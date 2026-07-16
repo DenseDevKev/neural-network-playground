@@ -2824,6 +2824,10 @@
     .forge-transport-cluster .btn--control {
         min-height: 44px;
     }
+    .forge-transport-cluster .speed-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
     .forge-buildrun__topology-stage .network-graph-toolbar {
         inset: 0 0 auto 0;
         display: flex;
