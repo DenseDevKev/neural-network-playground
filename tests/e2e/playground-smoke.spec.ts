@@ -10,6 +10,19 @@ interface RecipeExpectation {
     datasetSettings: string;
 }
 
+interface PausedRunInvariant {
+    hash: string;
+    step: number;
+    evaluationStep: number;
+    modelGeneration: string;
+    modelRevision: string;
+    checkpointMax: string;
+    checkpointValue: string;
+    checkpointLabel: string;
+    checkpointSummary: string;
+    savedRunCount: number;
+}
+
 const RECIPES = {
     regression: {
         title: 'Regression with No Hidden Layer',
@@ -69,6 +82,14 @@ function timeline(page: Page): Locator {
 
 function currentRun(page: Page): Locator {
     return page.locator('section[role="region"][aria-label="Current run"]');
+}
+
+function audienceMode(page: Page): Locator {
+    return page.getByRole('combobox', { name: 'Audience mode' });
+}
+
+function advancedTools(page: Page): Locator {
+    return page.getByRole('button', { name: 'Advanced Tools' });
 }
 
 function parseNumber(value: string | undefined): number {
@@ -141,6 +162,115 @@ async function openDrawer(page: Page, name: 'Presets' | 'History'): Promise<Loca
     }
     await expect(dialog).toBeVisible();
     return dialog;
+}
+
+async function closeDrawer(page: Page, name: 'Presets' | 'History'): Promise<void> {
+    const dialog = page.getByRole('dialog', { name });
+    await dialog.getByRole('button', { name: `Close ${name}` }).click();
+    await expect(dialog).toBeHidden();
+}
+
+async function setAdvancedTools(page: Page, open: boolean): Promise<void> {
+    const trigger = advancedTools(page);
+    if ((await trigger.getAttribute('aria-expanded')) !== String(open)) {
+        await trigger.click();
+    }
+    await expect(trigger).toHaveAttribute('aria-expanded', String(open));
+}
+
+async function readSavedRunCount(page: Page): Promise<number> {
+    const history = await openDrawer(page, 'History');
+    const count = await history.getByRole('article').count();
+    await closeDrawer(page, 'History');
+    return count;
+}
+
+async function readPausedRunInvariant(page: Page): Promise<PausedRunInvariant> {
+    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
+    const run = currentRun(page);
+    const checkpoint = page.getByRole('slider', { name: 'Checkpoint timeline' });
+    const checkpointControls = page.getByLabel('Checkpoint timeline controls');
+
+    return {
+        hash: await page.evaluate(() => window.location.hash),
+        step: await readStatusStep(page),
+        evaluationStep: await readFullEvaluationStep(page),
+        modelGeneration: (await run.getAttribute('data-model-generation')) ?? '',
+        modelRevision: (await run.getAttribute('data-model-revision')) ?? '',
+        checkpointMax: (await checkpoint.getAttribute('max')) ?? '',
+        checkpointValue: await checkpoint.inputValue(),
+        checkpointLabel: (await checkpoint.getAttribute('aria-valuetext')) ?? '',
+        checkpointSummary: await checkpointControls.innerText(),
+        savedRunCount: await readSavedRunCount(page),
+    };
+}
+
+async function expectPausedRunInvariant(
+    page: Page,
+    expected: PausedRunInvariant,
+): Promise<void> {
+    expect(await readPausedRunInvariant(page)).toEqual(expected);
+}
+
+async function showCodeAndExpectNumPy(page: Page): Promise<void> {
+    await ensureRunView(page);
+    await setAdvancedTools(page, true);
+    await page.getByRole('tab', { name: 'Code', exact: true }).click();
+    await expect(page.getByRole('tabpanel', { name: 'Code' })).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Code format' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'NumPy', exact: true }))
+        .toHaveAttribute('aria-selected', 'true');
+}
+
+async function expectFullyInViewport(page: Page, locator: Locator): Promise<void> {
+    await expect(locator).toBeVisible();
+    const box = await locator.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box, 'expected a measurable element box').not.toBeNull();
+    expect(viewport, 'expected a configured viewport').not.toBeNull();
+    if (!box || !viewport) return;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
+}
+
+async function expectConceptHelpInViewport(page: Page, concept: 'Data loss' | 'Checkpoint') {
+    const trigger = page.getByRole('button', { name: `Learn about ${concept}` }).first();
+    await trigger.click();
+    const panel = page.getByRole('region', { name: concept });
+    await expectFullyInViewport(page, panel);
+    await trigger.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(trigger).toBeFocused();
+}
+
+async function expectMinimumTouchTarget(locator: Locator, minimum = 44): Promise<void> {
+    const count = await locator.count();
+    expect(count).toBeGreaterThan(0);
+    for (let index = 0; index < count; index++) {
+        const target = locator.nth(index);
+        await expect(target).toBeVisible();
+        const box = await target.boundingBox();
+        expect(box, 'expected a measurable touch target').not.toBeNull();
+        if (!box) continue;
+        expect(box.width).toBeGreaterThanOrEqual(minimum);
+        expect(box.height).toBeGreaterThanOrEqual(minimum);
+    }
+}
+
+async function touchTap(page: Page, locator: Locator): Promise<void> {
+    const box = await locator.boundingBox();
+    expect(box, 'expected a measurable touch target').not.toBeNull();
+    if (!box) return;
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+}
+
+function cssTimeToMs(value: string): number {
+    const trimmed = value.trim();
+    if (trimmed.endsWith('ms')) return Number.parseFloat(trimmed);
+    if (trimmed.endsWith('s')) return Number.parseFloat(trimmed) * 1000;
+    return Number.NaN;
 }
 
 async function expectRecipe(page: Page, recipe: RecipeExpectation): Promise<void> {
@@ -269,4 +399,168 @@ test('saved runs survive reload and reapply their complete recipe', async ({ pag
     await expectModelAndEvaluationToConverge(page, 0);
     await expectRecipe(page, RECIPES.xor);
     await expectEvidenceAtStep(page, 0);
+});
+
+test('paused scientific state survives every audience profile and disclosure state', async ({ page }) => {
+    await loadPlayground(page);
+    await applyPreset(page, RECIPES.xor);
+
+    const transport = timeline(page);
+    await transport.getByRole('button', { name: '50 steps per frame' }).click();
+    await transport.getByRole('button', { name: 'Start training' }).click();
+    await expect(statusBar(page)).toHaveAttribute('data-status', 'running');
+    await expect.poll(() => readStatusStep(page)).toBeGreaterThanOrEqual(50);
+    await transport.getByRole('button', { name: 'Pause training' }).click();
+    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
+    const pausedStep = await expectModelAndEvaluationToConverge(page);
+
+    await transport.getByRole('button', { name: 'Run one training step' }).click();
+    await expectModelAndEvaluationToConverge(page, pausedStep + 1);
+
+    const history = await openDrawer(page, 'History');
+    await history.getByRole('button', { name: 'Save current run' }).click();
+    await expect(history.getByRole('article')).toHaveCount(1);
+    await closeDrawer(page, 'History');
+
+    await setAdvancedTools(page, true);
+    await page.getByRole('tab', { name: 'Code', exact: true }).click();
+    await page.getByRole('tab', { name: 'NumPy', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'NumPy', exact: true }))
+        .toHaveAttribute('aria-selected', 'true');
+
+    const baseline = await readPausedRunInvariant(page);
+    expect(baseline.hash.length).toBeGreaterThan(2);
+    expect(baseline.step).toBeGreaterThanOrEqual(51);
+    expect(baseline.evaluationStep).toBe(baseline.step);
+    expect(baseline.modelGeneration).not.toBe('');
+    expect(baseline.modelRevision).not.toBe('');
+    expect(Number(baseline.checkpointMax)).toBeGreaterThanOrEqual(1);
+    expect(baseline.savedRunCount).toBe(1);
+
+    for (const mode of ['beginner', 'explore', 'lab'] as const) {
+        await audienceMode(page).selectOption(mode);
+        const defaultOpen = mode === 'lab';
+        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', String(defaultOpen));
+        await expectPausedRunInvariant(page, baseline);
+
+        await setAdvancedTools(page, !defaultOpen);
+        await expectPausedRunInvariant(page, baseline);
+
+        await showCodeAndExpectNumPy(page);
+        await expectPausedRunInvariant(page, baseline);
+
+        await setAdvancedTools(page, false);
+        await expectPausedRunInvariant(page, baseline);
+    }
+});
+
+test('concept help remains fully visible in the desktop Run workspace', async ({ page }) => {
+    await loadPlayground(page);
+    await expectConceptHelpInViewport(page, 'Data loss');
+    await expectConceptHelpInViewport(page, 'Checkpoint');
+});
+
+test('reduced motion collapses shell animation and transition timing', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await loadPlayground(page);
+    expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+
+    const transport = timeline(page);
+    await transport.getByRole('button', { name: 'Start training' }).click();
+    await expect(statusBar(page)).toHaveAttribute('data-status', 'running');
+
+    const motion = await page.evaluate(() => {
+        const statusDot = document.querySelector<HTMLElement>('.forge-statusbar__dot');
+        const phaseButton = document.querySelector<HTMLElement>('.forge-phase__opt');
+        if (!statusDot || !phaseButton) throw new Error('release motion targets are missing');
+        const statusStyle = getComputedStyle(statusDot);
+        const phaseStyle = getComputedStyle(phaseButton);
+        return {
+            animationDurations: statusStyle.animationDuration.split(','),
+            animationIterations: statusStyle.animationIterationCount.split(','),
+            transitionDurations: phaseStyle.transitionDuration.split(','),
+        };
+    });
+
+    expect(motion.animationDurations.every((value) => cssTimeToMs(value) <= 1)).toBe(true);
+    expect(motion.animationIterations.every((value) => value.trim() === '1')).toBe(true);
+    expect(motion.transitionDurations.every((value) => cssTimeToMs(value) <= 1)).toBe(true);
+
+    await transport.getByRole('button', { name: 'Pause training' }).click();
+    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
+});
+
+test.describe('320px touch shell', () => {
+    test.use({
+        viewport: { width: 320, height: 844 },
+        hasTouch: true,
+        isMobile: true,
+    });
+
+    test('keeps critical controls reachable, sized, focused, and unclipped', async ({ page }) => {
+        await loadPlayground(page);
+        await expectConceptHelpInViewport(page, 'Data loss');
+        await expectConceptHelpInViewport(page, 'Checkpoint');
+
+        const workspaceView = page.getByRole('group', { name: 'Workspace view' });
+        const criticalTargets = [
+            workspaceView.getByRole('button', { name: 'build', exact: true }),
+            workspaceView.getByRole('button', { name: 'run', exact: true }),
+            audienceMode(page),
+            page.getByRole('button', { name: 'Presets', exact: true }),
+            page.getByRole('button', { name: 'Lessons', exact: true }),
+            page.getByRole('button', { name: 'History', exact: true }),
+            advancedTools(page),
+            page.getByRole('button', { name: 'Start training' }),
+            timeline(page).getByRole('button', { name: 'Run one training step' }),
+            timeline(page).getByRole('button', { name: 'Reset model and data' }),
+            page.getByRole('tab', { name: 'Boundary', exact: true }),
+            page.getByRole('tab', { name: 'Loss', exact: true }),
+            page.getByRole('tab', { name: 'Confusion', exact: true }),
+        ];
+        for (const target of criticalTargets) await expectMinimumTouchTarget(target);
+
+        const noGlobalOverflow = await page.evaluate(() => {
+            const shell = document.querySelector<HTMLElement>('.forge-shell');
+            if (!shell) throw new Error('forge shell is missing');
+            return {
+                document: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+                shell: shell.scrollWidth <= shell.clientWidth + 1,
+            };
+        });
+        expect(noGlobalOverflow).toEqual({ document: true, shell: true });
+
+        await touchTap(page, advancedTools(page));
+        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
+        await page.keyboard.press('Escape');
+        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
+        await expect(advancedTools(page)).toBeFocused();
+
+        const historyTrigger = page.getByRole('button', { name: 'History', exact: true });
+        await touchTap(page, historyTrigger);
+        const history = page.getByRole('dialog', { name: 'History' });
+        await expect(history).toBeVisible();
+        const closeHistory = history.getByRole('button', { name: 'Close History' });
+        await expectMinimumTouchTarget(closeHistory);
+        await touchTap(page, closeHistory);
+        await expect(history).toBeHidden();
+        await expect(historyTrigger).toBeFocused();
+
+        await touchTap(page, advancedTools(page));
+        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
+        await page.keyboard.press('Escape');
+        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
+        await expect(advancedTools(page)).toBeFocused();
+        const focusStyle = await advancedTools(page).evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, boxShadow: style.boxShadow };
+        });
+        expect(
+            (
+                focusStyle.outlineStyle !== 'none'
+                && Number.parseFloat(focusStyle.outlineWidth) >= 2
+            ) || focusStyle.boxShadow !== 'none',
+        ).toBe(true);
+
+    });
 });

@@ -179,6 +179,10 @@
     right: 0;
     left: auto;
 }
+.forge-shell .concept-help--above .concept-help__content {
+    top: auto;
+    bottom: calc(100% + 6px);
+}
 .forge-shell .concept-help--block {
     display: grid;
     justify-items: start;
@@ -2706,6 +2710,11 @@
     .forge-topbar__divider {
         display: none;
     }
+    .forge-phase__opt,
+    .forge-audience-mode__select {
+        min-height: 44px;
+        height: 44px;
+    }
     .forge-topbar__metrics {
         display: none;
     }
@@ -2791,6 +2800,11 @@
         width: min(320px, calc(100vw - 24px));
         max-height: 60vh;
     }
+    .forge-shell .training-bar__timeline-label--concept .concept-help__content {
+        position: fixed;
+        inset: auto 12px 36px;
+        width: auto;
+    }
     .forge-buildrun__advanced-note {
         padding: 8px;
     }
@@ -2806,6 +2820,9 @@
     }
     .forge-buildrun__transport .forge-transport-cluster {
         padding: 6px;
+    }
+    .forge-transport-cluster .btn--control {
+        min-height: 44px;
     }
     .forge-buildrun__topology-stage .network-graph-toolbar {
         inset: 0 0 auto 0;

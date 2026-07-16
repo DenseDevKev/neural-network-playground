@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { axe } from 'jest-axe';
 import App from '../App.tsx';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
@@ -242,6 +243,46 @@ describe('App shell integration', () => {
             pendingSave: null,
         });
     });
+
+    it.each([
+        ['beginner', 'build', false],
+        ['beginner', 'run', false],
+        ['explore', 'build', false],
+        ['explore', 'run', false],
+        ['lab', 'build', true],
+        ['lab', 'run', true],
+    ] as const)(
+        'has no axe violations in the %s %s shell',
+        async (audienceMode, view, advancedToolsOpen) => {
+            useLayoutStore.setState({
+                audienceMode,
+                advancedToolsOpen,
+                view,
+                phase: view,
+                activeRecipeSection: 'data',
+                activeTabLeft: 'data',
+                activeEvidenceView: 'boundary',
+                activeTabRight: 'boundary',
+            });
+
+            const { container } = render(<App />);
+            if (view === 'run') {
+                expect(screen.getByRole('tabpanel', { name: 'Boundary' })).toBeInTheDocument();
+            } else if (advancedToolsOpen) {
+                await screen.findByText('Mock Config Panel');
+            } else {
+                expect(screen.getByRole('region', { name: 'Workspace tools' })).toBeInTheDocument();
+            }
+
+            const results = await axe(container);
+            expect(
+                results.violations,
+                results.violations
+                    .map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.html).join(' | ')}`)
+                    .join('\n'),
+            ).toHaveLength(0);
+        },
+    );
 
     it('exposes only Build and Run as global workspace views', () => {
         render(<App />);

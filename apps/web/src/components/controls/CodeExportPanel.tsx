@@ -1,7 +1,7 @@
 // ── Code Export Panel ──
 // Tabbed panel that generates pseudocode, NumPy, and TF.js code from the current network.
 
-import { useMemo, useCallback, memo } from 'react';
+import { useMemo, useCallback, useId, useRef, memo, type KeyboardEvent } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type CodeExportTab } from '../../store/useLayoutStore.ts';
@@ -70,6 +70,8 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
     const setActiveTab = useLayoutStore((s) => s.setCodeExportTab);
     const [copied, setCopied] = useTimedState(false, 2000);
     const [copyError, setCopyError] = useTimedState<string | null>(null, 2000);
+    const tabIdBase = useId();
+    const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
     const prepared = usePlaygroundStore((s) => (
         s.access.status === 'ready' ? s.access.prepared : null
@@ -155,22 +157,55 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         }
     }, [code, setCopied, setCopyError]);
 
+    const handleTabKeyDown = useCallback((event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+        let nextIndex: number | null = null;
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+            nextIndex = (index + 1) % TABS.length;
+        } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+            nextIndex = (index - 1 + TABS.length) % TABS.length;
+        } else if (event.key === 'Home') {
+            nextIndex = 0;
+        } else if (event.key === 'End') {
+            nextIndex = TABS.length - 1;
+        }
+
+        if (nextIndex === null) return;
+        event.preventDefault();
+        setActiveTab(TABS[nextIndex].id);
+        tabRefs.current[nextIndex]?.focus();
+    }, [setActiveTab]);
+
     return (
         <div className="code-export-panel">
-            <div className="code-export__tabs">
-                {TABS.map((tab) => (
+            <div className="code-export__tabs" role="tablist" aria-label="Code format">
+                {TABS.map((tab, index) => (
                     <button
                         type="button"
+                        role="tab"
                         key={tab.id}
+                        id={`${tabIdBase}-${tab.id}`}
+                        aria-controls={`${tabIdBase}-panel`}
+                        aria-selected={activeTab === tab.id}
+                        tabIndex={activeTab === tab.id ? 0 : -1}
+                        ref={(element) => {
+                            tabRefs.current[index] = element;
+                        }}
                         className={`chip ${activeTab === tab.id ? 'active' : ''}`}
                         onClick={() => setActiveTab(tab.id)}
+                        onKeyDown={(event) => handleTabKeyDown(event, index)}
                     >
                         {tab.label}
                     </button>
                 ))}
             </div>
 
-            <div className="code-export__code-container">
+            <div
+                className="code-export__code-container"
+                role="tabpanel"
+                id={`${tabIdBase}-panel`}
+                aria-labelledby={`${tabIdBase}-${activeTab}`}
+                tabIndex={0}
+            >
                 <pre className="code-export__code">{code}</pre>
             </div>
 

@@ -132,8 +132,39 @@ describe('CodeExportPanel', () => {
 
     it('renders the Pseudocode tab by default', () => {
         render(<CodeExportPanel />);
-        const pseudocodeBtn = screen.getByRole('button', { name: 'Pseudocode' });
+        const pseudocodeBtn = screen.getByRole('tab', { name: 'Pseudocode' });
         expect(pseudocodeBtn).toHaveClass('active');
+    });
+
+    it('exposes the persisted code format as an accessible tab interface', () => {
+        render(<CodeExportPanel />);
+
+        expect(screen.getByRole('tablist', { name: 'Code format' })).toBeInTheDocument();
+        expect(screen.getByRole('tab', { name: 'Pseudocode' })).toHaveAttribute(
+            'aria-selected',
+            'true',
+        );
+        expect(screen.getByRole('tab', { name: 'NumPy' })).toHaveAttribute(
+            'aria-selected',
+            'false',
+        );
+        expect(screen.getByRole('tabpanel', { name: 'Pseudocode' })).toBeInTheDocument();
+    });
+
+    it('moves and selects code-format tabs with the standard tab keys', () => {
+        render(<CodeExportPanel />);
+
+        const pseudocode = screen.getByRole('tab', { name: 'Pseudocode' });
+        pseudocode.focus();
+        fireEvent.keyDown(pseudocode, { key: 'ArrowRight' });
+        expect(screen.getByRole('tab', { name: 'NumPy' })).toHaveFocus();
+        expect(screen.getByRole('tab', { name: 'NumPy' })).toHaveAttribute('aria-selected', 'true');
+
+        fireEvent.keyDown(screen.getByRole('tab', { name: 'NumPy' }), { key: 'End' });
+        expect(screen.getByRole('tab', { name: 'TF.js' })).toHaveFocus();
+
+        fireEvent.keyDown(screen.getByRole('tab', { name: 'TF.js' }), { key: 'Home' });
+        expect(screen.getByRole('tab', { name: 'Pseudocode' })).toHaveFocus();
     });
 
     it('shows code in the Pseudocode tab', () => {
@@ -216,10 +247,10 @@ describe('CodeExportPanel', () => {
         const codeBeforeSwitch = document.querySelector('.code-export__code')?.textContent;
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'NumPy' }));
+            fireEvent.click(screen.getByRole('tab', { name: 'NumPy' }));
         });
 
-        expect(screen.getByRole('button', { name: 'NumPy' })).toHaveClass('active');
+        expect(screen.getByRole('tab', { name: 'NumPy' })).toHaveClass('active');
         const codeAfterSwitch = document.querySelector('.code-export__code')?.textContent;
         expect(codeAfterSwitch).toBeTruthy();
         // NumPy code will differ from pseudocode
@@ -230,10 +261,10 @@ describe('CodeExportPanel', () => {
         render(<CodeExportPanel />);
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'TF.js' }));
+            fireEvent.click(screen.getByRole('tab', { name: 'TF.js' }));
         });
 
-        expect(screen.getByRole('button', { name: 'TF.js' })).toHaveClass('active');
+        expect(screen.getByRole('tab', { name: 'TF.js' })).toHaveClass('active');
         const code = document.querySelector('.code-export__code')?.textContent;
         expect(code).toBeTruthy();
     });
@@ -244,12 +275,12 @@ describe('CodeExportPanel', () => {
         const pseudocode = document.querySelector('.code-export__code')?.textContent ?? '';
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'NumPy' }));
+            fireEvent.click(screen.getByRole('tab', { name: 'NumPy' }));
         });
         const numpyCode = document.querySelector('.code-export__code')?.textContent ?? '';
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'TF.js' }));
+            fireEvent.click(screen.getByRole('tab', { name: 'TF.js' }));
         });
         const tfjsCode = document.querySelector('.code-export__code')?.textContent ?? '';
 
@@ -306,7 +337,7 @@ describe('CodeExportPanel', () => {
 
         // Switch to NumPy tab
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'NumPy' }));
+            fireEvent.click(screen.getByRole('tab', { name: 'NumPy' }));
         });
 
         const copyBtn = screen.getByRole('button', { name: /copy code/i });
@@ -323,12 +354,12 @@ describe('CodeExportPanel', () => {
         const { unmount } = render(<CodeExportPanel />);
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'NumPy' }));
+            fireEvent.click(screen.getByRole('tab', { name: 'NumPy' }));
         });
 
         unmount();
         render(<CodeExportPanel />);
 
-        expect(screen.getByRole('button', { name: 'NumPy' })).toHaveClass('active');
+        expect(screen.getByRole('tab', { name: 'NumPy' })).toHaveClass('active');
     });
 });

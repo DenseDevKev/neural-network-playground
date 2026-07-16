@@ -53,12 +53,14 @@ interface BuildRunShellProps {
 
 function InstrumentModule({
     title,
+    landmarkLabel = title,
     phase,
     targets,
     fill = false,
     children,
 }: {
     title: string;
+    landmarkLabel?: string;
     phase?: WorkspaceView | 'both';
     targets?: string;
     fill?: boolean;
@@ -69,7 +71,7 @@ function InstrumentModule({
             className={`forge-instrument-module ${fill ? 'forge-instrument-module--fill' : ''}`}
             data-forge-panel-targets={targets}
             tabIndex={-1}
-            aria-label={title}
+            aria-label={landmarkLabel}
         >
             <div className="forge-instrument-module__head">
                 <span className="forge-instrument-module__grip" aria-hidden />
@@ -253,7 +255,12 @@ export const BuildRunShell = memo(function BuildRunShell({
                 ) : (
                     <div className="forge-buildrun__grid forge-buildrun__grid--run">
                         <div className="forge-buildrun__left">
-                            <InstrumentModule title="Current Run" phase="run" targets="run">
+                            <InstrumentModule
+                                title="Current Run"
+                                landmarkLabel="Current Run module"
+                                phase="run"
+                                targets="run"
+                            >
                                 {runContent}
                             </InstrumentModule>
                             <InstrumentModule title="Recipe" phase="both" targets="experiment">

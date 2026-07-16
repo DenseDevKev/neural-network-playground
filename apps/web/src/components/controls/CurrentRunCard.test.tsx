@@ -136,6 +136,24 @@ describe('CurrentRunCard', () => {
         expect(screen.getByText('gap +0.0900')).toBeInTheDocument();
     });
 
+    it('exposes the accepted model identity for browser-level invariant checks', () => {
+        installTrained();
+        useTrainingStore.setState({
+            status: 'paused',
+            latestLiveSignal: {
+                ...live(128, 4),
+                model: { generationId: 7, revision: 131, step: 128, epoch: 4 },
+            },
+        });
+
+        render(<CurrentRunCard />);
+
+        const currentRun = screen.getByRole('region', { name: 'Current run' });
+        expect(currentRun).toHaveAttribute('data-model-generation', '7');
+        expect(currentRun).toHaveAttribute('data-model-revision', '131');
+        expect(currentRun).toHaveAttribute('data-model-step', '128');
+    });
+
     it('prioritizes pending config sync over generic idle state', () => {
         useTrainingStore.setState({ pendingConfigSource: 'training', trainingConfigLoading: true });
         render(<CurrentRunCard />);

@@ -203,6 +203,9 @@ export const CurrentRunCard = memo(function CurrentRunCard() {
             className={`forge-context-card forge-run-card forge-run-card--${state.tone}`}
             role="region"
             aria-label="Current run"
+            data-model-generation={evidence.currentModel?.generationId}
+            data-model-revision={evidence.currentModel?.revision}
+            data-model-step={evidence.currentModel?.step}
         >
             <div className="forge-context-card__head">
                 <span className="forge-context-card__eyebrow">Current run</span>
@@ -223,7 +226,11 @@ export const CurrentRunCard = memo(function CurrentRunCard() {
                     <span>{`Batch trend (EMA) ${formatMetric(evidence.batchTrend?.dataLoss)}`}</span>
                     <span className="forge-context-card__concept-label">
                         <span>{`Train data loss (full split) ${formatMetric(evidence.fullEvaluation?.trainDataLoss)}`}</span>
-                        <ConceptHelp conceptId="data-loss" guidanceLevel={guidanceLevel} />
+                        <ConceptHelp
+                            conceptId="data-loss"
+                            guidanceLevel={guidanceLevel}
+                            className="concept-help--block"
+                        />
                     </span>
                     <span>{`Test data loss (full split) ${formatMetric(evidence.fullEvaluation?.testDataLoss)}`}</span>
                     <span>{`Training objective ${formatMetric(evidence.fullEvaluation?.trainingObjective)}`}</span>

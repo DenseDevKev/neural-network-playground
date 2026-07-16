@@ -139,7 +139,11 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                 >
                     <span className="training-bar__timeline-label training-bar__timeline-label--concept">
                         <span>Timeline</span>
-                        <ConceptHelp conceptId="checkpoint" guidanceLevel={guidanceLevel} />
+                        <ConceptHelp
+                            conceptId="checkpoint"
+                            guidanceLevel={guidanceLevel}
+                            className="concept-help--above concept-help--end"
+                        />
                     </span>
                     <input
                         className="training-bar__timeline-range"

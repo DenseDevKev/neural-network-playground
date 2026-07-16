@@ -2,6 +2,15 @@ import { defineConfig, devices } from '@playwright/test';
 import process from 'node:process';
 
 const isCI = Boolean(process.env.CI);
+const requestedPort = process.env.PLAYWRIGHT_PORT ?? '4173';
+if (!/^\d+$/.test(requestedPort)) {
+    throw new Error('PLAYWRIGHT_PORT must be an integer between 1 and 65535');
+}
+const port = Number(requestedPort);
+if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error('PLAYWRIGHT_PORT must be an integer between 1 and 65535');
+}
+const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
     testDir: './tests/e2e',
@@ -11,14 +20,14 @@ export default defineConfig({
     },
     fullyParallel: false,
     forbidOnly: isCI,
-    retries: isCI ? 1 : 0,
+    retries: 0,
     workers: isCI ? 1 : undefined,
     reporter: [
         ['list'],
         ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ],
     use: {
-        baseURL: 'http://127.0.0.1:4173',
+        baseURL,
         locale: 'en-US',
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
@@ -35,8 +44,8 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: 'pnpm --filter @nn-playground/web preview --host 127.0.0.1 --port 4173 --strictPort',
-        url: 'http://127.0.0.1:4173',
+        command: `pnpm --filter @nn-playground/web preview --host 127.0.0.1 --port ${port} --strictPort`,
+        url: baseURL,
         reuseExistingServer: false,
         timeout: 120_000,
     },
