@@ -34,9 +34,19 @@ vi.mock('../components/controls/PresetPanel.tsx', () => ({
         </div>
     ),
 }));
-vi.mock('../components/controls/DataPanel.tsx', () => ({
-    DataPanel: () => <div>Mock Data</div>,
-}));
+vi.mock('../components/controls/DataPanel.tsx', async () => {
+    const { Tooltip } = await import('../components/common/Tooltip.tsx');
+    return {
+        DataPanel: () => (
+            <div>
+                Mock Data
+                <Tooltip content="Nested data help">
+                    <button type="button">Nested tooltip trigger</button>
+                </Tooltip>
+            </div>
+        ),
+    };
+});
 vi.mock('../components/controls/FeaturesPanel.tsx', () => ({
     FeaturesPanel: () => <div>Mock Features</div>,
 }));
@@ -282,6 +292,27 @@ describe('App shell integration', () => {
 
         expect(screen.queryByRole('dialog', { name: 'History' })).not.toBeInTheDocument();
         expect(historyTrigger).toHaveFocus();
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+
+        await user.keyboard('{Escape}');
+
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
+        expect(advancedTrigger).toHaveFocus();
+    });
+
+    it('dismisses a visible nested tooltip before collapsing Advanced Tools on Escape', async () => {
+        const user = userEvent.setup();
+        render(<App />);
+
+        const advancedTrigger = screen.getByRole('button', { name: 'Advanced Tools' });
+        await user.click(advancedTrigger);
+        await user.click(screen.getByRole('button', { name: 'Nested tooltip trigger' }));
+        const tooltip = screen.getByRole('tooltip', { name: 'Nested data help' });
+        expect(tooltip).toHaveStyle({ visibility: 'visible' });
+
+        await user.keyboard('{Escape}');
+
+        expect(tooltip).toHaveStyle({ visibility: 'hidden' });
         expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
 
         await user.keyboard('{Escape}');

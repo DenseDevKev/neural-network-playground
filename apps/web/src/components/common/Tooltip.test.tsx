@@ -666,6 +666,50 @@ describe('Tooltip', () => {
     expect(removeEventListenerSpy).toHaveBeenCalledWith('scroll', expect.any(Function), true);
   });
 
+  it('consumes Escape only while dismissing a visible tooltip', () => {
+    const windowKeydown = vi.fn();
+    window.addEventListener('keydown', windowKeydown);
+    try {
+      render(
+        <Tooltip content="Test tooltip">
+          <button>Focus me</button>
+        </Tooltip>
+      );
+
+      const button = screen.getByRole('button', { name: 'Focus me' });
+      const tooltip = document.querySelector('[role="tooltip"]') as HTMLElement;
+      fireEvent.focus(button);
+      expect(tooltip).toHaveStyle({ visibility: 'visible' });
+
+      const visibleEscape = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        button.dispatchEvent(visibleEscape);
+      });
+
+      expect(tooltip).toHaveStyle({ visibility: 'hidden' });
+      expect(visibleEscape.defaultPrevented).toBe(true);
+      expect(windowKeydown).not.toHaveBeenCalled();
+
+      const hiddenEscape = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        button.dispatchEvent(hiddenEscape);
+      });
+
+      expect(hiddenEscape.defaultPrevented).toBe(false);
+      expect(windowKeydown).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('keydown', windowKeydown);
+    }
+  });
+
   it('should support different placement props', () => {
     const placements = ['top', 'bottom', 'left', 'right'] as const;
     

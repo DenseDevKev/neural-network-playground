@@ -158,9 +158,10 @@ export function Tooltip({
         onFocusCapture={showImmediately}
         onBlurCapture={hide}
         onKeyDownCapture={(event) => {
-          if (event.key === 'Escape') {
-            hide();
-          }
+          if (event.key !== 'Escape' || !isVisible) return;
+          event.preventDefault();
+          event.stopPropagation();
+          hide();
         }}
         aria-describedby={isVisible ? generatedId : undefined}
         style={{ display: block ? 'block' : 'inline-block' }}
