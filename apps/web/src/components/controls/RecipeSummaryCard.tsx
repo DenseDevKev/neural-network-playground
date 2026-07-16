@@ -6,6 +6,7 @@ import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { isRecipeSectionVisible } from '../../productShell/visibleShell.ts';
 import { deriveAdvancedRecipeSettings } from '../../productShell/advancedRecipeSettings.ts';
+import { scheduleExplanationPanelFocus } from '../../explanations/explanationActionFocus.ts';
 
 export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
     const currentRecipe = usePlaygroundStore((s) => (
@@ -131,7 +132,10 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
                     <button
                         type="button"
                         className="btn btn--ghost"
-                        onClick={() => openAdvancedRecipeSection('hyperparams')}
+                        onClick={() => {
+                            openAdvancedRecipeSection('hyperparams');
+                            scheduleExplanationPanelFocus('hyperparams');
+                        }}
                     >
                         Open Advanced Tools
                     </button>

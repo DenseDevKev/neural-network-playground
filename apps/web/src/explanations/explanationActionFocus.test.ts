@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
-import { focusExplanationActionTarget } from './explanationActionFocus.ts';
+import {
+    focusExplanationActionTarget,
+    scheduleExplanationPanelFocus,
+} from './explanationActionFocus.ts';
 
 function resetLayout() {
     useLayoutStore.setState({
@@ -67,6 +70,27 @@ describe('focusExplanationActionTarget', () => {
 
         expect(useLayoutStore.getState().view).toBe('build');
         expect(document.activeElement).toBe(document.querySelector('[data-forge-panel-targets~="hyperparams"]'));
+    });
+
+    it('schedules container-only focus without changing layout state', () => {
+        useLayoutStore.setState({ view: 'run', phase: 'run', activeRecipeSection: 'data' });
+        document.body.innerHTML = [
+            '<button id="forge-left-tab-hyperparams">Hidden tab</button>',
+            '<section data-forge-panel-targets="hyperparams" tabindex="-1">Controls</section>',
+        ].join('');
+
+        scheduleExplanationPanelFocus('hyperparams', {
+            scheduleFocus: (focus) => focus(),
+        });
+
+        expect(useLayoutStore.getState()).toMatchObject({
+            view: 'run',
+            phase: 'run',
+            activeRecipeSection: 'data',
+        });
+        expect(document.activeElement).toBe(
+            document.querySelector('[data-forge-panel-targets~="hyperparams"]'),
+        );
     });
 
     it('opens a hidden Beginner tool without changing audience mode', () => {

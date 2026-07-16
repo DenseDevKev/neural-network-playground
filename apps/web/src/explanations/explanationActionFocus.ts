@@ -27,11 +27,19 @@ function getScheduler(scheduleFocus?: ScheduleFocus): ScheduleFocus {
     return (focus) => window.setTimeout(focus, 0);
 }
 
+function panelContainerSelector(panelId: RelatedPanelId): string {
+    return `[data-forge-panel-targets~="${panelId}"]`;
+}
+
+function focusPanelContainer(root: ParentNode, panelId: RelatedPanelId) {
+    root.querySelector<HTMLElement>(panelContainerSelector(panelId))?.focus();
+}
+
 function focusPanelTarget(root: ParentNode, side: 'left' | 'right', panelId: RelatedPanelId) {
     const candidates = [
         `#forge-${side}-tab-${panelId}`,
         `#forge-${side}-panel-${panelId}`,
-        `[data-forge-panel-targets~="${panelId}"]`,
+        panelContainerSelector(panelId),
     ];
 
     for (const selector of candidates) {
@@ -41,6 +49,15 @@ function focusPanelTarget(root: ParentNode, side: 'left' | 'right', panelId: Rel
             return;
         }
     }
+}
+
+export function scheduleExplanationPanelFocus(
+    panelId: RelatedPanelId,
+    options: FocusExplanationActionOptions = {},
+) {
+    const root = options.root ?? document;
+    const scheduleFocus = getScheduler(options.scheduleFocus);
+    scheduleFocus(() => focusPanelContainer(root, panelId));
 }
 
 export function focusExplanationActionTarget(

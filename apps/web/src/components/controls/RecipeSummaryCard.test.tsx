@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PREPARED_PRESETS, type PreparedExperimentDocumentV2 } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -54,6 +54,26 @@ function withAdvancedSettings(): PreparedExperimentDocumentV2 {
             },
         },
     } as PreparedExperimentDocumentV2;
+}
+
+function RevealedHyperparametersTarget() {
+    const view = useLayoutStore((state) => state.view);
+    const activeRecipeSection = useLayoutStore((state) => state.activeRecipeSection);
+    const advancedToolsOpen = useLayoutStore((state) => state.advancedToolsOpen);
+    if (view !== 'build'
+        || activeRecipeSection !== 'hyperparams'
+        || !advancedToolsOpen) {
+        return null;
+    }
+    return (
+        <section
+            data-forge-panel-targets="hyperparams"
+            tabIndex={-1}
+            aria-label="Revealed Hyperparameters"
+        >
+            Hyperparameters controls
+        </section>
+    );
 }
 
 describe('RecipeSummaryCard', () => {
@@ -215,6 +235,34 @@ describe('RecipeSummaryCard', () => {
         });
         expect(useTrainingStore.getState().latestLiveSignal).toBe(liveSignal);
         expect(useTrainingStore.getState().checkpointTimeline).toBe(checkpointTimeline);
+    });
+
+    it('moves focus from the unmounted recovery button to revealed Hyperparameters', async () => {
+        const user = userEvent.setup();
+        installCurrent(withAdvancedSettings());
+        useLayoutStore.setState({
+            view: 'run',
+            phase: 'run',
+            audienceMode: 'beginner',
+            advancedToolsOpen: false,
+            activeRecipeSection: 'data',
+            activeTabLeft: 'data',
+        });
+
+        render(
+            <>
+                <RecipeSummaryCard />
+                <RevealedHyperparametersTarget />
+            </>,
+        );
+
+        const recovery = screen.getByRole('button', { name: 'Open Advanced Tools' });
+        recovery.focus();
+        expect(recovery).toHaveFocus();
+        await user.click(recovery);
+
+        const target = await screen.findByRole('region', { name: 'Revealed Hyperparameters' });
+        await waitFor(() => expect(target).toHaveFocus());
     });
 
     it('does not warn when Hyperparameters is already visible', () => {
