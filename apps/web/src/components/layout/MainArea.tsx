@@ -87,6 +87,10 @@ export const BoundaryContent = memo(function BoundaryContent() {
     const discretize = usePlaygroundStore((s) => (
         s.access.status === 'ready' && s.access.prepared.document.view.discretizeOutput
     ));
+    const showDecisionBoundaryHelp = usePlaygroundStore((s) => (
+        s.access.status === 'ready'
+        && s.access.prepared.document.recipe.task.kind !== 'regression'
+    ));
     const editView     = usePlaygroundStore((s) => s.editView);
     const trainPoints  = useTrainingStore((s) => s.trainPoints);
     const testPoints   = useTrainingStore((s) => s.testPoints);
@@ -103,14 +107,16 @@ export const BoundaryContent = memo(function BoundaryContent() {
                     overlayMode={overlayMode}
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
-                    <div className="decision-boundary-concept">
-                        <span>Decision boundary</span>
-                        <ConceptHelp
-                            conceptId="decision-boundary"
-                            guidanceLevel={guidanceLevel}
-                            className="concept-help--block"
-                        />
-                    </div>
+                    {showDecisionBoundaryHelp ? (
+                        <div className="decision-boundary-concept">
+                            <span>Decision boundary</span>
+                            <ConceptHelp
+                                conceptId="decision-boundary"
+                                guidanceLevel={guidanceLevel}
+                                className="concept-help--block"
+                            />
+                        </div>
+                    ) : null}
                     <label className="checkbox-row">
                         <input type="checkbox" checked={showTestData}
                             onChange={async (event) => {

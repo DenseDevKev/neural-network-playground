@@ -23,7 +23,7 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
     const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
     const audienceMode = useLayoutStore((s) => s.audienceMode);
     const advancedToolsOpen = useLayoutStore((s) => s.advancedToolsOpen);
-    const setAdvancedToolsOpen = useLayoutStore((s) => s.setAdvancedToolsOpen);
+    const openAdvancedRecipeSection = useLayoutStore((s) => s.openAdvancedRecipeSection);
     const evidence = useMemo(() => selectScientificEvidence({
         latestLiveSignal,
         latestEvaluation,
@@ -131,7 +131,7 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
                     <button
                         type="button"
                         className="btn btn--ghost"
-                        onClick={() => setAdvancedToolsOpen(true)}
+                        onClick={() => openAdvancedRecipeSection('hyperparams')}
                     >
                         Open Advanced Tools
                     </button>

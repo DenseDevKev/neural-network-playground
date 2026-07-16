@@ -25,6 +25,7 @@ import {
     getAudienceProfile,
     isAudienceMode,
     type AudienceMode,
+    type BuildModuleId,
 } from '../productShell/audienceProfiles.ts';
 import {
     isEvidenceViewVisible,
@@ -92,6 +93,7 @@ export interface LayoutStore {
     setActiveEvidenceView: (view: EvidenceViewId) => void;
     setAudienceMode: (mode: AudienceMode) => void;
     setAdvancedToolsOpen: (open: boolean) => void;
+    openAdvancedRecipeSection: (section: BuildModuleId) => void;
 
     setLayout: (layout: LayoutVariant) => void;
     setPhase: (phase: PhaseMode) => void;
@@ -227,6 +229,13 @@ export function createLayoutStore() {
                         activeEvidenceView,
                         activeTabRight: activeEvidenceView,
                     };
+                }),
+                openAdvancedRecipeSection: (activeRecipeSection) => set({
+                    view: 'build',
+                    phase: 'build',
+                    activeRecipeSection,
+                    activeTabLeft: activeRecipeSection,
+                    advancedToolsOpen: true,
                 }),
 
                 setLayout: (layout) => set({ layout }),

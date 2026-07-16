@@ -164,6 +164,31 @@ describe('useLayoutStore', () => {
         expect(useLayoutStore.getState().audienceMode).toBe('beginner');
     });
 
+    it('opens an advanced recipe section in Build with one atomic notification', () => {
+        useLayoutStore.setState({
+            view: 'run',
+            phase: 'run',
+            audienceMode: 'beginner',
+            advancedToolsOpen: false,
+            activeRecipeSection: 'data',
+            activeTabLeft: 'data',
+        });
+        const transitions: Array<ReturnType<typeof useLayoutStore.getState>> = [];
+        const unsubscribe = useLayoutStore.subscribe((state) => transitions.push(state));
+
+        useLayoutStore.getState().openAdvancedRecipeSection('hyperparams');
+        unsubscribe();
+
+        expect(transitions).toHaveLength(1);
+        expect(transitions[0]).toMatchObject({
+            view: 'build',
+            phase: 'build',
+            activeRecipeSection: 'hyperparams',
+            activeTabLeft: 'hyperparams',
+            advancedToolsOpen: true,
+        });
+    });
+
     it('keeps legacy History navigation available without opening Advanced Tools', () => {
         useLayoutStore.getState().setAudienceMode('beginner');
         useLayoutStore.getState().setActiveEvidenceView('history');

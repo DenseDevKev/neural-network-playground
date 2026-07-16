@@ -10,6 +10,7 @@ import {
     DEFAULT_FEATURES,
     DEFAULT_NETWORK,
     DEFAULT_TRAINING,
+    PREPARED_PRESETS,
 } from '@nn-playground/shared';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
@@ -58,7 +59,11 @@ function createTrainingMock(): TrainingHook {
 
 describe('MainArea right-panel content', () => {
     beforeEach(() => {
+        const classification = PREPARED_PRESETS.find((entry) => entry.id === 'xor-hidden')?.prepared;
+        if (!classification) throw new Error('missing xor-hidden preset');
         usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: classification },
+            prepared: classification,
             data: { ...DEFAULT_DATA },
             network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed, hiddenLayers: [2] },
             features: { ...DEFAULT_FEATURES },
@@ -168,6 +173,21 @@ describe('MainArea right-panel content', () => {
 
         expect(screen.getByText(getConceptById('decision-boundary')?.plainDefinition ?? ''))
             .toBeInTheDocument();
+    });
+
+    it('does not describe a regression output field as a classification decision boundary', () => {
+        const regression = PREPARED_PRESETS.find((entry) => entry.id === 'regression-plane')?.prepared;
+        if (!regression) throw new Error('missing regression-plane preset');
+        usePlaygroundStore.setState({
+            access: { status: 'ready', prepared: regression },
+            prepared: regression,
+        });
+
+        render(<BoundaryContent />);
+
+        expect(screen.getByLabelText('Decision overlay controls')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Learn about Decision boundary' }))
+            .not.toBeInTheDocument();
     });
 
     it('renders the training explanation surface with the loss chart', () => {

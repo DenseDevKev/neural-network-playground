@@ -147,6 +147,76 @@ describe('RecipeSummaryCard', () => {
         }
     });
 
+    it('atomically leaves Run for visible Hyperparameters without changing scientific state', async () => {
+        const user = userEvent.setup();
+        const next = withAdvancedSettings();
+        installCurrent(next);
+        const liveSignal = {
+            model: { generationId: 4, revision: 20, step: 20, epoch: 2 },
+            dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+            objectiveKey: 'o',
+            basis: {
+                kind: 'mini-batch-ema' as const,
+                alpha: 0.1,
+                latestBatchSize: 10,
+                throughStep: 20,
+            },
+            dataLoss: 0.4,
+        };
+        const checkpointTimeline = {
+            checkpoints: [],
+            maxCheckpoints: 12,
+            evictedCount: 0,
+            liveCheckpointId: null,
+            restoredCheckpointId: null,
+        };
+        useTrainingStore.setState({
+            status: 'paused',
+            pauseReason: 'manual',
+            trainedRecipe: next.document.recipe,
+            trainedRecipeFingerprint: next.identities.recipeFingerprint,
+            latestLiveSignal: liveSignal,
+            checkpointTimeline,
+        });
+        useLayoutStore.setState({
+            view: 'run',
+            phase: 'run',
+            audienceMode: 'beginner',
+            advancedToolsOpen: false,
+            activeRecipeSection: 'data',
+            activeTabLeft: 'data',
+        });
+        const recipe = next.document.recipe;
+        const transitions: Array<ReturnType<typeof useLayoutStore.getState>> = [];
+        const unsubscribe = useLayoutStore.subscribe((state) => transitions.push(state));
+
+        render(<RecipeSummaryCard />);
+        expect(screen.getByRole('note', { name: 'Advanced settings active' }))
+            .toBeInTheDocument();
+
+        await user.click(screen.getByRole('button', { name: 'Open Advanced Tools' }));
+        unsubscribe();
+
+        expect(transitions).toHaveLength(1);
+        expect(transitions[0]).toMatchObject({
+            view: 'build',
+            phase: 'build',
+            activeRecipeSection: 'hyperparams',
+            activeTabLeft: 'hyperparams',
+            advancedToolsOpen: true,
+        });
+        expect(usePlaygroundStore.getState().access.status).toBe('ready');
+        if (usePlaygroundStore.getState().access.status === 'ready') {
+            expect(usePlaygroundStore.getState().access.prepared.document.recipe).toBe(recipe);
+        }
+        expect(useTrainingStore.getState()).toMatchObject({
+            status: 'paused',
+            pauseReason: 'manual',
+        });
+        expect(useTrainingStore.getState().latestLiveSignal).toBe(liveSignal);
+        expect(useTrainingStore.getState().checkpointTimeline).toBe(checkpointTimeline);
+    });
+
     it('does not warn when Hyperparameters is already visible', () => {
         installCurrent(withAdvancedSettings());
         useLayoutStore.setState({ audienceMode: 'explore', advancedToolsOpen: false });
