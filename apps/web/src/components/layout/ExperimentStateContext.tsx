@@ -1,4 +1,5 @@
 import { memo, type ReactNode, useMemo } from 'react';
+import { resolveVisibleEvidenceView } from '../../productShell/visibleShell.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore, type ConfigChangeSource } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type EvidenceViewId } from '../../store/useLayoutStore.ts';
@@ -229,7 +230,13 @@ export const EvidenceFrame = memo(function EvidenceFrame({
 export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
     const { drift, status, evidence, pendingConfigSource, workerError, configError } = useExperimentContext();
     const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);
-    const visibleEvidenceView = activeEvidenceView === 'history' ? 'boundary' : activeEvidenceView;
+    const audienceMode = useLayoutStore((s) => s.audienceMode);
+    const advancedToolsOpen = useLayoutStore((s) => s.advancedToolsOpen);
+    const visibleEvidenceView = resolveVisibleEvidenceView(
+        audienceMode,
+        advancedToolsOpen,
+        activeEvidenceView,
+    );
     const activeEvidence = EVIDENCE_VIEW_LABELS[visibleEvidenceView];
 
     let stateLabel = 'Draft';

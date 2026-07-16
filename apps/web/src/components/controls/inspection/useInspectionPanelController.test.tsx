@@ -218,19 +218,14 @@ describe('useInspectionPanelController', () => {
 
     afterEach(() => resetFrameBuffer());
 
-    it('leases inspection demand only while mounted', () => {
+    it('does not mutate shell-owned visualization demand while mounted or unmounted', () => {
+        const initialDemand = usePlaygroundStore.getState().demand;
         const { unmount } = renderHook(() => useInspectionPanelController());
 
-        expect(usePlaygroundStore.getState().demand).toMatchObject({
-            needLayerStats: true,
-            needActivationHistograms: true,
-        });
+        expect(usePlaygroundStore.getState().demand).toBe(initialDemand);
 
         unmount();
-        expect(usePlaygroundStore.getState().demand).toMatchObject({
-            needLayerStats: false,
-            needActivationHistograms: false,
-        });
+        expect(usePlaygroundStore.getState().demand).toBe(initialDemand);
     });
 
     it('refreshes layer statistics only for the focused layer version', () => {

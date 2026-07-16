@@ -56,19 +56,14 @@ describe('InspectionPanel integration', () => {
 
     afterEach(() => resetFrameBuffer());
 
-    it('preserves the inspection demand lease through the public wrapper', () => {
+    it('keeps the public wrapper free of visualization-demand ownership', () => {
+        const initialDemand = usePlaygroundStore.getState().demand;
         const { unmount } = render(<InspectionPanel />);
 
-        expect(usePlaygroundStore.getState().demand).toMatchObject({
-            needLayerStats: true,
-            needActivationHistograms: true,
-        });
+        expect(usePlaygroundStore.getState().demand).toBe(initialDemand);
 
         unmount();
-        expect(usePlaygroundStore.getState().demand).toMatchObject({
-            needLayerStats: false,
-            needActivationHistograms: false,
-        });
+        expect(usePlaygroundStore.getState().demand).toBe(initialDemand);
     });
 
     it('renders a worker prediction trace through the controller and view', async () => {

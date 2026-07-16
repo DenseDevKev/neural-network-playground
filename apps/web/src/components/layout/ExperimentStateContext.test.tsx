@@ -85,6 +85,8 @@ describe('ExperimentStateContext', () => {
             view: 'build',
             activeRecipeSection: 'data',
             activeEvidenceView: 'boundary',
+            audienceMode: 'explore',
+            advancedToolsOpen: false,
             layout: 'dock',
             phase: 'build',
             activeTabLeft: 'data',
@@ -219,6 +221,42 @@ describe('ExperimentStateContext', () => {
 
         expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
             'Topology shows the draft recipe while Boundary evidence belongs to trained model step 24.',
+        );
+    });
+
+    it('describes the same fallback evidence that a closed Beginner shell renders', () => {
+        useLayoutStore.setState({
+            view: 'run',
+            activeEvidenceView: 'inspection',
+            audienceMode: 'beginner',
+            advancedToolsOpen: false,
+            phase: 'run',
+            activeTabRight: 'inspection',
+        });
+
+        render(<DiagnosticCockpitStrip />);
+
+        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+            'run or step to produce Boundary evidence',
+        );
+        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' }))
+            .not.toHaveTextContent('Inspection evidence');
+    });
+
+    it('describes Inspection when the advanced target is visible', () => {
+        useLayoutStore.setState({
+            view: 'run',
+            activeEvidenceView: 'inspection',
+            audienceMode: 'beginner',
+            advancedToolsOpen: true,
+            phase: 'run',
+            activeTabRight: 'inspection',
+        });
+
+        render(<DiagnosticCockpitStrip />);
+
+        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+            'run or step to produce Inspection evidence',
         );
     });
 });

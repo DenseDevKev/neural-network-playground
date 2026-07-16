@@ -93,6 +93,8 @@ function CompatiblePlayground() {
     const training = useTraining();
     const view = useLayoutStore((s) => s.view);
     const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);
+    const audienceMode = useLayoutStore((s) => s.audienceMode);
+    const advancedToolsOpen = useLayoutStore((s) => s.advancedToolsOpen);
     const setActiveEvidenceView = useLayoutStore((s) => s.setActiveEvidenceView);
     const status = useTrainingStore((s) => s.status);
     const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
@@ -143,7 +145,8 @@ function CompatiblePlayground() {
         const nextDemand = deriveVisualizationDemand({
             view,
             activeEvidenceView,
-            historyDrawerOpen: openSurface === 'history',
+            audienceMode,
+            advancedToolsOpen,
             graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
         });
         if (
@@ -156,7 +159,15 @@ function CompatiblePlayground() {
             return;
         }
         setDemand(nextDemand);
-    }, [view, activeEvidenceView, openSurface, canvasNetworkGraph, demand, setDemand]);
+    }, [
+        view,
+        activeEvidenceView,
+        audienceMode,
+        advancedToolsOpen,
+        canvasNetworkGraph,
+        demand,
+        setDemand,
+    ]);
 
     useEffect(() => {
         if (workerError) {

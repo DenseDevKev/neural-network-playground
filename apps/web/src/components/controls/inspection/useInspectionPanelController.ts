@@ -102,26 +102,6 @@ export function useInspectionPanelController(): InspectionPanelController {
         setLandscapeLoading(false);
     }, [currentModelKey]);
 
-    useEffect(() => {
-        const enableInspectionDemand = (enabled: boolean) => {
-            const { demand, setDemand } = usePlaygroundStore.getState();
-            if (
-                demand.needLayerStats === enabled
-                && demand.needActivationHistograms === enabled
-            ) {
-                return;
-            }
-            setDemand({
-                ...demand,
-                needLayerStats: enabled,
-                needActivationHistograms: enabled,
-            });
-        };
-
-        enableInspectionDemand(true);
-        return () => enableInspectionDemand(false);
-    }, []);
-
     const layerStatsState = useMemo(() => {
         void layerStatsVersion;
         const frame = getFrameBuffer();
