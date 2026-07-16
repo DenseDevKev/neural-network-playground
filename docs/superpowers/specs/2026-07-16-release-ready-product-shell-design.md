@@ -1,7 +1,9 @@
 # Release-Ready Product Shell Design
 
-**Date:** 2026-07-16  
-**Status:** Approved implementation design  
+**Date:** 2026-07-16
+
+**Status:** Approved implementation design
+
 **Scope:** Advanced Tools, terminology, audience profiles, and release validation
 
 > **Implementation handoff:** This is the approved design, not a release-result
@@ -48,7 +50,7 @@ The shell uses a pure profile table rather than scattered profile checks:
 
 ```ts
 type AudienceMode = 'beginner' | 'explore' | 'lab';
-type BuildModuleId = 'features' | 'hyperparams' | 'config';
+type BuildModuleId = 'data' | 'network' | 'features' | 'hyperparams' | 'config';
 
 interface AudienceProfile {
     label: string;

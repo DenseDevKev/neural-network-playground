@@ -7,8 +7,10 @@
 > verified results belong in `docs/qa/2026-07-16-product-shell-release.md` after
 > the complete release matrix runs.
 
-**Recorded:** 2026-07-16  
-**Commit:** `97ce506` (`codex/refactor-decision-boundary`)  
+**Recorded:** 2026-07-16
+
+**Commit:** `97ce506` (`codex/refactor-decision-boundary`)
+
 **Worktree:** `/private/tmp/neural-network-playground-targeted-product-shell-refactor`
 
 ## Repository and CI inspection
