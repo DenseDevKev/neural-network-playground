@@ -2,6 +2,8 @@
 
 This contract fixes the state boundaries for the staged product-shell refactor. The refactor must preserve the V2 experiment document, URL behavior, engine and worker protocols, checkpoints, and saved runs.
 
+The release continuation is specified in `docs/superpowers/specs/2026-07-16-release-ready-product-shell-design.md`. Its measured pre-change evidence and browser diagnosis are recorded in `docs/qa/2026-07-16-product-shell-baseline.md`.
+
 ## Ownership
 
 | Owner | Authoritative responsibility |
@@ -11,7 +13,7 @@ This contract fixes the state boundaries for the staged product-shell refactor. 
 | `metricHistoryBuffer` | Bounded metric-series storage. `useTrainingStore` publishes its independent invalidation versions. |
 | Worker | Authoritative model state and scientific artifacts, including checkpoint payloads. |
 | `frameBuffer` | Accepted main-thread typed-array and provenance cache. Its React invalidation versions live in `useTrainingStore`; it is not a second scientific authority. |
-| `useLayoutStore` | Persisted workspace navigation, disclosure, code-tab, and audience preferences. Disclosure and audience fields are added in later roadmap stages. |
+| `useLayoutStore` | Persisted local workspace navigation, disclosure, code-tab, and audience preferences. These values never enter the V2 document, URL, checkpoints, exports, or saved runs. |
 | `experimentMemoryStore` | Saved, rejected, and pending run artifacts, plus their persistence/compatibility bookkeeping. |
 | Feature hooks/components | Request state, selections, focus/hover state, and ephemeral drawers. These do not belong in the shareable document or persisted layout state. |
 
