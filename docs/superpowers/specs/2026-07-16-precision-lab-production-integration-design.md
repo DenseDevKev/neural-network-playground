@@ -81,8 +81,13 @@ and browser smoke prove that `App.tsx` is the sole production consumer.
 
 ### Shell boundary
 
-`PrecisionLabShell` receives prepared content nodes and semantic state from
-`App.tsx`. It owns presentation-only composition:
+`PrecisionLabShell` receives prepared content nodes, display-safe values, and
+commands from `App.tsx`. Focused feature adapters outside the shell read stores,
+frame-buffer snapshots, recipe identity, and scientific selectors, then derive
+the immutable display models used by the recipe strip, run status, selection
+deck, and boundary rail. The shell never receives raw worker responses,
+scientific evidence envelopes, or frame artifacts. It owns presentation-only
+composition:
 
 - header and recipe strip placement;
 - Build/Run module rail;
@@ -93,8 +98,11 @@ and browser smoke prove that `App.tsx` is the sole production consumer.
 - focus movement associated with opening and closing shell surfaces.
 
 It does not mutate recipes, call worker APIs, interpret scientific evidence, or
-copy frame arrays. Existing production controls and evidence components remain
-the command and data boundaries.
+copy frame arrays. Existing production controls remain command boundaries;
+focused feature adapters and existing evidence components remain data and
+scientific-interpretation boundaries. Adapters may expose formatted labels,
+freshness states, bounded scalar summaries, typed presentation states, and
+event commands, but no API that lets the shell reach back into a store or worker.
 
 ## Shared workspace composition
 
@@ -217,15 +225,21 @@ and describes the selected neuron, activation distribution, bias, and strongest
 influences without calling the worker directly.
 
 Both the Canvas renderer and the supported fallback must preserve functional
-parity. If parity cannot be maintained, the fallback remains in place with the
-old node geometry rather than being silently removed during this visual slice.
+parity for graph commands, weight and activation data accuracy, persistent neuron
+selection, selected-path meaning, layer/node labels, status states, keyboard
+operation, and accessible summaries. Visual geometry is not part of this parity
+contract: the fallback may retain its existing node shapes and spacing while
+presenting the same data and interactions. The fallback must not be silently
+removed during this visual slice.
 
 ## Pinned decision-boundary rail
 
 Topology and boundary are one workspace composition. A new compact boundary
 presentation consumes the existing `useDecisionBoundaryModel` display model and
-shares its accepted frame snapshot semantics. It does not mount `BoundaryContent`
-or create another store adapter.
+shares its accepted frame snapshot semantics. The pinned rail owns the only live
+decision-boundary canvas in the product shell. It remains mounted while Build/Run
+and evidence tabs change, and it does not mount `BoundaryContent` or create
+another store adapter.
 
 The rail contains:
 
@@ -236,9 +250,13 @@ The rail contains:
 - an expand action that opens the detailed Boundary evidence state without
   replacing the topology.
 
-The full Boundary evidence deck reuses the compact presentation/model rather than
-subscribing to a second live boundary. Overlay, train/test, and discretization
-controls continue to use the existing document view and local overlay state.
+Selecting the Boundary evidence tab does not render another canvas. Its tabpanel
+contains overlay, train/test, and discretization controls; provenance and
+freshness; accessible scalar and class summaries; and the existing explanatory
+content. Those controls update the single pinned canvas through the focused
+boundary controller and existing document-view/local-overlay commands. The
+expand action selects and focuses this Boundary tabpanel while the pinned canvas
+stays in place.
 
 Because the boundary is visible in both Build and Run, visualization demand
 requests the required boundary artifact whenever a ready Precision Lab workspace
@@ -255,8 +273,9 @@ frequency; do not reduce scientific evaluation accuracy or hide the rail.
 The deck occupies a bounded track beneath the topology on desktop. It changes
 content without changing the outer workspace height.
 
-- Boundary shows detailed boundary controls and explanatory context around the
-  shared compact visualization.
+- Boundary shows controls, provenance, accessible summaries, and explanatory
+  context for the single pinned boundary canvas. It does not render a canvas of
+  its own.
 - Loss uses a responsive chart viewport with labels and legends outside the plot
   collision area. It must not use a horizontal scrollbar.
 - Confusion uses a responsive matrix-and-metrics grid. Metrics wrap or stack at
@@ -346,6 +365,18 @@ animation preference. The implementation must:
   break overlays or accessibility;
 - disable nonessential transitions under `prefers-reduced-motion: reduce`.
 
+Layout stability is a pass/fail browser requirement. At 1437×742, 735×860, and
+320×844, the test waits for the ready shell, records the bounding rectangles of
+the header, recipe strip, topology, boundary rail, evidence deck, and transport,
+starts training at 50 steps per frame, and samples those regions for five
+seconds. With no resize, navigation, drawer, or panel interaction during the
+sample, every region's `x`, `y`, `width`, and `height` must remain within 1 CSS
+pixel of its recorded value. Chromium's cumulative layout shift over the same
+post-start window, excluding entries with `hadRecentInput`, must equal zero. In
+both Chromium and WebKit, `document.documentElement.scrollWidth` and the primary
+workspace `scrollWidth` must remain no more than 1 CSS pixel greater than their
+respective `clientWidth` before, during, and after the sample.
+
 Performance instrumentation may measure render/layout activity in development,
 but browser tooling entries must remain filtered so DevTools interaction does not
 produce false slow-interaction warnings.
@@ -412,21 +443,28 @@ workflows green. Required acceptance includes:
    invariants.
 3. `pnpm lint`.
 4. Full `pnpm test` across engine, shared, and web packages.
-5. `pnpm build` and an explicit gzip comparison against the recorded release
-   baseline: main entry 142,005 bytes, Inspection chunk 6,349 bytes, total
-   JavaScript 223,010 bytes.
+5. `pnpm build` and a pass/fail zlib-gzip comparison against the recorded release
+   baseline. The main entry may grow by at most 10 KiB, from 142,005 to 152,245
+   bytes. The Inspection chunk may grow by at most 1 KiB, from 6,349 to 7,373
+   bytes. Total JavaScript may grow by at most 5%, from 223,010 to 234,161 bytes.
+   A limit failure blocks completion and must be addressed through direct icon
+   imports, dead-code removal, or an existing lazy boundary; the baseline or cap
+   is not raised without a separate reviewed decision.
 6. Repeated `pnpm test:perf` runs on an idle host, judged by medians. Forced
    evaluation remains at most 250ms and save capture at most 500ms.
 7. Chromium and WebKit smoke with zero retries and no console/page errors,
    covering training, pause/step, presets, checkpoint restore, saved runs,
    audience/disclosure invariants, all evidence tabs, dataset preview selection,
    graph controls, and wide/735px/320px containment.
-8. Keyboard-only, reduced-motion, 200% zoom, 44px touch-target, and horizontal
+8. The five-second post-start layout-stability measurement defined above,
+   including the 1 CSS pixel region-bounds tolerance, zero Chromium CLS, and
+   cross-browser overflow threshold at all three reference viewports.
+9. Keyboard-only, reduced-motion, 200% zoom, 44px touch-target, and horizontal
    overflow checks.
-9. Side-by-side reference and production screenshots at identical states and
+10. Side-by-side reference and production screenshots at identical states and
    viewports. A screenshot alone is not acceptance; interactions and scientific
    invariants must also pass.
-10. `git diff --check` and production-consumer searches before deleting the old
+11. `git diff --check` and production-consumer searches before deleting the old
     shell path.
 
 No assertion, retry count, timeout, performance threshold, or scientific cadence
