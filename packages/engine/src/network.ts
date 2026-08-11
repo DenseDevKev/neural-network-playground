@@ -2421,50 +2421,48 @@ export class Network {
     ): void {
         const numLayers = this.weights.length;
         const gridLen = gridInputs.length;
+        const requiredNeuronValues = this.getTotalNeuronCount() * gridLen;
+        if (outputTarget.length < gridLen) {
+            throw new RangeError(`outputTarget must have length at least ${gridLen}`);
+        }
+        if (neuronTarget.length < requiredNeuronValues) {
+            throw new RangeError(`neuronTarget must have length at least ${requiredNeuronValues}`);
+        }
+        const outputTargetIsFloat32 = outputTarget instanceof Float32Array;
+        const neuronTargetIsFloat32 = neuronTarget instanceof Float32Array;
 
         for (let i = 0; i < gridLen; i++) {
             const out = this.forwardInto(gridInputs[i]);
             const output = out[0];
-            const convertedOutput = outputTarget instanceof Float32Array
+            const convertedOutput = outputTargetIsFloat32
                 ? Math.fround(output)
                 : output;
-            if (!Number.isFinite(output) || !Number.isFinite(convertedOutput)) {
+            if (!Number.isFinite(convertedOutput)) {
                 throw new NonFiniteNumericalError(
                     `predictionGrid.output[${i}]`,
                     convertedOutput,
                 );
             }
-            outputTarget[i] = output;
-            if (!Number.isFinite(outputTarget[i])) {
-                throw new NonFiniteNumericalError(
-                    `predictionGrid.output[${i}]`,
-                    outputTarget[i],
-                );
-            }
+            outputTarget[i] = convertedOutput;
 
             let neuronIdx = 0;
+            let neuronTargetIndex = i;
             for (let l = 0; l < numLayers; l++) {
                 const layerOut = this.outputs[l];
                 for (let n = 0, len = layerOut.length; n < len; n++) {
                     const value = layerOut[n];
-                    const targetIndex = neuronIdx * gridLen + i;
-                    const converted = neuronTarget instanceof Float32Array
+                    const converted = neuronTargetIsFloat32
                         ? Math.fround(value)
                         : value;
-                    if (!Number.isFinite(value) || !Number.isFinite(converted)) {
+                    if (!Number.isFinite(converted)) {
                         throw new NonFiniteNumericalError(
                             `predictionGrid.neurons[${neuronIdx}][${i}]`,
                             converted,
                         );
                     }
-                    neuronTarget[targetIndex] = value;
-                    if (!Number.isFinite(neuronTarget[targetIndex])) {
-                        throw new NonFiniteNumericalError(
-                            `predictionGrid.neurons[${neuronIdx}][${i}]`,
-                            neuronTarget[targetIndex],
-                        );
-                    }
+                    neuronTarget[neuronTargetIndex] = converted;
                     neuronIdx++;
+                    neuronTargetIndex += gridLen;
                 }
             }
         }

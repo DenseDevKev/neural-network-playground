@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { Network, buildGridInputs } from '../network.js';
 import { getActiveFeatures, defaultFeatureFlags } from '../features.js';
 import { categoricalCrossEntropy } from '../losses.js';
+import { NonFiniteNumericalError } from '../numericalError.js';
 import type { NetworkConfig, TrainingConfig } from '../types.js';
 
 function makeConfig(overrides: Partial<NetworkConfig> = {}): NetworkConfig {
@@ -48,6 +49,16 @@ function makeCategoricalTraining(overrides: Partial<TrainingConfig> = {}): Train
         gradientClip: null,
         ...overrides,
     };
+}
+
+function captureNonFinite(action: () => unknown): NonFiniteNumericalError {
+    try {
+        action();
+    } catch (error) {
+        expect(error).toBeInstanceOf(NonFiniteNumericalError);
+        return error as NonFiniteNumericalError;
+    }
+    throw new Error('expected a NonFiniteNumericalError');
 }
 
 describe('Network construction', () => {
@@ -858,32 +869,134 @@ describe('predictMulticlassBoundaryInto', () => {
 });
 
 describe('predictGridWithNeuronsInto', () => {
-    it('produces results consistent with predictGridWithNeurons', () => {
+    it('writes exact Float32 output and flattened neuron-grid bytes', () => {
         const net = new Network(makeConfig({ hiddenLayers: [3, 2] }));
         const active = getActiveFeatures(defaultFeatureFlags());
         const gridInputs = buildGridInputs(5, active);
-        const gridLen = gridInputs.length; // 25
-
-        // Original method
+        const gridLen = gridInputs.length;
         const { outputGrid, neuronGrids } = net.predictGridWithNeurons(gridInputs);
-
-        // New typed-array method
         const totalNeurons = net.getTotalNeuronCount();
         const outputTarget = new Float32Array(gridLen);
         const neuronTarget = new Float32Array(totalNeurons * gridLen);
+        const expectedNeuronTarget = new Float32Array(totalNeurons * gridLen);
+        for (let neuronIndex = 0; neuronIndex < neuronGrids.length; neuronIndex++) {
+            expectedNeuronTarget.set(neuronGrids[neuronIndex], neuronIndex * gridLen);
+        }
+
         net.predictGridWithNeuronsInto(gridInputs, outputTarget, neuronTarget);
 
-        // Compare output grids
-        for (let i = 0; i < outputGrid.length; i++) {
-            expect(outputTarget[i]).toBeCloseTo(outputGrid[i], 5);
-        }
+        expect(outputTarget).toEqual(outputGrid);
+        expect(neuronTarget).toEqual(expectedNeuronTarget);
+        expect(new Uint8Array(outputTarget.buffer)).toEqual(new Uint8Array(outputGrid.buffer));
+        expect(new Uint8Array(neuronTarget.buffer)).toEqual(
+            new Uint8Array(expectedNeuronTarget.buffer),
+        );
+    });
 
-        // Compare neuron grids
-        for (let n = 0; n < neuronGrids.length; n++) {
-            for (let g = 0; g < gridLen; g++) {
-                expect(neuronTarget[n * gridLen + g]).toBeCloseTo(neuronGrids[n][g], 5);
-            }
-        }
+    it.each([
+        ['Float32 output and Float32 neurons', Float32Array, Float32Array],
+        ['Float64 output and Float64 neurons', Float64Array, Float64Array],
+        ['Float32 output and Float64 neurons', Float32Array, Float64Array],
+        ['Float64 output and Float32 neurons', Float64Array, Float32Array],
+    ] as const)('preserves target precision with %s', (_label, OutputArray, NeuronArray) => {
+        const net = new Network(makeConfig({
+            inputSize: 1,
+            hiddenLayers: [],
+            outputSize: 1,
+            activation: 'linear',
+            outputActivation: 'linear',
+            weightInit: 'zeros',
+        }));
+        net.setWeight(0, 0, 0, Math.SQRT2);
+        net.setBias(0, 0, 1 / 3);
+        const gridInputs = [[0.25], [-0.5]];
+        const exactValues = gridInputs.map(([input]) => Math.SQRT2 * input + 1 / 3);
+        const outputTarget = new OutputArray(gridInputs.length);
+        const neuronTarget = new NeuronArray(gridInputs.length);
+
+        net.predictGridWithNeuronsInto(gridInputs, outputTarget, neuronTarget);
+
+        const expectedOutput = exactValues.map((value) => (
+            outputTarget instanceof Float32Array ? Math.fround(value) : value
+        ));
+        const expectedNeurons = exactValues.map((value) => (
+            neuronTarget instanceof Float32Array ? Math.fround(value) : value
+        ));
+        expect(Array.from(outputTarget)).toEqual(expectedOutput);
+        expect(Array.from(neuronTarget)).toEqual(expectedNeurons);
+    });
+
+    it('rejects an undersized output target before writing either target', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3, 2] }));
+        const gridInputs = [[0, 0], [1, 1]];
+        const outputTarget = new Float64Array([123.5]);
+        const neuronTarget = new Float64Array(net.getTotalNeuronCount() * gridInputs.length);
+        neuronTarget.fill(456.5);
+        const outputBefore = outputTarget.slice();
+        const neuronsBefore = neuronTarget.slice();
+
+        expect(() => net.predictGridWithNeuronsInto(
+            gridInputs,
+            outputTarget,
+            neuronTarget,
+        )).toThrow(RangeError);
+
+        expect(outputTarget).toEqual(outputBefore);
+        expect(neuronTarget).toEqual(neuronsBefore);
+    });
+
+    it('rejects an undersized neuron target before writing either target', () => {
+        const net = new Network(makeConfig({ hiddenLayers: [3, 2] }));
+        const gridInputs = [[0, 0], [1, 1]];
+        const outputTarget = new Float64Array(gridInputs.length);
+        outputTarget.fill(123.5);
+        const neuronTarget = new Float64Array(
+            net.getTotalNeuronCount() * gridInputs.length - 1,
+        );
+        neuronTarget.fill(456.5);
+        const outputBefore = outputTarget.slice();
+        const neuronsBefore = neuronTarget.slice();
+
+        expect(() => net.predictGridWithNeuronsInto(
+            gridInputs,
+            outputTarget,
+            neuronTarget,
+        )).toThrow(RangeError);
+
+        expect(outputTarget).toEqual(outputBefore);
+        expect(neuronTarget).toEqual(neuronsBefore);
+    });
+
+    it('reports exact Float32 overflow paths and converted values', () => {
+        const net = new Network(makeConfig({
+            inputSize: 1,
+            hiddenLayers: [],
+            outputSize: 1,
+            activation: 'linear',
+            outputActivation: 'linear',
+            weightInit: 'zeros',
+        }));
+        net.setWeight(0, 0, 0, 1e100);
+
+        const outputError = captureNonFinite(() => net.predictGridWithNeuronsInto(
+            [[1]],
+            new Float32Array(1),
+            new Float64Array(1),
+        ));
+        const neuronError = captureNonFinite(() => net.predictGridWithNeuronsInto(
+            [[1]],
+            new Float64Array(1),
+            new Float32Array(1),
+        ));
+
+        expect(outputError).toMatchObject({
+            path: 'predictionGrid.output[0]',
+            value: Number.POSITIVE_INFINITY,
+        });
+        expect(neuronError).toMatchObject({
+            path: 'predictionGrid.neurons[0][0]',
+            value: Number.POSITIVE_INFINITY,
+        });
     });
 });
 

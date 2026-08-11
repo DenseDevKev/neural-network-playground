@@ -2497,3 +2497,62 @@ the lazy History panel rather than the training or visualization hot path.
 The timing values remain within the established local baseline range. The
 slice performs render-time string derivation from saved config objects and does
 not add worker computation, frame-buffer writes, or training-loop work.
+
+## Robust Grid Performance Gate
+
+Date: 2026-08-11
+
+Scope: replace one long timing sample per grid API with warmed median sampling,
+report every grid result before one aggregate budget assertion, and retain the
+existing per-iteration caps. The controlled pre-change runs identified a
+repeatable over-cap result in `predictGridWithNeuronsInto`; the scoped engine
+change was limited to the destination-buffer work supported by the five-trial
+isolated A/B profile recorded in the Task 10 implementation plan.
+
+Command, run separately for every sample below:
+
+- `pnpm --filter @nn-playground/engine test:perf`
+
+Method:
+
+- Vitest ran benchmark files serially with one worker.
+- The fixed grid case used a 100 by 100 grid, seed 42, and three hidden layers
+  of 16 neurons.
+- Each API received five warmup invocations followed by seven measured rounds.
+- `predictGrid` and `predictGridInto` used 20 iterations per measured round;
+  the two neuron-grid APIs used 10.
+- Each reported result is the median elapsed milliseconds per iteration across
+  the seven rounds. The parenthesized value is that run's median-round total.
+- All four results were collected and printed before the unchanged budgets were
+  checked together: 11.2504104, 11.1464268, 14.37312, and 12.2388
+  ms/iteration, respectively.
+
+Pre-optimization controlled results:
+
+| Run | `predictGrid` | `predictGridInto` | `predictGridWithNeurons` | `predictGridWithNeuronsInto` | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 1 | 10.5915 (211.8292 ms) | 10.4742 (209.4832 ms) | 13.1475 (131.4747 ms) | 12.3841 (123.8413 ms) | Failed: `predictGridWithNeuronsInto` over 12.2388 ms |
+| 2 | 10.6486 (212.9725 ms) | 10.6179 (212.3584 ms) | 13.3793 (133.7927 ms) | 12.2321 (122.3207 ms) | Passed |
+| 3 | 10.6106 (212.2128 ms) | 10.7495 (214.9896 ms) | 13.1327 (131.3269 ms) | 12.3304 (123.3035 ms) | Failed: `predictGridWithNeuronsInto` over 12.2388 ms |
+| Median of run medians | 10.6106 (212.2128 ms) | 10.6179 (212.3584 ms) | 13.1475 (131.4747 ms) | 12.3304 (123.3035 ms) | 2 of 3 commands failed |
+
+The scoped optimization added both destination-capacity guards before any
+write, hoisted the two target-kind decisions out of the loops, converted each
+destination value once, checked that converted value once before writing it,
+and advanced the flattened neuron offset without changing its layout.
+Float32/Float64 precision permutations, exact Float32 bytes, pre-write capacity
+failure, and the existing non-finite diagnostic paths are covered by unit
+tests. Forward arithmetic and all four budgets are unchanged.
+
+Post-optimization controlled results:
+
+| Run | `predictGrid` | `predictGridInto` | `predictGridWithNeurons` | `predictGridWithNeuronsInto` | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 1 | 10.5447 (210.8934 ms) | 10.6868 (213.7353 ms) | 13.0887 (130.8872 ms) | 11.4093 (114.0927 ms) | Passed |
+| 2 | 10.7053 (214.1053 ms) | 10.5303 (210.6061 ms) | 13.1073 (131.0727 ms) | 11.9586 (119.5862 ms) | Passed |
+| 3 | 10.5005 (210.0104 ms) | 10.6613 (213.2267 ms) | 13.1093 (131.0930 ms) | 11.5446 (115.4457 ms) | Passed |
+| Median of run medians | 10.5447 (210.8934 ms) | 10.6613 (213.2267 ms) | 13.1073 (131.0727 ms) | 11.5446 (115.4457 ms) | 3 of 3 commands passed |
+
+Each post-optimization command reported 2 passing benchmark files and 3
+passing benchmark tests. The accompanying Adam/SGD measurements were
+3.3567/1.0326, 3.3951/1.0055, and 3.6684/1.0037 ms across the three commands.
