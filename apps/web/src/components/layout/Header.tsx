@@ -258,7 +258,7 @@ export const Header = memo(function Header({
 
             <div className="forge-topbar__divider" aria-hidden />
 
-            <div className="forge-topbar__metrics" role="status" aria-live="polite" aria-label="Training metrics">
+            <div className="forge-topbar__metrics" role="group" aria-label="Training metrics">
                 <div className="forge-metric">
                     <span className="forge-metric__label">Epoch</span>
                     <span className={`forge-metric__value ${flashEpoch ? 'forge-metric__value--updated' : ''}`}>

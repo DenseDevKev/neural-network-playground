@@ -4,9 +4,15 @@ interface LoadingStateProps {
   isLoading: boolean;
   message?: string;
   inline?: boolean;
+  announce?: boolean;
 }
 
-export function LoadingState({ isLoading, message, inline = false }: LoadingStateProps) {
+export function LoadingState({
+  isLoading,
+  message,
+  inline = false,
+  announce = true,
+}: LoadingStateProps) {
   if (!isLoading) {
     return null;
   }
@@ -14,8 +20,8 @@ export function LoadingState({ isLoading, message, inline = false }: LoadingStat
   const indicator = (
     <div
       className={`loading-state ${inline ? 'loading-state--inline' : 'loading-state--overlay'}`}
-      role="status"
-      aria-live="polite"
+      role={announce ? 'status' : undefined}
+      aria-live={announce ? 'polite' : undefined}
     >
       <div
         className={`loading-spinner ${inline ? '' : 'loading-spinner--large'}`.trim()}

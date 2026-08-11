@@ -21,6 +21,14 @@ describe('LoadingState', () => {
     expect(document.body.querySelector('.loading-overlay')).not.toBeInTheDocument();
   });
 
+  it('keeps opt-out loading feedback visible without a live ancestor', () => {
+    render(<LoadingState isLoading={true} inline announce={false} message="Generating data..." />);
+
+    const feedback = screen.getByText('Generating data...');
+    expect(feedback).toBeVisible();
+    expect(feedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+  });
+
   it('should render overlay loading state in a portal', () => {
     render(<LoadingState isLoading={true} message="Initializing network..." />);
 

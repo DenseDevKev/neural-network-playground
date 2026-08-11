@@ -145,9 +145,9 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
 
     return (
         <div aria-busy={isLoading}>
-            <LoadingState isLoading={isLoading} inline message="Updating training..." />
+            <LoadingState isLoading={isLoading} inline announce={false} message="Updating training..." />
             {configError && configErrorSource === 'training' && (
-                <div className="config-feedback config-feedback--error" role="alert">
+                <div className="config-feedback config-feedback--error">
                     <span>{configError}</span>
                     <button
                         type="button"
@@ -299,7 +299,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                     </>
                 )}
 
-                <p className="control-note" aria-live="polite">{scheduleSummary}</p>
+                <p className="control-note">{scheduleSummary}</p>
 
                 <div className="control-row">
                     <span className="control-label">Output activation</span>
@@ -392,7 +392,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                     </Tooltip>
                 </div>
 
-                <p className="control-note" aria-live="polite">
+                <p className="control-note">
                     {OPTIMIZER_EXPLANATIONS[optimizer.kind]}
                 </p>
 

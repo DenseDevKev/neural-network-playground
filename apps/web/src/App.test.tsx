@@ -176,11 +176,16 @@ describe('App accessibility shell', () => {
 
         useTrainingStore.setState({
             status: 'idle',
+            pauseReason: null,
             dataConfigLoading: false,
             networkConfigLoading: false,
+            pendingConfigSource: null,
             configError: null,
             configErrorSource: null,
             workerError: null,
+            evidenceGenerationId: 1,
+            trainedRecipe: prepared.value.document.recipe,
+            trainedRecipeSource: 'initialize',
         });
 
         useLayoutStore.setState({
@@ -420,7 +425,9 @@ describe('App accessibility shell', () => {
     it('renders forge-shell with status bar', () => {
         const { container } = render(<App />);
         expect(container.querySelector('.forge-shell')).toBeTruthy();
-        expect(screen.getByRole('status', { name: 'Status bar' })).toBeInTheDocument();
+        const statusBar = screen.getByRole('group', { name: 'Status bar' });
+        expect(statusBar).toBeInTheDocument();
+        expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 
     it('shows the newest scientific model in the status bar after a forced pause evaluation', () => {
@@ -433,9 +440,35 @@ describe('App accessibility shell', () => {
 
         render(<App />);
 
-        const statusBar = screen.getByRole('status', { name: 'Status bar' });
+        const statusBar = screen.getByRole('group', { name: 'Status bar' });
         expect(statusBar).toHaveTextContent('STEP 2,500');
         expect(statusBar).not.toHaveTextContent('STEP 2,450');
+        expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+
+        act(() => useTrainingStore.setState({
+            latestEvaluation: fullEvaluation(2_600, 2_600, 173),
+        }));
+        expect(statusBar).toHaveTextContent('STEP 2,600');
+        expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+    });
+
+    it('announces a complete configuration transaction driven through the real store', () => {
+        render(<App />);
+        const announcements = screen.getByRole('status', {
+            name: 'Training and configuration announcements',
+        });
+
+        act(() => useTrainingStore.getState().beginConfigChange('data'));
+        expect(announcements).toHaveTextContent('Generating data');
+
+        act(() => useTrainingStore.getState().finishConfigChange());
+        expect(announcements).toHaveTextContent('Data update complete');
+
+        act(() => useTrainingStore.getState().beginConfigChange('network'));
+        expect(announcements).toHaveTextContent('Initializing network');
+        act(() => useTrainingStore.getState().failConfigChange('network failed'));
+        expect(announcements).toHaveTextContent('Network error: network failed');
+        expect(announcements).not.toHaveTextContent('Network update complete');
     });
 
     it('switches Build and Run views through the store', () => {

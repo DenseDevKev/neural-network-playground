@@ -265,7 +265,8 @@ describe('PresetPanel', () => {
         render(<PresetPanel onReset={onReset} onApplied={onApplied} />);
         await user.click(screen.getByRole('button', { name: `Apply preset: ${target.title}` }));
 
-        expect(await screen.findByRole('alert')).toHaveTextContent('Deliberate failure');
+        const error = await screen.findByText('recipe: Deliberate failure');
+        expect(error.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(useTrainingStore.getState().configErrorSource).toBe('preset');
         expect(useTrainingStore.getState().configError).toContain('Deliberate failure');
         expect(currentPreparedForTest()).toBe(prior);
@@ -441,11 +442,24 @@ describe('PresetPanel', () => {
 
         render(<PresetPanel onReset={vi.fn()} />);
 
-        expect(screen.getByRole('alert')).toHaveTextContent('Failed to apply preset');
+        expect(screen.getByText('Failed to apply preset')
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         await user.click(screen.getByRole('button', { name: 'Retry' }));
 
         expect(useTrainingStore.getState().pendingConfigSource).toBe('preset');
         expect(useTrainingStore.getState().presetConfigLoading).toBe(true);
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);
+    });
+
+    it('keeps owned preset loading feedback visible and non-live', () => {
+        useTrainingStore.setState({
+            presetConfigLoading: true,
+            pendingConfigSource: 'preset',
+        });
+        render(<PresetPanel onReset={vi.fn()} />);
+
+        const loadingFeedback = screen.getByText('Applying preset...');
+        expect(loadingFeedback).toBeVisible();
+        expect(loadingFeedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 });

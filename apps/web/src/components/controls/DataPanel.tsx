@@ -85,9 +85,9 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
 
     return (
         <div aria-busy={isLoading}>
-            <LoadingState isLoading={isLoading} inline message="Generating data..." />
+            <LoadingState isLoading={isLoading} inline announce={false} message="Generating data..." />
             {configError && configErrorSource === 'data' && (
-                <div className="config-feedback config-feedback--error" role="alert">
+                <div className="config-feedback config-feedback--error">
                     <span>{configError}</span>
                     <button type="button" className="btn btn--ghost btn--sm" onClick={retryDataChange}>
                         Retry
@@ -148,7 +148,6 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             <div
                 className="control-row"
                 aria-label={`Dataset settings: ${sampleCount} samples, ${noise} noise, ${trainPercent}% train`}
-                aria-live="polite"
                 style={{ marginBottom: 8 }}
             >
                 <span className="control-label">Dataset lab</span>
@@ -214,7 +213,6 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 className="control-row"
                 style={{ marginTop: 8 }}
                 aria-label={`Train/test split: ${trainCount} train, ${testCount} test`}
-                aria-live="polite"
             >
                 <span className="control-label">Split</span>
                 <span className="control-value">Train {trainCount}</span>

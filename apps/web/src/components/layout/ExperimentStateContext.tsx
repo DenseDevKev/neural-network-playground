@@ -197,7 +197,7 @@ export const EvidenceContextLine = memo(function EvidenceContextLine({ view }: {
     const explanation = getEvidenceMeta(view).explanation;
 
     return (
-        <p className="forge-evidence-context" aria-live="polite">
+        <p className="forge-evidence-context">
             <span className="forge-evidence-context__state">{stateLabel}</span>
             <span>{copy}</span>
             <small>{explanation}</small>
@@ -276,7 +276,7 @@ export const DiagnosticCockpitStrip = memo(function DiagnosticCockpitStrip() {
     }
 
     return (
-        <div className="forge-cockpit-strip" role="status" aria-label="Diagnostic cockpit state">
+        <div className="forge-cockpit-strip" role="group" aria-label="Diagnostic cockpit state">
             <div className="forge-cockpit-strip__copy">
                 <span>{stateLabel}</span>
                 <strong>{copy}</strong>

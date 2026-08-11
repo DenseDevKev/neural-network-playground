@@ -85,9 +85,9 @@ export const PresetPanel = memo(function PresetPanel({ onReset, onApplied }: Pre
 
     return (
         <div>
-            <LoadingState isLoading={isLoading} inline message="Applying preset..." />
+            <LoadingState isLoading={isLoading} inline announce={false} message="Applying preset..." />
             {configError && configErrorSource === 'preset' && (
-                <div className="config-feedback config-feedback--error" role="alert">
+                <div className="config-feedback config-feedback--error">
                     <span>{configError}</span>
                     <button type="button" className="btn btn--ghost btn--sm" onClick={retryPresetChange}>
                         Retry

@@ -306,9 +306,10 @@ describe('DataPanel V2 recipe controls', () => {
 
         await user.click(screen.getByRole('button', { name: '100 samples' }));
 
-        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+        const sampleError = await screen.findByText(
             'recipe.data.sampleCount: batch size 100 exceeds training population 50',
-        ));
+        );
+        expect(sampleError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(before);
         expect(recipe().data.sampleCount).toBe(300);
     });
@@ -331,9 +332,10 @@ describe('DataPanel V2 recipe controls', () => {
 
         await user.click(screen.getByRole('button', { name: 'Reshuffle split' }));
 
-        await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(
+        const seedError = await screen.findByText(
             'recipe.data.seed: cannot reshuffle seed 4294967295 beyond the uint32 maximum',
-        ));
+        );
+        expect(seedError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(before);
     });
 
@@ -348,10 +350,16 @@ describe('DataPanel V2 recipe controls', () => {
         });
         render(<DataPanel onReset={onReset} />);
 
-        const loadingStatus = screen.getByText('Generating data...').closest('[role="status"]');
-        expect(loadingStatus).toHaveTextContent('Generating data...');
-        expect(screen.getByRole('alert')).toHaveTextContent('Failed to generate data');
-        expect(screen.getByLabelText('Train/test split: 2 train, 1 test')).toBeInTheDocument();
+        const loadingFeedback = screen.getByText('Generating data...');
+        const errorFeedback = screen.getByText('Failed to generate data');
+        expect(loadingFeedback).toBeVisible();
+        expect(loadingFeedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(errorFeedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        const splitSummary = screen.getByLabelText('Train/test split: 2 train, 1 test');
+        expect(splitSummary).toBeInTheDocument();
+        expect(splitSummary.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(screen.getByLabelText('Dataset settings: 300 samples, 0 noise, 50% train')
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(screen.getByText(
             'Cause: XOR alternates labels by quadrant. Effect: a straight boundary fails, so hidden layers have something meaningful to learn.',
         )).toBeInTheDocument();

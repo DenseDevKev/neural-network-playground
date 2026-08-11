@@ -114,6 +114,22 @@ describe('Header', () => {
             expect(screen.getByText('0.5678')).toBeInTheDocument();
             expect(screen.getByText('49.3%')).toBeInTheDocument();
             expect(screen.queryByText('9.0000')).not.toBeInTheDocument();
+
+            const metrics = screen.getByRole('group', { name: 'Training metrics' });
+            expect(metrics).not.toHaveAttribute('aria-live');
+            expect(metrics.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+
+            act(() => {
+                useTrainingStore.setState({
+                    latestLiveSignal: {
+                        ...useTrainingStore.getState().latestLiveSignal!,
+                        model: { generationId: 4, revision: 1241, step: 1241, epoch: 13 },
+                        basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 10, throughStep: 1241 },
+                        dataLoss: 0.1111,
+                    },
+                });
+            });
+            expect(screen.getByText('0013').closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         } finally {
             removeLegacySnapshot();
         }

@@ -65,7 +65,8 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
             expect(currentPreparedForTest()?.document.recipe.model.hiddenLayers)
                 .toEqual([4, 4, 4]);
         });
-        expect(screen.getByRole('status')).toHaveTextContent('Initializing network...');
+        expect(screen.getByText('Initializing network...')
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(useTrainingStore.getState().pendingConfigSource).toBe('network');
     });
 
@@ -94,9 +95,8 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         await user.type(input, '99');
         await user.tab();
 
-        expect(await screen.findByRole('alert')).toHaveTextContent(
-            'recipe.model.hiddenLayers[0]',
-        );
+        const widthError = await screen.findByText(/recipe\.model\.hiddenLayers\[0\]/);
+        expect(widthError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(beforeInvalid);
         expect(input).toHaveValue(99);
     });
@@ -204,9 +204,10 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
 
         await user.click(screen.getByRole('button', { name: 'Add hidden layer' }));
 
-        expect(await screen.findByRole('alert')).toHaveTextContent(
+        const architectureError = await screen.findByText(
             'recipe.model.hiddenLayers: architecture exceeds 2000 trainable parameters',
         );
+        expect(architectureError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(before);
     });
 
@@ -217,6 +218,9 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         });
         const user = userEvent.setup();
         render(<NetworkConfigPanel />);
+
+        expect(screen.getByText('Failed to initialize network')
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
 
         await user.click(screen.getByRole('button', { name: 'Retry' }));
 

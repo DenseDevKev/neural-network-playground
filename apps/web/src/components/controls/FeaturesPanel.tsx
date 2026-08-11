@@ -47,9 +47,9 @@ export const FeaturesPanel = memo(function FeaturesPanel() {
 
     return (
         <div aria-busy={isLoading}>
-            <LoadingState isLoading={isLoading} inline message="Updating features..." />
+            <LoadingState isLoading={isLoading} inline announce={false} message="Updating features..." />
             {configError && configErrorSource === 'features' && (
-                <div className="config-feedback config-feedback--error" role="alert">
+                <div className="config-feedback config-feedback--error">
                     <span>{configError}</span>
                     <button type="button" className="btn btn--ghost btn--sm" onClick={retryFeatureChange}>
                         Retry

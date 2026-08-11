@@ -129,9 +129,9 @@ export const NetworkConfigPanel = memo(function NetworkConfigPanel() {
 
     return (
         <div aria-busy={isLoading}>
-            <LoadingState isLoading={isLoading} inline message="Initializing network..." />
+            <LoadingState isLoading={isLoading} inline announce={false} message="Initializing network..." />
             {configError && configErrorSource === 'network' && (
-                <div className="config-feedback config-feedback--error" role="alert">
+                <div className="config-feedback config-feedback--error">
                     <span>{configError}</span>
                     <button type="button" className="btn btn--ghost btn--sm" onClick={retryNetworkChange}>
                         Retry

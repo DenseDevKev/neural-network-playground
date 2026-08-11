@@ -790,8 +790,9 @@ describe('GuidedLessonPanel', () => {
         );
         await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
 
-        const alert = await screen.findByRole('alert');
-        expect(alert).toHaveTextContent('Deliberate failure');
+        const errorFeedback = await screen.findByText('recipe: Deliberate failure');
+        expect(errorFeedback).toBeVisible();
+        expect(errorFeedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(priorPrepared);
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: null,
@@ -809,7 +810,8 @@ describe('GuidedLessonPanel', () => {
         expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
 
         rerender(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
-        expect(screen.getByRole('alert')).toHaveTextContent('Deliberate failure');
+        expect(screen.getByText('recipe: Deliberate failure')
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(screen.getByRole('button', { name: 'Start lesson and reset' })).toBeEnabled();
     });
 

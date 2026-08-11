@@ -85,11 +85,14 @@ function CompatiblePlayground() {
         s.hydrationStatus === 'ready' && s.records.length > 0
     ));
     const status = useTrainingStore((s) => s.status);
-    const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
-    const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
+    const pauseReason = useTrainingStore((s) => s.pauseReason);
+    const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const configError = useTrainingStore((s) => s.configError);
     const configErrorSource = useTrainingStore((s) => s.configErrorSource);
     const workerError = useTrainingStore((s) => s.workerError);
+    const evidenceGenerationId = useTrainingStore((s) => s.evidenceGenerationId);
+    const trainedRecipe = useTrainingStore((s) => s.trainedRecipe);
+    const trainedRecipeSource = useTrainingStore((s) => s.trainedRecipeSource);
     const demand = usePlaygroundStore((s) => s.demand);
     const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
     const setDemand = usePlaygroundStore((s) => s.setDemand);
@@ -265,10 +268,14 @@ function CompatiblePlayground() {
 
             <AccessibilityAnnouncer
                 status={status}
-                dataConfigLoading={dataConfigLoading}
-                networkConfigLoading={networkConfigLoading}
+                pauseReason={pauseReason}
+                workerError={workerError}
+                pendingConfigSource={pendingConfigSource}
                 configError={configError}
                 configErrorSource={configErrorSource}
+                evidenceGenerationId={evidenceGenerationId}
+                trainedRecipe={trainedRecipe}
+                trainedRecipeSource={trainedRecipeSource}
             />
 
             {/* Worker crash overlay */}
@@ -368,7 +375,7 @@ function StatusBar() {
     return (
         <div
             className="forge-statusbar"
-            role="status"
+            role="group"
             aria-label="Status bar"
             data-status={status}
         >

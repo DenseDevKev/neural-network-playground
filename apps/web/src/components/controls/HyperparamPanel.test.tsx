@@ -92,6 +92,8 @@ describe('HyperparamPanel canonical V2 controls', () => {
         await editNumber('Step schedule gamma', '0.75');
         expect(currentPreparedForTest()?.document.recipe.training.schedule)
             .toEqual({ kind: 'step', interval: 250, gamma: 0.75 });
+        expect(screen.getByText(/Starts at .* multiplies by .* every 250 updates\./)
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
 
         await user.selectOptions(schedule, 'cosine');
         await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.schedule)
@@ -102,6 +104,8 @@ describe('HyperparamPanel canonical V2 controls', () => {
         await editNumber('Cosine minimum learning rate', '0.001');
         expect(currentPreparedForTest()?.document.recipe.training.schedule)
             .toEqual({ kind: 'cosine', totalSteps: 2000, minimumRate: 0.001 });
+        expect(screen.getByText(/Anneals from .* over 2000 updates\./)
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
 
         await user.selectOptions(schedule, 'constant');
         await waitFor(() => expect(currentPreparedForTest()?.document.recipe.training.schedule)
@@ -288,9 +292,8 @@ describe('HyperparamPanel canonical V2 controls', () => {
 
         await editNumber('Step schedule interval', '0');
 
-        expect(await screen.findByRole('alert')).toHaveTextContent(
-            'recipe.training.schedule.interval',
-        );
+        const scheduleError = await screen.findByText(/recipe\.training\.schedule\.interval/);
+        expect(scheduleError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(beforeInvalid);
         expect(screen.getByRole('spinbutton', { name: 'Step schedule interval' }))
             .toHaveValue(0);
@@ -349,9 +352,10 @@ describe('HyperparamPanel canonical V2 controls', () => {
 
         await user.selectOptions(screen.getByRole('combobox', { name: 'Learning rate' }), '0.1');
 
-        expect(await screen.findByRole('alert')).toHaveTextContent(
+        const validationError = await screen.findByText(
             'recipe.training.learningRate: learning rate failed external validation',
         );
+        expect(validationError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(before);
         await user.click(screen.getByRole('button', { name: 'Retry' }));
         expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
@@ -365,5 +369,23 @@ describe('HyperparamPanel canonical V2 controls', () => {
             .toBeInTheDocument();
         expect(screen.getByText(/Cause: larger batches average more samples per update/))
             .toBeInTheDocument();
+    });
+
+    it('keeps owned loading and retryable error feedback non-live', async () => {
+        const user = userEvent.setup();
+        useTrainingStore.setState({
+            trainingConfigLoading: true,
+            pendingConfigSource: 'training',
+            configError: 'Failed to update training',
+            configErrorSource: 'training',
+        });
+        render(<HyperparamPanel />);
+
+        expect(screen.getByText('Updating training...')
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(screen.getByText('Failed to update training')
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Retry' }));
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('training');
     });
 });

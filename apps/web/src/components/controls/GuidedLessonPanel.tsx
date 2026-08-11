@@ -248,7 +248,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
             {isDrawerOpen && (
                 <div className="guided-lesson__content">
                     {lessonError && (
-                        <div className="config-feedback config-feedback--error" role="alert">
+                        <div className="config-feedback config-feedback--error">
                             {lessonError}
                         </div>
                     )}

@@ -73,7 +73,7 @@ test.afterEach(async ({ page }) => {
 });
 
 function statusBar(page: Page): Locator {
-    return page.getByRole('status', { name: 'Status bar' });
+    return page.getByRole('group', { name: 'Status bar' });
 }
 
 function timeline(page: Page): Locator {
@@ -308,6 +308,8 @@ async function applyPreset(
 test('training can pause, single-step, and restore the initial checkpoint', async ({ page }) => {
     await loadPlayground(page);
     await expectEvidenceAtStep(page, 0);
+    await expect(statusBar(page)).toBeVisible();
+    await expect(statusBar(page).locator('xpath=ancestor-or-self::*[@aria-live or @role="status" or @role="alert"]')).toHaveCount(0);
 
     const transport = timeline(page);
     await transport.getByRole('button', { name: '1 step per frame' }).click();

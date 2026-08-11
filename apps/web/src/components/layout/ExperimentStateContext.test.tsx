@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
     PREPARED_PRESETS,
@@ -190,9 +190,11 @@ describe('ExperimentStateContext', () => {
 
         render(<DiagnosticCockpitStrip />);
 
-        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+        const cockpit = screen.getByRole('group', { name: 'Diagnostic cockpit state' });
+        expect(cockpit).toHaveTextContent(
             'Loss has batch trend through step 128 and full evaluation 3 at step 120 using all 210 train and 90 test samples.',
         );
+        expect(cockpit.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(screen.queryByText('focus pair')).not.toBeInTheDocument();
         expect(screen.getByText('Batch trend (EMA) 0.2200')).toBeInTheDocument();
         expect(screen.getByText('Train data loss (full split) 0.2200')).toBeInTheDocument();
@@ -222,7 +224,7 @@ describe('ExperimentStateContext', () => {
 
         expect(screen.getAllByText('Evaluation age')).toHaveLength(2);
         expect(screen.getAllByText('Confusion uses full evaluation 3 at step 120 across all 90 test samples; the current model is at step 128.')).toHaveLength(2);
-        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+        expect(screen.getByRole('group', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
             'Confusion uses full evaluation 3 at step 120 across all 90 test samples; the current model is at step 128.',
         );
     });
@@ -234,7 +236,7 @@ describe('ExperimentStateContext', () => {
 
         render(<DiagnosticCockpitStrip />);
 
-        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+        expect(screen.getByRole('group', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
             'Topology shows the draft recipe while Boundary evidence belongs to trained model step 24.',
         );
     });
@@ -251,10 +253,10 @@ describe('ExperimentStateContext', () => {
 
         render(<DiagnosticCockpitStrip />);
 
-        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+        expect(screen.getByRole('group', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
             'run or step to produce Boundary evidence',
         );
-        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' }))
+        expect(screen.getByRole('group', { name: 'Diagnostic cockpit state' }))
             .not.toHaveTextContent('Inspection evidence');
     });
 
@@ -270,8 +272,31 @@ describe('ExperimentStateContext', () => {
 
         render(<DiagnosticCockpitStrip />);
 
-        expect(screen.getByRole('status', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
+        expect(screen.getByRole('group', { name: 'Diagnostic cockpit state' })).toHaveTextContent(
             'run or step to produce Inspection evidence',
         );
+    });
+
+    it('keeps evidence context and cockpit updates outside live ancestors', () => {
+        useTrainingStore.setState({ latestLiveSignal: live(24) });
+        const { rerender } = render(
+            <>
+                <EvidenceContextLine view="Boundary" />
+                <DiagnosticCockpitStrip />
+            </>,
+        );
+
+        const evidenceContext = screen.getByText(/Boundary evidence reflects trained model step 24/)
+            .closest('.forge-evidence-context');
+        const cockpit = screen.getByRole('group', { name: 'Diagnostic cockpit state' });
+        expect(evidenceContext?.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(cockpit.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+
+        act(() => useTrainingStore.setState({ latestLiveSignal: live(25) }));
+        rerender(<><EvidenceContextLine view="Boundary" /><DiagnosticCockpitStrip /></>);
+        expect(screen.getByText(/Boundary evidence reflects trained model step 25/)
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(screen.getByRole('group', { name: 'Diagnostic cockpit state' })
+            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 });

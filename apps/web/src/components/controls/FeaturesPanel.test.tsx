@@ -125,8 +125,10 @@ describe('FeaturesPanel V2 recipe controls', () => {
         });
         render(<FeaturesPanel />);
 
-        expect(screen.getByRole('status')).toHaveTextContent('Updating features...');
-        expect(screen.getByRole('alert')).toHaveTextContent('Failed to update features');
+        const loadingFeedback = screen.getByText('Updating features...');
+        const errorFeedback = screen.getByText('Failed to update features');
+        expect(loadingFeedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(errorFeedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(screen.getByText(
             'Cause: x squared turns distance from the vertical center into a feature. Effect: circles and rings become easier to separate.',
         )).toBeInTheDocument();
