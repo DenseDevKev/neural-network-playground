@@ -3,12 +3,14 @@
 // URL, persistence, and saved-run contracts separate from UI placement.
 
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLayoutStore } from './store/useLayoutStore.ts';
 import { useExperimentMemoryStore } from './store/experimentMemoryStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { selectScientificEvidence } from './store/evidenceSelectors.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import { useTraining } from './hooks/useTraining.ts';
+import { useModalFocusContainment } from './hooks/useModalFocusContainment.ts';
 import { Header } from './components/layout/Header.tsx';
 import { BuildRunShell } from './components/layout/BuildRunShell.tsx';
 import {
@@ -103,8 +105,10 @@ function CompatiblePlayground() {
     const trainingRef = useRef(training);
     const statusRef = useRef(status);
     const workerErrorDialogRef = useRef<HTMLDivElement>(null);
+    const backgroundRef = useRef<HTMLDivElement>(null);
     useEffect(() => { trainingRef.current = training; }, [training]);
     useEffect(() => { statusRef.current = status; }, [status]);
+    useModalFocusContainment(Boolean(workerError), workerErrorDialogRef, backgroundRef);
 
     const stableReset = useCallback(() => trainingRef.current.reset(), []);
     const handleLessonHighlightChange = useCallback((target: LessonTarget | null) => {
@@ -176,13 +180,8 @@ function CompatiblePlayground() {
     ]);
 
     useEffect(() => {
-        if (workerError) {
-            workerErrorDialogRef.current?.focus();
-        }
-    }, [workerError]);
-
-    useEffect(() => {
         const handler = (event: KeyboardEvent) => {
+            if (workerError) return;
             if (event.key !== 'Escape') return;
             if (openSurface) {
                 event.preventDefault();
@@ -198,11 +197,12 @@ function CompatiblePlayground() {
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [advancedToolsOpen, openSurface, setAdvancedToolsOpen]);
+    }, [advancedToolsOpen, openSurface, setAdvancedToolsOpen, workerError]);
 
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
+            if (workerError) return;
             const action = resolveTrainingShortcut(e);
             if (!action) return;
 
@@ -222,7 +222,7 @@ function CompatiblePlayground() {
 
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, []);
+    }, [workerError]);
 
     const leftTabContent = {
         presets: <PresetPanel onReset={stableReset} />,
@@ -262,8 +262,35 @@ function CompatiblePlayground() {
         ? `${workerError} Refresh the page to restart the playground.`
         : '';
 
+    const workerErrorModal = workerError && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+                className="error-overlay"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="worker-error-title"
+                aria-describedby="worker-error-description"
+                tabIndex={-1}
+                ref={workerErrorDialogRef}
+            >
+                <div className="error-overlay__content">
+                    <EmptyState
+                        icon="⚠"
+                        title="Worker connection lost"
+                        titleId="worker-error-title"
+                        description={workerErrorDescription}
+                        descriptionId="worker-error-description"
+                        action={{ label: 'Refresh page', onClick: () => window.location.reload() }}
+                    />
+                </div>
+            </div>,
+            document.body,
+        )
+        : null;
+
     return (
-        <div className="forge-shell">
+        <>
+        <div className="forge-shell" ref={backgroundRef}>
             <a className="skip-link" href="#main-content">Skip to main content</a>
 
             <AccessibilityAnnouncer
@@ -277,30 +304,6 @@ function CompatiblePlayground() {
                 trainedRecipe={trainedRecipe}
                 trainedRecipeSource={trainedRecipeSource}
             />
-
-            {/* Worker crash overlay */}
-            {workerError && (
-                <div
-                    className="error-overlay"
-                    role="alertdialog"
-                    aria-modal="true"
-                    aria-labelledby="worker-error-title"
-                    aria-describedby="worker-error-description"
-                    tabIndex={-1}
-                    ref={workerErrorDialogRef}
-                >
-                    <div className="error-overlay__content">
-                        <EmptyState
-                            icon="⚠"
-                            title="Worker connection lost"
-                            titleId="worker-error-title"
-                            description={workerErrorDescription}
-                            descriptionId="worker-error-description"
-                            action={{ label: 'Refresh page', onClick: () => window.location.reload() }}
-                        />
-                    </div>
-                </div>
-            )}
 
             <ErrorBoundary title="Header unavailable" description="Header render failed." actionLabel="Reload" onRetry={stableReset}>
                 <Header
@@ -358,6 +361,8 @@ function CompatiblePlayground() {
 
             <StatusBar />
         </div>
+        {workerErrorModal}
+        </>
     );
 }
 

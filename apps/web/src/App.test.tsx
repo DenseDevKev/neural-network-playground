@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import type { ReactNode } from 'react';
 import App from './App';
@@ -95,7 +96,34 @@ vi.mock('./hooks/useTraining.ts', () => ({
 }));
 
 vi.mock('./components/layout/Header.tsx', () => ({
-    Header: () => <header>Header</header>,
+    Header: ({
+        openSurface,
+        onToggleSurface,
+        advancedToolsOpen,
+        onToggleAdvancedTools,
+    }: {
+        openSurface: 'presets' | 'lessons' | 'history' | null;
+        onToggleSurface: (surface: 'history') => void;
+        advancedToolsOpen: boolean;
+        onToggleAdvancedTools: () => void;
+    }) => (
+        <header>
+            <button
+                type="button"
+                aria-pressed={openSurface === 'history'}
+                onClick={() => onToggleSurface('history')}
+            >
+                History
+            </button>
+            <button
+                type="button"
+                aria-expanded={advancedToolsOpen}
+                onClick={onToggleAdvancedTools}
+            >
+                Advanced Tools
+            </button>
+        </header>
+    ),
 }));
 
 vi.mock('./components/layout/BuildRunShell.tsx', () => ({
@@ -301,14 +329,51 @@ describe('App accessibility shell', () => {
         expect(results.violations).toHaveLength(0);
     });
 
-    it('shows a recovery overlay when the worker connection fails', () => {
-        useTrainingStore.setState({ workerError: 'Worker channel closed unexpectedly.' });
+    it('contains worker-error focus, background, Escape, and global shortcuts until the error clears', async () => {
+        const user = userEvent.setup();
+        const { container } = render(<App />);
+        const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
+        const historyTrigger = screen.getByRole('button', { name: 'History' });
+        const advancedTrigger = screen.getByRole('button', { name: 'Advanced Tools' });
+        const shell = container.querySelector('.forge-shell');
+        expect(shell).not.toBeNull();
 
-        render(<App />);
+        await user.click(advancedTrigger);
+        await user.click(historyTrigger);
+        skipLink.focus();
+        act(() => useTrainingStore.setState({
+            workerError: 'Worker channel closed unexpectedly.',
+        }));
 
-        expect(screen.getAllByText('Worker connection lost').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('Worker channel closed unexpectedly. Refresh the page to restart the playground.').length).toBeGreaterThan(0);
+        const dialog = screen.getByRole('alertdialog', { name: 'Worker connection lost' });
+        expect(dialog).toHaveAccessibleDescription(
+            'Worker channel closed unexpectedly. Refresh the page to restart the playground.',
+        );
+        expect(dialog).toHaveFocus();
+        expect(shell).toHaveAttribute('inert');
+        expect(shell).toHaveAttribute('aria-hidden', 'true');
+        expect(shell).not.toContainElement(dialog);
+        expect(document.body).toContainElement(dialog);
         expect(screen.getByRole('button', { name: 'Refresh page' })).toBeInTheDocument();
+
+        await user.keyboard('{Escape}');
+        expect(useTrainingStore.getState().workerError).toBe('Worker channel closed unexpectedly.');
+        expect(historyTrigger).toHaveAttribute('aria-pressed', 'true');
+        expect(advancedTrigger).toHaveAttribute('aria-expanded', 'true');
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+
+        for (const code of ['Space', 'ArrowRight', 'KeyR']) {
+            dispatchGlobalKeyDown(code);
+        }
+        expect(trainingMock.play).not.toHaveBeenCalled();
+        expect(trainingMock.pause).not.toHaveBeenCalled();
+        expect(trainingMock.step).not.toHaveBeenCalled();
+        expect(trainingMock.reset).not.toHaveBeenCalled();
+
+        act(() => useTrainingStore.setState({ workerError: null }));
+        await waitFor(() => expect(skipLink).toHaveFocus());
+        expect(shell).not.toHaveAttribute('inert');
+        expect(shell).not.toHaveAttribute('aria-hidden');
     });
 
     it('cancels each resolved global shortcut and dispatches its matching training command once', () => {

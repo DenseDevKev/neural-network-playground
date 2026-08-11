@@ -576,6 +576,35 @@ describe('App shell integration', () => {
         }
     });
 
+    it('leases the real Header body portal while the worker-error modal owns focus', async () => {
+        const { container } = render(<App />);
+        const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
+        const helpTrigger = screen.getByRole('button', { name: 'About workspace views' });
+        const helpId = helpTrigger.getAttribute('aria-controls');
+        const helpPortal = helpId ? document.getElementById(helpId) : null;
+        const shell = container.querySelector('.forge-shell');
+        expect(helpPortal).not.toBeNull();
+        expect(helpPortal?.parentElement).toBe(document.body);
+        expect(shell).not.toBeNull();
+
+        helpPortal?.setAttribute('aria-hidden', 'false');
+        skipLink.focus();
+        act(() => useTrainingStore.setState({ workerError: 'Header portal containment.' }));
+
+        const dialog = screen.getByRole('alertdialog', { name: 'Worker connection lost' });
+        expect(dialog).toHaveFocus();
+        expect(shell).toHaveAttribute('inert');
+        expect(shell).toHaveAttribute('aria-hidden', 'true');
+        expect(shell).not.toContainElement(dialog);
+        expect(helpPortal).toHaveAttribute('inert');
+        expect(helpPortal).toHaveAttribute('aria-hidden', 'true');
+
+        act(() => useTrainingStore.setState({ workerError: null }));
+        await waitFor(() => expect(skipLink).toHaveFocus());
+        expect(helpPortal).not.toHaveAttribute('inert');
+        expect(helpPortal).toHaveAttribute('aria-hidden', 'false');
+    });
+
     it('renders Run with transport and one active evidence view', async () => {
         const user = userEvent.setup();
         render(<App />);

@@ -421,10 +421,13 @@ describe('Training integration', () => {
     });
 
     it('routes worker error messages to the error overlay', async () => {
+        let container!: HTMLElement;
         await act(async () => {
-            render(<App />);
+            ({ container } = render(<App />));
         });
         await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
+        const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
+        skipLink.focus();
 
         const errorMsg = {
             type: 'error' as const,
@@ -438,7 +441,15 @@ describe('Training integration', () => {
         });
 
         expect(useTrainingStore.getState().workerError).toBe('Training diverged.');
-        expect(screen.getByText('Worker connection lost')).toBeInTheDocument();
+        const dialog = screen.getByRole('alertdialog', { name: 'Worker connection lost' });
+        expect(dialog).toHaveAccessibleDescription(
+            'Training diverged. Refresh the page to restart the playground.',
+        );
+        expect(dialog).toHaveFocus();
+        const shell = container.querySelector('.forge-shell');
+        expect(shell).toHaveAttribute('inert');
+        expect(shell).toHaveAttribute('aria-hidden', 'true');
+        expect(shell).not.toContainElement(dialog);
     });
 });
 
