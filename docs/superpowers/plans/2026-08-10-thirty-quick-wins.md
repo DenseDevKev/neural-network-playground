@@ -1489,8 +1489,9 @@ git commit -m "feat(web): contain worker error focus"
 - The document and forge shell retain no horizontal overflow. The toolbar and
   edge legend may remain intentional inner scrollers, but every target must be
   reachable through that scrolling.
-- Enlarging the toolbar must retain the existing six-pixel gap to
-  `.network-graph-summary`; the two boxes never overlap.
+- Enlarging the toolbar must establish at least a six-pixel gap to
+  `.network-graph-summary`; the current compact baseline is only two pixels and
+  the two boxes must never overlap.
 - Define one module-level graph/evidence locator and assertion helper in the
   smoke spec for Task 29 to reuse; do not duplicate the 13-name inventory.
 
@@ -1634,9 +1635,9 @@ Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chro
 
 Expected: the new static test FAILS because the scoped rule/offset are absent;
 build PASSES and refreshes dist; Chromium E2E FAILS because controls measure 24
-to 28px. The existing small toolbar still has its six-pixel gap in RED; the gap
-assertion is the regression guard that would fail if controls were enlarged
-without the scoped summary offset.
+to 28px and the compact baseline has only a two-pixel toolbar/summary gap. The
+gap assertion proves the new layout establishes six pixels and guards against
+enlarging controls without the scoped summary offset.
 
 - [ ] **Step 3: Add compact hit-area styles without scaling graph content**
 
@@ -1652,8 +1653,8 @@ without the scoped summary offset.
 }
 ~~~
 
-Keep the current six-pixel toolbar/summary gap when the toolbar grows from 32px
-to 56px. Preserve visual label density with padding/wrapping and intentional
+Establish a six-pixel toolbar/summary gap when the toolbar grows to 56px.
+Preserve visual label density with padding/wrapping and intentional
 inner overflow; do not transform or scale graph content.
 
 - [ ] **Step 4: Run GREEN**
