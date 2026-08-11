@@ -1,11 +1,13 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type {
     ExperimentRunRecordV2,
     RejectedExperimentRunRecordV2,
 } from '@nn-playground/shared';
+import { EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS } from '@nn-playground/shared';
 import { getWorkerApi } from '../../worker/workerBridge.ts';
 import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
+import { createDefaultRunTitle } from './runTitle.ts';
 
 function recordLabel(record: ExperimentRunRecordV2): string {
     return record.title ?? record.id;
@@ -129,26 +131,47 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const replaceDocument = usePlaygroundStore((state) => state.replaceDocument);
     const [saving, setSaving] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [runTitle, setRunTitle] = useState('');
+    const savingRef = useRef(false);
+    const mountedRef = useRef(true);
+    const trimmedRunTitle = runTitle.trim();
+    const runTitleTooLong = Array.from(trimmedRunTitle).length
+        > EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS;
+
+    useEffect(() => () => {
+        mountedRef.current = false;
+    }, []);
 
     const saveCurrentRun = useCallback(async () => {
-        if (saving || pendingSave !== null) return;
+        if (savingRef.current || pendingSave !== null || runTitleTooLong) return;
+        savingRef.current = true;
         setSaving(true);
         setActionError(null);
         try {
             const timestamp = new Date().toISOString();
             const api = await getWorkerApi();
-            const record = await api.captureRunArtifact({
+            const capturedRecord = await api.captureRunArtifact({
                 id: createUuid(),
                 createdAt: timestamp,
                 updatedAt: timestamp,
+                ...(trimmedRunTitle.length > 0 ? { title: trimmedRunTitle } : {}),
             });
+            const record = capturedRecord.title === undefined
+                ? {
+                    ...capturedRecord,
+                    title: createDefaultRunTitle(capturedRecord.recipe, capturedRecord.snapshot),
+                }
+                : capturedRecord;
             await saveRecord(record);
         } catch (error) {
-            setActionError(error instanceof Error ? error.message : 'Saving the current run failed.');
+            if (mountedRef.current) {
+                setActionError(error instanceof Error ? error.message : 'Saving the current run failed.');
+            }
         } finally {
-            setSaving(false);
+            savingRef.current = false;
+            if (mountedRef.current) setSaving(false);
         }
-    }, [pendingSave, saveRecord, saving]);
+    }, [pendingSave, runTitleTooLong, saveRecord, trimmedRunTitle]);
 
     const applySavedRecipe = useCallback(async (record: ExperimentRunRecordV2) => {
         setActionError(null);
@@ -173,6 +196,24 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                 Saved runs contain a recipe plus worker-authored evaluation evidence. They do not
                 contain trained parameters.
             </div>
+            <label style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
+                <span>Run name</span>
+                <input
+                    type="text"
+                    value={runTitle}
+                    onChange={(event) => setRunTitle(event.currentTarget.value)}
+                    aria-describedby="run-name-guidance"
+                    aria-invalid={runTitleTooLong}
+                />
+            </label>
+            <div id="run-name-guidance" className="inspection__empty" style={{ marginBottom: 8 }}>
+                Optional. Leave blank to use dataset, architecture, and saved step.
+            </div>
+            {runTitleTooLong && (
+                <div className="inspection__empty" role="alert" style={{ marginBottom: 8 }}>
+                    Run name must contain at most {EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS} Unicode code points.
+                </div>
+            )}
             <button
                 type="button"
                 className="btn btn--ghost btn--sm"
@@ -180,6 +221,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                 onClick={() => { void saveCurrentRun(); }}
                 disabled={saving
                     || pendingSave !== null
+                    || runTitleTooLong
                     || hydrationStatus !== 'ready'
                     || prepared === null}
             >

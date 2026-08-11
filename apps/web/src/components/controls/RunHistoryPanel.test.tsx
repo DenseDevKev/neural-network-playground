@@ -1,8 +1,9 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     EXPERIMENT_MEMORY_ENVELOPE_KIND,
+    EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS,
     PREPARED_PRESETS,
 } from '@nn-playground/shared';
 import type {
@@ -125,6 +126,112 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         const persisted = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '';
         expect(persisted).toContain('"kind":"nn-playground-run"');
         expect(persisted).not.toMatch(/weights|biases|parameters/i);
+    });
+
+    it('trims a custom run name, gives it to the worker as metadata, and renders the saved title', async () => {
+        const prepared = currentPreparedForTest()!;
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: {
+            id: string;
+            title: string;
+        }) => makeRecord(prepared, metadata.id, metadata.title));
+
+        const view = render(<RunHistoryPanel />);
+        await userEvent.type(screen.getByRole('textbox', { name: 'Run name' }), '  XOR baseline  ');
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+
+        await waitFor(() => expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1));
+        expect(workerApi.captureRunArtifact.mock.calls[0][0]).toEqual(expect.objectContaining({
+            title: 'XOR baseline',
+        }));
+        expect(await screen.findByRole('article', { name: 'XOR baseline' })).toBeInTheDocument();
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY))
+            .toContain('"title":"XOR baseline"');
+
+        view.unmount();
+        useExperimentMemoryStore.setState({ records: [] });
+        await hydrateSingleton();
+        render(<RunHistoryPanel />);
+        expect(await screen.findByRole('article', { name: 'XOR baseline' })).toBeInTheDocument();
+    });
+
+    it('uses the worker-authored snapshot step in the deterministic default when the run name is blank', async () => {
+        const prepared = currentPreparedForTest()!;
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => {
+            const { title: _title, ...record } = makeRecord(prepared, metadata.id);
+            return record;
+        });
+
+        render(<RunHistoryPanel />);
+        fireEvent.change(screen.getByRole('textbox', { name: 'Run name' }), {
+            target: { value: '   ' },
+        });
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+
+        await waitFor(() => expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1));
+        expect(workerApi.captureRunArtifact.mock.calls[0][0]).not.toHaveProperty('title');
+        expect(await screen.findByRole('article', { name: 'Circle · 2-4-4-1 · step 4' }))
+            .toBeInTheDocument();
+    });
+
+    it('accepts exactly 120 Unicode code points, including astral characters', async () => {
+        const prepared = currentPreparedForTest()!;
+        const title = '🧠'.repeat(EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS);
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: {
+            id: string;
+            title: string;
+        }) => makeRecord(prepared, metadata.id, metadata.title));
+
+        render(<RunHistoryPanel />);
+        fireEvent.change(screen.getByRole('textbox', { name: 'Run name' }), {
+            target: { value: title },
+        });
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+
+        await waitFor(() => expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1));
+        expect(workerApi.captureRunArtifact.mock.calls[0][0]).toEqual(expect.objectContaining({ title }));
+    });
+
+    it('rejects a custom run name beyond the schema Unicode code-point limit', async () => {
+        render(<RunHistoryPanel />);
+        const input = screen.getByRole('textbox', { name: 'Run name' });
+        fireEvent.change(input, {
+            target: { value: '🧠'.repeat(EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS + 1) },
+        });
+
+        expect(input).toHaveAttribute('aria-invalid', 'true');
+        expect(screen.getByRole('alert')).toHaveTextContent(
+            `Run name must contain at most ${EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS} Unicode code points.`,
+        );
+        expect(screen.getByRole('button', { name: 'Save current run' })).toBeDisabled();
+        expect(workerApi.captureRunArtifact).not.toHaveBeenCalled();
+    });
+
+    it('finishes the exact clicked-title save after unmount without reading later input', async () => {
+        const prepared = currentPreparedForTest()!;
+        let resolveCapture!: () => void;
+        workerApi.captureRunArtifact.mockImplementation((metadata: { id: string; title: string }) => (
+            new Promise<ExperimentRunRecordV2>((resolve) => {
+                resolveCapture = () => resolve(makeRecord(prepared, metadata.id, metadata.title));
+            })
+        ));
+
+        const view = render(<RunHistoryPanel />);
+        const input = screen.getByRole('textbox', { name: 'Run name' });
+        await userEvent.type(input, 'First title');
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        fireEvent.change(input, { target: { value: 'Later title' } });
+        view.unmount();
+
+        await act(async () => {
+            resolveCapture();
+            await Promise.resolve();
+        });
+
+        expect(workerApi.captureRunArtifact.mock.calls[0][0]).toEqual(expect.objectContaining({
+            title: 'First title',
+        }));
+        await waitFor(() => expect(useExperimentMemoryStore.getState().records[0]?.title)
+            .toBe('First title'));
     });
 
     it('retries persistence with the captured record instead of recapturing scientific state', async () => {
