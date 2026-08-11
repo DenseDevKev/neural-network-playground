@@ -1,5 +1,15 @@
 // ── Header ── brand + Build/Run switch + live metrics + instrument menus
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    memo,
+    useCallback,
+    useEffect,
+    useId,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
@@ -33,7 +43,8 @@ const SURFACE_LABELS = {
 
 const WORKSPACE_VIEW_DESCRIPTION =
     'Build changes the recipe. Run trains and inspects it. Switching views does not start or reset training.';
-const WORKSPACE_VIEW_DESCRIPTION_ID = 'forge-workspace-view-description';
+const WORKSPACE_HELP_GAP = 8;
+const WORKSPACE_HELP_VIEWPORT_PADDING = 8;
 
 function useFlash(value: string) {
     const prev = useRef(value);
@@ -68,9 +79,54 @@ export const Header = memo(function Header({
     const setAudienceMode = useLayoutStore((s) => s.setAudienceMode);
     const [modeAnnouncement, setModeAnnouncement] = useState('');
     const [workspaceHelpOpen, setWorkspaceHelpOpen] = useState(false);
+    const [workspaceHelpPosition, setWorkspaceHelpPosition] = useState({ left: 0, top: 0 });
     const workspaceHelpPinnedRef = useRef(false);
     const workspaceHelpTriggerRef = useRef<HTMLButtonElement>(null);
+    const workspaceHelpDescriptionRef = useRef<HTMLDivElement>(null);
+    const workspaceDescriptionId = `forge-workspace-view-description-${useId()}`;
     const audienceProfile = getAudienceProfile(audienceMode);
+
+    const positionWorkspaceHelp = useCallback(() => {
+        const trigger = workspaceHelpTriggerRef.current;
+        const description = workspaceHelpDescriptionRef.current;
+        if (!trigger || !description) return;
+
+        const triggerRect = trigger.getBoundingClientRect();
+        const descriptionRect = description.getBoundingClientRect();
+        const descriptionWidth = descriptionRect.width || Math.min(320, window.innerWidth - 16);
+        const descriptionHeight = descriptionRect.height || 80;
+        const maxLeft = Math.max(
+            WORKSPACE_HELP_VIEWPORT_PADDING,
+            window.innerWidth - descriptionWidth - WORKSPACE_HELP_VIEWPORT_PADDING,
+        );
+        const left = Math.max(
+            WORKSPACE_HELP_VIEWPORT_PADDING,
+            Math.min(triggerRect.left, maxLeft),
+        );
+        const belowTop = triggerRect.bottom + WORKSPACE_HELP_GAP;
+        const top = belowTop + descriptionHeight <= window.innerHeight - WORKSPACE_HELP_VIEWPORT_PADDING
+            ? belowTop
+            : Math.max(
+                WORKSPACE_HELP_VIEWPORT_PADDING,
+                triggerRect.top - descriptionHeight - WORKSPACE_HELP_GAP,
+            );
+
+        setWorkspaceHelpPosition((current) => (
+            current.left === left && current.top === top ? current : { left, top }
+        ));
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!workspaceHelpOpen) return;
+
+        positionWorkspaceHelp();
+        window.addEventListener('resize', positionWorkspaceHelp);
+        window.addEventListener('scroll', positionWorkspaceHelp, true);
+        return () => {
+            window.removeEventListener('resize', positionWorkspaceHelp);
+            window.removeEventListener('scroll', positionWorkspaceHelp, true);
+        };
+    }, [positionWorkspaceHelp, workspaceHelpOpen]);
 
     const evidence = useMemo(() => selectScientificEvidence({
         latestLiveSignal,
@@ -104,7 +160,7 @@ export const Header = memo(function Header({
                 className="forge-phase"
                 role="group"
                 aria-label="Workspace view"
-                aria-describedby={WORKSPACE_VIEW_DESCRIPTION_ID}
+                aria-describedby={workspaceDescriptionId}
             >
                 {(['build', 'run'] as const).map((nextView) => (
                     <button
@@ -143,7 +199,7 @@ export const Header = memo(function Header({
                         type="button"
                         aria-label="About workspace views"
                         aria-expanded={workspaceHelpOpen}
-                        aria-controls={WORKSPACE_VIEW_DESCRIPTION_ID}
+                        aria-controls={workspaceDescriptionId}
                         onClick={() => {
                             workspaceHelpPinnedRef.current = !workspaceHelpPinnedRef.current;
                             setWorkspaceHelpOpen(workspaceHelpPinnedRef.current);
@@ -151,15 +207,6 @@ export const Header = memo(function Header({
                     >
                         <span aria-hidden="true">?</span>
                     </button>
-                    <span
-                        id={WORKSPACE_VIEW_DESCRIPTION_ID}
-                        className={workspaceHelpOpen ? 'forge-audience-mode__note' : 'sr-only'}
-                        role={workspaceHelpOpen ? 'region' : undefined}
-                        aria-label={workspaceHelpOpen ? 'Build and Run views' : undefined}
-                        style={workspaceHelpOpen ? { maxWidth: '280px' } : undefined}
-                    >
-                        {WORKSPACE_VIEW_DESCRIPTION}
-                    </span>
                 </span>
             </div>
 
@@ -297,6 +344,28 @@ export const Header = memo(function Header({
             </div>
 
             <TrainingProgressBar isTraining={isRunning} currentEpoch={epoch} />
+            {typeof document !== 'undefined' ? createPortal(
+                <div
+                    ref={workspaceHelpDescriptionRef}
+                    id={workspaceDescriptionId}
+                    className={workspaceHelpOpen ? 'tooltip tooltip__content' : 'sr-only'}
+                    role={workspaceHelpOpen ? 'region' : undefined}
+                    aria-label={workspaceHelpOpen ? 'Build and Run views' : undefined}
+                    style={workspaceHelpOpen ? {
+                        position: 'fixed',
+                        left: `${workspaceHelpPosition.left}px`,
+                        top: `${workspaceHelpPosition.top}px`,
+                        width: 'max-content',
+                        maxWidth: 'min(320px, calc(100vw - 16px))',
+                        boxSizing: 'border-box',
+                        pointerEvents: 'none',
+                        zIndex: 1200,
+                    } : undefined}
+                >
+                    {WORKSPACE_VIEW_DESCRIPTION}
+                </div>,
+                document.body,
+            ) : null}
         </header>
     );
 });

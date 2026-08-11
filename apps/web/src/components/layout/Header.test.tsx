@@ -187,25 +187,33 @@ describe('Header', () => {
             .getAttribute('aria-describedby');
 
         expect(trigger).toHaveAttribute('aria-expanded', 'false');
-        expect(contentId).toBe('forge-workspace-view-description');
-        expect(descriptionId).toBe('forge-workspace-view-description');
-        expect(document.querySelectorAll('[id="forge-workspace-view-description"]')).toHaveLength(1);
-        expect(document.getElementById('forge-workspace-view-description')).toHaveClass('sr-only');
+        expect(descriptionId).toBe(contentId);
+        expect(Array.from(document.querySelectorAll('[id]')).filter(
+            (element) => element.id === contentId,
+        )).toHaveLength(1);
+        expect(document.getElementById(contentId ?? '')).toHaveClass('sr-only');
 
         fireEvent.mouseEnter(trigger);
-        expect(document.getElementById(contentId ?? '')).toBe(
-            screen.getByRole('region', { name: 'Build and Run views' }),
-        );
+        const hoverExplanation = screen.getByRole('region', { name: 'Build and Run views' });
+        expect(document.getElementById(contentId ?? '')).toBe(hoverExplanation);
+        expect(hoverExplanation).toHaveStyle({ position: 'fixed' });
+        expect(screen.getByRole('banner')).not.toContainElement(hoverExplanation);
+        expect(document.body).toContainElement(hoverExplanation);
+        expect(contentId).toMatch(/^forge-workspace-view-description-/);
         fireEvent.mouseLeave(trigger);
         expect(screen.queryByRole('region', { name: 'Build and Run views' })).not.toBeInTheDocument();
-        expect(document.getElementById('forge-workspace-view-description')).toBeInTheDocument();
+        expect(document.getElementById(contentId ?? '')).toBeInTheDocument();
 
         fireEvent.focus(trigger);
         expect(screen.getByRole('region', { name: 'Build and Run views' })).toBeInTheDocument();
+        await user.keyboard('{Enter}');
+        expect(trigger).toHaveAttribute('aria-expanded', 'true');
         fireEvent.blur(trigger);
         expect(screen.queryByRole('region', { name: 'Build and Run views' })).not.toBeInTheDocument();
 
-        await user.click(trigger);
+        fireEvent.pointerDown(trigger, { pointerType: 'touch' });
+        fireEvent.pointerUp(trigger, { pointerType: 'touch' });
+        fireEvent.click(trigger);
         expect(trigger).toHaveAttribute('aria-expanded', 'true');
         const visibleExplanation = screen.getByRole('region', { name: 'Build and Run views' });
         expect(visibleExplanation).toBeVisible();
@@ -214,10 +222,46 @@ describe('Header', () => {
             'Build changes the recipe. Run trains and inspects it. Switching views does not start or reset training.',
         );
 
+        trigger.focus();
         await user.keyboard('{Escape}');
         expect(trigger).toHaveAttribute('aria-expanded', 'false');
         expect(screen.queryByRole('region', { name: 'Build and Run views' })).not.toBeInTheDocument();
         expect(trigger).toHaveFocus();
+    });
+
+    it('owns a unique persistent workspace description for every Header instance', () => {
+        render(
+            <>
+                <Header
+                    training={createTrainingMock()}
+                    openSurface={null}
+                    onToggleSurface={vi.fn()}
+                    advancedToolsOpen={false}
+                    onToggleAdvancedTools={vi.fn()}
+                />
+                <Header
+                    training={createTrainingMock()}
+                    openSurface={null}
+                    onToggleSurface={vi.fn()}
+                    advancedToolsOpen={false}
+                    onToggleAdvancedTools={vi.fn()}
+                />
+            </>,
+        );
+
+        const groups = screen.getAllByRole('group', { name: 'Workspace view' });
+        const triggers = screen.getAllByRole('button', { name: 'About workspace views' });
+        const descriptionIds = groups.map((group) => group.getAttribute('aria-describedby'));
+
+        expect(new Set(descriptionIds).size).toBe(2);
+        groups.forEach((_, index) => {
+            const descriptionId = descriptionIds[index];
+            expect(descriptionId).toMatch(/^forge-workspace-view-description-/);
+            expect(triggers[index]).toHaveAttribute('aria-controls', descriptionId);
+            expect(document.getElementById(descriptionId ?? '')).toHaveTextContent(
+                'Build changes the recipe. Run trains and inspects it. Switching views does not start or reset training.',
+            );
+        });
     });
 
     it('updates only workspace view state when Build or Run is clicked', async () => {
@@ -243,11 +287,11 @@ describe('Header', () => {
 
     it('has no automated accessibility violations with the workspace explanation open', async () => {
         const user = userEvent.setup();
-        const { container } = renderHeader();
+        const { baseElement } = renderHeader();
 
         await user.click(screen.getByRole('button', { name: 'About workspace views' }));
 
-        expect((await axe(container)).violations).toHaveLength(0);
+        expect((await axe(baseElement)).violations).toHaveLength(0);
     });
 
     it('changes audience mode through a described native select and announces only explicit choices', async () => {
