@@ -699,47 +699,66 @@ git commit -m "test(engine): stabilize grid performance evidence"
 - Modify: apps/web/src/store/useLayoutStore.test.ts
 - Create: apps/web/src/components/controls/FirstVisitLessonCue.tsx
 - Create: apps/web/src/components/controls/FirstVisitLessonCue.test.tsx
+- Modify: apps/web/src/App.tsx
+- Modify: apps/web/src/__tests__/appShell.integration.test.tsx
 - Modify: apps/web/src/components/layout/BuildRunShell.tsx
 - Modify: apps/web/src/components/layout/BuildRunShell.test.tsx
 
 **Interfaces:**
-- useLayoutStore persists `lessonCueDismissed` and monotonic `hasStartedLesson` without adding either to shared experiment URLs. Calling the existing `setActiveLessonStep` marks `hasStartedLesson` true; finishing or clearing a lesson never resets it.
-- FirstVisitLessonCue receives hasSavedRuns, hasStartedLesson, hasActiveLesson, onOpenLessons, and onDismiss; it renders only when all first-visit conditions are true.
+- useLayoutStore persists `lessonCueDismissed` and monotonic `hasStartedLesson` without adding either to shared experiment URLs. `dismissLessonCue()` only sets `lessonCueDismissed` true. Calling the existing `setActiveLessonStep` marks `hasStartedLesson` true; finishing or clearing a lesson never resets it. Production actions never reset either sticky boolean.
+- FirstVisitLessonCue receives historyReady, lessonCueDismissed, hasSavedRuns, hasStartedLesson, hasActiveLesson, onOpenLessons, and onDismiss; it renders only when history hydration is ready and all first-visit conditions are true.
+- Scope amendment (2026-08-11): App owns the drawer state and is the only layer
+  that can idempotently open Lessons with `setOpenSurface('lessons')`.
+  BuildRunShell must stay presentation-focused; App derives accepted saved-run
+  readiness, renders/passes the cue, and supplies one stable open callback.
+  Do not DOM-click a Header trigger or reuse the toggle callback, because those
+  approaches can close the requested surface or couple components through DOM.
 
 - [ ] **Step 1: Write failing visibility and persistence tests**
 
 ~~~tsx
-render(<FirstVisitLessonCue hasSavedRuns={false} hasStartedLesson={false} hasActiveLesson={false} onOpenLessons={open} onDismiss={dismiss} />);
+render(<FirstVisitLessonCue historyReady={true} lessonCueDismissed={false} hasSavedRuns={false} hasStartedLesson={false} hasActiveLesson={false} onOpenLessons={open} onDismiss={dismiss} />);
 expect(screen.getByRole('button', { name: 'Start a 3-minute lesson' })).toBeVisible();
 ~~~
 
-Add cases for a saved run, active lesson, previously started/finished lesson, and persisted dismissal, each of which hides the cue. Store tests must prove `hasStartedLesson` survives persistence sanitization and stays true after `clearActiveLessonStep()`.
+Add cases for loading history, a saved run, active lesson, previously started/finished lesson, and persisted dismissal, each of which hides the cue. Store tests must prove `hasStartedLesson` survives persistence sanitization and stays true after `clearActiveLessonStep()`.
+
+Add an App-shell integration RED proving the cue waits for history hydration,
+then opens the existing Lessons dialog without changing audience, workspace,
+recipe/prepared identity, training state, or URL hash.
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/controls/FirstVisitLessonCue.test.tsx src/store/useLayoutStore.test.ts --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/controls/FirstVisitLessonCue.test.tsx src/store/useLayoutStore.test.ts src/components/layout/BuildRunShell.test.tsx src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
 Expected: FAIL because the cue and persisted flag do not exist.
 
 - [ ] **Step 3: Implement the bounded cue and shell integration**
 
 ~~~tsx
-if (lessonCueDismissed || hasSavedRuns || hasStartedLesson || hasActiveLesson) return null;
+if (!historyReady || lessonCueDismissed || hasSavedRuns || hasStartedLesson || hasActiveLesson) return null;
 return <aside aria-label="Getting started">...</aside>;
 ~~~
 
 Place it beside Current Recipe in Build view and open the existing Lessons surface without changing audience mode or recipe state.
 
+App should pass a stable `openLessons` callback backed by
+`setOpenSurface('lessons')`; cue dismissal updates only layout persistence. Use
+accepted experiment-memory records only after `hydrationStatus === 'ready'` so
+established users never see a loading-time flash. Keep Zustand persistence
+version `0`; sanitize/partialize only actual booleans, leave active lesson fields
+transient, and reset the new singleton fields explicitly in affected tests.
+
 - [ ] **Step 4: Run GREEN**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/controls/FirstVisitLessonCue.test.tsx src/store/useLayoutStore.test.ts src/components/layout/BuildRunShell.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/controls/FirstVisitLessonCue.test.tsx src/store/useLayoutStore.test.ts src/components/layout/BuildRunShell.test.tsx src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
 Expected: PASS for fresh, dismissed, active-lesson, and existing-user states.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/store/useLayoutStore.ts apps/web/src/store/useLayoutStore.test.ts apps/web/src/components/controls/FirstVisitLessonCue.tsx apps/web/src/components/controls/FirstVisitLessonCue.test.tsx apps/web/src/components/layout/BuildRunShell.tsx apps/web/src/components/layout/BuildRunShell.test.tsx
+git add apps/web/src/store/useLayoutStore.ts apps/web/src/store/useLayoutStore.test.ts apps/web/src/components/controls/FirstVisitLessonCue.tsx apps/web/src/components/controls/FirstVisitLessonCue.test.tsx apps/web/src/App.tsx apps/web/src/__tests__/appShell.integration.test.tsx apps/web/src/components/layout/BuildRunShell.tsx apps/web/src/components/layout/BuildRunShell.test.tsx
 git commit -m "feat(web): add first visit lesson cue"
 ~~~
 
