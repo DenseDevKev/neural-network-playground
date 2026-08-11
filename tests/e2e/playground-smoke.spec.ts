@@ -324,6 +324,19 @@ async function expectGraphAndEvidenceTargets(page: Page): Promise<void> {
         await expectFullyInViewport(page, target);
         await expectMinimumTouchTarget(target);
     }
+
+    const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
+    const summary = page.locator(
+        '.forge-buildrun__topology-stage .network-graph-summary',
+    );
+    const toolbarBox = await toolbar.boundingBox();
+    const summaryBox = await summary.boundingBox();
+    expect(toolbarBox).not.toBeNull();
+    expect(summaryBox).not.toBeNull();
+    if (toolbarBox && summaryBox) {
+        expect(summaryBox.y - (toolbarBox.y + toolbarBox.height))
+            .toBeGreaterThanOrEqual(6);
+    }
 }
 
 async function touchTap(page: Page, locator: Locator): Promise<void> {
@@ -615,165 +628,191 @@ test.describe('800px compact shell', () => {
     });
 });
 
-test.describe('390px graph and evidence targets', () => {
-    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+async function compactShellJourney({ page }: { page: Page }): Promise<void> {
+    await page.route('https://fonts.googleapis.com/**', (route) => (
+        route.fulfill({ contentType: 'text/css', body: '' })
+    ));
+    await loadPlayground(page);
 
-    test('keeps every compact graph and evidence target reachable', async ({ page }) => {
-        await loadPlayground(page);
-        const boundaryTab = page.getByRole('tab', { name: 'Boundary', exact: true });
-        await boundaryTab.click();
-        await expect(boundaryTab).toHaveAttribute('aria-selected', 'true');
-        await expect(page.getByRole('dialog')).toHaveCount(0);
-        await expectGraphAndEvidenceTargets(page);
+    const shortcutDetails = timeline(page).getByRole('group', { name: 'Keyboard shortcuts' });
+    const shortcutSummary = shortcutDetails.locator('summary');
+    await shortcutSummary.scrollIntoViewIfNeeded();
+    await expectFullyInViewport(page, shortcutSummary);
+    await expectMinimumTouchTarget(shortcutSummary);
+    await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');
+    expect(await readStatusStep(page)).toBe(0);
+    const initialTrainingSnapshot = {
+        status: await statusBar(page).getAttribute('data-status'),
+        step: await readStatusStep(page),
+        generation: await currentRun(page).getAttribute('data-model-generation'),
+        revision: await currentRun(page).getAttribute('data-model-revision'),
+    };
+    expect(initialTrainingSnapshot.status).toBe('idle');
+    expect(initialTrainingSnapshot.step).toBe(0);
+    expect(initialTrainingSnapshot.generation).not.toBeNull();
+    expect(initialTrainingSnapshot.generation).not.toBe('');
+    expect(initialTrainingSnapshot.revision).not.toBeNull();
+    expect(initialTrainingSnapshot.revision).not.toBe('');
+    const expectTrainingSnapshotUnchanged = async () => {
+        expect({
+            status: await statusBar(page).getAttribute('data-status'),
+            step: await readStatusStep(page),
+            generation: await currentRun(page).getAttribute('data-model-generation'),
+            revision: await currentRun(page).getAttribute('data-model-revision'),
+        }).toEqual(initialTrainingSnapshot);
+    };
 
-        const overflow = await page.evaluate(() => {
-            const shell = document.querySelector<HTMLElement>('.forge-shell');
-            if (!shell) throw new Error('forge shell is missing');
-            return {
-                document: document.documentElement.scrollWidth
-                    <= document.documentElement.clientWidth + 1,
-                shell: shell.scrollWidth <= shell.clientWidth + 1,
-            };
-        });
-        expect(overflow).toEqual({ document: true, shell: true });
+    await touchTap(page, shortcutSummary);
+    await expect(shortcutDetails).toHaveAttribute('open', '');
+    await expectTrainingSnapshotUnchanged();
+    await touchTap(page, shortcutSummary);
+    await expect(shortcutDetails).not.toHaveAttribute('open', '');
+    await expectTrainingSnapshotUnchanged();
+    await shortcutSummary.focus();
+    await expect(shortcutSummary).toBeFocused();
+    await shortcutSummary.press('Space');
+    await expect(shortcutDetails).toHaveAttribute('open', '');
+    await expectTrainingSnapshotUnchanged();
+    await shortcutSummary.press('Space');
+    await expect(shortcutDetails).not.toHaveAttribute('open', '');
 
-        const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
-        const summary = page.locator(
-            '.forge-buildrun__topology-stage .network-graph-summary',
+    await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Epoch' }));
+    await expectConceptHelpInViewport(page, 'Epoch');
+    const workspaceView = page.getByRole('group', { name: 'Workspace view' });
+    await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
+    for (const concept of ['Train/test split', 'Learning rate'] as const) {
+        await expectMinimumTouchTarget(
+            page.getByRole('button', { name: `Learn about ${concept}` }),
         );
-        const toolbarBox = await toolbar.boundingBox();
-        const summaryBox = await summary.boundingBox();
-        expect(toolbarBox).not.toBeNull();
-        expect(summaryBox).not.toBeNull();
-        if (toolbarBox && summaryBox) {
-            expect(summaryBox.y - (toolbarBox.y + toolbarBox.height))
-                .toBeGreaterThanOrEqual(6);
-        }
+        await expectConceptHelpInViewport(page, concept);
+    }
+    await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
+
+    const compactOutcome = page.getByRole('group', { name: 'Evaluation outcome' });
+    const compactOutcomeSummary = compactOutcome.locator('summary');
+    const compactOutcomeBody = compactOutcome.locator('.forge-compact-outcome__body');
+    await expectFullyInViewport(page, compactOutcome);
+    await expectFullyInViewport(page, compactOutcomeSummary);
+    await expect(page.getByRole('group', { name: 'Training metrics' })).toBeHidden();
+    await expectMinimumTouchTarget(compactOutcomeSummary);
+    await expect(compactOutcome).not.toHaveAttribute('open', '');
+    await expect(compactOutcomeSummary).toContainText(/Step 0 · Test accuracy \d+\.\d%/);
+    await expect(compactOutcomeBody).toBeHidden();
+    await compactOutcomeSummary.click();
+    await expect(compactOutcome).toHaveAttribute('open', '');
+    await expect(compactOutcomeBody).toBeVisible();
+    await expect(compactOutcomeBody).toContainText('Full evaluation at step 0');
+    await expect(compactOutcomeBody).toContainText(/Train data loss \(full split\) \d+\.\d{4}/);
+    await expect(compactOutcomeBody).toContainText(/Test data loss \(full split\) \d+\.\d{4}/);
+    const openOutcomeOverflow = await page.evaluate(() => {
+        const shell = document.querySelector<HTMLElement>('.forge-shell');
+        if (!shell) throw new Error('forge shell is missing');
+        return {
+            document: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+            shell: shell.scrollWidth <= shell.clientWidth + 1,
+        };
     });
-});
+    expect(openOutcomeOverflow).toEqual({ document: true, shell: true });
+    await compactOutcomeSummary.click();
+    await expect(compactOutcome).not.toHaveAttribute('open', '');
 
-test.describe('320px touch shell', () => {
-    test.use({
-        viewport: { width: 320, height: 844 },
-        hasTouch: true,
-        isMobile: true,
+    await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Data loss' }));
+    await expectConceptHelpInViewport(page, 'Data loss');
+    await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Checkpoint' }));
+    await expectConceptHelpInViewport(page, 'Checkpoint');
+
+    const criticalTargets = [
+        workspaceView.getByRole('button', { name: 'build', exact: true }),
+        workspaceView.getByRole('button', { name: 'run', exact: true }),
+        audienceMode(page),
+        page.getByRole('button', { name: 'Presets', exact: true }),
+        page.getByRole('button', { name: 'Lessons', exact: true }),
+        page.getByRole('button', { name: 'History', exact: true }),
+        advancedTools(page),
+        page.getByRole('button', { name: 'Start training' }),
+        timeline(page).getByRole('button', { name: '10 steps per frame' }),
+        timeline(page).getByRole('button', { name: 'Run one training step' }),
+        timeline(page).getByRole('button', { name: 'Reset training' }),
+        page.getByRole('tab', { name: 'Boundary', exact: true }),
+        page.getByRole('tab', { name: 'Loss', exact: true }),
+        page.getByRole('tab', { name: 'Confusion', exact: true }),
+    ];
+    for (const target of criticalTargets) await expectMinimumTouchTarget(target);
+
+    for (const name of ['Boundary', 'Loss', 'Confusion'] as const) {
+        const tab = page.getByRole('tab', { name, exact: true });
+        await tab.scrollIntoViewIfNeeded();
+        await tab.click();
+        await expect(tab).toHaveAttribute('aria-selected', 'true');
+        await expectMinimumTouchTarget(tab);
+        await expectFullyInViewport(page, tab);
+    }
+
+    await touchTap(page, advancedTools(page));
+    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
+    const codeTab = page.getByRole('tab', { name: 'Code', exact: true });
+    await expectMinimumTouchTarget(codeTab);
+    await codeTab.click();
+    await expect(page.getByRole('tabpanel', { name: 'Code' })).toBeVisible();
+    const codeFormatList = page.getByRole('tablist', { name: 'Code format' });
+    await expect(codeFormatList).toBeVisible();
+    const codeFormats = codeFormatList.getByRole('tab');
+    await expectMinimumTouchTarget(codeFormats);
+    await page.keyboard.press('Escape');
+    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(advancedTools(page)).toBeFocused();
+
+    const historyTrigger = page.getByRole('button', { name: 'History', exact: true });
+    await touchTap(page, historyTrigger);
+    const history = page.getByRole('dialog', { name: 'History' });
+    await expect(history).toBeVisible();
+    const closeHistory = history.getByRole('button', { name: 'Close History' });
+    await expectMinimumTouchTarget(closeHistory);
+    await touchTap(page, closeHistory);
+    await expect(history).toBeHidden();
+    await expect(historyTrigger).toBeFocused();
+
+    await touchTap(page, advancedTools(page));
+    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Escape');
+    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(advancedTools(page)).toBeFocused();
+    const focusStyle = await advancedTools(page).evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, boxShadow: style.boxShadow };
     });
+    expect(
+        (
+            focusStyle.outlineStyle !== 'none'
+            && Number.parseFloat(focusStyle.outlineWidth) >= 2
+        ) || focusStyle.boxShadow !== 'none',
+    ).toBe(true);
 
-    test('keeps critical controls reachable, sized, focused, and unclipped', async ({ page }) => {
-        await loadPlayground(page);
+    await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
+    const boundaryTab = page.getByRole('tab', { name: 'Boundary', exact: true });
+    await boundaryTab.click();
+    await expect(boundaryTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expectGraphAndEvidenceTargets(page);
 
-        await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Epoch' }));
-        await expectConceptHelpInViewport(page, 'Epoch');
-        const workspaceView = page.getByRole('group', { name: 'Workspace view' });
-        await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
-        for (const concept of ['Train/test split', 'Learning rate'] as const) {
-            await expectMinimumTouchTarget(
-                page.getByRole('button', { name: `Learn about ${concept}` }),
-            );
-            await expectConceptHelpInViewport(page, concept);
-        }
-        await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
-
-        const compactOutcome = page.getByRole('group', { name: 'Evaluation outcome' });
-        const compactOutcomeSummary = compactOutcome.locator('summary');
-        const compactOutcomeBody = compactOutcome.locator('.forge-compact-outcome__body');
-        await expectFullyInViewport(page, compactOutcome);
-        await expectFullyInViewport(page, compactOutcomeSummary);
-        await expect(page.getByRole('group', { name: 'Training metrics' })).toBeHidden();
-        await expectMinimumTouchTarget(compactOutcomeSummary);
-        await expect(compactOutcome).not.toHaveAttribute('open', '');
-        await expect(compactOutcomeSummary).toContainText(/Step 0 · Test accuracy \d+\.\d%/);
-        await expect(compactOutcomeBody).toBeHidden();
-        await compactOutcomeSummary.click();
-        await expect(compactOutcome).toHaveAttribute('open', '');
-        await expect(compactOutcomeBody).toBeVisible();
-        await expect(compactOutcomeBody).toContainText('Full evaluation at step 0');
-        await expect(compactOutcomeBody).toContainText(/Train data loss \(full split\) \d+\.\d{4}/);
-        await expect(compactOutcomeBody).toContainText(/Test data loss \(full split\) \d+\.\d{4}/);
-        const openOutcomeOverflow = await page.evaluate(() => {
-            const shell = document.querySelector<HTMLElement>('.forge-shell');
-            if (!shell) throw new Error('forge shell is missing');
-            return {
-                document: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
-                shell: shell.scrollWidth <= shell.clientWidth + 1,
-            };
-        });
-        expect(openOutcomeOverflow).toEqual({ document: true, shell: true });
-        await compactOutcomeSummary.click();
-        await expect(compactOutcome).not.toHaveAttribute('open', '');
-
-        await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Data loss' }));
-        await expectConceptHelpInViewport(page, 'Data loss');
-        await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Checkpoint' }));
-        await expectConceptHelpInViewport(page, 'Checkpoint');
-
-        const criticalTargets = [
-            workspaceView.getByRole('button', { name: 'build', exact: true }),
-            workspaceView.getByRole('button', { name: 'run', exact: true }),
-            audienceMode(page),
-            page.getByRole('button', { name: 'Presets', exact: true }),
-            page.getByRole('button', { name: 'Lessons', exact: true }),
-            page.getByRole('button', { name: 'History', exact: true }),
-            advancedTools(page),
-            page.getByRole('button', { name: 'Start training' }),
-            timeline(page).getByRole('button', { name: '10 steps per frame' }),
-            timeline(page).getByRole('button', { name: 'Run one training step' }),
-            timeline(page).getByRole('button', { name: 'Reset training' }),
-            page.getByRole('tab', { name: 'Boundary', exact: true }),
-            page.getByRole('tab', { name: 'Loss', exact: true }),
-            page.getByRole('tab', { name: 'Confusion', exact: true }),
-        ];
-        for (const target of criticalTargets) await expectMinimumTouchTarget(target);
-
-        const noGlobalOverflow = await page.evaluate(() => {
-            const shell = document.querySelector<HTMLElement>('.forge-shell');
-            if (!shell) throw new Error('forge shell is missing');
-            return {
-                document: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
-                shell: shell.scrollWidth <= shell.clientWidth + 1,
-            };
-        });
-        expect(noGlobalOverflow).toEqual({ document: true, shell: true });
-
-        await touchTap(page, advancedTools(page));
-        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
-        const codeTab = page.getByRole('tab', { name: 'Code', exact: true });
-        await expectMinimumTouchTarget(codeTab);
-        await codeTab.click();
-        await expect(page.getByRole('tabpanel', { name: 'Code' })).toBeVisible();
-        const codeFormatList = page.getByRole('tablist', { name: 'Code format' });
-        await expect(codeFormatList).toBeVisible();
-        const codeFormats = codeFormatList.getByRole('tab');
-        await expectMinimumTouchTarget(codeFormats);
-        await page.keyboard.press('Escape');
-        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
-        await expect(advancedTools(page)).toBeFocused();
-
-        const historyTrigger = page.getByRole('button', { name: 'History', exact: true });
-        await touchTap(page, historyTrigger);
-        const history = page.getByRole('dialog', { name: 'History' });
-        await expect(history).toBeVisible();
-        const closeHistory = history.getByRole('button', { name: 'Close History' });
-        await expectMinimumTouchTarget(closeHistory);
-        await touchTap(page, closeHistory);
-        await expect(history).toBeHidden();
-        await expect(historyTrigger).toBeFocused();
-
-        await touchTap(page, advancedTools(page));
-        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
-        await page.keyboard.press('Escape');
-        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
-        await expect(advancedTools(page)).toBeFocused();
-        const focusStyle = await advancedTools(page).evaluate((element) => {
-            const style = getComputedStyle(element);
-            return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, boxShadow: style.boxShadow };
-        });
-        expect(
-            (
-                focusStyle.outlineStyle !== 'none'
-                && Number.parseFloat(focusStyle.outlineWidth) >= 2
-            ) || focusStyle.boxShadow !== 'none',
-        ).toBe(true);
-
+    const noGlobalOverflow = await page.evaluate(() => {
+        const shell = document.querySelector<HTMLElement>('.forge-shell');
+        if (!shell) throw new Error('forge shell is missing');
+        return {
+            document: document.documentElement.scrollWidth
+                <= document.documentElement.clientWidth + 1,
+            shell: shell.scrollWidth <= shell.clientWidth + 1,
+        };
     });
-});
+    expect(noGlobalOverflow).toEqual({ document: true, shell: true });
+}
+
+for (const width of [320, 390] as const) {
+    test.describe(`${width}px touch shell`, () => {
+        test.use({ viewport: { width, height: 844 }, hasTouch: true, isMobile: true });
+        test(
+            'keeps critical controls reachable, sized, focused, and unclipped',
+            compactShellJourney,
+        );
+    });
+}
