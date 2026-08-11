@@ -21,6 +21,12 @@ const trainingMock = {
     restoreCheckpoint: vi.fn(),
 };
 
+function dispatchGlobalKeyDown(code: string, options: KeyboardEventInit = {}) {
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code, ...options });
+    window.dispatchEvent(event);
+    return event;
+}
+
 function liveSignal(revision: number, step: number, epoch: number) {
     return {
         model: { generationId: 1, revision, step, epoch },
@@ -219,27 +225,48 @@ describe('App accessibility shell', () => {
         expect(screen.getByRole('button', { name: 'Refresh page' })).toBeInTheDocument();
     });
 
-    it('handles global keyboard shortcuts for training controls', () => {
+    it('cancels each resolved global shortcut and dispatches its matching training command once', () => {
         render(<App />);
 
-        fireEvent.keyDown(window, { code: 'Space' });
-        fireEvent.keyDown(window, { code: 'ArrowRight' });
-        fireEvent.keyDown(window, { code: 'KeyR' });
+        const shortcuts = [
+            { code: 'Space', command: trainingMock.play },
+            { code: 'ArrowRight', command: trainingMock.step },
+            { code: 'KeyR', command: trainingMock.reset },
+        ];
+
+        for (const { code, command } of shortcuts) {
+            const event = dispatchGlobalKeyDown(code);
+            expect(event.defaultPrevented).toBe(true);
+            expect(command).toHaveBeenCalledTimes(1);
+        }
 
         expect(trainingMock.play).toHaveBeenCalledTimes(1);
+        expect(trainingMock.pause).not.toHaveBeenCalled();
         expect(trainingMock.step).toHaveBeenCalledTimes(1);
         expect(trainingMock.reset).toHaveBeenCalledTimes(1);
     });
 
-    it('does not intercept modified or repeated training shortcuts', () => {
+    it('leaves modified and repeated training shortcuts for the browser without dispatching commands', () => {
         render(<App />);
 
-        fireEvent.keyDown(window, { code: 'KeyR', metaKey: true });
-        fireEvent.keyDown(window, { code: 'KeyR', ctrlKey: true });
-        fireEvent.keyDown(window, { code: 'KeyR', altKey: true });
-        fireEvent.keyDown(window, { code: 'KeyR', shiftKey: true });
-        fireEvent.keyDown(window, { code: 'KeyR', repeat: true });
+        const modifiers: KeyboardEventInit[] = [
+            { metaKey: true },
+            { ctrlKey: true },
+            { altKey: true },
+            { shiftKey: true },
+            { repeat: true },
+        ];
 
+        for (const code of ['Space', 'ArrowRight', 'KeyR']) {
+            for (const modifier of modifiers) {
+                const event = dispatchGlobalKeyDown(code, modifier);
+                expect(event.defaultPrevented).toBe(false);
+            }
+        }
+
+        expect(trainingMock.play).not.toHaveBeenCalled();
+        expect(trainingMock.pause).not.toHaveBeenCalled();
+        expect(trainingMock.step).not.toHaveBeenCalled();
         expect(trainingMock.reset).not.toHaveBeenCalled();
     });
 
