@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
@@ -14,6 +14,7 @@ import {
     currentPreparedForTest,
     installLegacyDataProjectionForTest,
 } from '../../test/playgroundStoreTestUtils.ts';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 async function restoreDocument(document: ExperimentDocumentV2 = DEFAULT_EXPERIMENT_DOCUMENT) {
     const restored = await usePlaygroundStore.getState().replaceDocument(document);
@@ -270,6 +271,55 @@ describe('DataPanel V2 recipe controls', () => {
         }
     });
 
+    it('directly describes reshuffle and Reset training with unique matching tooltips', () => {
+        render(
+            <>
+                <DataPanel onReset={vi.fn()} />
+                <DataPanel onReset={vi.fn()} />
+            </>,
+        );
+
+        const actions = [
+            {
+                buttons: screen.getAllByRole('button', { name: 'Reshuffle split' }),
+                effect: STATE_EFFECTS['reshuffle-split'],
+            },
+            {
+                buttons: screen.getAllByRole('button', { name: 'Reset training' }),
+                effect: STATE_EFFECTS['training-reset'],
+            },
+        ];
+
+        const allDescriptionIds: string[] = [];
+        for (const { buttons, effect } of actions) {
+            expect(buttons).toHaveLength(2);
+            const ownedIds = buttons.map((button) => {
+                expect(button).toHaveAccessibleDescription(effect);
+                const ids = (button.getAttribute('aria-describedby') ?? '')
+                    .split(/\s+/u)
+                    .filter(Boolean);
+                expect(ids).toHaveLength(1);
+                const description = document.getElementById(ids[0]);
+                expect(description).toHaveTextContent(effect);
+                expect(description?.closest('[aria-live], [role="status"], [role="alert"]'))
+                    .toBeNull();
+                return ids[0];
+            });
+            expect(new Set(ownedIds).size).toBe(buttons.length);
+            allDescriptionIds.push(...ownedIds);
+
+            expect(
+                [...document.querySelectorAll('.tooltip__content')]
+                    .filter((content) => content.textContent === effect),
+            ).toHaveLength(buttons.length);
+        }
+
+        expect(new Set(allDescriptionIds).size).toBe(allDescriptionIds.length);
+        for (const button of screen.getAllByRole('button', { name: 'Reset training' })) {
+            expect(within(button).getByText('Reset training', { exact: true })).toBeVisible();
+        }
+    });
+
     it('moves binary to multiclass to regression to binary with exact derived contracts', async () => {
         const user = userEvent.setup();
         render(<DataPanel onReset={vi.fn()} />);
@@ -439,7 +489,7 @@ describe('DataPanel V2 recipe controls', () => {
         await user.click(screen.getByRole('button', { name: 'Retry' }));
         expect(useTrainingStore.getState().configSyncNonce).toBe(1);
 
-        await user.click(screen.getByRole('button', { name: 'Reset model & data' }));
+        await user.click(screen.getByRole('button', { name: 'Reset training' }));
         expect(onReset).toHaveBeenCalledTimes(1);
     });
 });

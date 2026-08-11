@@ -16,6 +16,7 @@ import { ConceptHelp } from '../common/ConceptHelp.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { DATASET_TOOLTIPS } from '../../data/datasetInsights.ts';
 import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 const CLASSIFICATION_DATASETS: { id: DatasetId; label: string }[] = [
     { id: 'circle', label: 'Circle' },
@@ -61,6 +62,8 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
     const trainRatioOutputId = `${controlId}-train-ratio-output`;
     const noiseId = `${controlId}-noise`;
     const noiseOutputId = `${controlId}-noise-output`;
+    const reshuffleEffectsId = `${controlId}-reshuffle-split-effects`;
+    const trainingResetEffectsId = `${controlId}-training-reset-effects`;
 
     const retryDataChange = () => useTrainingStore.getState().retryConfigSync();
 
@@ -229,12 +232,13 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 <span className="control-value">Test {testCount}</span>
             </div>
 
-            <Tooltip content="Cause: reshuffle changes the existing data seed. Effect: the generated examples and train/test split are rebuilt deterministically without adding a new schema field." block>
+            <Tooltip content={STATE_EFFECTS['reshuffle-split']} block>
                 <button
                     type="button"
                     className="btn btn--ghost btn--sm"
                     style={{ marginTop: 8, width: '100%' }}
                     disabled={isLoading}
+                    aria-describedby={reshuffleEffectsId}
                     onClick={() => {
                         void commitRecipeEdit('data', reshuffleDataSeed);
                     }}
@@ -242,6 +246,9 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                     Reshuffle split
                 </button>
             </Tooltip>
+            <span id={reshuffleEffectsId} className="sr-only">
+                {STATE_EFFECTS['reshuffle-split']}
+            </span>
 
             <div className="control-row" style={{ marginTop: 8 }}>
                 <label className="control-label" htmlFor={noiseId}>Noise</label>
@@ -273,17 +280,21 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                 />
             </Tooltip>
 
-            <Tooltip content="Cause: regenerating samples redraws the same dataset pattern with the current settings. Effect: you can check whether behavior is robust or seed-specific." block>
+            <Tooltip content={STATE_EFFECTS['training-reset']} block>
                 <button
                     type="button"
                     className="btn btn--ghost btn--sm"
                     style={{ marginTop: 10, width: '100%' }}
                     onClick={onReset}
-                    aria-label="Reset model & data"
+                    aria-describedby={trainingResetEffectsId}
                 >
-                    ↻ Reset model & data
+                    <span aria-hidden="true">↻</span>{' '}
+                    <span>Reset training</span>
                 </button>
             </Tooltip>
+            <span id={trainingResetEffectsId} className="sr-only">
+                {STATE_EFFECTS['training-reset']}
+            </span>
         </div>
     );
 });

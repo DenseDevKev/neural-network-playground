@@ -23,6 +23,7 @@ import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
 import { GuidedLessonPanel } from './GuidedLessonPanel.tsx';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 type ApplyResult = SchemaResult<PreparedExperimentDocumentV2>;
 
@@ -158,16 +159,43 @@ describe('GuidedLessonPanel', () => {
         const onReset = vi.fn();
         render(<GuidedLessonPanel onReset={onReset} onHighlightChange={vi.fn()} />);
 
-        expect(screen.getByText(/replaces the current recipe and resets training/i)).toBeVisible();
+        expect(screen.getByText(STATE_EFFECTS['lesson-start'], { exact: true })).toBeVisible();
         const startButton = screen.getByRole('button', { name: 'Start lesson and reset' });
         expect(startButton).toBeEnabled();
+        expect(startButton).toHaveAccessibleDescription(STATE_EFFECTS['lesson-start']);
 
         await user.click(startButton);
         await screen.findByText('Step 1 of 4');
 
         expect(onReset).toHaveBeenCalledTimes(1);
-        expect(screen.queryByText(/replaces the current recipe and resets training/i)).not.toBeInTheDocument();
+        expect(screen.queryByText(STATE_EFFECTS['lesson-start'], { exact: true })).not.toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Start lesson and reset' })).not.toBeInTheDocument();
+    });
+
+    it('owns a unique persistent non-live lesson-start description per panel', () => {
+        render(
+            <>
+                <GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />
+                <GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />
+            </>,
+        );
+
+        const startButtons = screen.getAllByRole('button', { name: 'Start lesson and reset' });
+        const descriptionIds = startButtons.map((button) => {
+            expect(button).toHaveAccessibleDescription(STATE_EFFECTS['lesson-start']);
+            const ids = (button.getAttribute('aria-describedby') ?? '')
+                .split(/\s+/u)
+                .filter(Boolean);
+            expect(ids).toHaveLength(1);
+            const description = document.getElementById(ids[0]);
+            expect(description).toHaveTextContent(STATE_EFFECTS['lesson-start']);
+            expect(description).toBeVisible();
+            expect(description?.closest('[aria-live], [role="status"], [role="alert"]'))
+                .toBeNull();
+            return ids[0];
+        });
+
+        expect(new Set(descriptionIds).size).toBe(startButtons.length);
     });
 
     it('runs through lesson navigation and clears the highlight on finish', async () => {

@@ -9,6 +9,7 @@ import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { createDefaultRunTitle } from './runTitle.ts';
 import { reconcileComparisonSelection } from './runComparisonSelection.ts';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 function recordLabel(record: ExperimentRunRecordV2): string {
     return record.title ?? record.id;
@@ -155,7 +156,10 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const [actionError, setActionError] = useState<string | null>(null);
     const [runTitle, setRunTitle] = useState('');
     const [comparisonSelection, setComparisonSelection] = useState<readonly string[] | null>(null);
-    const comparisonGuidanceId = useId();
+    const panelId = useId();
+    const comparisonGuidanceId = `${panelId}-comparison-guidance`;
+    const runNameGuidanceId = `${panelId}-run-name-guidance`;
+    const savedRecipeEffectsId = `${panelId}-saved-recipe-effects`;
     const savingRef = useRef(false);
     const mountedRef = useRef(true);
     const trimmedRunTitle = runTitle.trim();
@@ -249,17 +253,24 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                 Saved runs contain a recipe plus worker-authored evaluation evidence. They do not
                 contain trained parameters.
             </div>
+            <div
+                id={savedRecipeEffectsId}
+                className="inspection__empty"
+                style={{ marginBottom: 8 }}
+            >
+                {STATE_EFFECTS['saved-recipe-apply']}
+            </div>
             <label style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
                 <span>Run name</span>
                 <input
                     type="text"
                     value={runTitle}
                     onChange={(event) => setRunTitle(event.currentTarget.value)}
-                    aria-describedby="run-name-guidance"
+                    aria-describedby={runNameGuidanceId}
                     aria-invalid={runTitleTooLong}
                 />
             </label>
-            <div id="run-name-guidance" className="inspection__empty" style={{ marginBottom: 8 }}>
+            <div id={runNameGuidanceId} className="inspection__empty" style={{ marginBottom: 8 }}>
                 Optional. Leave blank to use dataset, architecture, and saved step.
             </div>
             {runTitleTooLong && (
@@ -474,6 +485,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                                                 type="button"
                                                 className="btn btn--ghost btn--sm"
                                                 onClick={() => { void applySavedRecipe(record); }}
+                                                aria-describedby={savedRecipeEffectsId}
                                             >
                                                 Apply saved recipe
                                             </button>

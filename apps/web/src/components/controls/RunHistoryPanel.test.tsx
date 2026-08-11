@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -20,6 +20,7 @@ import {
 } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 const workerApi = vi.hoisted(() => ({
     captureRunArtifact: vi.fn(),
@@ -344,6 +345,63 @@ describe('RunHistoryPanel V2 evidence memory', () => {
             recipe: prepared.document.recipe,
         })));
         expect(screen.queryByRole('button', { name: /restore/i })).not.toBeInTheDocument();
+    });
+
+    it('owns unique run-name and saved-recipe descriptions across mounted panels', async () => {
+        const prepared = preset('circle-one-layer');
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(
+                makeRecord(prepared, IDS[0], 'First'),
+            );
+            await useExperimentMemoryStore.getState().saveRecord(
+                makeRecord(prepared, IDS[1], 'Second'),
+            );
+        });
+
+        const { container } = render(
+            <>
+                <RunHistoryPanel />
+                <RunHistoryPanel />
+            </>,
+        );
+        const panels = [...container.querySelectorAll<HTMLElement>('.run-history-panel')];
+        const allOwnedIds: string[] = [];
+
+        expect(panels).toHaveLength(2);
+        for (const panel of panels) {
+            const runName = within(panel).getByRole('textbox', { name: 'Run name' });
+            const runNameIds = (runName.getAttribute('aria-describedby') ?? '')
+                .split(/\s+/u)
+                .filter(Boolean);
+            expect(runNameIds).toHaveLength(1);
+            expect(document.getElementById(runNameIds[0])).toHaveTextContent(
+                'Optional. Leave blank to use dataset, architecture, and saved step.',
+            );
+
+            const effectsNote = within(panel).getByText(
+                STATE_EFFECTS['saved-recipe-apply'],
+                { exact: true },
+            );
+            expect(effectsNote).toBeVisible();
+            expect(effectsNote.closest('[aria-live], [role="status"], [role="alert"]'))
+                .toBeNull();
+            const applyButtons = within(panel).getAllByRole('button', {
+                name: 'Apply saved recipe',
+            });
+            const applyIds = applyButtons.map((button) => {
+                expect(button).toHaveAccessibleDescription(STATE_EFFECTS['saved-recipe-apply']);
+                const ids = (button.getAttribute('aria-describedby') ?? '')
+                    .split(/\s+/u)
+                    .filter(Boolean);
+                expect(ids).toHaveLength(1);
+                expect(document.getElementById(ids[0])).toBe(effectsNote);
+                return ids[0];
+            });
+            expect(new Set(applyIds).size).toBe(1);
+            allOwnedIds.push(runNameIds[0], applyIds[0]);
+        }
+
+        expect(new Set(allOwnedIds).size).toBe(allOwnedIds.length);
     });
 
     it('shows no numeric winner when dataset or objective identity differs', async () => {

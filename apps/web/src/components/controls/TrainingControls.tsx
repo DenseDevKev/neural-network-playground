@@ -8,6 +8,7 @@ import { getTrainingLifecycleUi } from './trainingLifecycle.ts';
 import { ConceptHelp } from '../common/ConceptHelp.tsx';
 import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 import { TRAINING_SHORTCUTS, type TrainingShortcutAction } from '../../shortcuts/trainingShortcuts.ts';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 interface Props {
     training: TrainingHook;
@@ -39,7 +40,9 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
     const pauseReason = useTrainingStore((s) => s.pauseReason);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const checkpointTimeline = useTrainingStore((s) => s.checkpointTimeline);
-    const restoreGuaranteeId = useId();
+    const controlId = useId();
+    const restoreGuaranteeId = `${controlId}-restore-guarantee`;
+    const trainingResetEffectsId = `${controlId}-training-reset-effects`;
     const isRunning = status === 'running';
     const lifecycle = getTrainingLifecycleUi({ status, pauseReason, pendingConfigSource });
     const blockConfigAction = lifecycle.isBlocked;
@@ -98,19 +101,23 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                         <span className="btn__shortcut">{trainingShortcutLabel('step')}</span>
                     </button>
                 </Tooltip>
-                <Tooltip content="Cause: reset rebuilds weights and data from the current settings. Effect: you can tell whether a result was learned reliably or got lucky." shortcut={trainingShortcutLabel('reset')}>
+                <Tooltip content={STATE_EFFECTS['training-reset']} shortcut={trainingShortcutLabel('reset')}>
                     <button
                         type="button"
                         className="btn btn--ghost btn--control"
                         onClick={training.reset}
-                        aria-label="Reset model and data"
+                        aria-label="Reset training"
+                        aria-describedby={trainingResetEffectsId}
                         disabled={blockConfigAction}
                     >
                         <span className="btn__icon" aria-hidden="true">↺</span>
-                        <span className="btn__label">Reset</span>
+                        <span className="btn__label">Reset training</span>
                         <span className="btn__shortcut">{trainingShortcutLabel('reset')}</span>
                     </button>
                 </Tooltip>
+                <span id={trainingResetEffectsId} className="sr-only">
+                    {STATE_EFFECTS['training-reset']}
+                </span>
             </div>
 
             <details className="training-shortcuts" aria-label="Keyboard shortcuts">

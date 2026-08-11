@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ExperimentSchemaIssue } from '@nn-playground/shared';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
@@ -12,6 +12,7 @@ import {
     type LessonStep,
     type LessonTarget,
 } from '../../lessons/lessonRegistry.ts';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 export type { LessonTarget } from '../../lessons/lessonRegistry.ts';
 
@@ -87,6 +88,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const [isDrawerOpen, setIsDrawerOpen] = useState(getInitialDrawerOpen);
     const [isStarting, setIsStarting] = useState(false);
     const [lessonError, setLessonError] = useState<string | null>(null);
+    const lessonEffectsId = `${useId()}-lesson-start-effects`;
     const startInFlight = useRef(false);
     const mounted = useRef(true);
     const activationModel = useRef<LessonModelIdentity | null>(null);
@@ -322,14 +324,15 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                                     About {selectedLesson.estimatedMinutes} min
                                 </div>
                             )}
-                            <p className="guided-lesson__consequence">
-                                Changes: replaces the current recipe and resets training. Preserves: saved runs.
+                            <p id={lessonEffectsId} className="guided-lesson__consequence">
+                                {STATE_EFFECTS['lesson-start']}
                             </p>
                             <button
                                 type="button"
                                 className="btn btn--accent btn--sm guided-lesson__start"
                                 onClick={startLesson}
                                 aria-label="Start lesson and reset"
+                                aria-describedby={lessonEffectsId}
                                 disabled={isStarting}
                             >
                                 {isStarting ? 'Starting...' : 'Start lesson and reset'}

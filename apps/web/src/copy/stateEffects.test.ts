@@ -1,0 +1,18 @@
+import { describe, expect, it } from 'vitest';
+import { STATE_EFFECTS } from './stateEffects.ts';
+
+const EXPECTED_STATE_EFFECTS = {
+    'training-reset': 'Changes: reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: the current recipe, generated examples, train/test membership, lesson progress, and stored run evidence.',
+    'reshuffle-split': "Changes: increments the recipe's data seed, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: every other recipe setting, lesson progress, and stored run evidence.",
+    'lesson-start': "Changes: replaces the current recipe with the lesson recipe, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, replaces in-session checkpoints with a new step-0 checkpoint, and starts lesson progress at step 1; Preserves: the document's test-data and discretization options and stored run evidence.",
+    'preset-apply': "Changes: applying a different preset replaces the recipe, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: the document's test-data and discretization options, lesson state, and stored run evidence.",
+    'saved-recipe-apply': "Changes: replaces the current recipe with the saved recipe and starts a fresh step-0 run with regenerated examples and train/test membership, reinitialized model weights and optimizer state, new step-0 evaluation evidence, and a new in-session checkpoint; Preserves: the document's test-data and discretization options, lesson state, and every stored run record, but does not restore the saved run's trained parameters or evidence into the live run.",
+} as const;
+
+describe('STATE_EFFECTS', () => {
+    it('freezes the complete reviewed action order and exact copy', () => {
+        expect(Object.keys(STATE_EFFECTS)).toEqual(Object.keys(EXPECTED_STATE_EFFECTS));
+        expect(Object.isFrozen(STATE_EFFECTS)).toBe(true);
+        expect(STATE_EFFECTS).toEqual(EXPECTED_STATE_EFFECTS);
+    });
+});

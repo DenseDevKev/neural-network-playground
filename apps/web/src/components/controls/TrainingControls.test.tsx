@@ -7,6 +7,7 @@ import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { getConceptById } from '../../concepts/conceptCatalog.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { TRAINING_SHORTCUTS } from '../../shortcuts/trainingShortcuts.ts';
+import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 function createTrainingMock(): TrainingHook {
   return {
@@ -99,11 +100,42 @@ describe('TrainingControls', () => {
     expect(screen.getByRole('region', { name: 'Timeline strip' })).toBeInTheDocument();
     const playButton = screen.getByRole('button', { name: 'Start training' });
     const stepButton = screen.getByRole('button', { name: 'Run one training step' });
-    const resetButton = screen.getByRole('button', { name: 'Reset model and data' });
+    const resetButton = screen.getByRole('button', { name: 'Reset training' });
 
     expect(within(playButton).getByText('Space')).toBeInTheDocument();
     expect(within(stepButton).getAllByText('→')[1]).toBeInTheDocument();
     expect(within(resetButton).getByText('R')).toBeInTheDocument();
+  });
+
+  it('directly describes every visible Reset training action with unique non-live copy', () => {
+    const firstTraining = createTrainingMock();
+    const secondTraining = createTrainingMock();
+
+    render(
+      <>
+        <TrainingControls training={firstTraining} />
+        <TrainingControls training={secondTraining} />
+      </>,
+    );
+
+    const resetButtons = screen.getAllByRole('button', { name: 'Reset training' });
+    const descriptionIds = resetButtons.map((button) => {
+      expect(within(button).getByText('Reset training', { exact: true })).toBeVisible();
+      expect(button).toHaveAccessibleDescription(STATE_EFFECTS['training-reset']);
+
+      const ids = (button.getAttribute('aria-describedby') ?? '').split(/\s+/u).filter(Boolean);
+      expect(ids).toHaveLength(1);
+      const description = document.getElementById(ids[0]);
+      expect(description).toHaveTextContent(STATE_EFFECTS['training-reset']);
+      expect(description?.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+      return ids[0];
+    });
+
+    expect(new Set(descriptionIds).size).toBe(resetButtons.length);
+    expect(
+      [...document.querySelectorAll('.tooltip__content')]
+        .filter((content) => content.textContent === STATE_EFFECTS['training-reset']),
+    ).toHaveLength(resetButtons.length);
   });
 
   it('exposes the shared shortcut registry in a default-closed native disclosure', async () => {
@@ -292,7 +324,7 @@ describe('TrainingControls', () => {
 
     expect(screen.getByRole('button', { name: 'Start training' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Run one training step' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Reset model and data' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reset training' })).toBeDisabled();
     expect(screen.getByText('Updating preset config...')).toBeInTheDocument();
 
     const speed25 = screen.getByRole('button', { name: '25 steps per frame' });
