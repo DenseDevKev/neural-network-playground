@@ -40,6 +40,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
     const mounted = useRef(true);
     const copyInFlight = useRef(false);
     const importInFlight = useRef(false);
+    const errorGeneration = useRef(0);
     const [error, setError] = useState<string | null>(null);
     const [isCopying, setIsCopying] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
@@ -54,13 +55,14 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
 
     const reportError = useCallback((message: string) => {
         if (!mounted.current) return;
+        errorGeneration.current += 1;
         setStatus(null);
         setError(message);
     }, [setStatus]);
 
-    const reportSuccess = useCallback((message: string) => {
+    const reportSuccess = useCallback((message: string, startErrorGeneration: number) => {
         if (!mounted.current) return;
-        setError(null);
+        if (errorGeneration.current === startErrorGeneration) setError(null);
         setStatus(message);
     }, [setStatus]);
 
@@ -81,6 +83,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
     }, [reportError]);
 
     const handleExport = useCallback(() => {
+        const startErrorGeneration = errorGeneration.current;
         const access = usePlaygroundStore.getState().access;
         if (access.status !== 'ready') {
             reportError(NO_ACTIVE_EXPERIMENT);
@@ -97,7 +100,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
             anchor.href = url;
             anchor.download = 'nn-playground-experiment-v2.json';
             anchor.click();
-            reportSuccess('Exported!');
+            reportSuccess('Exported!', startErrorGeneration);
         } catch (exportError) {
             reportError(errorMessage(exportError, '$: Could not export experiment'));
         } finally {
@@ -109,6 +112,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
         if (copyInFlight.current) return;
         copyInFlight.current = true;
         setIsCopying(true);
+        const startErrorGeneration = errorGeneration.current;
 
         try {
             let syncResult;
@@ -135,7 +139,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
             const absoluteUrl = currentUrl.href;
             try {
                 await writeText.call(navigator.clipboard, absoluteUrl);
-                reportSuccess('URL copied!');
+                reportSuccess('URL copied!', startErrorGeneration);
             } catch (clipboardError) {
                 reportError(errorMessage(clipboardError, '$: Could not copy URL'));
             }
@@ -172,6 +176,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
 
             importInFlight.current = true;
             setIsImporting(true);
+            const startErrorGeneration = errorGeneration.current;
             const selectionRequestId = usePlaygroundStore.getState()
                 .preparation.requestId;
 
@@ -277,7 +282,7 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
                         return;
                     }
                     onReset();
-                    if (mounted.current) reportSuccess('Imported!');
+                    if (mounted.current) reportSuccess('Imported!', startErrorGeneration);
                 } finally {
                     finishImport();
                 }

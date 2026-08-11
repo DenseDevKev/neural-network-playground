@@ -214,6 +214,33 @@ describe('ConfigPanel strict V2 transport', () => {
         expect(copyButton).toBeEnabled();
     });
 
+    it('keeps a newer JSON export error when an older URL copy succeeds', async () => {
+        const copyResult = deferred<void>();
+        (navigator.clipboard.writeText as ReturnType<typeof vi.fn>)
+            .mockReturnValue(copyResult.promise);
+        (URL.createObjectURL as ReturnType<typeof vi.fn>)
+            .mockImplementationOnce(() => {
+                throw new Error('URL creation failed');
+            });
+        render(<ConfigPanel onReset={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+        await waitFor(() => {
+            expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /export json/i }));
+        expect(screen.getByRole('alert')).toHaveTextContent(/could not export experiment/i);
+
+        await act(async () => {
+            copyResult.resolve();
+            await copyResult.promise;
+        });
+
+        expect(screen.getByRole('status')).toHaveTextContent('URL copied');
+        expect(screen.getByRole('alert')).toHaveTextContent(/could not export experiment/i);
+    });
+
     it('exports the exact prepared V2 document with a V2-specific filename', async () => {
         const prepared = currentPrepared()!;
         render(<ConfigPanel onReset={vi.fn()} />);
