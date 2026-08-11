@@ -11,13 +11,24 @@ const comlinkStub = vi.hoisted(() => ({
         updateConfig: vi.fn(),
         updateDemand: vi.fn().mockResolvedValue(undefined),
     },
+    wrap: vi.fn(),
     transfer: vi.fn((value: unknown) => value),
 }));
+comlinkStub.wrap.mockImplementation(() => comlinkStub.api);
 
 vi.mock('comlink', () => ({
-    wrap: vi.fn(() => comlinkStub.api),
+    wrap: comlinkStub.wrap,
     transfer: comlinkStub.transfer,
 }));
+
+function createComlinkApi() {
+    return {
+        setStreamPort: vi.fn().mockResolvedValue(undefined),
+        initialize: vi.fn(),
+        updateConfig: vi.fn(),
+        updateDemand: vi.fn().mockResolvedValue(undefined),
+    };
+}
 
 // ── Stub global Worker ──
 const VALID_WORKER_READY_MESSAGE = Object.freeze({
@@ -156,6 +167,7 @@ describe('workerBridge readiness gating', () => {
         fakeMessageChannels.length = 0;
         comlinkStub.api.setStreamPort.mockReset().mockResolvedValue(undefined);
         comlinkStub.api.updateDemand.mockReset().mockResolvedValue(undefined);
+        comlinkStub.wrap.mockReset().mockImplementation(() => comlinkStub.api);
         comlinkStub.transfer.mockClear();
     });
 
@@ -205,16 +217,21 @@ describe('workerBridge readiness gating', () => {
     });
 
     it('cleans up a rejected channel and shares one retry across concurrent callers', async () => {
+        const transferError = new Error('transfer failed');
         let resolveSecondAttempt!: () => void;
         comlinkStub.api.setStreamPort
-            .mockRejectedValueOnce(new Error('transfer failed'))
+            .mockRejectedValueOnce(transferError)
             .mockImplementationOnce(() => new Promise<void>((resolve) => {
                 resolveSecondAttempt = resolve;
             }));
 
         const firstAttempt = setupStreamChannel();
         fakeWorkerInstance!.dispatchMessage(VALID_WORKER_READY_MESSAGE);
-        await expect(firstAttempt).rejects.toThrow('transfer failed');
+        const firstError = await firstAttempt.then(
+            () => null,
+            (error: unknown) => error,
+        );
+        expect(firstError).toBe(transferError);
 
         const rejectedChannel = fakeMessageChannels[0];
         expect(rejectedChannel.port1.close).toHaveBeenCalledTimes(1);
@@ -239,9 +256,122 @@ describe('workerBridge readiness gating', () => {
             'message',
             expect.any(Function),
         );
+        expect(installedChannel.port1.addEventListener).toHaveBeenCalledTimes(1);
+        expect(installedChannel.port1.start).toHaveBeenCalledTimes(1);
 
         postStreamCommand({ type: 'pause' });
         expect(installedChannel.port1.postMessage).toHaveBeenCalledWith({ type: 'pause' });
+    });
+
+    it('preserves worker B pending setup when worker A readiness rejects after replacement', async () => {
+        const apiA = createComlinkApi();
+        const apiB = createComlinkApi();
+        let resolveWorkerB!: () => void;
+        apiB.setStreamPort.mockImplementationOnce(() => new Promise<void>((resolve) => {
+            resolveWorkerB = resolve;
+        }));
+        comlinkStub.wrap
+            .mockImplementationOnce(() => apiA)
+            .mockImplementationOnce(() => apiB);
+
+        const setupA = setupStreamChannel();
+        const outcomeA = setupA.then(
+            () => null,
+            (error: unknown) => error,
+        );
+        const workerA = fakeWorkerInstance!;
+
+        terminateWorker();
+        const setupB = setupStreamChannel();
+        const workerB = fakeWorkerInstance!;
+        expect(workerB).not.toBe(workerA);
+        workerB.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        await vi.waitFor(() => {
+            expect(apiB.setStreamPort).toHaveBeenCalledTimes(1);
+        });
+
+        const errorA = await outcomeA;
+        expect(errorA).toBeInstanceOf(Error);
+        expect((errorA as Error).message).toBe(
+            'Training worker terminated before becoming ready',
+        );
+
+        const concurrentB = setupStreamChannel();
+        await Promise.resolve();
+        expect(fakeMessageChannels).toHaveLength(1);
+        expect(comlinkStub.transfer).toHaveBeenCalledTimes(1);
+        expect(apiB.setStreamPort).toHaveBeenCalledTimes(1);
+
+        resolveWorkerB();
+        await expect(setupB).resolves.toBeUndefined();
+        await expect(concurrentB).resolves.toBeUndefined();
+
+        const installedChannel = fakeMessageChannels[0];
+        expect(installedChannel.port1.addEventListener).toHaveBeenCalledTimes(1);
+        expect(installedChannel.port1.start).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects worker A stale transfer without clearing or replacing worker B setup', async () => {
+        const apiA = createComlinkApi();
+        const apiB = createComlinkApi();
+        let resolveWorkerA!: () => void;
+        let resolveWorkerB!: () => void;
+        apiA.setStreamPort.mockImplementationOnce(() => new Promise<void>((resolve) => {
+            resolveWorkerA = resolve;
+        }));
+        apiB.setStreamPort.mockImplementationOnce(() => new Promise<void>((resolve) => {
+            resolveWorkerB = resolve;
+        }));
+        comlinkStub.wrap
+            .mockImplementationOnce(() => apiA)
+            .mockImplementationOnce(() => apiB);
+
+        const setupA = setupStreamChannel();
+        fakeWorkerInstance!.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        await vi.waitFor(() => {
+            expect(apiA.setStreamPort).toHaveBeenCalledTimes(1);
+        });
+        const channelA = fakeMessageChannels[0];
+        const outcomeA = setupA.then(
+            () => null,
+            (error: unknown) => error,
+        );
+
+        terminateWorker();
+        const setupB = setupStreamChannel();
+        fakeWorkerInstance!.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        await vi.waitFor(() => {
+            expect(apiB.setStreamPort).toHaveBeenCalledTimes(1);
+        });
+        const channelB = fakeMessageChannels[1];
+
+        resolveWorkerA();
+        const errorA = await outcomeA;
+        expect(errorA).toBeInstanceOf(Error);
+        expect((errorA as Error).message).toBe(
+            'Training worker terminated during stream setup',
+        );
+        expect(channelA.port1.close).toHaveBeenCalledTimes(1);
+        expect(channelA.port2.close).toHaveBeenCalledTimes(1);
+        expect(channelA.port1.addEventListener).not.toHaveBeenCalled();
+        expect(channelA.port1.start).not.toHaveBeenCalled();
+
+        const concurrentB = setupStreamChannel();
+        await Promise.resolve();
+        expect(fakeMessageChannels).toHaveLength(2);
+        expect(comlinkStub.transfer).toHaveBeenCalledTimes(2);
+        expect(apiB.setStreamPort).toHaveBeenCalledTimes(1);
+
+        resolveWorkerB();
+        await expect(setupB).resolves.toBeUndefined();
+        await expect(concurrentB).resolves.toBeUndefined();
+        expect(channelB.port1.addEventListener).toHaveBeenCalledTimes(1);
+        expect(channelB.port1.start).toHaveBeenCalledTimes(1);
+        expect(channelB.port1.close).not.toHaveBeenCalled();
+
+        postStreamCommand({ type: 'pause' });
+        expect(channelB.port1.postMessage).toHaveBeenCalledWith({ type: 'pause' });
+        expect(channelA.port1.postMessage).not.toHaveBeenCalled();
     });
 
     it('ignores malformed and unrelated worker messages until readiness times out', async () => {
