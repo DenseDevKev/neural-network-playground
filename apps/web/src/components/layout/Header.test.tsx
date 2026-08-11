@@ -294,23 +294,27 @@ describe('Header', () => {
         expect((await axe(baseElement)).violations).toHaveLength(0);
     });
 
-    it('changes audience mode through a described native select and announces only explicit choices', async () => {
+    it('changes workspace profile through a described native select and announces only explicit choices', async () => {
         const user = userEvent.setup();
         renderHeader();
 
-        const mode = screen.getByRole('combobox', { name: 'Audience mode' });
+        expect(screen.getByText('Workspace')).toBeInTheDocument();
+        const mode = screen.getByRole('combobox', { name: 'Workspace profile' });
         expect(mode).toHaveValue('explore');
         expect(mode).toHaveAccessibleDescription(
-            'Adds feature, hyperparameter, and confusion tools for guided experimentation. Mode changes visible tools only.',
+            'Adds feature, hyperparameter, and confusion tools for guided experimentation. Profiles change visible tools and guidance only.',
         );
         expect(screen.getByText(
             'Adds feature, hyperparameter, and confusion tools for guided experimentation.',
         )).toBeInTheDocument();
-        expect(screen.getByText('Mode changes visible tools only.')).toBeInTheDocument();
+        expect(screen.getByText('Profiles change visible tools and guidance only.')).toBeInTheDocument();
         expect(screen.getByRole('option', { name: 'Beginner' })).toHaveValue('beginner');
         expect(screen.getByRole('option', { name: 'Explore' })).toHaveValue('explore');
         expect(screen.getByRole('option', { name: 'Lab' })).toHaveValue('lab');
-        expect(screen.getByRole('status', { name: 'Audience mode change' })).toBeEmptyDOMElement();
+        expect(screen.getByRole('status', { name: 'Workspace profile change' })).toBeEmptyDOMElement();
+        const initialStored = JSON.parse(window.localStorage.getItem('nn-playground-layout') ?? '{}');
+        expect(initialStored.version).toBe(0);
+        expect(initialStored.state.audienceMode).toBe('explore');
 
         await user.selectOptions(mode, 'lab');
 
@@ -318,18 +322,21 @@ describe('Header', () => {
             audienceMode: 'lab',
             advancedToolsOpen: true,
         });
-        expect(screen.getByRole('status', { name: 'Audience mode change' }))
-            .toHaveTextContent('Mode: Lab. Mode changes visible tools only.');
+        expect(screen.getByRole('status', { name: 'Workspace profile change' }))
+            .toHaveTextContent('Workspace profile: Lab. Profiles change visible tools and guidance only.');
         const stored = JSON.parse(window.localStorage.getItem('nn-playground-layout') ?? '{}');
-        expect(stored.state).toMatchObject({ audienceMode: 'lab', advancedToolsOpen: true });
+        expect(stored.state.audienceMode).toBe('lab');
+        expect(stored.state.advancedToolsOpen).toBe(true);
 
         await user.selectOptions(mode, 'beginner');
         expect(useLayoutStore.getState()).toMatchObject({
             audienceMode: 'beginner',
             advancedToolsOpen: false,
         });
-        expect(screen.getByRole('status', { name: 'Audience mode change' }))
-            .toHaveTextContent('Mode: Beginner. Mode changes visible tools only.');
+        expect(screen.getByRole('status', { name: 'Workspace profile change' }))
+            .toHaveTextContent('Workspace profile: Beginner. Profiles change visible tools and guidance only.');
+        const beginnerStored = JSON.parse(window.localStorage.getItem('nn-playground-layout') ?? '{}');
+        expect(beginnerStored.state.audienceMode).toBe('beginner');
         expect(screen.getByText(
             'Keeps the core data, network, boundary, and loss tools visible with more guidance.',
         )).toBeInTheDocument();

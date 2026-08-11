@@ -304,7 +304,7 @@ describe('App shell integration', () => {
             header.getByRole('button', { name: 'build' }),
             header.getByRole('button', { name: 'run' }),
             header.getByRole('button', { name: 'About workspace views' }),
-            header.getByRole('combobox', { name: 'Audience mode' }),
+            header.getByRole('combobox', { name: 'Workspace profile' }),
             header.getByRole('button', { name: 'Presets' }),
             header.getByRole('button', { name: 'Lessons' }),
             header.getByRole('button', { name: 'History' }),
@@ -774,7 +774,7 @@ describe('App shell integration', () => {
         await user.click(disclosure);
         assertScientificState();
 
-        const mode = screen.getByRole('combobox', { name: 'Audience mode' });
+        const mode = screen.getByRole('combobox', { name: 'Workspace profile' });
         await user.selectOptions(mode, 'explore');
         expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
         expect(screen.queryByRole('note', { name: 'Advanced settings active' }))

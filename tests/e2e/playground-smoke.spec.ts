@@ -85,7 +85,7 @@ function currentRun(page: Page): Locator {
 }
 
 function audienceMode(page: Page): Locator {
-    return page.getByRole('combobox', { name: 'Audience mode' });
+    return page.getByRole('combobox', { name: 'Workspace profile' });
 }
 
 function advancedTools(page: Page): Locator {

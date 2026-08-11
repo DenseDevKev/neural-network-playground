@@ -9,8 +9,16 @@ import {
 } from './audienceProfiles.ts';
 
 describe('audience profiles', () => {
-    it('defines the exact Beginner, Explore, and Lab capabilities', () => {
+    it('keeps the ordered profile identifiers paired with their public labels', () => {
         expect(AUDIENCE_MODES).toEqual(['beginner', 'explore', 'lab']);
+        expect(AUDIENCE_MODES.map((mode) => [mode, getAudienceProfile(mode).label])).toEqual([
+            ['beginner', 'Beginner'],
+            ['explore', 'Explore'],
+            ['lab', 'Lab'],
+        ]);
+    });
+
+    it('defines the exact Beginner, Explore, and Lab capabilities', () => {
         expect(AUDIENCE_PROFILES).toEqual({
             beginner: {
                 label: 'Beginner',

@@ -214,10 +214,10 @@ export const Header = memo(function Header({
 
             <div className="forge-audience-mode">
                 <label className="forge-audience-mode__control">
-                    <span>Mode</span>
+                    <span>Workspace</span>
                     <select
                         className="select forge-audience-mode__select"
-                        aria-label="Audience mode"
+                        aria-label="Workspace profile"
                         aria-describedby="forge-audience-mode-profile-description forge-audience-mode-description"
                         value={audienceMode}
                         onChange={(event) => {
@@ -225,7 +225,7 @@ export const Header = memo(function Header({
                             if (!isAudienceMode(nextMode)) return;
                             setAudienceMode(nextMode);
                             setModeAnnouncement(
-                                `Mode: ${getAudienceProfile(nextMode).label}. Mode changes visible tools only.`,
+                                `Workspace profile: ${getAudienceProfile(nextMode).label}. Profiles change visible tools and guidance only.`,
                             );
                         }}
                     >
@@ -243,12 +243,12 @@ export const Header = memo(function Header({
                     {audienceProfile.description}
                 </span>
                 <span id="forge-audience-mode-description" className="forge-audience-mode__note">
-                    Mode changes visible tools only.
+                    Profiles change visible tools and guidance only.
                 </span>
                 <span
                     className="sr-only"
                     role="status"
-                    aria-label="Audience mode change"
+                    aria-label="Workspace profile change"
                     aria-live="polite"
                     aria-atomic="true"
                 >
