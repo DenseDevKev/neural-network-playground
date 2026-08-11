@@ -169,6 +169,19 @@ describe('NetworkGraphCanvas', () => {
         expect(desc!.textContent).toContain('Hidden activation: tanh');
     });
 
+    it('names the graph while retaining its dynamic network description', () => {
+        updateCompiledForTest((compiled) => ({
+            ...compiled,
+            network: { ...compiled.network, hiddenLayers: [4, 4], activation: 'tanh' },
+        }));
+
+        render(<NetworkGraphCanvas />);
+
+        const graph = screen.getByRole('img', { name: 'Neural network graph' });
+        expect(graph).toHaveAccessibleDescription(/Neural network:/);
+        expect(graph).toHaveAttribute('aria-describedby', 'network-graph-desc');
+    });
+
     it('renders architecture story and capacity badge inside the graph', () => {
         updateCompiledForTest((compiled) => ({
             ...compiled,

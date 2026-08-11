@@ -764,6 +764,7 @@ export function NetworkGraphCanvas() {
             <canvas
                 ref={canvasRef}
                 role="img"
+                aria-label="Neural network graph"
                 aria-describedby="network-graph-desc"
                 style={{
                     width: '100%',
