@@ -1851,6 +1851,8 @@ git commit -m "feat(web): surface compact evaluation outcome"
 - Modify: apps/web/src/components/controls/DataPanel.test.tsx
 - Modify: apps/web/src/components/controls/TrainingControls.tsx
 - Modify: apps/web/src/components/controls/TrainingControls.test.tsx
+- Modify: apps/web/src/styles/forge.css
+- Modify: apps/web/src/styles/forgeResponsive.test.ts
 - Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
@@ -1860,7 +1862,10 @@ git commit -m "feat(web): surface compact evaluation outcome"
   related concepts, difficulty, all three profiles, and a valid UI target where
   applicable: `learning-rate` targets `hyperparams`, `train-test-split` targets
   `data`, and `epoch` deliberately has no target.
-- Place `ConceptHelp` beside the visible Learning rate label, Train ratio label, and Epoch label; guidance remains controlled by the current audience profile.
+- Place `ConceptHelp` beside the visible Learning rate label, Train ratio label,
+  and Epoch label; guidance remains controlled by the current audience profile.
+  Give all three the dedicated `concept-help--viewport-overlay` modifier so the
+  disclosure is fixed to the viewport instead of clipped by its control module.
 - Preserve Task 17's native Train ratio label/output association. The help
   button is a sibling of its `<label>`, never nested inside or substituted for
   the label.
@@ -1871,10 +1876,13 @@ git commit -m "feat(web): surface compact evaluation outcome"
   set: indices are shuffled without replacement, every example is consumed
   once, the final batch may be short, and the integer epoch increments only
   after that pass. Do not describe sampling with replacement.
-- The Epoch help uses `concept-help--above concept-help--end` in the bottom
-  transport so its disclosure remains in the viewport. The existing desktop
-  and 320px browser journeys verify all three new help surfaces, 44px compact
-  triggers, and bounded disclosure geometry without a CSS change.
+- The Epoch help retains `concept-help--above concept-help--end` alongside the
+  new viewport-overlay modifier in the bottom transport. A sufficiently
+  specific later CSS rule fixes viewport overlays 12px from the right and 36px
+  above the bottom; it overrides label-relative `above`/`end` offsets without
+  changing other concept help. The desktop and 320px browser journeys verify
+  all three new help surfaces, 44px compact triggers, viewport bounds, and
+  ancestor-clipping safety through corner hit-testing.
 
 - [ ] **Step 1: Write failing catalog and placement tests**
 
@@ -1945,24 +1953,61 @@ For DataPanel, reassert the Task 17 label/output IDs, `for` ownership,
 For TrainingControls, retain an exact inner `Epoch N` text span and assert the
 help sibling carries `concept-help--above concept-help--end`.
 
-Extend `expectConceptHelpInViewport` in `playground-smoke.spec.ts` to accept all
-three terms. In the desktop concept-help test, verify Epoch in Run, then switch
-to Build and verify Train/test split and Learning rate. In the 320px touch-shell
-journey do the same, require each trigger to meet the existing 44px target and
-each open region to be fully in the viewport, then return to Run before the
-journey's existing Run-only assertions.
+Extend `expectConceptHelpInViewport` in `playground-smoke.spec.ts` rather than
+replacing its current terms; its union becomes `Data loss | Checkpoint | Epoch |
+Train/test split | Learning rate`. In addition to its bounding-box check,
+sample every disclosure corner four pixels inward with `document.elementFromPoint`
+and require the hit element to be the region or one of its descendants. This
+proves an in-viewport box is not clipped by an overflow ancestor:
+
+~~~ts
+const cornersAreExposed = await region.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const points = [
+        [rect.left + 4, rect.top + 4],
+        [rect.right - 4, rect.top + 4],
+        [rect.left + 4, rect.bottom - 4],
+        [rect.right - 4, rect.bottom - 4],
+    ];
+    return points.every(([x, y]) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit !== null && (hit === element || element.contains(hit));
+    });
+});
+expect(cornersAreExposed).toBe(true);
+~~~
+
+In the desktop concept-help test, verify Epoch in Run, then switch to Build and
+verify Train/test split and Learning rate. In the 320px touch-shell journey do
+the same, require each trigger to meet the existing 44px target and each open
+region to be fully in the viewport and corner-exposed, then return to Run before
+the journey's existing Run-only assertions.
+
+Add a static CSS regression proving the exact scoped modifier owns fixed
+positioning and the complete inset. The selector must be more specific than the
+existing `concept-help--above` and `concept-help--end` rules and appear after
+them:
+
+~~~ts
+expect(css).toMatch(
+    /\.forge-shell \.concept-help\.concept-help--viewport-overlay \.concept-help__content\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*auto 12px 36px auto;/,
+);
+~~~
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/concepts/conceptCatalog.test.ts src/components/controls/HyperparamPanel.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/TrainingControls.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/concepts/conceptCatalog.test.ts src/components/controls/HyperparamPanel.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/TrainingControls.test.tsx src/styles/forgeResponsive.test.ts --pool=forks --reporter=dot
 
 Run: pnpm build
 
 Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --grep "concept help|320px touch shell"
 
-Expected: Vitest FAILS because the concept IDs and contextual controls are
-absent. The build succeeds and refreshes `dist`; Chromium FAILS on the missing
-new help triggers.
+Expected: Vitest FAILS because the concept IDs, contextual controls, and scoped
+viewport-overlay rule are absent. The build succeeds and refreshes `dist`;
+Chromium FAILS on the missing new help triggers. A runtime-only probe of the
+planned label-relative placement measured Train/test split and Learning rate
+outside or clipped by their modules at both desktop and 320px, so GREEN must
+also satisfy corner hit-testing rather than bounding boxes alone.
 
 - [ ] **Step 3: Add scientifically bounded copy and contextual controls**
 
@@ -1974,7 +2019,11 @@ epoch counts data passes rather than convergence or model quality.
 ~~~tsx
 <span className="control-label">
     Learning rate
-    <ConceptHelp conceptId="learning-rate" guidanceLevel={guidanceLevel} />
+    <ConceptHelp
+        conceptId="learning-rate"
+        guidanceLevel={guidanceLevel}
+        className="concept-help--viewport-overlay"
+    />
 </span>
 ~~~
 
@@ -1986,7 +2035,11 @@ Task 17 label:
 ~~~tsx
 <span className="control-label">
     <label htmlFor={trainRatioId}>Train ratio</label>
-    <ConceptHelp conceptId="train-test-split" guidanceLevel={guidanceLevel} />
+    <ConceptHelp
+        conceptId="train-test-split"
+        guidanceLevel={guidanceLevel}
+        className="concept-help--viewport-overlay"
+    />
 </span>
 ~~~
 
@@ -2000,14 +2053,25 @@ visible `Epoch {currentModel.epoch}` text and an adjacent help control:
     <ConceptHelp
         conceptId="epoch"
         guidanceLevel={guidanceLevel}
-        className="concept-help--above concept-help--end"
+        className="concept-help--above concept-help--end concept-help--viewport-overlay"
     />
 </span>
 ~~~
 
+Add the dedicated overlay rule after the existing `above`/`end` modifiers so
+the stronger selector wins on desktop and compact screens while leaving every
+other help surface unchanged:
+
+~~~css
+.forge-shell .concept-help.concept-help--viewport-overlay .concept-help__content {
+    position: fixed;
+    inset: auto 12px 36px auto;
+}
+~~~
+
 - [ ] **Step 4: Run GREEN and typecheck**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/concepts/conceptCatalog.test.ts src/components/controls/HyperparamPanel.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/TrainingControls.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/concepts/conceptCatalog.test.ts src/components/controls/HyperparamPanel.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/TrainingControls.test.tsx src/styles/forgeResponsive.test.ts --pool=forks --reporter=dot
 
 Run: pnpm --filter @nn-playground/web typecheck
 
@@ -2016,13 +2080,13 @@ Run: pnpm build
 Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "concept help|320px touch shell"
 
 Expected: PASS with all concept metadata and placements typed, readiness-safe
-hook order, profile-specific guidance, and fully visible help in both browser
-engines at desktop and 320px.
+hook order, profile-specific guidance, and fully visible, corner-exposed help in
+both browser engines at desktop and 320px.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/concepts/conceptCatalog.ts apps/web/src/concepts/conceptCatalog.test.ts apps/web/src/components/controls/HyperparamPanel.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx tests/e2e/playground-smoke.spec.ts
+git add apps/web/src/concepts/conceptCatalog.ts apps/web/src/concepts/conceptCatalog.test.ts apps/web/src/components/controls/HyperparamPanel.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx apps/web/src/styles/forge.css apps/web/src/styles/forgeResponsive.test.ts tests/e2e/playground-smoke.spec.ts
 git commit -m "feat(web): explain core training concepts"
 ~~~
 
