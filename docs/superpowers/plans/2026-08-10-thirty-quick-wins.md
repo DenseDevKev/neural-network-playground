@@ -586,11 +586,22 @@ git commit -m "build: scope prototype lint globals"
 - Create: packages/engine/src/__benchmarks__/performanceStatistics.ts
 - Create: packages/engine/src/__benchmarks__/performanceStatistics.test.ts
 - Modify: packages/engine/src/__benchmarks__/grid_performance.bench.ts
+- Modify: packages/engine/src/network.ts
+- Modify: packages/engine/src/__tests__/network.test.ts
 - Modify: docs/perf/PERFORMANCE_BASELINE.md
 
 **Interfaces:**
 - Produces median(values), measureMedianMsPerIteration(run, options), and assertPerformanceBudgets(results), which reports every over-budget path in one failure.
 - The four existing prediction APIs retain their current caps unless controlled evidence and code profiling justify an implementation optimization or a documented baseline change.
+- Scope amendment (2026-08-11): three controlled robust runs left
+  `predictGridWithNeuronsInto` over its unchanged cap in two runs, with a
+  median-of-run-medians of 12.3304 ms/iteration versus 12.2388. A five-trial
+  isolated A/B showed that capacity guards, hoisted target-kind decisions, and
+  one pre-write representability check improve the path median by 5.99% while
+  preserving Float64 large-finite values and the exact Float32 overflow error.
+  The two production/test paths above are authorized only for that profiled
+  optimization; preserve engine math, evaluation order, flat neuron layout,
+  target precision, and non-finite error path/value.
 
 - [ ] **Step 1: Write failing statistics and aggregate-failure tests**
 
@@ -623,13 +634,44 @@ export function median(values: readonly number[]): number {
 
 Measure at least five warmed rounds per path and collect all four results before one aggregate budget assertion.
 
+- [ ] **Step 3a: Capture the profiled production-path RED and protect safety semantics**
+
+Run three times before the production optimization:
+pnpm --filter @nn-playground/engine test:perf
+
+Expected performance RED: all four paths are measured and reported, but the
+unchanged `predictGridWithNeuronsInto` cap fails in runs 1 and 3 at 12.3841 and
+12.3304 ms/iteration (run 2 measures 12.2321), for a 12.3304
+median-of-run-medians versus the 12.2388 cap.
+
+Add unit tests that require undersized output and neuron targets to fail before
+any write, prove exact Float32 output/neuron-grid equality and layout against
+the allocating API, and cover all-Float32, all-Float64, and both mixed target
+permutations (output32/neuron64 and output64/neuron32). Require exact
+`NonFiniteNumericalError` path/value assertions for Float32 overflow in both
+optimized destination branches: `predictionGrid.output[0]`/`Infinity` and
+`predictionGrid.neurons[0][0]`/`Infinity`. Run the existing
+`numericalError.test.ts` cases unchanged to preserve large-finite Float64 values
+and their current overflow diagnostics.
+
+Add minimum-capacity guards before removing the old post-write readback (typed
+array out-of-bounds writes are otherwise ignored). Hoist the output/neuron
+Float32 decisions once per call, convert once, reject a non-finite converted
+value before its write, store that converted value, and increment the flattened
+neuron offset without changing write order. Do not change forward arithmetic,
+buffer layout, API shape, or budgets.
+
 - [ ] **Step 4: Run helper GREEN and controlled performance samples**
 
 Run: pnpm --filter @nn-playground/engine exec vitest run src/__benchmarks__/performanceStatistics.test.ts --pool=forks --reporter=dot
 
-Run three times: pnpm --filter @nn-playground/engine test:perf
+Run three times after the production optimization:
+pnpm --filter @nn-playground/engine test:perf
 
-Expected: helper PASS; each controlled run measures and reports all four paths. If a path remains over budget, profile and optimize the path before proceeding; do not merely raise its cap.
+Expected: helper PASS; all three controlled commands PASS the unchanged caps,
+and every run measures and reports all four paths. Record all raw medians and
+the median-of-run-medians. If a path remains over budget, continue profiling or
+stop; do not merely raise its cap.
 
 - [ ] **Step 5: Run engine unit tests and commit**
 
@@ -637,8 +679,12 @@ Run: pnpm --filter @nn-playground/engine test
 
 Expected: PASS.
 
+Run: pnpm --filter @nn-playground/engine exec vitest run src/__tests__/network.test.ts src/__tests__/numericalError.test.ts --pool=forks --reporter=dot
+
+Expected: PASS for exact layout/precision/capacity and numerical-error contracts.
+
 ~~~bash
-git add packages/engine/src/__benchmarks__/performanceStatistics.ts packages/engine/src/__benchmarks__/performanceStatistics.test.ts packages/engine/src/__benchmarks__/grid_performance.bench.ts docs/perf/PERFORMANCE_BASELINE.md
+git add packages/engine/src/__benchmarks__/performanceStatistics.ts packages/engine/src/__benchmarks__/performanceStatistics.test.ts packages/engine/src/__benchmarks__/grid_performance.bench.ts packages/engine/src/network.ts packages/engine/src/__tests__/network.test.ts docs/perf/PERFORMANCE_BASELINE.md
 git commit -m "test(engine): stabilize grid performance evidence"
 ~~~
 
