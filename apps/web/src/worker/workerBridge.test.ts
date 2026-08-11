@@ -126,6 +126,7 @@ import {
     startRenderLoop,
     stopRenderLoop,
     terminateWorker,
+    emitE2EWorkerError,
 } from './workerBridge';
 import { getFrameBuffer, resetFrameBuffer } from './frameBuffer.ts';
 import {
@@ -499,6 +500,22 @@ describe('workerBridge error paths', () => {
     afterEach(() => {
         unsub();
         terminateWorker();
+    });
+
+    it('delivers a protocol-v2 E2E error only after subscription', () => {
+        unsub();
+        terminateWorker();
+        expect(emitE2EWorkerError('injected startup failure')).toBe(false);
+
+        const messages: WorkerToMainMessage[] = [];
+        unsub = onSnapshot((message) => messages.push(message));
+        expect(emitE2EWorkerError('injected startup failure')).toBe(true);
+        expect(messages).toEqual([{
+            type: 'error',
+            protocolVersion: 2,
+            runId: 0,
+            message: 'injected startup failure',
+        }]);
     });
 
     it('routes Worker onerror to _onSnapshot as type=error', () => {

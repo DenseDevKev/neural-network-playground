@@ -48,6 +48,7 @@ const bridge = vi.hoisted(() => {
         newRunTo: vi.fn(),
         discardPendingSnapshot: vi.fn(),
         terminateWorker: vi.fn(),
+        emitE2EWorkerError: vi.fn(),
     };
 });
 
@@ -61,7 +62,15 @@ vi.mock('../worker/workerBridge.ts', () => ({
     newRunTo: bridge.newRunTo,
     discardPendingSnapshot: bridge.discardPendingSnapshot,
     terminateWorker: bridge.terminateWorker,
+    emitE2EWorkerError: bridge.emitE2EWorkerError,
 }));
+
+const faults = vi.hoisted(() => ({
+    consumeE2EWorkerFault: vi.fn(),
+    E2E_WORKER_FAULT_MESSAGE: 'Injected E2E worker startup failure.',
+}));
+
+vi.mock('../testing/e2eFaults.ts', () => faults);
 
 import { useTraining } from './useTraining.ts';
 
@@ -482,6 +491,44 @@ describe('useTraining', () => {
         bridge.setupStreamChannel.mockResolvedValue(undefined);
         bridge.onSnapshot.mockReturnValue(() => {});
         bridge.discardPendingSnapshot.mockReturnValue(true);
+        faults.consumeE2EWorkerFault.mockReset().mockReturnValue(null);
+        bridge.emitE2EWorkerError.mockReset().mockReturnValue(true);
+    });
+
+    it('keeps a consumed E2E startup fault sticky across StrictMode effect replay', async () => {
+        let subscribed: ((message: WorkerToMainMessage) => void) | null = null;
+        const subscriptions: Array<(message: WorkerToMainMessage) => void> = [];
+        const lifecycle: string[] = [];
+        let faultCalls = 0;
+        bridge.onSnapshot.mockImplementation((callback: (message: WorkerToMainMessage) => void) => {
+            subscriptions.push(callback);
+            lifecycle.push('subscribe');
+            subscribed = callback;
+            return () => {
+                lifecycle.push('unsubscribe');
+                if (subscribed === callback) subscribed = null;
+            };
+        });
+        faults.consumeE2EWorkerFault.mockImplementation(() => (
+            faultCalls++ === 0 ? 'startup-once' : null
+        ));
+        bridge.emitE2EWorkerError.mockImplementation((message: string) => {
+            lifecycle.push('emit');
+            subscribed?.({ type: 'error', protocolVersion: 2, runId: 0, message });
+            return subscribed !== null;
+        });
+        renderHook(() => useTraining(), { reactStrictMode: true });
+
+        await waitFor(() => expect(subscriptions).toHaveLength(2));
+        expect(faults.consumeE2EWorkerFault).toHaveBeenCalledTimes(1);
+        await waitFor(() => expect(bridge.emitE2EWorkerError).toHaveBeenCalledTimes(1));
+        expect(lifecycle).toEqual(['subscribe', 'unsubscribe', 'subscribe', 'emit']);
+        expect(subscribed).toBe(subscriptions[1]);
+        expect(bridge.workerApi.initializeExperimentV2).not.toHaveBeenCalled();
+        expect(useTrainingStore.getState().workerError)
+            .toBe('Injected E2E worker startup failure.');
+        await Promise.resolve();
+        expect(bridge.workerApi.initializeExperimentV2).not.toHaveBeenCalled();
     });
 
     it('initializes the worker and hydrates runtime state on mount', async () => {

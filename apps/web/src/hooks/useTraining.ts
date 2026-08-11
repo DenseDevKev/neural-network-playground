@@ -20,7 +20,12 @@ import {
     newRunTo,
     discardPendingSnapshot,
     terminateWorker,
+    emitE2EWorkerError,
 } from '../worker/workerBridge.ts';
+import {
+    consumeE2EWorkerFault,
+    E2E_WORKER_FAULT_MESSAGE,
+} from '../testing/e2eFaults.ts';
 import {
     getFrameBuffer,
     getFrameVersions,
@@ -773,6 +778,7 @@ export function useTraining(): TrainingHook {
     const activeConfigSyncSeqRef = useRef(0);
     const configSyncPendingRef = useRef(false);
     const restoreBarrierRef = useRef<Promise<void> | null>(null);
+    const e2eStartupFaultActiveRef = useRef(false);
 
     // Config selectors (from playground store — stable, rarely changes)
     const prepared = usePlaygroundStore((s) => (
@@ -1098,11 +1104,22 @@ export function useTraining(): TrainingHook {
     useEffect(() => {
         lifecycleEpochRef.current++;
         mountedRef.current = true;
+        if (e2eStartupFaultActiveRef.current) return;
         if (!prepared) {
             reportWorkerError(
                 new Error('Training is unavailable because the shared experiment URL is incompatible with version 2.'),
                 'Failed to initialize training worker.',
             );
+            return;
+        }
+        const fault = consumeE2EWorkerFault(
+            new URL(window.location.href),
+            window.sessionStorage,
+            import.meta.env.VITE_E2E_FAULTS === '1',
+        );
+        if (fault === 'startup-once') {
+            e2eStartupFaultActiveRef.current = true;
+            queueMicrotask(() => emitE2EWorkerError(E2E_WORKER_FAULT_MESSAGE));
             return;
         }
         initializeWorker(prepared).catch((error) => {
@@ -1115,6 +1132,7 @@ export function useTraining(): TrainingHook {
 
     // Every accepted prepared-document replacement starts a fresh generation.
     useEffect(() => {
+        if (e2eStartupFaultActiveRef.current) return;
         const isRetry = configSyncNonce !== prevConfigSyncNonceRef.current;
         if (!prepared) return;
         if (!isRetry && prevPreparedRef.current === prepared) return;

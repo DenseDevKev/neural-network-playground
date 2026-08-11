@@ -7,9 +7,11 @@
   "scripts": {
     "dev": "pnpm --filter @nn-playground/web dev",
     "build": "pnpm --filter @nn-playground/web build",
+    "build:e2e": "VITE_E2E_FAULTS=1 pnpm build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r test",
     "test:e2e": "playwright test",
+    "test:e2e:recovery": "pnpm run build:e2e && playwright test tests/e2e/worker-recovery.spec.ts --project=chromium --project=webkit --grep \"@fault-enabled\"",
     "test:engine": "pnpm --filter @nn-playground/engine test",
     "test:perf": "node scripts/run-performance-gates.mjs",
     "bench": "pnpm --filter @nn-playground/engine bench",

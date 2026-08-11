@@ -134,6 +134,13 @@ function emitWorkerError(message: string): void {
     }
 }
 
+/** Test-build seam that follows the real bridge error-delivery path. */
+export function emitE2EWorkerError(message: string): boolean {
+    if (!_onSnapshot) return false;
+    emitWorkerError(message);
+    return true;
+}
+
 function deepFreezeArtifact<T>(value: T): Readonly<T> {
     if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
     for (const key of Reflect.ownKeys(value)) {
