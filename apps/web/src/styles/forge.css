@@ -541,6 +541,12 @@
     gap: var(--space-sm);
 }
 
+.forge-compact-outcome { display: none; }
+.forge-compact-outcome > summary:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
 .forge-topbar__spacer { flex: 1; }
 
 .forge-topbar__kit {
@@ -2784,6 +2790,30 @@
     }
     .forge-topbar__metrics {
         display: none;
+    }
+    .forge-compact-outcome {
+        display: block;
+        flex: 1 0 100%;
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    .forge-compact-outcome > summary {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        min-height: 44px;
+        box-sizing: border-box;
+        padding: 6px 10px;
+        cursor: pointer;
+        overflow-wrap: anywhere;
+    }
+    .forge-compact-outcome[open] > .forge-compact-outcome__body {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+        padding: 6px 10px 10px;
+        overflow-wrap: anywhere;
     }
     .forge-topbar__spacer {
         flex-basis: 1px;

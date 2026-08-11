@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
 import { Header } from './Header';
@@ -77,7 +77,8 @@ describe('Header', () => {
         });
     });
 
-    it('labels a newer batch trend separately from the paired full evaluation', () => {
+    it('keeps desktop metrics and exposes the paired classification evaluation in a native compact disclosure', async () => {
+        const user = userEvent.setup();
         useTrainingStore.setState({
             latestLiveSignal: {
                 model: { generationId: 4, revision: 1240, step: 1240, epoch: 12 },
@@ -105,19 +106,39 @@ describe('Header', () => {
         try {
             renderHeader();
 
-            expect(screen.getByText('0012')).toBeInTheDocument();
-            expect(screen.getByText('0.1234')).toBeInTheDocument();
-            expect(screen.getByText(/Batch trend \(EMA\).*step 1,240/i)).toBeInTheDocument();
-            expect(screen.getByText(/Train data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
-            expect(screen.getByText(/Test data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
-            expect(screen.getByText('0.2345')).toBeInTheDocument();
-            expect(screen.getByText('0.5678')).toBeInTheDocument();
-            expect(screen.getByText('49.3%')).toBeInTheDocument();
+            const metrics = screen.getByRole('group', { name: 'Training metrics' });
+            expect(within(metrics).getByText('0012')).toBeInTheDocument();
+            expect(within(metrics).getByText('0.1234')).toBeInTheDocument();
+            expect(within(metrics).getByText(/Batch trend \(EMA\).*step 1,240/i)).toBeInTheDocument();
+            expect(within(metrics).getByText(/Train data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
+            expect(within(metrics).getByText(/Test data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
+            expect(within(metrics).getByText('0.2345')).toBeInTheDocument();
+            expect(within(metrics).getByText('0.5678')).toBeInTheDocument();
+            expect(within(metrics).getByText('49.3%')).toBeInTheDocument();
             expect(screen.queryByText('9.0000')).not.toBeInTheDocument();
 
-            const metrics = screen.getByRole('group', { name: 'Training metrics' });
             expect(metrics).not.toHaveAttribute('aria-live');
             expect(metrics.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+
+            const outcome = screen.getByRole('group', { name: 'Evaluation outcome' });
+            const summary = within(outcome).getByText(
+                'Step 1,230 · Test accuracy 49.3%',
+                { selector: 'summary' },
+            );
+            const body = outcome.querySelector('.forge-compact-outcome__body');
+            expect(outcome).not.toHaveAttribute('open');
+            expect(body).not.toBeVisible();
+            expect(outcome).not.toHaveAttribute('aria-live');
+            expect(outcome.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+
+            await user.click(summary);
+
+            expect(outcome).toHaveAttribute('open');
+            expect(body).toBeVisible();
+            expect(outcome).toHaveTextContent('Full evaluation at step 1,230');
+            expect(outcome).toHaveTextContent('Train data loss (full split) 0.2345');
+            expect(outcome).toHaveTextContent('Test data loss (full split) 0.5678');
+            expect(outcome).toHaveTextContent('Test accuracy 49.3%');
 
             act(() => {
                 useTrainingStore.setState({
@@ -133,6 +154,91 @@ describe('Header', () => {
         } finally {
             removeLegacySnapshot();
         }
+    });
+
+    it('uses full-evaluation test loss as the compact regression outcome', async () => {
+        const user = userEvent.setup();
+        useTrainingStore.setState({
+            latestLiveSignal: {
+                model: { generationId: 7, revision: 85, step: 85, epoch: 2 },
+                dataset: { generatorVersion: 1, datasetKey: 'regression', trainCount: 240, testCount: 60 },
+                objectiveKey: 'mse',
+                basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 10, throughStep: 85 },
+                dataLoss: 0.8765,
+            },
+            latestEvaluation: {
+                evaluationId: 9,
+                trigger: 'cadence',
+                model: { generationId: 7, revision: 80, step: 80, epoch: 2 },
+                dataset: { generatorVersion: 1, datasetKey: 'regression', trainCount: 240, testCount: 60 },
+                objectiveKey: 'mse',
+                train: { basis: { kind: 'full-split', split: 'train', sampleCount: 240, populationCount: 240 }, values: { dataLoss: 0.34567 } },
+                test: { basis: { kind: 'full-split', split: 'test', sampleCount: 60, populationCount: 60 }, values: { dataLoss: 0.45678 } },
+                objective: { regularizationPenalty: 0, trainTotalObjective: 0.34567 },
+            },
+        });
+        renderHeader();
+
+        const outcome = screen.getByRole('group', { name: 'Evaluation outcome' });
+        const summary = within(outcome).getByText(
+            'Step 80 · Test data loss 0.4568',
+            { selector: 'summary' },
+        );
+        expect(outcome).not.toHaveTextContent('0.8765');
+        expect(outcome).not.toHaveTextContent('Batch trend');
+
+        await user.click(summary);
+
+        expect(outcome).toHaveTextContent('Full evaluation at step 80');
+        expect(outcome).toHaveTextContent('Train data loss (full split) 0.3457');
+        expect(outcome).toHaveTextContent('Test data loss (full split) 0.4568');
+        expect(outcome).not.toHaveTextContent('Test accuracy');
+    });
+
+    it('keeps a real zero-percent full-evaluation accuracy on the classification branch', () => {
+        useTrainingStore.setState({
+            latestEvaluation: {
+                evaluationId: 10,
+                trigger: 'cadence',
+                model: { generationId: 8, revision: 25, step: 25, epoch: 1 },
+                dataset: { generatorVersion: 1, datasetKey: 'classification', trainCount: 150, testCount: 150 },
+                objectiveKey: 'bce',
+                train: { basis: { kind: 'full-split', split: 'train', sampleCount: 150, populationCount: 150 }, values: { dataLoss: 1.11111, accuracy: 0.1 } },
+                test: { basis: { kind: 'full-split', split: 'test', sampleCount: 150, populationCount: 150 }, values: { dataLoss: 2.22222, accuracy: 0 } },
+                objective: { regularizationPenalty: 0, trainTotalObjective: 1.11111 },
+            },
+        });
+        renderHeader();
+
+        const outcome = screen.getByRole('group', { name: 'Evaluation outcome' });
+        expect(within(outcome).getByText(
+            'Step 25 · Test accuracy 0.0%',
+            { selector: 'summary' },
+        )).toBeInTheDocument();
+        expect(outcome).not.toHaveTextContent('Test data loss 2.2222');
+    });
+
+    it('reports missing full evaluation without substituting the live batch EMA', () => {
+        useTrainingStore.setState({
+            latestLiveSignal: {
+                model: { generationId: 3, revision: 18, step: 18, epoch: 1 },
+                dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },
+                objectiveKey: 'o',
+                basis: { kind: 'mini-batch-ema', alpha: 0.1, latestBatchSize: 10, throughStep: 18 },
+                dataLoss: 0.2468,
+            },
+            latestEvaluation: null,
+        });
+        renderHeader();
+
+        const outcome = screen.getByRole('group', { name: 'Evaluation outcome' });
+        expect(within(outcome).getByText('Not evaluated yet', { selector: 'summary' }))
+            .toBeInTheDocument();
+        expect(outcome).not.toHaveAttribute('open');
+        expect(outcome).not.toHaveTextContent('0.2468');
+        expect(outcome).not.toHaveTextContent('Batch trend');
+        expect(outcome).not.toHaveAttribute('aria-live');
+        expect(outcome.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 
     it('uses the primary header play button to start and pause training', async () => {

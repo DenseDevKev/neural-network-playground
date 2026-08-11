@@ -599,6 +599,35 @@ test.describe('320px touch shell', () => {
 
     test('keeps critical controls reachable, sized, focused, and unclipped', async ({ page }) => {
         await loadPlayground(page);
+
+        const compactOutcome = page.getByRole('group', { name: 'Evaluation outcome' });
+        const compactOutcomeSummary = compactOutcome.locator('summary');
+        const compactOutcomeBody = compactOutcome.locator('.forge-compact-outcome__body');
+        await expectFullyInViewport(page, compactOutcome);
+        await expectFullyInViewport(page, compactOutcomeSummary);
+        await expect(page.getByRole('group', { name: 'Training metrics' })).toBeHidden();
+        await expectMinimumTouchTarget(compactOutcomeSummary);
+        await expect(compactOutcome).not.toHaveAttribute('open', '');
+        await expect(compactOutcomeSummary).toContainText(/Step 0 · Test accuracy \d+\.\d%/);
+        await expect(compactOutcomeBody).toBeHidden();
+        await compactOutcomeSummary.click();
+        await expect(compactOutcome).toHaveAttribute('open', '');
+        await expect(compactOutcomeBody).toBeVisible();
+        await expect(compactOutcomeBody).toContainText('Full evaluation at step 0');
+        await expect(compactOutcomeBody).toContainText(/Train data loss \(full split\) \d+\.\d{4}/);
+        await expect(compactOutcomeBody).toContainText(/Test data loss \(full split\) \d+\.\d{4}/);
+        const openOutcomeOverflow = await page.evaluate(() => {
+            const shell = document.querySelector<HTMLElement>('.forge-shell');
+            if (!shell) throw new Error('forge shell is missing');
+            return {
+                document: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+                shell: shell.scrollWidth <= shell.clientWidth + 1,
+            };
+        });
+        expect(openOutcomeOverflow).toEqual({ document: true, shell: true });
+        await compactOutcomeSummary.click();
+        await expect(compactOutcome).not.toHaveAttribute('open', '');
+
         await expectConceptHelpInViewport(page, 'Data loss');
         await expectConceptHelpInViewport(page, 'Checkpoint');
 

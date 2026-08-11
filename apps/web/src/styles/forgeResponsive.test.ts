@@ -90,6 +90,47 @@ describe('forge Build/Run instrument CSS', () => {
         expect(owningBlock).toBeDefined();
     });
 
+    it('keeps the compact evaluation disclosure hidden by default and wholly owned by one compact block', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+        const baseDisclosure = css.match(/\.forge-compact-outcome\s*\{([^}]*)\}/);
+        expect(baseDisclosure?.[1]).toMatch(/display:\s*none/);
+
+        const compactBlocks = extractMediaBlocks(css, '@media (max-width: 900px)');
+        const owningBlocks = compactBlocks.filter((block) => (
+            /\.forge-compact-outcome\s*\{/.test(block)
+            && /\.forge-compact-outcome\s*>\s*summary\s*\{/.test(block)
+            && /\.forge-compact-outcome\[open\]\s*>\s*\.forge-compact-outcome__body\s*\{/.test(block)
+        ));
+        expect(owningBlocks).toHaveLength(1);
+
+        const owningBlock = owningBlocks[0] ?? '';
+        const disclosure = owningBlock.match(/\.forge-compact-outcome\s*\{([^}]*)\}/)?.[1] ?? '';
+        const summary = owningBlock.match(/\.forge-compact-outcome\s*>\s*summary\s*\{([^}]*)\}/)?.[1] ?? '';
+        const openBody = owningBlock.match(
+            /\.forge-compact-outcome\[open\]\s*>\s*\.forge-compact-outcome__body\s*\{([^}]*)\}/,
+        )?.[1] ?? '';
+
+        expect(disclosure).toMatch(/display:\s*block/);
+        expect(disclosure).toMatch(/flex:\s*1\s+0\s+100%/);
+        expect(disclosure).toMatch(/min-width:\s*0/);
+        expect(disclosure).toMatch(/max-width:\s*100%/);
+        expect(disclosure).toMatch(/box-sizing:\s*border-box/);
+        expect(disclosure).not.toMatch(/(?:^|;)\s*width:\s*\d+(?:px|r?em)\b/);
+
+        expect(summary).toMatch(/display:\s*flex/);
+        expect(summary).toMatch(/min-width:\s*0/);
+        expect(summary).toMatch(/min-height:\s*44px/);
+        expect(summary).toMatch(/box-sizing:\s*border-box/);
+        expect(summary).toMatch(/overflow-wrap:\s*anywhere/);
+        expect(summary).not.toMatch(/(?:^|;)\s*width:\s*\d+(?:px|r?em)\b/);
+
+        expect(openBody).toMatch(/display:\s*grid/);
+        expect(openBody).toMatch(/gap:\s*4px/);
+        expect(openBody).toMatch(/min-width:\s*0/);
+        expect(openBody).toMatch(/overflow-wrap:\s*anywhere/);
+        expect(openBody).not.toMatch(/(?:^|;)\s*width:\s*\d+(?:px|r?em)\b/);
+    });
+
     it('styles app scrollbars with dark chrome', () => {
         const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
 

@@ -132,12 +132,21 @@ export const Header = memo(function Header({
         latestLiveSignal,
         latestEvaluation,
     }), [latestEvaluation, latestLiveSignal]);
+    const fullEvaluation = evidence.fullEvaluation;
     const epoch = evidence.currentModel?.epoch ?? 0;
     const batchLoss = evidence.batchTrend?.dataLoss.toFixed(4) ?? '—';
-    const trainLoss = evidence.fullEvaluation?.trainDataLoss.toFixed(4) ?? '—';
-    const testLoss = evidence.fullEvaluation?.testDataLoss.toFixed(4) ?? '—';
-    const accuracy = evidence.fullEvaluation?.testAccuracy;
+    const trainLoss = fullEvaluation?.trainDataLoss.toFixed(4) ?? '—';
+    const testLoss = fullEvaluation?.testDataLoss.toFixed(4) ?? '—';
+    const accuracy = fullEvaluation?.testAccuracy;
     const accStr = accuracy != null ? `${(accuracy * 100).toFixed(1)}%` : '—';
+    const compactPrimaryOutcome = fullEvaluation === null
+        ? 'Not evaluated yet'
+        : accuracy != null
+            ? `Test accuracy ${accStr}`
+            : `Test data loss ${testLoss}`;
+    const compactOutcomeSummary = fullEvaluation === null
+        ? compactPrimaryOutcome
+        : `Step ${fullEvaluation.step.toLocaleString()} · ${compactPrimaryOutcome}`;
 
     const flashEpoch = useFlash(String(epoch));
     const flashBatch = useFlash(batchLoss);
@@ -298,6 +307,18 @@ export const Header = memo(function Header({
                     </div>
                 )}
             </div>
+
+            <details className="forge-compact-outcome" aria-label="Evaluation outcome">
+                <summary>{compactOutcomeSummary}</summary>
+                {fullEvaluation && (
+                    <div className="forge-compact-outcome__body">
+                        <span>{`Full evaluation at step ${fullEvaluation.step.toLocaleString()}`}</span>
+                        <span>{`Train data loss (full split) ${trainLoss}`}</span>
+                        <span>{`Test data loss (full split) ${testLoss}`}</span>
+                        {accuracy != null && <span>{`Test accuracy ${accStr}`}</span>}
+                    </div>
+                )}
+            </details>
 
             <span className="forge-topbar__spacer" />
 
