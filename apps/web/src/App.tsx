@@ -40,39 +40,7 @@ import {
     ADVANCED_TOOLS_TRIGGER_ID,
     type DrawerSurfaceId,
 } from './productShell/shellTypes.ts';
-
-const SHORTCUT_BLOCKED_ROLES = new Set(['button', 'tab', 'switch', 'slider']);
-
-function shouldIgnoreGlobalShortcut(target: EventTarget | null) {
-    if (!(target instanceof Element)) return false;
-    if (target === document.body || target === document.documentElement) return false;
-
-    let el: Element | null = target;
-    while (el) {
-        if (
-            el instanceof HTMLButtonElement ||
-            el instanceof HTMLInputElement ||
-            el instanceof HTMLSelectElement ||
-            el instanceof HTMLTextAreaElement ||
-            el instanceof HTMLAnchorElement
-        ) {
-            return true;
-        }
-
-        const role = el.getAttribute('role');
-        if (role && SHORTCUT_BLOCKED_ROLES.has(role)) return true;
-
-        const tabIndex = el.getAttribute('tabindex');
-        if (tabIndex !== null && tabIndex !== '-1') return true;
-
-        const contentEditable = el.getAttribute('contenteditable');
-        if (contentEditable !== null && contentEditable.toLowerCase() !== 'false') return true;
-
-        el = el.parentElement;
-    }
-
-    return false;
-}
+import { resolveTrainingShortcut } from './shortcuts/trainingShortcuts.ts';
 
 export default function App() {
     const access = usePlaygroundStore((state) => state.access);
@@ -212,20 +180,19 @@ function CompatiblePlayground() {
     // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
-            if (shouldIgnoreGlobalShortcut(e.target)) return;
+            const action = resolveTrainingShortcut(e);
+            if (!action) return;
 
-            if (e.code === 'Space') {
-                e.preventDefault();
+            e.preventDefault();
+            if (action === 'play-pause') {
                 if (statusRef.current === 'running') {
                     trainingRef.current.pause();
                 } else {
                     trainingRef.current.play();
                 }
-            } else if (e.code === 'ArrowRight') {
-                e.preventDefault();
+            } else if (action === 'step') {
                 trainingRef.current.step();
-            } else if (e.code === 'KeyR') {
-                e.preventDefault();
+            } else {
                 trainingRef.current.reset();
             }
         };

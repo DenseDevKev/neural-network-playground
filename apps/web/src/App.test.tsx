@@ -231,6 +231,18 @@ describe('App accessibility shell', () => {
         expect(trainingMock.reset).toHaveBeenCalledTimes(1);
     });
 
+    it('does not intercept modified or repeated training shortcuts', () => {
+        render(<App />);
+
+        fireEvent.keyDown(window, { code: 'KeyR', metaKey: true });
+        fireEvent.keyDown(window, { code: 'KeyR', ctrlKey: true });
+        fireEvent.keyDown(window, { code: 'KeyR', altKey: true });
+        fireEvent.keyDown(window, { code: 'KeyR', shiftKey: true });
+        fireEvent.keyDown(window, { code: 'KeyR', repeat: true });
+
+        expect(trainingMock.reset).not.toHaveBeenCalled();
+    });
+
     it('handles global keyboard shortcuts from page background focus', () => {
         render(<App />);
 
