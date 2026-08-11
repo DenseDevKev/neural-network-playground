@@ -54,7 +54,6 @@ function evaluation(step = 20): PairedEvaluation {
 describe('TrainingExplanationPanel', () => {
     beforeEach(() => {
         useTrainingStore.setState({
-            snapshot: null,
             latestLiveSignal: live(),
             latestEvaluation: evaluation(),
             pauseReason: null,

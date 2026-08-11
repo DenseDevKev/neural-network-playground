@@ -8,16 +8,22 @@ import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.t
 import {
     getFrameBuffer,
     resetFrameBuffer,
+    type ParameterProvenance,
     updateFrameBuffer,
 } from './frameBuffer.ts';
 
 let dataset: DatasetRevision;
 let objectiveKey: string;
+let parameterProvenance: ParameterProvenance;
 
 beforeAll(async () => {
     const fixtures = await createScientificTrustFixtures();
     dataset = fixtures.evaluation.dataset;
     objectiveKey = fixtures.evaluation.objectiveKey;
+    parameterProvenance = {
+        model: { generationId: 1, revision: 7, step: 70, epoch: 3 },
+        recipeFingerprint: fixtures.prepared.identities.recipeFingerprint,
+    };
 });
 
 function provenance(
@@ -38,11 +44,6 @@ function provenance(
 }
 
 const strict = { requireArtifactProvenance: true } as const;
-const parameterProvenance = {
-    model: { generationId: 1, revision: 7, step: 70, epoch: 3 },
-    recipeFingerprint: `r2.1.${'A'.repeat(43)}`,
-} as const;
-
 describe('frame buffer artifact provenance', () => {
     beforeEach(() => {
         resetFrameBuffer();

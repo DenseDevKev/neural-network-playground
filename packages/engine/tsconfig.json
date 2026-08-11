@@ -5,6 +5,9 @@
         "rootDir": "src",
         "lib": [
             "ES2022"
+        ],
+        "types": [
+            "node"
         ]
     },
     "include": [

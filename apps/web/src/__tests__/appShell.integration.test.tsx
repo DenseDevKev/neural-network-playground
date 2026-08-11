@@ -526,7 +526,7 @@ describe('App shell integration', () => {
             screen.getByRole('combobox', { name: 'Guided lesson' }),
             'lesson-feature-engineering-circle',
         );
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
 
         expect(useLayoutStore.getState().view).toBe('build');
         expect(useLayoutStore.getState().activeRecipeSection).toBe('features');
@@ -596,7 +596,6 @@ describe('App shell integration', () => {
 
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared },
-            prepared,
             preparation: { status: 'ready', requestId: 0, issues: [] },
         });
         useTrainingStore.setState({

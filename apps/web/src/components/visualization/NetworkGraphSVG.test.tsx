@@ -21,7 +21,6 @@ describe('NetworkGraphSVG', () => {
     beforeEach(() => {
         resetFrameBuffer();
         useTrainingStore.setState({
-            snapshot: null,
             frameVersion: 0,
             outputGridVersion: 0,
             neuronGridsVersion: 0,

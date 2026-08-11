@@ -23,7 +23,6 @@ function resetTrainingTransaction() {
     useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
         status: 'idle',
-        snapshot: null,
         trainPoints: [{ x: 0, y: 0, label: 0 }, { x: 1, y: 1, label: 1 }],
         testPoints: [{ x: -1, y: -1, label: 0 }],
         stepsPerFrame: 5,
@@ -45,18 +44,7 @@ describe('DataPanel V2 recipe controls', () => {
         resetTrainingTransaction();
     });
 
-    it('renders canonical recipe data instead of a conflicting legacy projection', () => {
-        usePlaygroundStore.setState((state) => ({
-            data: {
-                ...state.data,
-                dataset: 'xor',
-                problemType: 'classification',
-                noise: 49,
-                trainTestRatio: 0.9,
-                numSamples: 1_000,
-            },
-        }));
-
+    it('renders canonical recipe data from the prepared experiment', () => {
         render(<DataPanel onReset={vi.fn()} />);
 
         expect(screen.getByLabelText('Dataset settings: 300 samples, 0 noise, 50% train'))

@@ -56,13 +56,6 @@ describe('HyperparamPanel canonical V2 controls', () => {
     });
 
     it('reads canonical training values and renders classification objective/output as derived', () => {
-        usePlaygroundStore.setState({
-            training: {
-                ...usePlaygroundStore.getState().training,
-                learningRate: 10,
-                batchSize: 64,
-            },
-        });
         render(<HyperparamPanel />);
 
         expect(screen.getByRole('combobox', { name: 'Learning rate' })).toHaveValue('0.03');

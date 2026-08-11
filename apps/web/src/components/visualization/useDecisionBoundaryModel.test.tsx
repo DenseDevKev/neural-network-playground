@@ -21,7 +21,7 @@ const PROPS = {
     testPoints: [],
     showTestData: false,
     discretize: false,
-} as const;
+};
 
 describe('useDecisionBoundaryModel', () => {
     beforeEach(() => {

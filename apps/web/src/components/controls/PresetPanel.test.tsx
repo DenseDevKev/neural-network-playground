@@ -23,7 +23,6 @@ function resetTrainingTransactionState() {
     useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
         status: 'idle',
-        snapshot: null,
         trainPoints: [],
         testPoints: [],
         stepsPerFrame: 5,

@@ -95,8 +95,6 @@ function makeSnapshot(
         epoch: Math.floor(step / 10),
         weights,
         biases,
-        trainLoss: 0.4 - step * 0.01,
-        testLoss: 0.5 - step * 0.01,
         trainMetrics: { loss: 0.4 - step * 0.01, accuracy: 0.7 },
         testMetrics: { loss: 0.5 - step * 0.01, accuracy: 0.6 },
         outputGrid: new Float32Array(gridPointCount).fill(0.2),
@@ -453,6 +451,7 @@ describe('useTraining', () => {
         bridge.workerApi.stepExperimentV2.mockReset().mockResolvedValue(makeV2Result(1, 4, 2));
         bridge.workerApi.restoreCheckpointV2.mockReset().mockImplementation(() => {
             const state = useTrainingStore.getState();
+            const access = usePlaygroundStore.getState().access;
             const generation = state.evidenceGenerationId ?? 1;
             const revision = (state.latestLiveSignal?.model.revision
                 ?? state.latestEvaluation?.model.revision
@@ -463,8 +462,8 @@ describe('useTraining', () => {
                 (state.latestEvaluation?.evaluationId ?? 1) + 1,
                 'restore',
                 makeSnapshot(0),
-                usePlaygroundStore.getState().access.status === 'ready'
-                    ? usePlaygroundStore.getState().access.prepared
+                access.status === 'ready'
+                    ? access.prepared
                     : undefined,
                 revision,
             );
@@ -1094,6 +1093,7 @@ describe('useTraining', () => {
                 protocolVersion: 2,
                 runId: 1,
                 snapshotId: 2,
+                recipeFingerprint: INITIAL_PREPARED.identities.recipeFingerprint,
                 model: { generationId: 1, revision: 9, step: 9, epoch: 0 },
                 scalars: {
                     step: 9,
@@ -1144,6 +1144,7 @@ describe('useTraining', () => {
             protocolVersion: 2,
             runId: 1,
             snapshotId: 2,
+            recipeFingerprint: INITIAL_PREPARED.identities.recipeFingerprint,
             model: { generationId: 1, revision: 1, step: 1, epoch: 0 },
             scalars: {
                 step: 1,
@@ -1634,6 +1635,7 @@ describe('useTraining', () => {
                 protocolVersion: 2,
                 runId: 1,
                 snapshotId: 5,
+                recipeFingerprint: INITIAL_PREPARED.identities.recipeFingerprint,
                 model: { generationId: 1, revision: 5, step: 5, epoch: 0 },
                 scalars: {
                     step: 5,

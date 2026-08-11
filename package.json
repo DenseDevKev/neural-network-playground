@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "pnpm --filter @nn-playground/web dev",
     "build": "pnpm --filter @nn-playground/web build",
+    "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r test",
     "test:e2e": "playwright test",
     "test:engine": "pnpm --filter @nn-playground/engine test",

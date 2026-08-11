@@ -48,7 +48,6 @@ describe('Header', () => {
         useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: null,
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,
@@ -78,11 +77,6 @@ describe('Header', () => {
 
     it('labels a newer batch trend separately from the paired full evaluation', () => {
         useTrainingStore.setState({
-            snapshot: {
-                epoch: 99,
-                trainLoss: 9,
-                testLoss: 8,
-            } as any,
             latestLiveSignal: {
                 model: { generationId: 4, revision: 1240, step: 1240, epoch: 12 },
                 dataset: { generatorVersion: 1, datasetKey: 'd', trainCount: 210, testCount: 90 },

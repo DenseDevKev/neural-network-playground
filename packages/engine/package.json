@@ -6,12 +6,14 @@
     "main": "src/index.ts",
     "types": "src/index.ts",
     "scripts": {
+        "typecheck": "tsc --noEmit -p tsconfig.json",
         "test": "vitest run",
         "test:watch": "vitest",
         "test:perf": "vitest run --config vitest.perf.config.ts",
         "bench": "pnpm run test:perf"
     },
     "devDependencies": {
+        "@types/node": "^22.0.0",
         "vitest": "^3.0.0",
         "typescript": "^5.7.0"
     }

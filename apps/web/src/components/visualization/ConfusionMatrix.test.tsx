@@ -47,11 +47,9 @@ describe('ConfusionMatrix paired evaluation provenance', () => {
         const binary = prepared('xor-hidden');
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: binary },
-            prepared: binary,
         });
         useTrainingStore.setState({
             latestEvaluation: null,
-            snapshot: null,
             trainPoints: [],
             testPoints: [],
         });
@@ -65,13 +63,10 @@ describe('ConfusionMatrix paired evaluation provenance', () => {
         expect(screen.getByText(/paired full test evaluation/i)).toBeInTheDocument();
     });
 
-    it('ignores contradictory snapshot and frame matrices and binds only to latestEvaluation', () => {
+    it('ignores contradictory frame matrices and binds only to latestEvaluation', () => {
         updateFrameBuffer({ confusionMatrix: { tn: 1, fp: 2, fn: 3, tp: 4 } });
         useTrainingStore.setState({
             latestEvaluation: binaryPair(basePair),
-            snapshot: {
-                testMetrics: { confusionMatrix: { tn: 9, fp: 9, fn: 9, tp: 9 } },
-            } as any,
             testPoints: [{ x: 0, y: 0, label: 1 }],
         });
 
@@ -88,7 +83,6 @@ describe('ConfusionMatrix paired evaluation provenance', () => {
         const multiclass = prepared('three-class-clusters');
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: multiclass },
-            prepared: multiclass,
         });
         useTrainingStore.setState({
             latestEvaluation: {
@@ -121,7 +115,6 @@ describe('ConfusionMatrix paired evaluation provenance', () => {
         const regression = prepared('regression-plane');
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: regression },
-            prepared: regression,
         });
         useTrainingStore.setState({ latestEvaluation: binaryPair(basePair) });
 

@@ -6,10 +6,6 @@ import { BoundaryContent, ConfigurationContent, MainArea } from './MainArea.tsx'
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import {
-    DEFAULT_DATA,
-    DEFAULT_FEATURES,
-    DEFAULT_NETWORK,
-    DEFAULT_TRAINING,
     PREPARED_PRESETS,
 } from '@nn-playground/shared';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
@@ -63,29 +59,11 @@ describe('MainArea right-panel content', () => {
         if (!classification) throw new Error('missing xor-hidden preset');
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: classification },
-            prepared: classification,
-            data: { ...DEFAULT_DATA },
-            network: { ...DEFAULT_NETWORK, inputSize: 2, outputSize: 1, seed: DEFAULT_DATA.seed, hiddenLayers: [2] },
-            features: { ...DEFAULT_FEATURES },
-            training: { ...DEFAULT_TRAINING },
-            ui: { showTestData: false, discretizeOutput: false },
         });
 
         useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: {
-                step: 5,
-                epoch: 0,
-                trainLoss: 0.5,
-                testLoss: 0.6,
-                trainMetrics: { loss: 0.5, accuracy: 0.5 },
-                testMetrics: { loss: 0.6, accuracy: 0.4 },
-                weights: [[[0.1, 0.2], [0.3, 0.4]], [[0.5, 0.6]]],
-                biases: [[0.1, 0.2], [0.3]],
-                outputGrid: [],
-                gridSize: 40,
-            } as any,
             frameVersion: 0,
             trainPoints: [],
             testPoints: [],
@@ -180,7 +158,6 @@ describe('MainArea right-panel content', () => {
         if (!regression) throw new Error('missing regression-plane preset');
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: regression },
-            prepared: regression,
         });
 
         render(<BoundaryContent />);

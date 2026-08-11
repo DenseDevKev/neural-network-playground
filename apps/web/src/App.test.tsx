@@ -171,7 +171,6 @@ describe('App accessibility shell', () => {
         if (!prepared.ok) throw new Error('default experiment fixture did not prepare');
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: prepared.value },
-            prepared: prepared.value,
             preparation: { status: 'ready', requestId: 0, issues: [] },
         });
 
@@ -182,7 +181,6 @@ describe('App accessibility shell', () => {
             configError: null,
             configErrorSource: null,
             workerError: null,
-            snapshot: null,
         });
 
         useLayoutStore.setState({

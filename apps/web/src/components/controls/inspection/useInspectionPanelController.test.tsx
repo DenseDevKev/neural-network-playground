@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { DEFAULT_DEMAND, PREPARED_PRESETS } from '@nn-playground/shared';
+import { DEFAULT_DEMAND, PREPARED_PRESETS, type ModelRevision } from '@nn-playground/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaygroundStore } from '../../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../../store/useTrainingStore.ts';
@@ -26,7 +26,7 @@ vi.mock('../../../worker/workerBridge.ts', () => ({
     getWorkerApi: async () => workerApi,
 }));
 
-const MODEL = { generationId: 1, revision: 12, step: 12, epoch: 1 } as const;
+const MODEL: ModelRevision = { generationId: 1, revision: 12, step: 12, epoch: 1 };
 const DATASET = {
     generatorVersion: 1,
     datasetKey: 'dataset-v2',
@@ -198,7 +198,6 @@ describe('useInspectionPanelController', () => {
         const prepared = oneLayerPrepared();
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared },
-            prepared,
             demand: {
                 ...DEFAULT_DEMAND,
                 needLayerStats: false,
@@ -206,7 +205,6 @@ describe('useInspectionPanelController', () => {
             },
         });
         useTrainingStore.setState({
-            snapshot: null,
             trainPoints: [],
             testPoints: [],
             latestLiveSignal: null,

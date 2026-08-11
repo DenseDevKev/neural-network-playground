@@ -58,6 +58,11 @@ import {
     workerApi,
 } from './training.worker.ts';
 
+type GpuDetectionOverrides = NonNullable<Parameters<typeof setGpuInitializationForTests>[0]>;
+type DetectedGpuDevice = NonNullable<Awaited<ReturnType<
+    NonNullable<GpuDetectionOverrides['detect']>
+>>>;
+
 let nextRequestId = 10_000;
 
 describe('worker bootstrap readiness', () => {
@@ -1375,7 +1380,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
         workerApi.updateDemand({ ...DEFAULT_DEMAND, gridInterval: 1 });
         workerApi.setWebGpuEnabled(true);
-        const detection = deferred<GPUDevice | null>();
+        const detection = deferred<DetectedGpuDevice | null>();
         const create = vi.fn();
         setGpuInitializationForTests({
             detect: () => detection.promise,
@@ -1388,7 +1393,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         vi.advanceTimersByTime(20);
         await flushMicrotasks();
         workerApi.setWebGpuEnabled(false);
-        detection.resolve({} as GPUDevice);
+        detection.resolve({} as DetectedGpuDevice);
         await detection.promise;
         await flushMicrotasks();
 

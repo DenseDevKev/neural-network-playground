@@ -10,6 +10,7 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
 } from '@nn-playground/shared';
+import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
 
 const trainingMock = {
     play: vi.fn(),
@@ -32,20 +33,10 @@ describe('UI integration flows', () => {
         expect(restored.ok).toBe(true);
 
         useTrainingStore.getState().resetEvidence();
+        const fixtures = await createScientificTrustFixtures();
+        useTrainingStore.getState().applyEvidence(fixtures.evidence);
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: {
-                step: 0,
-                epoch: 0,
-                trainLoss: 0.5,
-                testLoss: 0.6,
-                trainMetrics: { loss: 0.5, accuracy: 0.5 },
-                testMetrics: { loss: 0.6, accuracy: 0.4 },
-                weights: [],
-                biases: [],
-                outputGrid: [],
-                gridSize: 40,
-            } as any,
             trainPoints: [],
             testPoints: [],
             stepsPerFrame: 5,
@@ -102,9 +93,12 @@ describe('UI integration flows', () => {
         act(() => {
             useTrainingStore.setState((state) => ({
                 status: 'running',
-                snapshot: {
-                    ...(state.snapshot as any),
-                    epoch: 12,
+                latestLiveSignal: {
+                    ...state.latestLiveSignal!,
+                    model: {
+                        ...state.latestLiveSignal!.model,
+                        epoch: 12,
+                    },
                 },
             }));
         });

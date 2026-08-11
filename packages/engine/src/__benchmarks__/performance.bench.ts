@@ -1,3 +1,5 @@
+import console from 'node:console';
+import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
 import { Network } from '../network.js';
 import type { NetworkConfig, TrainingConfig } from '../types.js';

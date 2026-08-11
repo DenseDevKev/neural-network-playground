@@ -36,7 +36,6 @@ describe('InspectionPanel integration', () => {
         const prepared = oneLayerPrepared();
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared },
-            prepared,
             demand: {
                 ...DEFAULT_DEMAND,
                 needLayerStats: false,
@@ -44,7 +43,6 @@ describe('InspectionPanel integration', () => {
             },
         });
         useTrainingStore.setState({
-            snapshot: null,
             trainPoints: [],
             testPoints: [],
             latestLiveSignal: null,

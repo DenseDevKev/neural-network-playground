@@ -475,7 +475,7 @@ describe('ConfigPanel strict V2 transport', () => {
     it('allows a file exactly at the byte limit to reach strict decoding', async () => {
         const originalRead = FileReader.prototype.readAsText;
         const readAsText = vi.spyOn(FileReader.prototype, 'readAsText')
-            .mockImplementation(function (blob, encoding) {
+            .mockImplementation(function (this: FileReader, blob, encoding) {
                 return originalRead.call(this, blob, encoding);
             });
         const { container } = render(<ConfigPanel onReset={vi.fn()} />);
@@ -494,8 +494,11 @@ describe('ConfigPanel strict V2 transport', () => {
 
     it('announces FileReader failures and resets the file control', async () => {
         vi.spyOn(FileReader.prototype, 'readAsText')
-            .mockImplementation(function () {
-                this.onerror?.call(this, new ProgressEvent('error'));
+            .mockImplementation(function (this: FileReader) {
+                this.onerror?.call(
+                    this,
+                    new ProgressEvent('error') as ProgressEvent<FileReader>,
+                );
             });
         const onReset = vi.fn();
         const { container } = render(<ConfigPanel onReset={onReset} />);
@@ -513,8 +516,9 @@ describe('ConfigPanel strict V2 transport', () => {
             source: { kind: 'file', file },
             issues: [{ path: '$', message: 'Could not read config file' }],
         });
-        expect(usePlaygroundStore.getState().access.source.kind === 'file'
-            ? usePlaygroundStore.getState().access.source.file
+        const access = usePlaygroundStore.getState().access;
+        expect(access.status === 'incompatible' && access.source.kind === 'file'
+            ? access.source.file
             : null).toBe(file);
         expect(onReset).not.toHaveBeenCalled();
         expect(input.value).toBe('');
@@ -522,8 +526,11 @@ describe('ConfigPanel strict V2 transport', () => {
 
     it('releases the import transaction when FileReader aborts', async () => {
         vi.spyOn(FileReader.prototype, 'readAsText')
-            .mockImplementation(function () {
-                this.onabort?.call(this, new ProgressEvent('abort'));
+            .mockImplementation(function (this: FileReader) {
+                this.onabort?.call(
+                    this,
+                    new ProgressEvent('abort') as ProgressEvent<FileReader>,
+                );
             });
         const { container } = render(<ConfigPanel onReset={vi.fn()} />);
         const input = fileInput(container);
@@ -658,7 +665,7 @@ describe('ConfigPanel strict V2 transport', () => {
         const imported = await requirePrepared(documentWithNoise(before, 29));
         const newer = documentWithNoise(before, 31);
         const readers: FileReader[] = [];
-        vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function () {
+        vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) {
             readers.push(this);
         });
         const { container } = render(<ConfigPanel onReset={onReset} />);

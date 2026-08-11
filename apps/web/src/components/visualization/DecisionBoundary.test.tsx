@@ -63,7 +63,6 @@ describe('DecisionBoundary', () => {
         putImageData.mockClear();
         resetFrameBuffer();
         useTrainingStore.setState({
-            snapshot: null,
             frameVersion: 0,
             trainPoints: [],
             testPoints: [],

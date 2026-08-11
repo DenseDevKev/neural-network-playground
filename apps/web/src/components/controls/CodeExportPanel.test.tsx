@@ -17,19 +17,6 @@ import {
     type ModelRevision,
 } from '@nn-playground/shared';
 
-const fakeSnapshot = {
-    step: 5,
-    epoch: 0,
-    trainLoss: 0.5,
-    testLoss: 0.6,
-    trainMetrics: { loss: 0.5, accuracy: 0.5 },
-    testMetrics: { loss: 0.6, accuracy: 0.4 },
-    weights: [[[0.1, 0.2], [0.3, 0.4]], [[0.5, 0.6]]],
-    biases: [[0.1, 0.2], [0.3]],
-    outputGrid: [],
-    gridSize: 40,
-};
-
 async function prepareWithHiddenLayers(
     hiddenLayers: number[],
 ): Promise<PreparedExperimentDocumentV2> {
@@ -43,7 +30,6 @@ async function prepareWithHiddenLayers(
 function installPrepared(prepared: PreparedExperimentDocumentV2) {
     usePlaygroundStore.setState({
         access: { status: 'ready', prepared },
-        prepared,
     });
 }
 
@@ -70,7 +56,6 @@ describe('CodeExportPanel', () => {
         useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({
             status: 'idle',
-            snapshot: fakeSnapshot as any,
             frameVersion: 0,
             trainPoints: [],
             testPoints: [],
@@ -178,7 +163,6 @@ describe('CodeExportPanel', () => {
         const multiclass = PREPARED_PRESETS.find((entry) => entry.id === 'three-class-clusters')!.prepared;
         installPrepared(multiclass);
         useTrainingStore.setState({
-            snapshot: null,
             trainedRecipe: null,
             trainedRecipeFingerprint: null,
             latestLiveSignal: null,
@@ -229,7 +213,12 @@ describe('CodeExportPanel', () => {
 
     it.each([
         ['generation', { generationId: 2, revision: 5, step: 5, epoch: 0 }, null],
-        ['fingerprint', { generationId: 1, revision: 5, step: 5, epoch: 0 }, `r2.1.${'Z'.repeat(43)}`],
+        [
+            'fingerprint',
+            { generationId: 1, revision: 5, step: 5, epoch: 0 },
+            PREPARED_PRESETS.find((entry) => entry.id === 'three-class-clusters')!
+                .prepared.identities.recipeFingerprint,
+        ],
     ] as const)('suppresses parameters on a %s mismatch', (_kind, model, fingerprint) => {
         const prepared = usePlaygroundStore.getState().access;
         if (prepared.status !== 'ready') throw new Error('expected prepared experiment');

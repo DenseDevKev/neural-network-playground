@@ -80,7 +80,6 @@ describe('NetworkGraphCanvas', () => {
     beforeEach(() => {
         resetFrameBuffer();
         useTrainingStore.setState({
-            snapshot: null,
             frameVersion: 0,
             layerStatsVersion: 0,
             trainPoints: [],

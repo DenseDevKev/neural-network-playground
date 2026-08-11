@@ -6,6 +6,7 @@
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
+        "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json",
         "preview": "vite preview",
         "test": "NODE_OPTIONS=--experimental-require-module vitest run --pool=forks --reporter=dot --passWithNoTests",
         "test:perf": "NODE_OPTIONS=--experimental-require-module vitest run --config vitest.perf.config.ts --pool=forks --reporter=verbose"
@@ -23,6 +24,7 @@
         "@testing-library/jest-dom": "^6.9.1",
         "@testing-library/react": "^16.3.2",
         "@testing-library/user-event": "^14.6.1",
+        "@types/node": "^22.0.0",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",
         "@vitejs/plugin-react": "^4.3.0",

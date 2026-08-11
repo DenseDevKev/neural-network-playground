@@ -23,7 +23,6 @@ function resetTrainingTransaction() {
     useTrainingStore.getState().resetEvidence();
     useTrainingStore.setState({
         status: 'idle',
-        snapshot: null,
         trainPoints: [],
         testPoints: [],
         stepsPerFrame: 5,
@@ -45,16 +44,7 @@ describe('FeaturesPanel V2 recipe controls', () => {
         resetTrainingTransaction();
     });
 
-    it('renders canonical feature IDs instead of a conflicting legacy projection', () => {
-        usePlaygroundStore.setState((state) => ({
-            features: {
-                ...state.features,
-                x: false,
-                y: false,
-                xSquared: true,
-            },
-        }));
-
+    it('renders canonical feature IDs from the prepared experiment', () => {
         render(<FeaturesPanel />);
 
         expect(screen.getByRole('button', { name: 'X₁' })).toHaveAttribute('aria-pressed', 'true');

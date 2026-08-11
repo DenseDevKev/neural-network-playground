@@ -43,7 +43,7 @@ function preset(id: (typeof PREPARED_PRESETS)[number]['id']) {
 
 function makeRecord(
     prepared: PreparedExperimentDocumentV2,
-    id = IDS[0],
+    id: string = IDS[0],
     title = 'Saved evidence',
     testDataLoss = 0.5,
 ): ExperimentRunRecordV2 {

@@ -41,8 +41,6 @@ const mockSnapshot: NetworkSnapshot = {
     [[0.5, 0.6]], // Layer 2: 1 neuron, 2 inputs
   ],
   biases: [[0.1, 0.2], [0.3]],
-  trainLoss: 0.1,
-  testLoss: 0.12,
   trainMetrics: { loss: 0.1, accuracy: 0.9 },
   testMetrics: { loss: 0.12, accuracy: 0.88 },
   outputGrid: [],

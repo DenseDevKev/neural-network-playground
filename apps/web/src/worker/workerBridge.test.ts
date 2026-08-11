@@ -141,6 +141,7 @@ import type {
     ArtifactBasis,
     ArtifactProvenance,
     DatasetRevision,
+    RecipeFingerprint,
     WorkerArtifactProvenanceV2,
     WorkerSnapshotMessage,
     WorkerToMainMessage,
@@ -150,11 +151,13 @@ import { createScientificTrustFixtures } from '../test/scientificTrustFixtures.t
 
 let artifactDataset: DatasetRevision;
 let artifactObjectiveKey: string;
+let artifactRecipeFingerprint: RecipeFingerprint;
 
 beforeAll(async () => {
     const fixtures = await createScientificTrustFixtures();
     artifactDataset = fixtures.evaluation.dataset;
     artifactObjectiveKey = fixtures.evaluation.objectiveKey;
+    artifactRecipeFingerprint = fixtures.prepared.identities.recipeFingerprint;
 });
 
 describe('workerBridge readiness gating', () => {
@@ -259,8 +262,9 @@ describe('workerBridge readiness gating', () => {
         expect(installedChannel.port1.addEventListener).toHaveBeenCalledTimes(1);
         expect(installedChannel.port1.start).toHaveBeenCalledTimes(1);
 
-        postStreamCommand({ type: 'pause' });
-        expect(installedChannel.port1.postMessage).toHaveBeenCalledWith({ type: 'pause' });
+        const stopCommand = { type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION } as const;
+        postStreamCommand(stopCommand);
+        expect(installedChannel.port1.postMessage).toHaveBeenCalledWith(stopCommand);
     });
 
     it('preserves worker B pending setup when worker A readiness rejects after replacement', async () => {
@@ -369,8 +373,9 @@ describe('workerBridge readiness gating', () => {
         expect(channelB.port1.start).toHaveBeenCalledTimes(1);
         expect(channelB.port1.close).not.toHaveBeenCalled();
 
-        postStreamCommand({ type: 'pause' });
-        expect(channelB.port1.postMessage).toHaveBeenCalledWith({ type: 'pause' });
+        const stopCommand = { type: 'stopTraining', protocolVersion: WORKER_PROTOCOL_VERSION } as const;
+        postStreamCommand(stopCommand);
+        expect(channelB.port1.postMessage).toHaveBeenCalledWith(stopCommand);
         expect(channelA.port1.postMessage).not.toHaveBeenCalled();
     });
 
@@ -736,7 +741,7 @@ function makeStrictSnapshotMessage(
             step: snapshotId * 10,
             epoch: snapshotId,
         },
-        recipeFingerprint: `r2.1.${'A'.repeat(43)}`,
+        recipeFingerprint: artifactRecipeFingerprint,
         activationHistogramBins: Float32Array.from([
             histogramSampleCount,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -776,7 +781,9 @@ function makeStrictSnapshotMessage(
         };
     };
     if (!Object.prototype.hasOwnProperty.call(overrides, 'artifacts')) {
-        const artifacts: WorkerArtifactProvenanceV2 = {};
+        const artifacts: {
+            -readonly [Key in keyof WorkerArtifactProvenanceV2]?: WorkerArtifactProvenanceV2[Key];
+        } = {};
         if ((message.outputGrid?.length ?? 0) > 0
             || message.multiclassClassGrid !== undefined
             || message.sharedSeq !== undefined) {

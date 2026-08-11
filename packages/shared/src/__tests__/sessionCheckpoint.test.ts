@@ -338,13 +338,26 @@ describe('validateSessionCheckpointV2', () => {
     });
 
     it('accepts valid typed arrays created in another realm', () => {
-        const value = checkpoint();
-        value.network.layers[0].weights = runInNewContext(
-            'new Float64Array([1, 2, 3, 4, 5, 6])',
-        ) as Float64Array;
-        value.cursor.shuffledIndices = runInNewContext(
-            'new Uint32Array([2, 0, 3, 1])',
-        ) as Uint32Array;
+        const source = checkpoint();
+        const value: SessionCheckpointV2 = {
+            ...source,
+            network: {
+                layers: source.network.layers.map((layer, index) => index === 0
+                    ? {
+                        ...layer,
+                        weights: runInNewContext(
+                            'new Float64Array([1, 2, 3, 4, 5, 6])',
+                        ) as Float64Array,
+                    }
+                    : layer),
+            },
+            cursor: {
+                ...source.cursor,
+                shuffledIndices: runInNewContext(
+                    'new Uint32Array([2, 0, 3, 1])',
+                ) as Uint32Array,
+            },
+        };
 
         const parsed = validateSessionCheckpointV2(value, context());
         expect(parsed.network.layers[0].weights).toEqual(

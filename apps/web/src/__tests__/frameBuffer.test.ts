@@ -213,10 +213,10 @@ describe('frameBuffer', () => {
             const outputGrid = new Float32Array([0, 1, 0, 1]);
             const weights = new Float32Array([0.1, 0.2]);
             const confusionMatrix = {
-                truePositive: 1,
-                trueNegative: 2,
-                falsePositive: 3,
-                falseNegative: 4,
+                tp: 1,
+                tn: 2,
+                fp: 3,
+                fn: 4,
             };
 
             const newVersion = updateFrameBuffer({

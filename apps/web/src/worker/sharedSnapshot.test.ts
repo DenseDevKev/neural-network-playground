@@ -128,13 +128,16 @@ describe('sharedSnapshot', () => {
 
         const realLoad = Atomics.load;
         let startLoads = 0;
-        vi.spyOn(Atomics, 'load').mockImplementation((array, index) => {
+        const loadInt32 = (array: Int32Array, index: number): number => {
             if (array === views.control && index === CTL_SEQ_START) {
                 startLoads++;
                 if (startLoads === 1) return 99;
             }
             return realLoad(array, index);
-        });
+        };
+        vi.spyOn(Atomics, 'load').mockImplementation(
+            loadInt32 as unknown as typeof Atomics.load,
+        );
 
         const outputDst = new Float32Array(4);
         const neuronDst = new Float32Array(4);
@@ -153,12 +156,15 @@ describe('sharedSnapshot', () => {
         publishSharedSnapshot(views, new Float32Array([1, 2, 3, 4]), null, FLAG_OUTPUT_GRID);
 
         const realLoad = Atomics.load;
-        vi.spyOn(Atomics, 'load').mockImplementation((array, index) => {
+        const loadInt32 = (array: Int32Array, index: number): number => {
             if (array === views.control && index === CTL_SEQ_START) {
                 return realLoad(array, index) + 1;
             }
             return realLoad(array, index);
-        });
+        };
+        vi.spyOn(Atomics, 'load').mockImplementation(
+            loadInt32 as unknown as typeof Atomics.load,
+        );
 
         expect(readSharedSnapshot(views, new Float32Array(4), null, 2)).toBeNull();
     });

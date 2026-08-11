@@ -196,14 +196,16 @@ describe('deriveDecisionBoundaryModel', () => {
                 },
             },
         },
-    ])('returns unavailable for malformed multiclass data: $name', ({ frame }) => {
-        const model = derive({ task: MULTICLASS_TASK, frame });
+    ] satisfies readonly { name: string; frame: DecisionBoundaryFrameSnapshot }[])(
+        'returns unavailable for malformed multiclass data: $name', ({ frame }) => {
+            const model = derive({ task: MULTICLASS_TASK, frame });
 
-        expect(model).toMatchObject({
-            kind: 'unavailable',
-            title: 'Binary decision boundary unavailable',
-        });
-    });
+            expect(model).toMatchObject({
+                kind: 'unavailable',
+                title: 'Binary decision boundary unavailable',
+            });
+        },
+    );
 
     it('returns unavailable when a training classification point has a non-binary label', () => {
         const model = derive({

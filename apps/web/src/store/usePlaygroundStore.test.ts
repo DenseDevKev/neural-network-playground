@@ -441,8 +441,9 @@ describe('strict initialization and URL state', () => {
         expect(store.getState()).not.toHaveProperty('incompatibleSource');
         expect(store.getState().preparation.status).toBe('error');
         expect(store.getState().preparation.issues).toEqual([]);
-        expect(store.getState().access.status === 'incompatible'
-            ? store.getState().access.issues.length
+        const access = store.getState().access;
+        expect(access.status === 'incompatible'
+            ? access.issues.length
             : 0).toBeGreaterThan(0);
         expect((await store.getState().applyRecipe(preset('xor-hidden'))).ok).toBe(false);
     });

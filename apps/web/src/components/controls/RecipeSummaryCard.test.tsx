@@ -144,8 +144,9 @@ describe('RecipeSummaryCard', () => {
         const user = userEvent.setup();
         installCurrent(withAdvancedSettings());
         useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
-        const recipe = usePlaygroundStore.getState().access.status === 'ready'
-            ? usePlaygroundStore.getState().access.prepared.document.recipe
+        const initialAccess = usePlaygroundStore.getState().access;
+        const recipe = initialAccess.status === 'ready'
+            ? initialAccess.prepared.document.recipe
             : null;
 
         render(<RecipeSummaryCard />);
@@ -161,9 +162,10 @@ describe('RecipeSummaryCard', () => {
         await user.click(screen.getByRole('button', { name: 'Open Advanced Tools' }));
 
         expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
-        expect(usePlaygroundStore.getState().access.status).toBe('ready');
-        if (usePlaygroundStore.getState().access.status === 'ready') {
-            expect(usePlaygroundStore.getState().access.prepared.document.recipe).toBe(recipe);
+        const currentAccess = usePlaygroundStore.getState().access;
+        expect(currentAccess.status).toBe('ready');
+        if (currentAccess.status === 'ready') {
+            expect(currentAccess.prepared.document.recipe).toBe(recipe);
         }
     });
 
@@ -225,9 +227,10 @@ describe('RecipeSummaryCard', () => {
             activeTabLeft: 'hyperparams',
             advancedToolsOpen: true,
         });
-        expect(usePlaygroundStore.getState().access.status).toBe('ready');
-        if (usePlaygroundStore.getState().access.status === 'ready') {
-            expect(usePlaygroundStore.getState().access.prepared.document.recipe).toBe(recipe);
+        const currentAccess = usePlaygroundStore.getState().access;
+        expect(currentAccess.status).toBe('ready');
+        if (currentAccess.status === 'ready') {
+            expect(currentAccess.prepared.document.recipe).toBe(recipe);
         }
         expect(useTrainingStore.getState()).toMatchObject({
             status: 'paused',

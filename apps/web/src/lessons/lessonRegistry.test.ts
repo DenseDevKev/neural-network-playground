@@ -156,7 +156,7 @@ describe('lesson registry invariants', () => {
 
         for (const lesson of LESSON_DEFINITIONS) {
             for (const step of lesson.steps) {
-                if (step.tab && highlightedTabs.has(step.tab)) {
+                if ('tab' in step && step.tab && highlightedTabs.has(step.tab)) {
                     expect(step.target, `${lesson.id}:${step.id}`).toBe(step.tab);
                 }
             }
