@@ -204,11 +204,10 @@ describe('App accessibility shell', () => {
         window.history.replaceState(null, '', await experimentHashWithNoise(7));
         act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
 
-        await waitFor(() => expect(usePlaygroundStore.getState().access.status).toBe('ready'));
-        expect(usePlaygroundStore.getState().access).toMatchObject({
+        await waitFor(() => expect(usePlaygroundStore.getState().access).toMatchObject({
             status: 'ready',
             prepared: { document: { recipe: { data: { noise: 7 } } } },
-        });
+        }));
     });
 
     it('shows compatibility recovery when a changed hash is incompatible', async () => {
