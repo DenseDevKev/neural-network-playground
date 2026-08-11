@@ -2648,6 +2648,9 @@ git commit -m "feat(web): sync saved runs across tabs"
 - Literal summaries are `[perf] engine: PASS`, `[perf] web: FAIL (exit 2)`,
   `[perf] engine: FAIL (signal SIGTERM)`, `[perf] engine: FAIL (spawn error:
   <single-line message>)`, or `[perf] engine: FAIL (no exit status)`.
+  For defensively injected combinations, choose exactly one reason in this
+  precedence: normalized spawn error, then signal, then numeric exit, then no
+  exit status.
 - Guard CLI execution with `process.argv[1] !== undefined` before resolving it,
   then compare `import.meta.url` to
   `pathToFileURL(resolve(process.argv[1])).href`; imports without argv never
@@ -2687,7 +2690,9 @@ defensive null-code/null-signal; emitted spawn error followed by close settling
 once; exact POSIX argv/options and explicit Windows cmd invocation;
 exact ordered two-line summaries for pass/exit/signal/spawn failure; import
 without default-runner invocation; and package.json containing exactly
-`"test:perf": "node scripts/run-performance-gates.mjs"` with no `&&`.
+`"test:perf": "node scripts/run-performance-gates.mjs"` with no `&&`. Inject
+an impossible error+signal+exit combination and lock the documented single
+failure-reason precedence rather than concatenating reasons.
 
 - [ ] **Step 2: Run RED**
 
