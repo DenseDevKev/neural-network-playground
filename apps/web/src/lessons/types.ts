@@ -3,15 +3,21 @@ import type { LeftTabId, PhaseMode } from '../store/useLayoutStore.ts';
 
 export type LessonTarget = 'data' | 'features' | 'network' | 'hyperparams' | 'transport';
 
+export type LessonCompletionRule =
+    | { kind: 'training-step-at-least'; step: number }
+    | { kind: 'view-is'; view: 'build' | 'run' };
+
 export interface LessonStep {
     id: string;
     title: string;
     body: string;
+    tryThis: string;
     target: LessonTarget;
     tab?: LeftTabId;
     phase?: PhaseMode;
     expectedOutcome?: string;
     explanationRuleIds?: readonly string[];
+    completion?: LessonCompletionRule;
 }
 
 export interface LessonDefinition {

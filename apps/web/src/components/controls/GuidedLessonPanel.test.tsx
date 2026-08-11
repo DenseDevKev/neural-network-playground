@@ -1,9 +1,10 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
     PREPARED_PRESETS,
+    type LiveTrainingSignal,
     type PreparedExperimentDocumentV2,
     type SchemaResult,
 } from '@nn-playground/shared';
@@ -20,6 +21,7 @@ import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
 import { setNoise } from '../../store/recipeEdits.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
 import { GuidedLessonPanel } from './GuidedLessonPanel.tsx';
 
 type ApplyResult = SchemaResult<PreparedExperimentDocumentV2>;
@@ -54,6 +56,8 @@ function resetLayout() {
         activeTabRight: 'boundary',
         activeLessonId: null,
         activeLessonStepIndex: null,
+        lessonCueDismissed: false,
+        hasStartedLesson: false,
     });
 }
 
@@ -98,6 +102,11 @@ function deferApplyCompletion(apply: PlaygroundStore['applyRecipe']) {
 
 describe('GuidedLessonPanel', () => {
     let originalApplyRecipe: PlaygroundStore['applyRecipe'];
+    let initialLiveSignal: LiveTrainingSignal;
+
+    beforeAll(async () => {
+        initialLiveSignal = (await createScientificTrustFixtures()).liveSignal;
+    });
 
     beforeEach(async () => {
         mockCompactLessonDrawer(false);
@@ -106,6 +115,7 @@ describe('GuidedLessonPanel', () => {
         expect(restored.ok).toBe(true);
         resetLayout();
         resetTrainingTransactionState();
+        useTrainingStore.getState().resetEvidence();
     });
 
     afterEach(() => {
@@ -193,6 +203,142 @@ describe('GuidedLessonPanel', () => {
             activeLessonStepIndex: null,
         });
         expect(screen.getByRole('button', { name: 'Start lesson and reset' })).toBeInTheDocument();
+    });
+
+    it('shows a training-step action and Done transition without gating or advancing Next', async () => {
+        const user = userEvent.setup();
+        const staleSignal = {
+            ...initialLiveSignal,
+            model: {
+                ...initialLiveSignal.model,
+                revision: 8,
+                step: 8,
+            },
+        };
+        useTrainingStore.setState({ latestLiveSignal: staleSignal });
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        await user.selectOptions(
+            screen.getByRole('combobox', { name: 'Guided lesson' }),
+            'lesson-learning-rate-tuning',
+        );
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await screen.findByText('Step 1 of 4');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+
+        expect(screen.getByText('Try this')).toBeVisible();
+        expect(screen.getByText(
+            'Select Step once, then compare the new loss point with the previous point.',
+        )).toBeVisible();
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
+
+        act(() => {
+            useTrainingStore.setState({ latestLiveSignal: { ...staleSignal } });
+        });
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
+
+        act(() => {
+            useTrainingStore.setState({
+                latestLiveSignal: {
+                    ...initialLiveSignal,
+                    model: {
+                        ...initialLiveSignal.model,
+                        generationId: initialLiveSignal.model.generationId - 1,
+                        revision: 100,
+                        step: 100,
+                    },
+                },
+            });
+        });
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+
+        act(() => {
+            useTrainingStore.setState({
+                latestLiveSignal: {
+                    ...initialLiveSignal,
+                    model: {
+                        ...initialLiveSignal.model,
+                        generationId: initialLiveSignal.model.generationId + 1,
+                        revision: 0,
+                        step: 0,
+                    },
+                },
+            });
+        });
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+
+        act(() => {
+            useTrainingStore.setState({
+                latestLiveSignal: {
+                    ...initialLiveSignal,
+                    model: {
+                        ...initialLiveSignal.model,
+                        generationId: initialLiveSignal.model.generationId + 1,
+                        revision: 1,
+                        step: 1,
+                    },
+                },
+            });
+        });
+
+        expect(await screen.findByText('Done')).toBeVisible();
+        expect(screen.getByText('Connect rate to the loss curve')).toBeVisible();
+        expect(screen.getByText('Step 2 of 4')).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
+    });
+
+    it('updates a view completion in place while leaving Next enabled', async () => {
+        const user = userEvent.setup();
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        await user.selectOptions(
+            screen.getByRole('combobox', { name: 'Guided lesson' }),
+            'lesson-learning-rate-tuning',
+        );
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await screen.findByText('Step 1 of 4');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        expect(useLayoutStore.getState().view).toBe('run');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+
+        expect(screen.getByText('Keep the model fixed')).toBeVisible();
+        expect(screen.getByText(
+            'Select Build, then check that the hidden-layer topology is unchanged.',
+        )).toBeVisible();
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+        expect(useLayoutStore.getState().view).toBe('run');
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
+
+        act(() => useLayoutStore.getState().setView('build'));
+        expect(await screen.findByText('Done')).toBeVisible();
+        expect(screen.getByText('Keep the model fixed')).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
+
+        act(() => useLayoutStore.getState().setView('run'));
+        await waitFor(() => expect(screen.queryByText('Done')).not.toBeInTheDocument());
+        expect(screen.getByText('Keep the model fixed')).toBeVisible();
+    });
+
+    it('shows Try this without a false Done state for a step with no completion rule', async () => {
+        const user = userEvent.setup();
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await screen.findByText('Step 1 of 4');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+
+        expect(screen.getByText('Try this')).toBeVisible();
+        expect(screen.getByText(
+            'Count the two hidden layers, then compare their neuron widths in the Network controls.',
+        )).toBeVisible();
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
     });
 
     it('opens a hidden Beginner lesson target without changing audience mode', async () => {

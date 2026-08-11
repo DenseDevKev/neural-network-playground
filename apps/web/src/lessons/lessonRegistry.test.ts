@@ -138,15 +138,71 @@ describe('lesson registry invariants', () => {
 
     it('keeps every step text complete and targets valid', () => {
         const validTargets = new Set<string>(VALID_LESSON_TARGETS);
+        const tryThisCopy = new Set<string>();
+        const actionLead = /^(Change|Check|Compare|Count|Find|Keep|Look|Move|Notice|Open|Read|Select|Set|Step|Toggle|Use|Watch)\b/;
+        const genericFiller = /\b(?:continue when ready|explore the controls|try this step)\b/i;
 
         for (const lesson of LESSON_DEFINITIONS) {
             expect(lesson.title.trim(), lesson.id).not.toBe('');
             expect(lesson.summary.trim(), lesson.id).not.toBe('');
             for (const step of lesson.steps) {
+                const stepName = `${lesson.id}:${step.id}`;
                 expect(step.title.trim(), `${lesson.id}:${step.id}`).not.toBe('');
                 expect(step.body.trim(), `${lesson.id}:${step.id}`).not.toBe('');
+                expect(step.tryThis.trim(), stepName).not.toBe('');
+                expect(step.tryThis.length, stepName).toBeLessThanOrEqual(160);
+                expect(step.tryThis, stepName).toMatch(actionLead);
+                expect(step.tryThis, stepName).not.toMatch(genericFiller);
+                expect(tryThisCopy.has(step.tryThis), stepName).toBe(false);
+                tryThisCopy.add(step.tryThis);
                 expect(validTargets.has(step.target), `${lesson.id}:${step.id}`).toBe(true);
-                if (step.phase) expect(['build', 'run']).toContain(step.phase);
+                if ('phase' in step && step.phase) {
+                    expect(['build', 'run']).toContain(step.phase);
+                }
+            }
+        }
+    });
+
+    it('uses only state-provable closed completion rules while leaving optional steps', () => {
+        const completionKinds = new Set<string>();
+        let stepsWithoutCompletion = 0;
+
+        for (const lesson of LESSON_DEFINITIONS) {
+            for (const step of lesson.steps) {
+                if (!('completion' in step) || !step.completion) {
+                    stepsWithoutCompletion++;
+                    continue;
+                }
+
+                completionKinds.add(step.completion.kind);
+                if (step.completion.kind === 'training-step-at-least') {
+                    expect(Object.keys(step.completion).sort()).toEqual(['kind', 'step']);
+                    expect(Number.isSafeInteger(step.completion.step)).toBe(true);
+                    expect(step.completion.step).toBeGreaterThan(0);
+                } else {
+                    expect(Object.keys(step.completion).sort()).toEqual(['kind', 'view']);
+                    expect(['build', 'run']).toContain(step.completion.view);
+                }
+            }
+        }
+
+        expect(completionKinds).toEqual(new Set(['training-step-at-least', 'view-is']));
+        expect(stepsWithoutCompletion).toBeGreaterThan(0);
+    });
+
+    it('keeps observable actions aligned with the controls and state on their target surface', () => {
+        const observableTermsByTarget = {
+            data: /\b(?:class|cluster|data|noise|point|quadrant|ring|split|spiral)\b/i,
+            features: /\b(?:feature|x²|y²)\b/i,
+            network: /\b(?:activation|hidden|layer|model|network|neuron|output|topology)\b/i,
+            hyperparams: /\b(?:batch|clipping|learning rate|loss|optimizer|regularization|setting)\b/i,
+            transport: /\b(?:boundary|evaluation|loss|play|run|step|train|training)\b/i,
+        } as const;
+
+        for (const lesson of LESSON_DEFINITIONS) {
+            for (const step of lesson.steps) {
+                expect(step.tryThis, `${lesson.id}:${step.id}`)
+                    .toMatch(observableTermsByTarget[step.target]);
             }
         }
     });

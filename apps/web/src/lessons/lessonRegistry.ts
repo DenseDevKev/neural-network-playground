@@ -27,6 +27,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'data',
                 phase: 'build',
                 body: 'The XOR preset alternates labels by quadrant, so no single straight line can separate every point.',
+                tryThis: 'Look at the four quadrants and notice that each class occupies opposite corners.',
             },
             {
                 id: 'give-model-capacity',
@@ -35,6 +36,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'Two hidden layers let the network combine simple bends into the corners needed for XOR.',
+                tryThis: 'Count the two hidden layers, then compare their neuron widths in the Network controls.',
             },
             {
                 id: 'use-steady-updates',
@@ -43,6 +45,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'A moderate learning rate and small batches make the loss react without bouncing wildly.',
+                tryThis: 'Compare the Learning rate and Batch size controls, then note the selected settings.',
             },
             {
                 id: 'train-in-small-moves',
@@ -50,6 +53,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Step or play from the transport controls and watch the boundary change as weights update.',
+                tryThis: 'Select Step once and watch the decision boundary update around the XOR points.',
             },
         ],
     },
@@ -67,6 +71,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'data',
                 phase: 'build',
                 body: 'The Gaussian dataset places two clouds where a straight separator is enough to split the labels.',
+                tryThis: 'Compare the two point clusters and find the open gap a straight boundary can cross.',
             },
             {
                 id: 'inspect-single-neuron',
@@ -75,6 +80,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'With no hidden layers, the model can only learn a weighted sum of the input features.',
+                tryThis: 'Check that Hidden Layers shows 0, then notice the network still has one output neuron.',
             },
             {
                 id: 'train-linear-boundary',
@@ -82,6 +88,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Run a few steps and watch the boundary rotate toward the gap between the two clusters.',
+                tryThis: 'Select Step once and watch the straight boundary rotate between the clusters.',
             },
         ],
     },
@@ -99,6 +106,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'data',
                 phase: 'build',
                 body: 'Regression predicts a continuous surface instead of choosing between classes.',
+                tryThis: 'Check that Problem type is Regression, then compare continuous target values across the data.',
             },
             {
                 id: 'inspect-regression-settings',
@@ -107,6 +115,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'Mean squared error and a linear output match a continuous target better than classification settings.',
+                tryThis: 'Open the Loss control and check that the regression setting uses mean squared error.',
             },
             {
                 id: 'confirm-linear-model',
@@ -115,6 +124,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'No hidden layer is needed when the target is already shaped like a plane.',
+                tryThis: 'Check that Hidden Layers shows 0, then trace the linear model from inputs to output.',
             },
             {
                 id: 'train-plane-fit',
@@ -122,6 +132,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Run training and watch the loss drop as the plane aligns with the generated surface.',
+                tryThis: 'Select Step once and watch the regression loss change as the plane starts to fit.',
             },
         ],
     },
@@ -139,6 +150,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'data',
                 phase: 'build',
                 body: 'The circle dataset puts one class near the center and the other around it, so a straight line cannot separate both rings.',
+                tryThis: 'Compare the center points with the outer ring and look for why one straight line fails.',
             },
             {
                 id: 'use-one-hidden-layer',
@@ -147,6 +159,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'A single hidden layer gives the model several small bends that can combine into a rounded boundary.',
+                tryThis: 'Count the single hidden layer, then check how many neurons it gives the network.',
             },
             {
                 id: 'keep-updates-smooth',
@@ -155,6 +168,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'Moderate learning settings make it easier to see the boundary curve inward instead of jumping around.',
+                tryThis: 'Compare the Learning rate and Batch size controls before training the circle.',
             },
             {
                 id: 'train-circle-boundary',
@@ -162,6 +176,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Run training and compare the center region against the outer ring as the hidden layer learns the curve.',
+                tryThis: 'Select Step once and watch the boundary begin to curve around the center points.',
             },
         ],
     },
@@ -179,6 +194,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'features',
                 phase: 'build',
                 body: 'Squared coordinate features expose distance-from-center information that the raw x and y inputs hide from a linear model.',
+                tryThis: 'Check that the x² and y² feature buttons are selected alongside the raw inputs.',
             },
             {
                 id: 'compare-with-linear-model',
@@ -187,6 +203,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'With the right features, even a model with no hidden layers can draw a useful circular separator.',
+                tryThis: 'Check that Hidden Layers shows 0, then notice how the engineered features keep the model linear.',
             },
             {
                 id: 'use-classification-loss',
@@ -195,6 +212,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'Cross-entropy and a sigmoid output keep the lesson focused on class probability rather than regression error.',
+                tryThis: 'Read the classification loss summary and check that it uses cross-entropy.',
             },
             {
                 id: 'train-feature-model',
@@ -202,6 +220,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Run training and notice how the boundary becomes round without adding hidden-layer capacity.',
+                tryThis: 'Select Step once and watch the boundary curve without adding a hidden layer.',
             },
         ],
     },
@@ -219,6 +238,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'data',
                 phase: 'build',
                 body: 'The spiral arms wrap around each other, so the model needs many local bends to follow the class boundary.',
+                tryThis: 'Compare the two spiral arms and count how often their points wind past each other.',
             },
             {
                 id: 'inspect-deeper-network',
@@ -227,6 +247,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'Multiple hidden layers let early bends combine into more detailed bends later in the network.',
+                tryThis: 'Count the hidden layers and compare their neuron widths in the Network controls.',
             },
             {
                 id: 'slow-spiral-learning',
@@ -235,6 +256,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'A smaller learning rate helps the deeper model adjust gradually instead of overshooting the narrow spiral arms.',
+                tryThis: 'Check the Learning rate value and notice that the spiral preset uses 0.01.',
             },
             {
                 id: 'train-spiral-boundary',
@@ -242,6 +264,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Run training for longer than the simpler lessons and watch the boundary untwist section by section.',
+                tryThis: 'Select Step once and watch for a local change along the spiral boundary.',
             },
         ],
     },
@@ -259,6 +282,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'Learning rate controls how far each training update moves the weights after a gradient step.',
+                tryThis: 'Read the Learning rate value before changing or running anything.',
             },
             {
                 id: 'connect-rate-to-loss',
@@ -266,14 +290,17 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Step through training and watch whether loss falls smoothly, stalls, or jumps around.',
+                tryThis: 'Select Step once, then compare the new loss point with the previous point.',
+                completion: { kind: 'training-step-at-least', step: 1 },
             },
             {
                 id: 'keep-capacity-fixed',
                 title: 'Keep the model fixed',
                 target: 'network',
                 tab: 'network',
-                phase: 'build',
                 body: 'Change one idea at a time: keep the topology stable while experimenting with update size.',
+                tryThis: 'Select Build, then check that the hidden-layer topology is unchanged.',
+                completion: { kind: 'view-is', view: 'build' },
             },
             {
                 id: 'retry-with-smaller-steps',
@@ -281,6 +308,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'After changing the learning rate or clipping settings, reset and run again to compare the curve.',
+                tryThis: 'Select Reset, adjust Learning rate, then run training and compare the new loss curve.',
             },
         ],
     },
@@ -298,6 +326,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'A deeper network can trace complicated data, but extra flexibility can also memorize noisy details.',
+                tryThis: 'Count the hidden layers and neuron widths that make this network flexible.',
             },
             {
                 id: 'open-regularization-controls',
@@ -306,6 +335,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'Regularization nudges the model toward smaller weights so it must prefer simpler explanations.',
+                tryThis: 'Open the Regularization section and check the selected penalty and rate.',
             },
             {
                 id: 'compare-training-and-holdout',
@@ -313,6 +343,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Run training and watch for a pattern where training improves faster than held-out test behavior.',
+                tryThis: 'Select Play, then compare train and test loss when the next full evaluation appears.',
             },
             {
                 id: 'simplify-or-regularize',
@@ -320,6 +351,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'After simplifying or regularizing, run another short trial and compare whether the train/test gap narrows.',
+                tryThis: 'Change one regularization setting, reset training, then compare the next train/test loss gap.',
             },
         ],
     },
@@ -337,6 +369,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'data',
                 phase: 'build',
                 body: 'Noise moves points away from the clean pattern, so a perfect boundary may be the wrong goal.',
+                tryThis: 'Move the Noise control slightly and watch the point pattern reshuffle.',
             },
             {
                 id: 'prefer-smooth-boundaries',
@@ -345,6 +378,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'A modest hidden layer can capture the circle while avoiding tiny bends around individual noisy points.',
+                tryThis: 'Count the hidden-layer neurons and compare their capacity with the noisy point pattern.',
             },
             {
                 id: 'use-conservative-settings',
@@ -353,6 +387,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'hyperparams',
                 phase: 'build',
                 body: 'Regularization and steady update sizes help the model ignore isolated noisy examples.',
+                tryThis: 'Check the Regularization and Learning rate settings before training on noisy data.',
             },
             {
                 id: 'train-and-read-uncertainty',
@@ -360,6 +395,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Run training, then treat uncertain or isolated mistakes as signals about data quality, not just model quality.',
+                tryThis: 'Select Play, then compare uncertain boundary regions with isolated noisy points.',
             },
         ],
     },
@@ -377,6 +413,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'data',
                 phase: 'build',
                 body: 'Each point belongs to Class 0, Class 1, or Class 2, so the model must choose among three labels instead of drawing a binary split.',
+                tryThis: 'Compare all three point clusters and name the class color at each cluster center.',
             },
             {
                 id: 'inspect-three-outputs',
@@ -385,6 +422,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'The network uses one output neuron per class. Softmax turns those outputs into competing confidence scores.',
+                tryThis: 'Check the network summary for three output neurons, one for each class.',
             },
             {
                 id: 'connect-softmax-loss',
@@ -393,6 +431,7 @@ export const LESSON_DEFINITIONS = [
                 tab: 'network',
                 phase: 'build',
                 body: 'This preset keeps three outputs, softmax, and categorical cross-entropy paired so the highest class score wins after each update.',
+                tryThis: 'Read the output and loss summaries and confirm softmax is paired with categorical cross-entropy.',
             },
             {
                 id: 'train-class-regions',
@@ -400,6 +439,7 @@ export const LESSON_DEFINITIONS = [
                 target: 'transport',
                 phase: 'run',
                 body: 'Start training and watch the boundary divide the plane into three winning-class regions, with uncertainty near class borders.',
+                tryThis: 'Select Step once and watch the three class regions update near their borders.',
             },
         ],
     },
@@ -419,4 +459,9 @@ export function getLessonRecipe(lesson: LessonDefinition): RecipeCatalogEntry {
     return entry;
 }
 
-export type { LessonDefinition, LessonStep, LessonTarget } from './types.ts';
+export type {
+    LessonCompletionRule,
+    LessonDefinition,
+    LessonStep,
+    LessonTarget,
+} from './types.ts';

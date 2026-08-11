@@ -8,6 +8,7 @@ import {
     LESSON_DEFINITIONS,
     getLessonDefinition,
     getLessonRecipe,
+    type LessonCompletionRule,
     type LessonStep,
     type LessonTarget,
 } from '../../lessons/lessonRegistry.ts';
@@ -20,6 +21,51 @@ interface GuidedLessonPanelProps {
 }
 
 const COMPACT_DRAWER_QUERY = '(max-width: 900px)';
+
+interface LessonModelIdentity {
+    generationId: number;
+    revision: number;
+    step: number;
+}
+
+function snapshotModelIdentity(model: LessonModelIdentity | null): LessonModelIdentity | null {
+    return model && {
+        generationId: model.generationId,
+        revision: model.revision,
+        step: model.step,
+    };
+}
+
+function hasEvidenceAfterLessonStart(
+    current: LessonModelIdentity | null,
+    activation: LessonModelIdentity | null,
+): boolean {
+    if (!current) return false;
+    if (!activation) return true;
+    if (current.generationId !== activation.generationId) {
+        return current.generationId > activation.generationId;
+    }
+    return current.revision > activation.revision || current.step > activation.step;
+}
+
+function isLessonCompletionSatisfied(
+    rule: LessonCompletionRule,
+    state: {
+        view: 'build' | 'run';
+        currentModel: LessonModelIdentity | null;
+        activationModel: LessonModelIdentity | null;
+    },
+): boolean {
+    switch (rule.kind) {
+        case 'training-step-at-least': {
+            if (!state.currentModel) return false;
+            return hasEvidenceAfterLessonStart(state.currentModel, state.activationModel)
+                && state.currentModel.step >= rule.step;
+        }
+        case 'view-is':
+            return state.view === rule.view;
+    }
+}
 
 function getInitialDrawerOpen(): boolean {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -43,7 +89,10 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const [lessonError, setLessonError] = useState<string | null>(null);
     const startInFlight = useRef(false);
     const mounted = useRef(true);
+    const activationModel = useRef<LessonModelIdentity | null>(null);
     const applyRecipe = usePlaygroundStore((s) => s.applyRecipe);
+    const currentModel = useTrainingStore((s) => s.latestLiveSignal?.model ?? null);
+    const view = useLayoutStore((s) => s.view);
     const setActiveRecipeSection = useLayoutStore((s) => s.setActiveRecipeSection);
     const setView = useLayoutStore((s) => s.setView);
     const setActiveLessonStep = useLayoutStore((s) => s.setActiveLessonStep);
@@ -54,6 +103,13 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     );
     const lessonRecipe = useMemo(() => getLessonRecipe(selectedLesson), [selectedLesson]);
     const activeStep = activeStepIndex === null ? null : selectedLesson.steps[activeStepIndex];
+    const completionSatisfied = activeStep?.completion
+        ? isLessonCompletionSatisfied(activeStep.completion, {
+            view,
+            currentModel,
+            activationModel: activationModel.current,
+        })
+        : false;
     const lessonStateClass = activeStep ? 'guided-lesson--active' : '';
 
     useEffect(() => {
@@ -118,6 +174,9 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                 || !mounted.current) return;
             onReset();
             if (!mounted.current) return;
+            activationModel.current = snapshotModelIdentity(
+                useTrainingStore.getState().latestLiveSignal?.model ?? null,
+            );
             setActiveStepIndex(0);
             setActiveLessonStep(selectedLesson.id, 0);
             focusStep(selectedLesson.steps[0]);
@@ -142,12 +201,14 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     };
 
     const finishLesson = () => {
+        activationModel.current = null;
         setActiveStepIndex(null);
         clearActiveLessonStep();
         onHighlightChange?.(null);
     };
 
     const selectLesson = (lessonId: string) => {
+        activationModel.current = null;
         setSelectedLessonId(lessonId);
         setActiveStepIndex(null);
         setLessonError(null);
@@ -196,6 +257,15 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                             </div>
                             <h2 className="guided-lesson__step-title">{activeStep.title}</h2>
                             <p className="guided-lesson__body">{activeStep.body}</p>
+                            <div className="guided-lesson__try-this">
+                                <div className="guided-lesson__eyebrow">Try this</div>
+                                <p className="guided-lesson__body">{activeStep.tryThis}</p>
+                                {completionSatisfied && (
+                                    <div className="guided-lesson__meta" role="status">
+                                        Done
+                                    </div>
+                                )}
+                            </div>
                             <div className="guided-lesson__actions">
                                 <button
                                     type="button"
