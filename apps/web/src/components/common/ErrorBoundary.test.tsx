@@ -40,7 +40,8 @@ describe('ErrorBoundary', () => {
         expect(screen.getByRole('status')).toHaveAttribute('aria-atomic', 'true');
         expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
         expect(screen.getByRole('status')).toBeEmptyDOMElement();
-        expect(screen.getByRole('status').parentElement).toHaveAttribute('aria-busy', 'false');
+        expect(screen.getByRole('button', { name: 'Try again' }).closest('[aria-busy]'))
+            .toHaveAttribute('aria-busy', 'false');
     });
 
     it('resets the boundary and calls onRetry', async () => {
@@ -105,7 +106,9 @@ describe('ErrorBoundary', () => {
         expect(screen.getByText('A section failed to render. Boom')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Retrying…' })).toBeInTheDocument();
         expect(screen.getByRole('status')).toHaveTextContent('Retrying…');
-        expect(screen.getByRole('status').parentElement).toHaveAttribute('aria-busy', 'true');
+        expect(screen.getByRole('status').closest('[aria-busy="true"]')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Retrying…' }).closest('[aria-busy]'))
+            .toHaveAttribute('aria-busy', 'true');
 
         deferred.resolve();
 
@@ -133,6 +136,7 @@ describe('ErrorBoundary', () => {
         expect(screen.getByText(/A section failed to render\. Boom/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
         expect(screen.getByRole('status')).toHaveTextContent('Retry failed: reset failed');
-        expect(screen.getByRole('status').parentElement).toHaveAttribute('aria-busy', 'false');
+        expect(screen.getByRole('button', { name: 'Try again' }).closest('[aria-busy]'))
+            .toHaveAttribute('aria-busy', 'false');
     });
 });
