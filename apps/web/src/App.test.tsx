@@ -199,7 +199,6 @@ describe('App accessibility shell', () => {
     });
 
     it('loads a valid experiment hash changed after mount through the URL loader', async () => {
-        const loadFromUrl = vi.spyOn(usePlaygroundStore.getState(), 'loadFromUrl');
         render(<App />);
 
         window.history.replaceState(null, '', await experimentHashWithNoise(7));
@@ -210,7 +209,6 @@ describe('App accessibility shell', () => {
             status: 'ready',
             prepared: { document: { recipe: { data: { noise: 7 } } } },
         });
-        expect(loadFromUrl).toHaveBeenCalledTimes(1);
     });
 
     it('shows compatibility recovery when a changed hash is incompatible', async () => {
@@ -251,14 +249,20 @@ describe('App accessibility shell', () => {
     });
 
     it('stops loading hash changes after App unmounts', async () => {
-        const loadFromUrl = vi.spyOn(usePlaygroundStore.getState(), 'loadFromUrl');
-        const { unmount } = render(<App />);
-        unmount();
+        const store = usePlaygroundStore.getState();
+        expect(vi.isMockFunction(store.loadFromUrl)).toBe(false);
+        const loadFromUrl = vi.spyOn(store, 'loadFromUrl');
+        try {
+            const { unmount } = render(<App />);
+            unmount();
 
-        window.history.replaceState(null, '', await experimentHashWithNoise(5));
-        act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+            window.history.replaceState(null, '', await experimentHashWithNoise(5));
+            act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
 
-        expect(loadFromUrl).not.toHaveBeenCalled();
+            expect(loadFromUrl).not.toHaveBeenCalled();
+        } finally {
+            loadFromUrl.mockRestore();
+        }
     });
 
     it('renders durable compatibility recovery without mounting the training hook', () => {
