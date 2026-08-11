@@ -80,6 +80,91 @@ describe('DataPanel V2 recipe controls', () => {
         expect(screen.getByRole('button', { name: 'Plane' })).toBeInTheDocument();
     });
 
+    it('associates exact slider values with stable native labels and outputs', async () => {
+        render(<DataPanel onReset={vi.fn()} />);
+
+        const trainSlider = screen.getByRole('slider', { name: 'Train ratio' });
+        const noiseSlider = screen.getByRole('slider', { name: 'Noise' });
+        const trainId = trainSlider.id;
+        const noiseId = noiseSlider.id;
+        const trainOutputId = trainSlider.getAttribute('aria-describedby') ?? '';
+        const noiseOutputId = noiseSlider.getAttribute('aria-describedby') ?? '';
+
+        expect(trainId).not.toBe('');
+        expect(noiseId).not.toBe('');
+        expect(trainOutputId).not.toBe('');
+        expect(noiseOutputId).not.toBe('');
+        expect(document.querySelector(`label[for="${trainId}"]`))
+            .toHaveTextContent('Train ratio');
+        expect(document.querySelector(`label[for="${noiseId}"]`))
+            .toHaveTextContent('Noise');
+
+        const trainOutput = document.getElementById(trainOutputId);
+        const noiseOutput = document.getElementById(noiseOutputId);
+        expect(trainOutput?.tagName).toBe('OUTPUT');
+        expect(noiseOutput?.tagName).toBe('OUTPUT');
+        expect(trainOutput).toHaveAttribute('for', trainId);
+        expect(noiseOutput).toHaveAttribute('for', noiseId);
+        expect(trainOutput).toHaveTextContent('50%');
+        expect(noiseOutput).toHaveTextContent('0%');
+        expect((trainSlider as HTMLInputElement).value).toBe('50');
+        expect((noiseSlider as HTMLInputElement).value).toBe('0');
+        expect(trainSlider).toHaveAttribute(
+            'aria-valuetext',
+            '50 percent training, 50 percent test',
+        );
+        expect(noiseSlider).toHaveAttribute('aria-valuetext', '0 percent noise');
+
+        fireEvent.change(trainSlider, { target: { value: '70' } });
+        await waitFor(() => expect(recipe().data.trainFraction).toBe(0.7));
+        expect(screen.getByRole('slider', { name: 'Train ratio' })).toHaveAttribute(
+            'aria-valuetext',
+            '70 percent training, 30 percent test',
+        );
+        expect(document.getElementById(trainOutputId)).toHaveTextContent('70%');
+        expect(screen.getByRole('slider', { name: 'Train ratio' }).id).toBe(trainId);
+        expect(screen.getByRole('slider', { name: 'Noise' }).id).toBe(noiseId);
+
+        fireEvent.change(noiseSlider, { target: { value: '15' } });
+        await waitFor(() => expect(recipe().data.noise).toBe(15));
+        expect(screen.getByRole('slider', { name: 'Noise' }))
+            .toHaveAttribute('aria-valuetext', '15 percent noise');
+        expect(document.getElementById(noiseOutputId)).toHaveTextContent('15%');
+        expect(screen.getByRole('slider', { name: 'Train ratio' }).id).toBe(trainId);
+        expect(screen.getByRole('slider', { name: 'Noise' }).id).toBe(noiseId);
+    });
+
+    it('keeps slider and output ownership unique across two panels', () => {
+        render(
+            <>
+                <DataPanel onReset={vi.fn()} />
+                <DataPanel onReset={vi.fn()} />
+            </>,
+        );
+
+        const sliders = [
+            ...screen.getAllByRole('slider', { name: 'Train ratio' }),
+            ...screen.getAllByRole('slider', { name: 'Noise' }),
+        ];
+        const inputIds = sliders.map((slider) => slider.id);
+        const outputIds = sliders.map(
+            (slider) => slider.getAttribute('aria-describedby') ?? '',
+        );
+
+        expect(inputIds).not.toContain('');
+        expect(outputIds).not.toContain('');
+        expect(new Set([...inputIds, ...outputIds]).size).toBe(8);
+
+        for (const slider of sliders) {
+            const outputId = slider.getAttribute('aria-describedby') ?? '';
+            expect(document.querySelector(`label[for="${slider.id}"]`))
+                .toHaveTextContent(slider.getAttribute('aria-valuetext')?.includes('noise')
+                    ? 'Noise'
+                    : 'Train ratio');
+            expect(document.getElementById(outputId)).toHaveAttribute('for', slider.id);
+        }
+    });
+
     it('moves binary to multiclass to regression to binary with exact derived contracts', async () => {
         const user = userEvent.setup();
         render(<DataPanel onReset={vi.fn()} />);
@@ -128,10 +213,10 @@ describe('DataPanel V2 recipe controls', () => {
         render(<DataPanel onReset={vi.fn()} />);
 
         await user.click(screen.getByRole('button', { name: '600 samples' }));
-        fireEvent.change(screen.getByRole('slider', { name: 'Train/test split percentage' }), {
+        fireEvent.change(screen.getByRole('slider', { name: 'Train ratio' }), {
             target: { value: '70' },
         });
-        fireEvent.change(screen.getByRole('slider', { name: 'Noise level' }), {
+        fireEvent.change(screen.getByRole('slider', { name: 'Noise' }), {
             target: { value: '18' },
         });
         await waitFor(() => expect(recipe().data).toMatchObject({
@@ -155,8 +240,8 @@ describe('DataPanel V2 recipe controls', () => {
 
     it('preserves rapid orthogonal edits and makes the last same-field edit win', async () => {
         render(<DataPanel onReset={vi.fn()} />);
-        const split = screen.getByRole('slider', { name: 'Train/test split percentage' });
-        const noise = screen.getByRole('slider', { name: 'Noise level' });
+        const split = screen.getByRole('slider', { name: 'Train ratio' });
+        const noise = screen.getByRole('slider', { name: 'Noise' });
 
         fireEvent.change(split, { target: { value: '60' } });
         fireEvent.change(noise, { target: { value: '7' } });
@@ -228,7 +313,8 @@ describe('DataPanel V2 recipe controls', () => {
         });
         render(<DataPanel onReset={onReset} />);
 
-        expect(screen.getByRole('status')).toHaveTextContent('Generating data...');
+        const loadingStatus = screen.getByText('Generating data...').closest('[role="status"]');
+        expect(loadingStatus).toHaveTextContent('Generating data...');
         expect(screen.getByRole('alert')).toHaveTextContent('Failed to generate data');
         expect(screen.getByLabelText('Train/test split: 2 train, 1 test')).toBeInTheDocument();
         expect(screen.getByText(

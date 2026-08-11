@@ -1,5 +1,5 @@
 // ── Data Panel ──
-import { memo } from 'react';
+import { memo, useId } from 'react';
 import type { DatasetId } from '@nn-playground/engine';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -53,6 +53,11 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
     const testCount = useTrainingStore((state) => state.testPoints.length);
     const configError = useTrainingStore((state) => state.configError);
     const configErrorSource = useTrainingStore((state) => state.configErrorSource);
+    const controlId = useId();
+    const trainRatioId = `${controlId}-train-ratio`;
+    const trainRatioOutputId = `${controlId}-train-ratio-output`;
+    const noiseId = `${controlId}-noise`;
+    const noiseOutputId = `${controlId}-noise-output`;
 
     const retryDataChange = () => useTrainingStore.getState().retryConfigSync();
 
@@ -69,6 +74,8 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
 
     const dataset = recipe.task.dataset;
     const { noise, trainFraction, sampleCount } = recipe.data;
+    const trainPercent = Math.round(trainFraction * 100);
+    const testPercent = 100 - trainPercent;
     const currentProblemLabel = problemLabel(recipe.task.kind);
 
     const chooseDataset = (nextDataset: DatasetId) => {
@@ -140,7 +147,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
 
             <div
                 className="control-row"
-                aria-label={`Dataset settings: ${sampleCount} samples, ${noise} noise, ${Math.round(trainFraction * 100)}% train`}
+                aria-label={`Dataset settings: ${sampleCount} samples, ${noise} noise, ${trainPercent}% train`}
                 aria-live="polite"
                 style={{ marginBottom: 8 }}
             >
@@ -174,15 +181,22 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             </div>
 
             <div className="control-row">
-                <span className="control-label">Train ratio</span>
-                <span className="control-value">{Math.round(trainFraction * 100)}%</span>
+                <label className="control-label" htmlFor={trainRatioId}>Train ratio</label>
+                <output
+                    className="control-value"
+                    id={trainRatioOutputId}
+                    htmlFor={trainRatioId}
+                >
+                    {trainPercent}%
+                </output>
             </div>
             <Tooltip content="Cause: a higher train ratio gives the model more examples to fit. Effect: the test set gets smaller, so generalization estimates become noisier." block>
                 <input
+                    id={trainRatioId}
                     type="range"
                     min="10"
                     max="90"
-                    value={Math.round(trainFraction * 100)}
+                    value={trainPercent}
                     onChange={(event) => {
                         const nextFraction = Number(event.target.value) / 100;
                         if (nextFraction === trainFraction) return;
@@ -191,7 +205,8 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                             (current) => setTrainFraction(current, nextFraction),
                         );
                     }}
-                    aria-label="Train/test split percentage"
+                    aria-describedby={trainRatioOutputId}
+                    aria-valuetext={`${trainPercent} percent training, ${testPercent} percent test`}
                 />
             </Tooltip>
 
@@ -221,11 +236,18 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             </Tooltip>
 
             <div className="control-row" style={{ marginTop: 8 }}>
-                <span className="control-label">Noise</span>
-                <span className="control-value">{noise}</span>
+                <label className="control-label" htmlFor={noiseId}>Noise</label>
+                <output
+                    className="control-value"
+                    id={noiseOutputId}
+                    htmlFor={noiseId}
+                >
+                    {noise}%
+                </output>
             </div>
             <Tooltip content="Cause: more noise blurs class edges. Effect: training loss may flatten and test accuracy becomes harder to improve." block>
                 <input
+                    id={noiseId}
                     type="range"
                     min="0"
                     max="50"
@@ -238,7 +260,8 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                             (current) => setNoise(current, nextNoise),
                         );
                     }}
-                    aria-label="Noise level"
+                    aria-describedby={noiseOutputId}
+                    aria-valuetext={`${noise} percent noise`}
                 />
             </Tooltip>
 
