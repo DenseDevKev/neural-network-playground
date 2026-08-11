@@ -418,12 +418,52 @@ git commit -m "feat(web): add names to saved runs"
 - Modify: packages/engine/src/__benchmarks__/performance.bench.ts
 - Modify: packages/shared/src/__tests__/codeExport.test.ts
 - Modify: packages/shared/src/__tests__/sessionCheckpoint.test.ts
+- Modify: apps/web/src/App.test.tsx
+- Modify: apps/web/src/__tests__/appShell.integration.test.tsx
+- Modify: apps/web/src/__tests__/frameBuffer.test.ts
+- Modify: apps/web/src/components/controls/CodeExportPanel.test.tsx
+- Modify: apps/web/src/components/controls/ConfigPanel.test.tsx
+- Modify: apps/web/src/components/controls/DataPanel.test.tsx
+- Modify: apps/web/src/components/controls/FeaturesPanel.test.tsx
+- Modify: apps/web/src/components/controls/HyperparamPanel.test.tsx
+- Modify: apps/web/src/components/controls/InspectionPanel.test.tsx
+- Modify: apps/web/src/components/controls/PresetPanel.test.tsx
+- Modify: apps/web/src/components/controls/RecipeSummaryCard.test.tsx
+- Modify: apps/web/src/components/controls/RunHistoryPanel.test.tsx
+- Modify: apps/web/src/components/controls/TrainingControls.test.tsx
+- Modify: apps/web/src/components/controls/inspection/useInspectionPanelController.test.tsx
+- Modify: apps/web/src/components/layout/Header.test.tsx
+- Modify: apps/web/src/components/layout/MainArea.test.tsx
+- Modify: apps/web/src/components/layout/UIFlows.integration.test.tsx
+- Modify: apps/web/src/components/visualization/ConfusionMatrix.test.tsx
+- Modify: apps/web/src/components/visualization/DecisionBoundary.test.tsx
+- Modify: apps/web/src/components/visualization/NetworkGraphCanvas.test.tsx
+- Modify: apps/web/src/components/visualization/NetworkGraphSVG.test.tsx
+- Modify: apps/web/src/components/visualization/TrainingExplanationPanel.test.tsx
+- Modify: apps/web/src/components/visualization/decisionBoundaryModel.test.ts
+- Modify: apps/web/src/components/visualization/useDecisionBoundaryModel.test.tsx
+- Modify: apps/web/src/hooks/useTraining.test.tsx
+- Modify: apps/web/src/lessons/lessonRegistry.test.ts
+- Modify: apps/web/src/store/usePlaygroundStore.test.ts
+- Modify: apps/web/src/worker/frameBuffer.test.ts
+- Modify: apps/web/src/worker/sharedSnapshot.test.ts
+- Modify: apps/web/src/worker/training.worker.v2.test.ts
+- Modify: apps/web/src/worker/workerBridge.test.ts
+- Modify: apps/web/src/test/jest-axe.d.ts
+- Modify: apps/web/src/test/playgroundStoreTestUtils.ts
+- Modify: apps/web/src/test/scientificTrustFixtures.ts
 - Modify: .github/workflows/ci.yml
 - Modify: pnpm-lock.yaml
 
 **Interfaces:**
 - Produces pnpm typecheck, checking web, engine, shared, and their tests/benchmarks.
 - CI exposes Typecheck as a named gate before unit tests.
+- Scope amendment (2026-08-11): the first strict web test program exposed 96
+  pre-existing semantic diagnostics across 31 test files. Those test-only
+  fixture repairs are part of this task because 22 files have no later owner.
+  Keep strict checking and the full include set; do not use `noCheck`, new
+  exclusions, test-only production-interface augmentation, blanket `any`
+  casts, or weakened production contracts to manufacture a green gate.
 
 - [ ] **Step 1: Capture the current failing executable RED gate**
 
@@ -435,6 +475,17 @@ Run: pnpm --filter @nn-playground/shared exec tsc --noEmit
 
 Expected: FAIL on stale NetworkSnapshot, missing node:vm types, and readonly shuffledIndices mutation.
 
+Create only the strict `apps/web/tsconfig.test.json` harness described in Step 2,
+then capture both halves directly before repairing any fixtures.
+
+Run: pnpm --filter @nn-playground/web exec tsc --noEmit -p tsconfig.json
+
+Expected: PASS for production source.
+
+Run: pnpm --filter @nn-playground/web exec tsc --noEmit -p tsconfig.test.json
+
+Expected: FAIL with the captured 96-test-diagnostic baseline.
+
 - [ ] **Step 2: Add root typecheck orchestration and correct package contracts**
 
 ~~~json
@@ -443,7 +494,17 @@ Expected: FAIL on stale NetworkSnapshot, missing node:vm types, and readonly shu
 }
 ~~~
 
-Each workspace package defines a `typecheck` script. Web runs its existing production config plus `tsc --noEmit -p tsconfig.test.json`; the test config includes `src/**/*.test.ts`, `src/**/*.test.tsx`, and `src/test/**` with Vitest, Vite, jest-dom, DOM, and Node types. Add `@types/node` as an explicit development dependency in web, engine, and shared. Import performance from node:perf_hooks and console from node:console in benchmarks, update the stale snapshot fixture to the current contract, and construct a mutable checkpoint fixture instead of mutating readonly production data.
+Each workspace package defines a `typecheck` script. Web runs its existing production config plus `tsc --noEmit -p tsconfig.test.json`; the test config includes `src/**/*.test.ts`, `src/**/*.test.tsx`, and `src/test/**/*` with Vitest, Vite, jest-dom, DOM, and Node types. Add `@types/node` as an explicit development dependency in web, engine, and shared. Import performance from node:perf_hooks and console from node:console in benchmarks, update the stale snapshot fixture to the current contract, and construct a mutable checkpoint fixture instead of mutating readonly production data.
+
+Remediate the web diagnostics at their test-fixture sources. Prefer current V2
+store/evidence helpers and typed protocol builders over repeated legacy state
+writes. Repair branded fingerprints through validated scientific fixtures,
+construct malformed readonly artifacts before assigning their protocol type,
+narrow discriminated unions once, and type local mocks against their actual
+browser/Atomics contracts. Keep the worker WebGPU test bound to the repository's
+existing local device contract rather than adding broad ambient globals. Update
+the stale guided-lesson integration assertion so the full runtime suite accepts
+the Task 6 action name `Start lesson and reset`.
 
 - [ ] **Step 3: Add the named CI step**
 
@@ -458,6 +519,10 @@ Run: pnpm typecheck
 
 Expected: PASS across all workspaces with no TypeScript errors.
 
+Run: pnpm --filter @nn-playground/web typecheck
+
+Expected: PASS for the production config and every included web test/helper file.
+
 Run: pnpm test
 
 Expected: PASS with existing and amended fixtures.
@@ -465,7 +530,7 @@ Expected: PASS with existing and amended fixtures.
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add package.json apps/web/package.json apps/web/tsconfig.test.json packages/engine/package.json packages/engine/tsconfig.json packages/shared/package.json packages/shared/tsconfig.json packages/engine/src/__benchmarks__/grid_performance.bench.ts packages/engine/src/__benchmarks__/performance.bench.ts packages/shared/src/__tests__/codeExport.test.ts packages/shared/src/__tests__/sessionCheckpoint.test.ts .github/workflows/ci.yml pnpm-lock.yaml
+git add package.json apps/web/package.json apps/web/tsconfig.test.json packages/engine/package.json packages/engine/tsconfig.json packages/shared/package.json packages/shared/tsconfig.json packages/engine/src/__benchmarks__/grid_performance.bench.ts packages/engine/src/__benchmarks__/performance.bench.ts packages/shared/src/__tests__/codeExport.test.ts packages/shared/src/__tests__/sessionCheckpoint.test.ts apps/web/src/App.test.tsx apps/web/src/__tests__/appShell.integration.test.tsx apps/web/src/__tests__/frameBuffer.test.ts apps/web/src/components/controls/CodeExportPanel.test.tsx apps/web/src/components/controls/ConfigPanel.test.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/FeaturesPanel.test.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/InspectionPanel.test.tsx apps/web/src/components/controls/PresetPanel.test.tsx apps/web/src/components/controls/RecipeSummaryCard.test.tsx apps/web/src/components/controls/RunHistoryPanel.test.tsx apps/web/src/components/controls/TrainingControls.test.tsx apps/web/src/components/controls/inspection/useInspectionPanelController.test.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/components/layout/MainArea.test.tsx apps/web/src/components/layout/UIFlows.integration.test.tsx apps/web/src/components/visualization/ConfusionMatrix.test.tsx apps/web/src/components/visualization/DecisionBoundary.test.tsx apps/web/src/components/visualization/NetworkGraphCanvas.test.tsx apps/web/src/components/visualization/NetworkGraphSVG.test.tsx apps/web/src/components/visualization/TrainingExplanationPanel.test.tsx apps/web/src/components/visualization/decisionBoundaryModel.test.ts apps/web/src/components/visualization/useDecisionBoundaryModel.test.tsx apps/web/src/hooks/useTraining.test.tsx apps/web/src/lessons/lessonRegistry.test.ts apps/web/src/store/usePlaygroundStore.test.ts apps/web/src/worker/frameBuffer.test.ts apps/web/src/worker/sharedSnapshot.test.ts apps/web/src/worker/training.worker.v2.test.ts apps/web/src/worker/workerBridge.test.ts apps/web/src/test/jest-axe.d.ts apps/web/src/test/playgroundStoreTestUtils.ts apps/web/src/test/scientificTrustFixtures.ts .github/workflows/ci.yml pnpm-lock.yaml
 git commit -m "build: add repository typecheck gate"
 ~~~
 
