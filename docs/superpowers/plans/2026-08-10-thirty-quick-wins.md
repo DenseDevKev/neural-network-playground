@@ -1462,18 +1462,149 @@ git commit -m "feat(web): contain worker error focus"
 - Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
-- At 390 by 844, graph toolbar buttons, topology-mode buttons, edge filters, and decision-overlay buttons have at least 44px bounding width and height.
-- At that viewport the document and forge shell retain no horizontal overflow.
+- Validate the default Canvas graph path (`canvasNetworkGraph: true`) in Run with
+  the Boundary tab active and no drawer open; this task does not claim SVG
+  fallback control parity.
+- At 390 by 844, all 13 unique graph toolbar, topology-mode, edge-filter, and
+  decision-overlay controls have at least 44px bounding width and height after
+  each is scrolled fully into the viewport.
+- The document and forge shell retain no horizontal overflow. The toolbar and
+  edge legend may remain intentional inner scrollers, but every target must be
+  reachable through that scrolling.
+- Enlarging the toolbar must retain the existing six-pixel gap to
+  `.network-graph-summary`; the two boxes never overlap.
+- Define one module-level graph/evidence locator and assertion helper in the
+  smoke spec for Task 29 to reuse; do not duplicate the 13-name inventory.
 
 - [ ] **Step 1: Add failing compact target assertions**
 
-Add a focused `390px graph and evidence targets` browser test with viewport 390 by 844. Its target inventory includes Zoom out graph, Zoom in graph, Fit graph to view, Weights, Activations, all four edge filters, and Output, Uncertain, Errors, Split.
+Add a focused `390px graph and evidence targets` browser test with viewport 390
+by 844. After `loadPlayground(page)`, explicitly select/assert Boundary and
+assert no drawer dialog is open. Scope exact locators to Network graph toolbar,
+Topology view mode, Edge weight legend, the Boundary tabpanel, and its Decision
+overlay controls.
 
 ~~~ts
-for (const target of graphAndEvidenceTargets) await expectMinimumTouchTarget(target);
+function graphAndEvidenceTargets(page: Page): readonly Locator[] {
+    const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
+    const modes = toolbar.getByRole('group', { name: 'Topology view mode' });
+    const legend = page.getByLabel('Edge weight legend', { exact: true });
+    const boundaryPanel = page.getByRole('tabpanel', { name: 'Boundary', exact: true });
+    const overlays = boundaryPanel.getByLabel('Decision overlay controls', { exact: true });
+    return [
+        toolbar.getByRole('button', { name: 'Zoom out graph', exact: true }),
+        toolbar.getByRole('button', { name: 'Zoom in graph', exact: true }),
+        toolbar.getByRole('button', { name: 'Fit graph to view', exact: true }),
+        modes.getByRole('button', { name: 'Weights', exact: true }),
+        modes.getByRole('button', { name: 'Activations', exact: true }),
+        legend.getByRole('button', { name: 'Show all edges', exact: true }),
+        legend.getByRole('button', { name: 'Show only strong edges', exact: true }),
+        legend.getByRole('button', { name: 'Show positive edges', exact: true }),
+        legend.getByRole('button', { name: 'Show negative edges', exact: true }),
+        overlays.getByRole('button', { name: 'Output', exact: true }),
+        overlays.getByRole('button', { name: 'Uncertain', exact: true }),
+        overlays.getByRole('button', { name: 'Errors', exact: true }),
+        overlays.getByRole('button', { name: 'Split', exact: true }),
+    ];
+}
+
+async function expectGraphAndEvidenceTargets(page: Page): Promise<void> {
+    for (const target of graphAndEvidenceTargets(page)) {
+        await expect(target).toHaveCount(1);
+        await target.scrollIntoViewIfNeeded();
+        await expectFullyInViewport(page, target);
+        await expectMinimumTouchTarget(target);
+    }
+}
+
+test.describe('390px graph and evidence targets', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    test('keeps every compact graph and evidence target reachable', async ({ page }) => {
+        await loadPlayground(page);
+        const boundaryTab = page.getByRole('tab', { name: 'Boundary', exact: true });
+        await boundaryTab.click();
+        await expect(boundaryTab).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expectGraphAndEvidenceTargets(page);
+
+        const overflow = await page.evaluate(() => {
+            const shell = document.querySelector<HTMLElement>('.forge-shell');
+            if (!shell) throw new Error('forge shell is missing');
+            return {
+                document: document.documentElement.scrollWidth
+                    <= document.documentElement.clientWidth + 1,
+                shell: shell.scrollWidth <= shell.clientWidth + 1,
+            };
+        });
+        expect(overflow).toEqual({ document: true, shell: true });
+
+        const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
+        const summary = page.locator(
+            '.forge-buildrun__topology-stage .network-graph-summary',
+        );
+        const toolbarBox = await toolbar.boundingBox();
+        const summaryBox = await summary.boundingBox();
+        expect(toolbarBox).not.toBeNull();
+        expect(summaryBox).not.toBeNull();
+        if (toolbarBox && summaryBox) {
+            expect(summaryBox.y - (toolbarBox.y + toolbarBox.height))
+                .toBeGreaterThanOrEqual(6);
+        }
+    });
+});
 ~~~
 
-Add a static CSS test requiring a compact selector block for these controls.
+Use a 1px tolerance only for viewport-edge math, never for the 44px minimum.
+Assert document/shell client and scroll widths match after inner scrolling, and
+require `summary.y - (toolbar.y + toolbar.height) >= 6`.
+
+Add a brace-balanced `extractMediaBlocks` helper to the static CSS test because
+forge.css has multiple max-width 900px blocks. Require the exact grouped target
+rule and summary offset in the same block; a broad cross-block regex is a
+false-green.
+
+~~~ts
+function extractMediaBlocks(css: string, header: string): string[] {
+    const blocks: string[] = [];
+    let cursor = 0;
+    while (true) {
+        const headerIndex = css.indexOf(header, cursor);
+        if (headerIndex < 0) return blocks;
+        const open = css.indexOf('{', headerIndex);
+        if (open < 0) throw new Error(`Missing block for ${header}`);
+        let depth = 1;
+        let index = open + 1;
+        for (; index < css.length && depth > 0; index += 1) {
+            if (css[index] === '{') depth += 1;
+            if (css[index] === '}') depth -= 1;
+        }
+        if (depth !== 0) throw new Error(`Unclosed block for ${header}`);
+        blocks.push(css.slice(open + 1, index - 1));
+        cursor = index;
+    }
+}
+
+it('touch-sizes compact graph and evidence controls in one owning media block', () => {
+    const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+    const compactBlocks = extractMediaBlocks(css, '@media (max-width: 900px)');
+    const owningBlock = compactBlocks.find((block) => {
+        const targets = block.match(
+            /\.forge-buildrun__topology-stage \.network-graph-toolbar button\s*,\s*\.forge-buildrun__topology-stage \.network-graph-legend__filter\s*,\s*\.forge-buildrun__evidence-body \.decision-overlay-controls button\s*\{([^}]*)\}/,
+        );
+        const summary = block.match(
+            /\.forge-buildrun__topology-stage \.network-graph-summary\s*\{([^}]*)\}/,
+        );
+        return Boolean(
+            targets
+            && /min-width:\s*44px/.test(targets[1])
+            && /min-height:\s*44px/.test(targets[1])
+            && summary
+            && /top:\s*62px/.test(summary[1]),
+        );
+    });
+    expect(owningBlock).toBeDefined();
+});
+~~~
 
 - [ ] **Step 2: Run RED**
 
@@ -1483,22 +1614,29 @@ Run: pnpm build
 
 Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --grep "390px graph and evidence targets"
 
-Expected: FAIL because current visible controls measure 24 to 28px high.
+Expected: the new static test FAILS because the scoped rule/offset are absent;
+build PASSES and refreshes dist; Chromium E2E FAILS because controls measure 24
+to 28px. The existing small toolbar still has its six-pixel gap in RED; the gap
+assertion is the regression guard that would fail if controls were enlarged
+without the scoped summary offset.
 
 - [ ] **Step 3: Add compact hit-area styles without scaling graph content**
 
 ~~~css
 @media (max-width: 900px) {
-    .network-graph-toolbar button,
-    .network-graph-legend button,
-    .decision-boundary__overlay-controls button {
+    .forge-buildrun__topology-stage .network-graph-toolbar button,
+    .forge-buildrun__topology-stage .network-graph-legend__filter,
+    .forge-buildrun__evidence-body .decision-overlay-controls button {
         min-width: 44px;
         min-height: 44px;
     }
+    .forge-buildrun__topology-stage .network-graph-summary { top: 62px; }
 }
 ~~~
 
-Use the actual existing class selectors found in the components; preserve visual label density with padding and wrapping rather than transforms.
+Keep the current six-pixel toolbar/summary gap when the toolbar grows from 32px
+to 56px. Preserve visual label density with padding/wrapping and intentional
+inner overflow; do not transform or scale graph content.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -2026,6 +2164,10 @@ git commit -m "test(e2e): scan production accessibility"
 **Interfaces:**
 - Run one shared compact reachability journey at both 320 by 844 and 390 by 844 using generated, uniquely named tests.
 - At both widths assert no document/shell horizontal overflow, all critical and graph/evidence controls from Task 20 are at least 44 by 44, active evidence tabs remain visible, compact evaluation outcome from Task 21 is reachable, drawers close and restore focus, and browser errors remain empty.
+- Reuse Task 20's one module-level graph/evidence locator/assertion helper. After
+  any Code/drawer/profile journey state, explicitly return to Run + Boundary
+  before calling it. Replace Task 20's standalone 390 test when the matrix
+  absorbs it so the locator inventory does not drift or run twice.
 - At both widths reach the Task 16 Keyboard shortcuts summary, prove touch
   activation opens the native disclosure without starting/resetting training,
   close it, then focus it and prove native Space activation opens it without
@@ -2063,6 +2205,11 @@ touch close, and native Space open. For the keyboard action use
 Extend the same journey with Task 20 graph/evidence targets, Task 21 outcome
 disclosure, active-tab-in-viewport measurement, and the existing focus
 restoration checks.
+
+Before the Task 20 assertions, explicitly select Run and the exact Boundary tab,
+assert no drawer dialog is open, then call the existing shared helper. Remove
+the prior standalone `390px graph and evidence targets` test rather than copying
+its 13 accessible names into this journey.
 
 - [ ] **Step 4: Run GREEN in both browser engines**
 
