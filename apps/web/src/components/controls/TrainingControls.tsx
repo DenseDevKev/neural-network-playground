@@ -1,5 +1,5 @@
 // ── Training Controls ──
-import { memo, useEffect, useId, useMemo, useState } from 'react';
+import { Fragment, memo, useEffect, useId, useMemo, useState } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
@@ -7,6 +7,7 @@ import { Tooltip } from '../common/Tooltip.tsx';
 import { getTrainingLifecycleUi } from './trainingLifecycle.ts';
 import { ConceptHelp } from '../common/ConceptHelp.tsx';
 import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
+import { TRAINING_SHORTCUTS, type TrainingShortcutAction } from '../../shortcuts/trainingShortcuts.ts';
 
 interface Props {
     training: TrainingHook;
@@ -20,6 +21,9 @@ const SPEED_OPTIONS: { value: number; label: string }[] = [
     { value: 50, label: '50' },
 ];
 const RESTORE_GUARANTEE = 'Future shuffles may differ; this checkpoint guarantees parameters and optimizer state only.';
+const trainingShortcutLabel = (action: TrainingShortcutAction) => (
+    TRAINING_SHORTCUTS.find((shortcut) => shortcut.action === action)?.label
+);
 
 export const TrainingControls = memo(function TrainingControls({ training }: Props) {
     const guidanceLevel = useAudienceGuidanceLevel();
@@ -67,7 +71,7 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                                 ? 'Configuration is syncing. Training can resume when the current settings reach the worker.'
                                 : 'Cause: play repeats weight updates continuously. Effect: the boundary and metrics evolve until you pause or reset.'
                     }
-                    shortcut="Space"
+                    shortcut={trainingShortcutLabel('play-pause')}
                 >
                     <button
                         type="button"
@@ -78,10 +82,10 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     >
                         <span className="btn__icon" aria-hidden="true">{isRunning ? '⏸' : '▶'}</span>
                         <span className="btn__label">{lifecycle.primaryLabel}</span>
-                        <span className="btn__shortcut">Space</span>
+                        <span className="btn__shortcut">{trainingShortcutLabel('play-pause')}</span>
                     </button>
                 </Tooltip>
-                <Tooltip content="Cause: step applies one update. Effect: you can connect a single weight change to the next boundary or loss movement." shortcut="→">
+                <Tooltip content="Cause: step applies one update. Effect: you can connect a single weight change to the next boundary or loss movement." shortcut={trainingShortcutLabel('step')}>
                     <button
                         type="button"
                         className="btn btn--ghost btn--control"
@@ -91,10 +95,10 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     >
                         <span className="btn__icon" aria-hidden="true">→</span>
                         <span className="btn__label">Step</span>
-                        <span className="btn__shortcut">→</span>
+                        <span className="btn__shortcut">{trainingShortcutLabel('step')}</span>
                     </button>
                 </Tooltip>
-                <Tooltip content="Cause: reset rebuilds weights and data from the current settings. Effect: you can tell whether a result was learned reliably or got lucky." shortcut="R">
+                <Tooltip content="Cause: reset rebuilds weights and data from the current settings. Effect: you can tell whether a result was learned reliably or got lucky." shortcut={trainingShortcutLabel('reset')}>
                     <button
                         type="button"
                         className="btn btn--ghost btn--control"
@@ -104,10 +108,22 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     >
                         <span className="btn__icon" aria-hidden="true">↺</span>
                         <span className="btn__label">Reset</span>
-                        <span className="btn__shortcut">R</span>
+                        <span className="btn__shortcut">{trainingShortcutLabel('reset')}</span>
                     </button>
                 </Tooltip>
             </div>
+
+            <details className="training-shortcuts" aria-label="Keyboard shortcuts">
+                <summary>Keyboard shortcuts</summary>
+                <dl>
+                    {TRAINING_SHORTCUTS.map(({ code, label, description }) => (
+                        <Fragment key={code}>
+                            <dt><kbd>{label}</kbd></dt>
+                            <dd>{description}</dd>
+                        </Fragment>
+                    ))}
+                </dl>
+            </details>
 
             <div className="training-bar__speed" aria-label="Training speed">
                 <span className="training-bar__speed-label">Steps/frame:</span>

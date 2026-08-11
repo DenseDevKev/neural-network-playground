@@ -1171,41 +1171,148 @@ git commit -m "feat(web): improve data slider semantics"
 - Modify: apps/web/src/components/layout/Header.test.tsx
 - Modify: apps/web/src/components/layout/AccessibilityAnnouncer.tsx
 - Modify: apps/web/src/components/layout/AccessibilityAnnouncer.test.tsx
+- Modify: apps/web/src/components/layout/ExperimentStateContext.tsx
+- Modify: apps/web/src/components/layout/ExperimentStateContext.test.tsx
+- Modify: apps/web/src/App.tsx
+- Modify: apps/web/src/App.test.tsx
+- Modify: apps/web/src/components/common/LoadingState.tsx
+- Modify: apps/web/src/components/common/LoadingState.test.tsx
+- Modify: apps/web/src/components/controls/DataPanel.tsx
+- Modify: apps/web/src/components/controls/DataPanel.test.tsx
+- Modify: apps/web/src/components/controls/FeaturesPanel.tsx
+- Modify: apps/web/src/components/controls/FeaturesPanel.test.tsx
+- Modify: apps/web/src/components/controls/NetworkConfigPanel.tsx
+- Modify: apps/web/src/components/controls/NetworkConfigPanel.test.tsx
+- Modify: apps/web/src/components/controls/HyperparamPanel.tsx
+- Modify: apps/web/src/components/controls/HyperparamPanel.test.tsx
+- Modify: apps/web/src/components/controls/PresetPanel.tsx
+- Modify: apps/web/src/components/controls/PresetPanel.test.tsx
+- Modify: apps/web/src/components/controls/GuidedLessonPanel.tsx
+- Modify: apps/web/src/components/controls/GuidedLessonPanel.test.tsx
 
 **Interfaces:**
-- Header metric group remains named Training metrics but loses status and aria-live semantics.
-- AccessibilityAnnouncer retains one announcement per meaningful transition: training start/reset lifecycle, pause, configuration start, successful configuration completion, and new configuration error. A loading flag transition from true to false with no error is the completion signal; unchanged rerenders do not repeat a message.
+- Rapidly changing Header metrics, evidence context, diagnostic cockpit metrics,
+  and the bottom status-bar step remain ordinary readable content outside every
+  `aria-live`, status, or alert ancestor. Named metric/status containers use
+  `role="group"`; removing only explicit `aria-live` is insufficient because
+  `role="status"` is implicitly polite.
+- `AccessibilityAnnouncer` is the single live owner for training/configuration
+  transitions and has the stable name Training and configuration announcements.
+  Its one polite atomic region starts empty.
+- Training start is idle/paused to running. Pause requires paused status plus a
+  non-null non-error pause reason. A successful reset is a changed evidence
+  generation whose trained recipe source is reset, including idle-to-idle;
+  status alone must not mislabel config-sync initialization as a reset.
+- Reset publication is split across store writes, and a later config sync can
+  advance generation while the prior source still says reset. Announce only
+  when an unannounced generation is paired with a new trained-recipe publication
+  whose source is reset. Use the cloned `trainedRecipe` object identity (not a
+  timestamp alone) as the publication token, then latch that reset generation;
+  unchanged rerenders cannot miss/repeat it and stale source cannot create a
+  false reset.
+- Configuration scopes are data, network, features, training, and preset. One
+  owned busy interval emits one start and then either one completion or one
+  `(source,message)` error. Same-scope rapid edits coalesce. Superseding A with
+  B emits B start without A completion. Retry may announce the same error again
+  only after the error identity was cleared by a new owned interval.
+- Deterministic per-render priority is new error, new/superseding configuration
+  start, successful configuration completion, reset token, non-error pause,
+  then training start. Every previous-state field advances even when an event
+  loses priority so it cannot replay.
+- Config-sync's internal null-reason pause/idle lifecycle is not announced as a
+  user pause/reset. Worker errors remain owned by App's focused alertdialog;
+  suppress the announcer's generic pause when pause reason is error so users do
+  not hear two error surfaces.
+- Add an `announce` (or equivalently named) LoadingState option that defaults to
+  true. The five config panels opt out because the central announcer owns those
+  starts; Sidebar/MainArea and other independent loading feedback retain current
+  live behavior. The same panels keep config errors visible/retryable but
+  non-live; incompatibility/no-recipe alerts that are not store config errors
+  remain alerts.
+- GuidedLessonPanel's preset-backed lesson-start failure is the same central
+  config error. Keep its persistent retry/action copy visible but non-live;
+  preserve unrelated lesson step/progress/completion live semantics.
 
 - [ ] **Step 1: Write a failing live-region boundary test**
 
 ~~~tsx
-const metrics = screen.getByLabelText('Training metrics');
-expect(metrics).not.toHaveAttribute('role', 'status');
+const metrics = screen.getByRole('group', { name: 'Training metrics' });
 expect(metrics).not.toHaveAttribute('aria-live');
+expect(metrics.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
 ~~~
 
-Add transition-table tests proving `Training started`, `Training paused`, `Training reset`, configuration start, configuration completion, and configuration error are each written once for one transition and are not rewritten on an unchanged rerender. Cover at least data plus one non-data configuration scope so the generic completion logic is exercised.
+Repeat the non-live-ancestor assertion after metric/evidence step updates for the
+Header, EvidenceContextLine, DiagnosticCockpitStrip, and StatusBar. Assert the
+cockpit/status bar remain named groups.
+
+Add a transition table for all five config scopes covering start, success,
+failure without false completion, same-scope coalescing, A-to-B supersession,
+retry of the same error, and unchanged rerenders. Observe the named live region
+with `MutationObserver` (childList plus characterData) so an unchanged rerender
+proves zero new DOM writes rather than merely ending with the same text. Cover
+training start, manual/automatic pause, idle-to-idle reset generation, config
+internal pause/idle suppression, and worker-error pause suppression. Drive at
+least one complete start/finish/fail flow through the real training store in App
+tests instead of relying only on prop rerenders.
+
+For reset, test the real split-publication order and stale-source hazard:
+
+- generation advances while the prior source/publication is non-reset: zero;
+  a new trained-recipe publication with reset source: one;
+- after that reset, a config-sync generation advances while the stale source is
+  still reset but publication identity is unchanged: zero; its new config-sync
+  publication: still zero;
+- a later real reset (including reset-after-reset) advances generation alone:
+  zero; its new reset publication identity: one; unchanged rerender: zero.
+
+For duplicate ownership, assert `LoadingState announce={false}` and each of the
+five config panels' active loading/config-error feedback has no live/status/alert
+ancestor while remaining visible and retryable. Preserve default live LoadingState
+coverage for independent callers and the panels' distinct compatibility alerts.
+Prove GuidedLessonPanel's matching preset failure is visible/non-live/retryable
+without changing its separate lesson-progress announcements.
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/components/layout/AccessibilityAnnouncer.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/components/layout/AccessibilityAnnouncer.test.tsx src/components/layout/ExperimentStateContext.test.tsx src/App.test.tsx src/components/common/LoadingState.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/FeaturesPanel.test.tsx src/components/controls/NetworkConfigPanel.test.tsx src/components/controls/HyperparamPanel.test.tsx src/components/controls/PresetPanel.test.tsx src/components/controls/GuidedLessonPanel.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because the metric group is currently one polite status region.
+Expected: FAIL because multiple volatile metric/config surfaces are live, reset
+ownership is status-only, completions/supersession are not modeled, and config
+panels duplicate the central announcer.
 
 - [ ] **Step 3: Remove metric live semantics and preserve meaningful completion announcements**
 
-Keep aria-label="Training metrics" and ordinary readable text; do not add per-value live regions. In AccessibilityAnnouncer, compare previous and current loading flags in one deterministic priority order. Announce `${scope} update complete` only for true-to-false transitions when the matching operation has no current configuration error, then update all refs so rerenders cannot repeat it.
+Keep the named metric/context/status copy as ordinary content; do not add
+per-value live regions. Use one deterministic AccessibilityAnnouncer transition
+effect/reducer, not independent effects that can clobber each other. Track the
+previous full snapshot: status, pause reason, worker error, active config scope,
+error source/message, evidence generation, trained recipe object/publication
+identity, and trained recipe source. Announce
+`${Scope} update complete` only when the previously owned scope ends without a
+matching current error. Always update the full previous snapshot.
+
+Use the non-live LoadingState option only at the five central-owned config panel
+call sites. Remove `aria-live` from DataPanel's dataset/split summaries and
+HyperparamPanel's configuration summaries as part of the same ownership rule;
+retain their readable copy and Task 17 label/output semantics.
 
 - [ ] **Step 4: Run GREEN**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/components/layout/AccessibilityAnnouncer.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/components/layout/AccessibilityAnnouncer.test.tsx src/components/layout/ExperimentStateContext.test.tsx src/App.test.tsx src/components/common/LoadingState.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/FeaturesPanel.test.tsx src/components/controls/NetworkConfigPanel.test.tsx src/components/controls/HyperparamPanel.test.tsx src/components/controls/PresetPanel.test.tsx src/components/controls/GuidedLessonPanel.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS with the metric group quiet and lifecycle, configuration start/completion, pause, reset, and error transitions announced exactly once.
+Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useTraining.test.tsx src/store/useTrainingStore.test.ts src/__tests__/training.integration.test.tsx --pool=forks --reporter=dot
+
+Run: pnpm --filter @nn-playground/web typecheck
+
+Expected: PASS with volatile metrics quiet, one central DOM write per observed
+meaningful transition, no panel duplicate, and lifecycle/store integrations
+unchanged. This guarantees the app-owned live-region mutation contract; actual
+speech coalescing remains assistive-technology behavior.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/components/layout/AccessibilityAnnouncer.tsx apps/web/src/components/layout/AccessibilityAnnouncer.test.tsx
+git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/components/layout/AccessibilityAnnouncer.tsx apps/web/src/components/layout/AccessibilityAnnouncer.test.tsx apps/web/src/components/layout/ExperimentStateContext.tsx apps/web/src/components/layout/ExperimentStateContext.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx apps/web/src/components/common/LoadingState.tsx apps/web/src/components/common/LoadingState.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/FeaturesPanel.tsx apps/web/src/components/controls/FeaturesPanel.test.tsx apps/web/src/components/controls/NetworkConfigPanel.tsx apps/web/src/components/controls/NetworkConfigPanel.test.tsx apps/web/src/components/controls/HyperparamPanel.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/PresetPanel.tsx apps/web/src/components/controls/PresetPanel.test.tsx apps/web/src/components/controls/GuidedLessonPanel.tsx apps/web/src/components/controls/GuidedLessonPanel.test.tsx
 git commit -m "fix(web): quiet live metric announcements"
 ~~~
 

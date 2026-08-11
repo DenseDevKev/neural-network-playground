@@ -70,6 +70,18 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).not.toContain('var(--accent-cyan)');
     });
 
+    it('keeps the keyboard shortcut disclosure visible, full-width, and touch-sized on compact screens', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+
+        expect(css).toContain('.forge-transport-cluster .training-shortcuts > summary:focus-visible');
+        expect(css).toMatch(
+            /@media \(max-width: 900px\)[\s\S]*?\.forge-transport-cluster \.training-shortcuts \{[\s\S]*?display: block;[\s\S]*?width: 100%;/,
+        );
+        expect(css).toMatch(
+            /@media \(max-width: 900px\)[\s\S]*?\.forge-transport-cluster \.training-shortcuts > summary \{[\s\S]*?min-height: 44px;/,
+        );
+    });
+
     it('keeps topology controls attached to a single graph toolbar surface', () => {
         const css = readFileSync(resolve(__dirname, 'index.css'), 'utf8');
 

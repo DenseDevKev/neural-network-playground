@@ -1392,6 +1392,73 @@
     border-color: rgba(188, 135, 254, 0.12);
 }
 
+.forge-transport-cluster .training-shortcuts {
+    position: relative;
+    flex: 0 0 auto;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+}
+
+.forge-transport-cluster .training-shortcuts > summary {
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.055);
+    border-radius: var(--radius-sm);
+    background: rgba(255, 255, 255, 0.018);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    list-style-position: inside;
+}
+
+.forge-transport-cluster .training-shortcuts > summary:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+.forge-transport-cluster .training-shortcuts dl {
+    position: absolute;
+    z-index: 80;
+    bottom: calc(100% + 6px);
+    left: 0;
+    display: grid;
+    grid-template-columns: auto minmax(170px, 1fr);
+    gap: 7px 10px;
+    width: min(320px, calc(100vw - 24px));
+    margin: 0;
+    padding: 10px;
+    border: 1px solid var(--forge-border-active);
+    border-radius: var(--radius-sm);
+    background: rgba(10, 12, 17, 0.98);
+    box-shadow: var(--forge-shadow-muted);
+}
+
+.forge-transport-cluster .training-shortcuts dt,
+.forge-transport-cluster .training-shortcuts dd {
+    margin: 0;
+}
+
+.forge-transport-cluster .training-shortcuts kbd {
+    display: inline-flex;
+    justify-content: center;
+    min-width: 28px;
+    padding: 2px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.055);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+}
+
+.forge-transport-cluster .training-shortcuts dd {
+    color: var(--text-tertiary);
+    line-height: 1.4;
+}
+
 .forge-transport-cluster .training-bar__timeline {
     max-width: none;
 }
@@ -2886,6 +2953,14 @@
     .forge-transport-cluster .btn__shortcut,
     .forge-transport-cluster .training-bar__meta {
         display: none;
+    }
+    .forge-transport-cluster .training-shortcuts {
+        display: block;
+        width: 100%;
+    }
+    .forge-transport-cluster .training-shortcuts > summary {
+        min-height: 44px;
+        box-sizing: border-box;
     }
     .neuron-row {
         display: grid;

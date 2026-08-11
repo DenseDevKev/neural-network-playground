@@ -6,6 +6,7 @@ import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { getConceptById } from '../../concepts/conceptCatalog.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
+import { TRAINING_SHORTCUTS } from '../../shortcuts/trainingShortcuts.ts';
 
 function createTrainingMock(): TrainingHook {
   return {
@@ -103,6 +104,35 @@ describe('TrainingControls', () => {
     expect(within(playButton).getByText('Space')).toBeInTheDocument();
     expect(within(stepButton).getAllByText('→')[1]).toBeInTheDocument();
     expect(within(resetButton).getByText('R')).toBeInTheDocument();
+  });
+
+  it('exposes the shared shortcut registry in a default-closed native disclosure', async () => {
+    const user = userEvent.setup();
+    const training = createTrainingMock();
+
+    render(<TrainingControls training={training} />);
+
+    const trainingBar = screen.getByRole('region', { name: 'Timeline strip' });
+    const controls = trainingBar.querySelector('.training-bar__controls');
+    const details = screen.getByRole('group', { name: 'Keyboard shortcuts' });
+    const summary = within(details).getByText('Keyboard shortcuts');
+
+    expect(details.parentElement).toBe(trainingBar);
+    expect(details.previousElementSibling).toBe(controls);
+    expect(details).not.toHaveAttribute('open');
+    await user.click(summary);
+    expect(details).toHaveAttribute('open');
+
+    const terms = within(details).getAllByRole('term');
+    const definitions = within(details).getAllByRole('definition');
+    expect(details.querySelectorAll('dl')).toHaveLength(1);
+    expect(terms).toHaveLength(TRAINING_SHORTCUTS.length);
+    expect(definitions).toHaveLength(TRAINING_SHORTCUTS.length);
+    expect(terms.map((term) => term.textContent))
+      .toEqual(TRAINING_SHORTCUTS.map(({ label }) => label));
+    expect(definitions.map((definition) => definition.textContent))
+      .toEqual(TRAINING_SHORTCUTS.map(({ description }) => description));
+    expect(terms.every((term) => term.firstElementChild?.tagName === 'KBD')).toBe(true);
   });
 
   it('preserves the primary Start, Pause, and Resume action flow', async () => {
