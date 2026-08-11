@@ -66,16 +66,20 @@ export function useModalFocusContainment(
             }
         };
 
-        const isHiddenOrDisabled = (element: HTMLElement) => {
-            if (
-                element.matches(':disabled')
-                || element.tabIndex < 0
-            ) {
-                return true;
-            }
+        const isNativeContentEditable = (element: HTMLElement) => (
+            element.matches('[contenteditable]:not([contenteditable="false"])')
+        );
 
+        const isSequentiallyFocusable = (element: HTMLElement) => {
+            const hasExplicitNegativeTabIndex = element.hasAttribute('tabindex')
+                && element.tabIndex < 0;
+            return !hasExplicitNegativeTabIndex
+                && (element.tabIndex >= 0 || isNativeContentEditable(element));
+        };
+
+        const hasHiddenContext = (element: HTMLElement, boundary?: HTMLElement) => {
             let current: HTMLElement | null = element;
-            while (current && dialog.contains(current)) {
+            while (current) {
                 if (
                     current.hidden
                     || current.hasAttribute('inert')
@@ -91,11 +95,17 @@ export function useModalFocusContainment(
                 ) {
                     return true;
                 }
-                if (current === dialog) break;
+                if (current === boundary) break;
                 current = current.parentElement;
             }
             return false;
         };
+
+        const isHiddenOrDisabled = (element: HTMLElement) => (
+            element.matches(':disabled')
+            || !isSequentiallyFocusable(element)
+            || hasHiddenContext(element, dialog)
+        );
 
         const focusables = () => Array.from(
             dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
@@ -134,12 +144,7 @@ export function useModalFocusContainment(
                 return;
             }
 
-            if (
-                event.key === 'Escape'
-                || event.code === 'Space'
-                || event.code === 'ArrowRight'
-                || event.code === 'KeyR'
-            ) {
+            if (event.key === 'Escape') {
                 event.preventDefault();
                 event.stopPropagation();
             }
@@ -171,17 +176,14 @@ export function useModalFocusContainment(
                 }
             }
 
-            if (!priorFocus?.isConnected || priorFocus.matches(':disabled') || priorFocus.tabIndex < 0) {
-                return;
-            }
             if (
-                priorFocus.hidden
-                || priorFocus.closest('[inert], [aria-hidden="true"], [hidden]')
+                !priorFocus?.isConnected
+                || priorFocus.matches(':disabled')
+                || !isSequentiallyFocusable(priorFocus)
+                || hasHiddenContext(priorFocus)
             ) {
                 return;
             }
-            const priorStyle = window.getComputedStyle(priorFocus);
-            if (priorStyle.display === 'none' || priorStyle.visibility === 'hidden') return;
             focusWithoutScroll(priorFocus);
         };
     }, [active, backgroundRef, dialogRef]);

@@ -2,15 +2,16 @@ import { StrictMode, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { useModalFocusContainment } from './useModalFocusContainment.ts';
 
 interface HarnessProps {
     active: boolean;
     controls?: 'two' | 'none' | 'filtered';
+    onFirstAction?: () => void;
 }
 
-function Harness({ active, controls = 'two' }: HarnessProps) {
+function Harness({ active, controls = 'two', onFirstAction }: HarnessProps) {
     const dialogRef = useRef<HTMLDivElement>(null);
     const backgroundRef = useRef<HTMLDivElement>(null);
     useModalFocusContainment(active, dialogRef, backgroundRef);
@@ -29,7 +30,7 @@ function Harness({ active, controls = 'two' }: HarnessProps) {
                 >
                     {controls !== 'none' && (
                         <>
-                            <button type="button">First action</button>
+                            <button type="button" onClick={onFirstAction}>First action</button>
                             <button type="button">Second action</button>
                         </>
                     )}
@@ -40,6 +41,10 @@ function Harness({ active, controls = 'two' }: HarnessProps) {
                             <span aria-hidden="true"><button type="button">ARIA hidden action</button></span>
                             <span inert><button type="button">Inert action</button></span>
                             <button type="button" style={{ display: 'none' }}>CSS hidden action</button>
+                            <div contentEditable suppressContentEditableWarning>Editable action</div>
+                            <div contentEditable suppressContentEditableWarning tabIndex={-1}>
+                                Explicitly excluded editable action
+                            </div>
                         </>
                     )}
                 </div>,
@@ -61,6 +66,8 @@ describe('useModalFocusContainment', () => {
         const dialog = screen.getByRole('alertdialog', { name: 'Fatal worker error' });
         const first = within(dialog).getByRole('button', { name: 'First action' });
         const second = within(dialog).getByRole('button', { name: 'Second action' });
+        const editable = within(dialog).getByText('Editable action');
+        expect(editable.tabIndex).toBe(-1);
         expect(dialog).toHaveFocus();
         expect(screen.getByTestId('background')).toHaveAttribute('inert');
         expect(screen.getByTestId('background')).toHaveAttribute('aria-hidden', 'true');
@@ -70,9 +77,11 @@ describe('useModalFocusContainment', () => {
         await user.tab();
         expect(second).toHaveFocus();
         await user.tab();
+        expect(editable).toHaveFocus();
+        await user.tab();
         expect(first).toHaveFocus();
         await user.tab({ shift: true });
-        expect(second).toHaveFocus();
+        expect(editable).toHaveFocus();
 
         const inserted = document.createElement('button');
         inserted.textContent = 'Inserted action';
@@ -103,6 +112,29 @@ describe('useModalFocusContainment', () => {
             expect(dialog).toHaveFocus();
         } finally {
             outside.remove();
+        }
+    });
+
+    it('allows native dialog actions and modified browser recovery shortcuts', async () => {
+        const user = userEvent.setup();
+        const onAction = vi.fn();
+        render(<Harness active onFirstAction={onAction} />);
+        const action = screen.getByRole('button', { name: 'First action' });
+        action.focus();
+
+        await user.keyboard(' ');
+        expect(onAction).toHaveBeenCalledTimes(1);
+
+        for (const modifier of [{ metaKey: true }, { ctrlKey: true }]) {
+            const modifiedReload = new KeyboardEvent('keydown', {
+                bubbles: true,
+                cancelable: true,
+                code: 'KeyR',
+                key: 'r',
+                ...modifier,
+            });
+            action.dispatchEvent(modifiedReload);
+            expect(modifiedReload.defaultPrevented).toBe(false);
         }
     });
 
@@ -160,6 +192,26 @@ describe('useModalFocusContainment', () => {
         expect(bodyPortal).toHaveAttribute('aria-hidden', 'false');
         bodyPortal.remove();
     });
+
+    it.each([
+        ['display', 'none'],
+        ['visibility', 'hidden'],
+        ['visibility', 'collapse'],
+    ] as const)(
+        'does not restore a still-connected opener inside an ancestor with %s: %s',
+        (property, value) => {
+            const view = render(<Harness active={false} />);
+            const background = screen.getByTestId('background');
+            const opener = screen.getByRole('button', { name: 'Background opener' });
+            opener.focus();
+
+            view.rerender(<Harness active />);
+            background.style[property] = value;
+            view.rerender(<Harness active={false} />);
+
+            expect(opener).not.toHaveFocus();
+        },
+    );
 
     it('survives StrictMode setup-cleanup-setup without capturing the dialog or leaking containment', () => {
         const opener = document.createElement('button');

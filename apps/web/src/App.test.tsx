@@ -354,7 +354,22 @@ describe('App accessibility shell', () => {
         expect(shell).toHaveAttribute('aria-hidden', 'true');
         expect(shell).not.toContainElement(dialog);
         expect(document.body).toContainElement(dialog);
-        expect(screen.getByRole('button', { name: 'Refresh page' })).toBeInTheDocument();
+        const refresh = screen.getByRole('button', { name: 'Refresh page' });
+        const nativeRecovery = vi.fn((event: MouseEvent) => event.stopPropagation());
+        refresh.addEventListener('click', nativeRecovery, { capture: true });
+        refresh.focus();
+        await user.keyboard(' ');
+        expect(nativeRecovery).toHaveBeenCalledTimes(1);
+
+        const modifiedReload = new KeyboardEvent('keydown', {
+            bubbles: true,
+            cancelable: true,
+            code: 'KeyR',
+            key: 'r',
+            metaKey: true,
+        });
+        refresh.dispatchEvent(modifiedReload);
+        expect(modifiedReload.defaultPrevented).toBe(false);
 
         await user.keyboard('{Escape}');
         expect(useTrainingStore.getState().workerError).toBe('Worker channel closed unexpectedly.');
