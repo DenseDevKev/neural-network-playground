@@ -45,6 +45,13 @@ import { resolveTrainingShortcut } from './shortcuts/trainingShortcuts.ts';
 export default function App() {
     const access = usePlaygroundStore((state) => state.access);
     const startFresh = usePlaygroundStore((state) => state.startFresh);
+    useEffect(() => {
+        const loadLocation = () => {
+            void usePlaygroundStore.getState().loadFromUrl();
+        };
+        window.addEventListener('hashchange', loadLocation);
+        return () => window.removeEventListener('hashchange', loadLocation);
+    }, []);
     const recoverWithDefault = useCallback(async () => {
         const result = await startFresh();
         if (!result.ok) {

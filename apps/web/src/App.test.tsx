@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import type { ReactNode } from 'react';
 import App from './App';
@@ -8,6 +8,7 @@ import { useLayoutStore } from './store/useLayoutStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
+    encodeExperimentUrl,
     prepareExperimentDocument,
 } from '@nn-playground/shared';
 
@@ -25,6 +26,21 @@ function dispatchGlobalKeyDown(code: string, options: KeyboardEventInit = {}) {
     const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code, ...options });
     window.dispatchEvent(event);
     return event;
+}
+
+async function experimentHashWithNoise(noise: number) {
+    const result = await prepareExperimentDocument({
+        ...DEFAULT_EXPERIMENT_DOCUMENT,
+        recipe: {
+            ...DEFAULT_EXPERIMENT_DOCUMENT.recipe,
+            data: {
+                ...DEFAULT_EXPERIMENT_DOCUMENT.recipe.data,
+                noise,
+            },
+        },
+    });
+    if (!result.ok) throw new Error('experiment hash fixture did not prepare');
+    return encodeExperimentUrl(result.value.document);
 }
 
 function liveSignal(revision: number, step: number, epoch: number) {
@@ -143,6 +159,7 @@ vi.mock('./components/controls/RunHistoryPanel.tsx',   () => ({ RunHistoryPanel:
 describe('App accessibility shell', () => {
     beforeEach(async () => {
         window.localStorage.clear();
+        window.history.replaceState(null, '', '/');
         trainingMock.play.mockReset();
         trainingMock.pause.mockReset();
         trainingMock.step.mockReset();
@@ -179,6 +196,69 @@ describe('App accessibility shell', () => {
             activeTabLeft: 'data',
             activeTabRight: 'boundary',
         });
+    });
+
+    it('loads a valid experiment hash changed after mount through the URL loader', async () => {
+        const loadFromUrl = vi.spyOn(usePlaygroundStore.getState(), 'loadFromUrl');
+        render(<App />);
+
+        window.history.replaceState(null, '', await experimentHashWithNoise(7));
+        act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+
+        await waitFor(() => expect(usePlaygroundStore.getState().access.status).toBe('ready'));
+        expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'ready',
+            prepared: { document: { recipe: { data: { noise: 7 } } } },
+        });
+        expect(loadFromUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows compatibility recovery when a changed hash is incompatible', async () => {
+        render(<App />);
+
+        window.history.replaceState(null, '', '#v=3&r=AAAA');
+        act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+
+        await waitFor(() => expect(usePlaygroundStore.getState().access.status).toBe('incompatible'));
+        expect(screen.getByRole('main', { name: 'Experiment compatibility' })).toBeInTheDocument();
+
+        window.history.replaceState(null, '', await experimentHashWithNoise(5));
+        act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+        await waitFor(() => expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'ready',
+            prepared: { document: { recipe: { data: { noise: 5 } } } },
+        }));
+    });
+
+    it('loads each valid hashchange while navigating between two experiments', async () => {
+        render(<App />);
+        const firstHash = await experimentHashWithNoise(3);
+        const secondHash = await experimentHashWithNoise(9);
+
+        window.history.replaceState(null, '', firstHash);
+        act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+        await waitFor(() => expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'ready',
+            prepared: { document: { recipe: { data: { noise: 3 } } } },
+        }));
+
+        window.history.replaceState(null, '', secondHash);
+        act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+        await waitFor(() => expect(usePlaygroundStore.getState().access).toMatchObject({
+            status: 'ready',
+            prepared: { document: { recipe: { data: { noise: 9 } } } },
+        }));
+    });
+
+    it('stops loading hash changes after App unmounts', async () => {
+        const loadFromUrl = vi.spyOn(usePlaygroundStore.getState(), 'loadFromUrl');
+        const { unmount } = render(<App />);
+        unmount();
+
+        window.history.replaceState(null, '', await experimentHashWithNoise(5));
+        act(() => window.dispatchEvent(new HashChangeEvent('hashchange')));
+
+        expect(loadFromUrl).not.toHaveBeenCalled();
     });
 
     it('renders durable compatibility recovery without mounting the training hook', () => {
