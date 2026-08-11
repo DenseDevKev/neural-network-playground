@@ -935,7 +935,7 @@ git commit -m "feat(web): explain build and run views"
 - Visible label and accessible name become Workspace profile.
 - Stored audience values beginner, explore, and lab remain unchanged.
 - The app-shell keyboard/selector assertion uses the new accessible name; its
-  prior `Audience mode` query is part of the executable RED.
+  prior legacy profile-selector query is part of the executable RED.
 - The Playwright audience-mode helper uses the new accessible name while its
   internal helper/storage terminology and stored values remain unchanged.
 
@@ -960,7 +960,8 @@ Run: pnpm build
 
 Run: pnpm test:e2e -- tests/e2e/playground-smoke.spec.ts
 
-Expected: FAIL because the current accessible name is Audience mode and visible label is Mode; the updated Playwright helper cannot yet resolve Workspace profile.
+Expected: FAIL because the current legacy accessible/visible labels do not match;
+the updated Playwright helper cannot yet resolve Workspace profile.
 
 - [ ] **Step 3: Update labels without changing enum or persistence keys**
 
@@ -1210,6 +1211,7 @@ git commit -m "feat(web): improve data slider semantics"
 - Modify: apps/web/src/components/controls/PresetPanel.test.tsx
 - Modify: apps/web/src/components/controls/GuidedLessonPanel.tsx
 - Modify: apps/web/src/components/controls/GuidedLessonPanel.test.tsx
+- Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
 - Rapidly changing Header metrics, evidence context, diagnostic cockpit metrics,
@@ -1266,6 +1268,13 @@ Repeat the non-live-ancestor assertion after metric/evidence step updates for th
 Header, EvidenceContextLine, DiagnosticCockpitStrip, and StatusBar. Assert the
 cockpit/status bar remain named groups.
 
+Update the shared Playwright `statusBar(page)` helper from role `status` to role
+`group`. In the existing `training can pause, single-step, and restore the
+initial checkpoint` test, assert the Status bar is readable and has no
+`[aria-live]`, `[role="status"]`, or `[role="alert"]` ancestor. This makes the
+app-wide role change executable in the built artifact rather than leaving the
+next smoke task with a stale locator.
+
 Add a transition table for all five config scopes covering start, success,
 failure without false completion, same-scope coalescing, A-to-B supersession,
 retry of the same error, and unchanged rerenders. Observe the named live region
@@ -1297,9 +1306,13 @@ without changing its separate lesson-progress announcements.
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/components/layout/AccessibilityAnnouncer.test.tsx src/components/layout/ExperimentStateContext.test.tsx src/App.test.tsx src/components/common/LoadingState.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/FeaturesPanel.test.tsx src/components/controls/NetworkConfigPanel.test.tsx src/components/controls/HyperparamPanel.test.tsx src/components/controls/PresetPanel.test.tsx src/components/controls/GuidedLessonPanel.test.tsx --pool=forks --reporter=dot
 
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --grep "training can pause"
+
 Expected: FAIL because multiple volatile metric/config surfaces are live, reset
-ownership is status-only, completions/supersession are not modeled, and config
-panels duplicate the central announcer.
+ownership is status-only, completions/supersession are not modeled, config
+panels duplicate the central announcer, and the built Status bar is not a group.
 
 - [ ] **Step 3: Remove metric live semantics and preserve meaningful completion announcements**
 
@@ -1325,15 +1338,20 @@ Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useTraining.test
 
 Run: pnpm --filter @nn-playground/web typecheck
 
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "training can pause"
+
 Expected: PASS with volatile metrics quiet, one central DOM write per observed
 meaningful transition, no panel duplicate, and lifecycle/store integrations
-unchanged. This guarantees the app-owned live-region mutation contract; actual
-speech coalescing remains assistive-technology behavior.
+unchanged in units and both built browsers. This guarantees the app-owned
+live-region mutation contract; actual speech coalescing remains
+assistive-technology behavior.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/components/layout/AccessibilityAnnouncer.tsx apps/web/src/components/layout/AccessibilityAnnouncer.test.tsx apps/web/src/components/layout/ExperimentStateContext.tsx apps/web/src/components/layout/ExperimentStateContext.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx apps/web/src/components/common/LoadingState.tsx apps/web/src/components/common/LoadingState.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/FeaturesPanel.tsx apps/web/src/components/controls/FeaturesPanel.test.tsx apps/web/src/components/controls/NetworkConfigPanel.tsx apps/web/src/components/controls/NetworkConfigPanel.test.tsx apps/web/src/components/controls/HyperparamPanel.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/PresetPanel.tsx apps/web/src/components/controls/PresetPanel.test.tsx apps/web/src/components/controls/GuidedLessonPanel.tsx apps/web/src/components/controls/GuidedLessonPanel.test.tsx
+git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/components/layout/AccessibilityAnnouncer.tsx apps/web/src/components/layout/AccessibilityAnnouncer.test.tsx apps/web/src/components/layout/ExperimentStateContext.tsx apps/web/src/components/layout/ExperimentStateContext.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx apps/web/src/components/common/LoadingState.tsx apps/web/src/components/common/LoadingState.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/FeaturesPanel.tsx apps/web/src/components/controls/FeaturesPanel.test.tsx apps/web/src/components/controls/NetworkConfigPanel.tsx apps/web/src/components/controls/NetworkConfigPanel.test.tsx apps/web/src/components/controls/HyperparamPanel.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/PresetPanel.tsx apps/web/src/components/controls/PresetPanel.test.tsx apps/web/src/components/controls/GuidedLessonPanel.tsx apps/web/src/components/controls/GuidedLessonPanel.test.tsx tests/e2e/playground-smoke.spec.ts
 git commit -m "fix(web): quiet live metric announcements"
 ~~~
 
@@ -1664,48 +1682,158 @@ git commit -m "fix(web): enlarge compact graph controls"
 - Modify: apps/web/src/components/layout/Header.test.tsx
 - Modify: apps/web/src/styles/forge.css
 - Modify: apps/web/src/styles/forgeResponsive.test.ts
+- Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
 - At max-width 900px, expose one compact native disclosure named `Evaluation outcome` while the desktop metric cluster remains unchanged.
-- The disclosure summary names the full-evaluation step and primary held-out outcome: test accuracy for classification when available, otherwise test data loss. Its body includes train data loss, test data loss, accuracy when applicable, and evaluation provenance.
+- Derive the disclosure only from the existing `evidence.fullEvaluation`. Its
+  summary is `Step {localized step} · Test accuracy {one-decimal percent}` when
+  `testAccuracy != null`, otherwise `Step {localized step} · Test data loss
+  {four decimals}`. A real zero-percent accuracy remains classification.
+- Its body names `Full evaluation at step …`, train and test full-split data
+  losses, and test accuracy only when available. It never duplicates the live
+  batch EMA as full-split evidence.
 - Missing evidence is reported as `Not evaluated yet`; the disclosure never substitutes the live batch EMA for full-split evidence.
+- The disclosure is ordinary non-live content, preserving Task 18's single
+  announcement owner. It is closed by default, keyboard/touch operable, at
+  least 44px high at compact widths, fully reachable at 320px, and opening it
+  does not create document or shell horizontal overflow.
 
 - [ ] **Step 1: Write failing semantic and compact-CSS tests**
 
+Use `within(...)` because desktop and compact markup intentionally repeat metric
+values. Cover classification, regression, zero-percent accuracy, and a non-null
+live batch EMA with null full evaluation. Assert the last case says `Not
+evaluated yet` and contains neither the EMA value nor `Batch trend`. Prove the
+native disclosure begins closed, its body becomes visible only after activation,
+and neither it nor an ancestor has live/status/alert semantics.
+
 ~~~tsx
-expect(screen.getByRole('group', { name: 'Evaluation outcome' })).toHaveTextContent('Test accuracy 87.5%');
-expect(screen.getByRole('group', { name: 'Evaluation outcome' })).toHaveTextContent('Full evaluation at step 40');
+const metrics = screen.getByRole('group', { name: 'Training metrics' });
+const outcome = screen.getByRole('group', { name: 'Evaluation outcome' });
+const summary = within(outcome).getByText(
+    'Step 1,230 · Test accuracy 49.3%',
+    { selector: 'summary' },
+);
+expect(within(metrics).getByText('0.2345')).toBeInTheDocument();
+expect(outcome).not.toHaveAttribute('open');
+expect(outcome.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+await user.click(summary);
+expect(outcome).toHaveAttribute('open');
+expect(outcome).toHaveTextContent('Full evaluation at step 1,230');
+expect(outcome).toHaveTextContent('Train data loss (full split) 0.2345');
+expect(outcome).toHaveTextContent('Test data loss (full split) 0.5678');
+expect(outcome).toHaveTextContent('Test accuracy 49.3%');
 ~~~
 
-Cover regression/test-loss fallback and the no-evaluation state. Add a static responsive assertion that the disclosure is hidden above 900px, visible at the compact breakpoint, and does not add fixed width.
+Add a brace-balanced CSS assertion using Task 20's `extractMediaBlocks`. Require
+the base disclosure rule to be `display: none`; require one owning max-width
+900px block to contain the complete compact disclosure, summary, and `[open]`
+body rules below. Rule-local assertions must prove the 44px target, wrapping,
+full-width flex behavior, and absence of a fixed pixel/rem/em width.
+
+Extend the existing `320px touch shell` Playwright journey after
+`loadPlayground(page)`: the outcome and summary are visible/fully in viewport,
+the desktop `Training metrics` group is hidden, the summary meets the 44px
+target, its step-0 full-evaluation copy opens, and the existing document/shell
+overflow assertion is repeated while open. Task 29 later parameterizes these
+same assertions at 390px rather than duplicating them.
 
 - [ ] **Step 2: Run the failing coverage-gate RED**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/styles/forgeResponsive.test.ts --pool=forks --reporter=dot
 
-Expected: FAIL because compact view currently hides the complete metric cluster with no replacement.
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --grep "320px touch shell"
+
+Expected: Vitest FAILS because compact view hides the complete metric cluster
+with no replacement. The build succeeds and refreshes `dist`; Chromium FAILS
+the new missing compact-outcome assertion.
 
 - [ ] **Step 3: Add the compact disclosure from existing evidence**
 
 ~~~tsx
+const fullEvaluation = evidence.fullEvaluation;
+const compactPrimaryOutcome = fullEvaluation === null
+    ? 'Not evaluated yet'
+    : accuracy != null
+        ? `Test accuracy ${accStr}`
+        : `Test data loss ${testLoss}`;
+const compactOutcomeSummary = fullEvaluation === null
+    ? compactPrimaryOutcome
+    : `Step ${fullEvaluation.step.toLocaleString()} · ${compactPrimaryOutcome}`;
+
 <details className="forge-compact-outcome" aria-label="Evaluation outcome">
-    <summary>{primaryOutcomeLabel}</summary>
-    <span>{fullEvaluation ? `Full evaluation at step ${fullEvaluation.step}` : 'Not evaluated yet'}</span>
+    <summary>{compactOutcomeSummary}</summary>
+    {fullEvaluation && (
+        <div className="forge-compact-outcome__body">
+            <span>{`Full evaluation at step ${fullEvaluation.step.toLocaleString()}`}</span>
+            <span>{`Train data loss (full split) ${trainLoss}`}</span>
+            <span>{`Test data loss (full split) ${testLoss}`}</span>
+            {accuracy != null && <span>{`Test accuracy ${accStr}`}</span>}
+        </div>
+    )}
 </details>
 ~~~
 
-Derive strings from the same `fullEvaluation` values as the desktop metrics. Keep the summary concise at 320px and allow the details body to wrap.
+Place it next to the desktop metrics and before the topbar spacer. Reuse the
+existing four-decimal loss and one-decimal accuracy formatting. Add these exact
+rule bodies; keeping author `display: grid` behind `[open]` is required so CSS
+cannot defeat native closed-details hiding:
+
+~~~css
+.forge-compact-outcome { display: none; }
+.forge-compact-outcome > summary:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+@media (max-width: 900px) {
+    .forge-compact-outcome {
+        display: block;
+        flex: 1 0 100%;
+        min-width: 0;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+    .forge-compact-outcome > summary {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        min-height: 44px;
+        box-sizing: border-box;
+        padding: 6px 10px;
+        cursor: pointer;
+        overflow-wrap: anywhere;
+    }
+    .forge-compact-outcome[open] > .forge-compact-outcome__body {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+        padding: 6px 10px 10px;
+        overflow-wrap: anywhere;
+    }
+}
+~~~
 
 - [ ] **Step 4: Run GREEN**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/styles/forgeResponsive.test.ts --pool=forks --reporter=dot
 
-Expected: PASS for classification, regression, empty evidence, and responsive visibility.
+Run: pnpm --filter @nn-playground/web typecheck
+
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "320px touch shell"
+
+Expected: PASS for classification, regression, zero accuracy, empty evidence,
+native disclosure semantics, compact reachability, and zero global overflow in
+both browser engines.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/styles/forge.css apps/web/src/styles/forgeResponsive.test.ts
+git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/styles/forge.css apps/web/src/styles/forgeResponsive.test.ts tests/e2e/playground-smoke.spec.ts
 git commit -m "feat(web): surface compact evaluation outcome"
 ~~~
 
@@ -1722,10 +1850,15 @@ git commit -m "feat(web): surface compact evaluation outcome"
 - Modify: apps/web/src/components/controls/DataPanel.test.tsx
 - Modify: apps/web/src/components/controls/TrainingControls.tsx
 - Modify: apps/web/src/components/controls/TrainingControls.test.tsx
+- Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
 - Extend `ConceptId` with `learning-rate`, `train-test-split`, and `epoch`.
-- Every entry includes a plain definition, extended explanation, aliases, at least one example, related concepts, difficulty, profiles, and an existing valid UI target where applicable.
+- Append the three IDs after the existing six IDs so catalog and profile order
+  remain stable. Every entry includes exact reviewed copy, aliases, an example,
+  related concepts, difficulty, all three profiles, and a valid UI target where
+  applicable: `learning-rate` targets `hyperparams`, `train-test-split` targets
+  `data`, and `epoch` deliberately has no target.
 - Place `ConceptHelp` beside the visible Learning rate label, Train ratio label, and Epoch label; guidance remains controlled by the current audience profile.
 - Preserve Task 17's native Train ratio label/output association. The help
   button is a sibling of its `<label>`, never nested inside or substituted for
@@ -1733,29 +1866,109 @@ git commit -m "feat(web): surface compact evaluation outcome"
 - Call `useAudienceGuidanceLevel()` unconditionally before DataPanel and
   HyperparamPanel recipe/prepared early returns; TrainingControls already calls
   it unconditionally. Readiness transitions must not change hook order.
+- One epoch in this worker is one complete pass through the current training
+  set: indices are shuffled without replacement, every example is consumed
+  once, the final batch may be short, and the integer epoch increments only
+  after that pass. Do not describe sampling with replacement.
+- The Epoch help uses `concept-help--above concept-help--end` in the bottom
+  transport so its disclosure remains in the viewport. The existing desktop
+  and 320px browser journeys verify all three new help surfaces, 44px compact
+  triggers, and bounded disclosure geometry without a CSS change.
 
 - [ ] **Step 1: Write failing catalog and placement tests**
 
+Update the catalog's exact `EXPECTED_ORDER` and six-ID assertion, then lock the
+complete reviewed metadata rather than checking only truthiness:
+
 ~~~ts
-for (const id of ['learning-rate', 'train-test-split', 'epoch'] as const) {
-    const concept = getConceptById(id);
-    expect(concept?.plainDefinition).toBeTruthy();
-    expect(concept?.examples?.length).toBeGreaterThan(0);
-    expect(concept?.related.length).toBeGreaterThan(0);
-}
+expect(CONCEPT_IDS).toEqual([
+    'data-loss', 'training-objective', 'decision-boundary',
+    'activation', 'gradient', 'checkpoint',
+    'learning-rate', 'train-test-split', 'epoch',
+]);
+expect(getConceptById('learning-rate')).toMatchObject({
+    canonicalTerm: 'Learning rate',
+    plainDefinition:
+        'The learning rate sets the scale of each optimizer update to the model’s parameters.',
+    extendedExplanation:
+        'The optimizer uses the learning rate to scale parameter updates. Larger values can move faster but may overshoot or make loss unstable; smaller values can be steadier but slower. A schedule can change the rate as training proceeds.',
+    aliases: ['step size', 'optimizer learning rate', 'update scale'],
+    related: ['gradient', 'training-objective'],
+    profiles: ['beginner', 'explore', 'lab'],
+    difficulty: 'beginner',
+    examples: [
+        'With plain SGD, learning rate 0.1 moves a parameter ten times as far as 0.01 for the same gradient.',
+    ],
+    uiTarget: 'hyperparams',
+});
+expect(getConceptById('train-test-split')).toMatchObject({
+    canonicalTerm: 'Train/test split',
+    plainDefinition:
+        'The train/test split assigns generated examples to a training set used for fitting and a held-out test set used only for evaluation.',
+    extendedExplanation:
+        'Membership is deterministic and stays fixed while the current prepared experiment trains. Data-recipe changes or Reshuffle split rebuild membership. Test examples never drive weight updates; full-split test evidence measures held-out performance at the same model step.',
+    aliases: ['data split', 'training test split', 'held-out split'],
+    related: ['data-loss', 'training-objective'],
+    profiles: ['beginner', 'explore', 'lab'],
+    difficulty: 'beginner',
+    examples: [
+        'With 200 generated examples and a 70% train ratio, 140 train and 60 are held out for test.',
+    ],
+    uiTarget: 'data',
+});
+expect(getConceptById('epoch')).toMatchObject({
+    canonicalTerm: 'Epoch',
+    plainDefinition: 'One epoch is one complete pass through the current training set.',
+    extendedExplanation:
+        'The worker shuffles the training examples, processes each one once in mini-batches, and increments Epoch only after the full training set is consumed. The final batch may be smaller than the configured batch size. Epoch counts data passes, not convergence or model quality.',
+    aliases: ['training epoch', 'data pass', 'full training pass'],
+    related: ['learning-rate', 'checkpoint'],
+    profiles: ['beginner', 'explore', 'lab'],
+    difficulty: 'beginner',
+    examples: [
+        'With 150 training examples and batch size 64, one epoch completes after batches of 64, 64, and 22 examples.',
+    ],
+});
+expect(getConceptById('epoch')?.uiTarget).toBeUndefined();
 ~~~
 
-In each component test, open the adjacent help control and assert the matching canonical term plus plain definition.
+In each component test, open the exact adjacent controls `Learn about Learning
+rate`, `Learn about Train/test split`, and `Learn about Epoch`; assert their
+named regions, canonical terms, and exact plain definitions. Prove DataPanel
+and HyperparamPanel can rerender from incompatible/not-ready to ready without a
+hook-order error. Explicitly reset `useLayoutStore` audience mode in both test
+suites. Prove Beginner guidance includes extended copy and the example while
+Lab retains the plain definition but omits optional extended/example content.
+For DataPanel, reassert the Task 17 label/output IDs, `for` ownership,
+`aria-describedby`, `aria-valuetext`, and label/help sibling relationship.
+For TrainingControls, retain an exact inner `Epoch N` text span and assert the
+help sibling carries `concept-help--above concept-help--end`.
+
+Extend `expectConceptHelpInViewport` in `playground-smoke.spec.ts` to accept all
+three terms. In the desktop concept-help test, verify Epoch in Run, then switch
+to Build and verify Train/test split and Learning rate. In the 320px touch-shell
+journey do the same, require each trigger to meet the existing 44px target and
+each open region to be fully in the viewport, then return to Run before the
+journey's existing Run-only assertions.
 
 - [ ] **Step 2: Run RED**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/concepts/conceptCatalog.test.ts src/components/controls/HyperparamPanel.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/TrainingControls.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because the concept IDs and contextual help controls are absent.
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --grep "concept help|320px touch shell"
+
+Expected: Vitest FAILS because the concept IDs and contextual controls are
+absent. The build succeeds and refreshes `dist`; Chromium FAILS on the missing
+new help triggers.
 
 - [ ] **Step 3: Add scientifically bounded copy and contextual controls**
 
-Define learning rate as update scale, split as fixed membership used to separate fitting from held-out evaluation, and epoch as examples processed divided by training-set size. State that an epoch is progress accounting, not a guarantee that every example was visited exactly once under sampling with replacement.
+Add the exact catalog entries above. Define learning rate as optimizer-update
+scale, split as deterministic membership separating fitting from held-out
+evaluation, and epoch as the worker's full without-replacement pass. State that
+epoch counts data passes rather than convergence or model quality.
 
 ~~~tsx
 <span className="control-label">
@@ -1776,18 +1989,39 @@ Task 17 label:
 </span>
 ~~~
 
+Keep that label and help as siblings; do not remove or rename Task 17's input
+and output IDs or accessible value text. In TrainingControls, wrap the exact
+visible `Epoch {currentModel.epoch}` text and an adjacent help control:
+
+~~~tsx
+<span>
+    <span>Epoch {currentModel.epoch}</span>
+    <ConceptHelp
+        conceptId="epoch"
+        guidanceLevel={guidanceLevel}
+        className="concept-help--above concept-help--end"
+    />
+</span>
+~~~
+
 - [ ] **Step 4: Run GREEN and typecheck**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/concepts/conceptCatalog.test.ts src/components/controls/HyperparamPanel.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/TrainingControls.test.tsx --pool=forks --reporter=dot
 
 Run: pnpm --filter @nn-playground/web typecheck
 
-Expected: PASS with all concept metadata and placements typed.
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "concept help|320px touch shell"
+
+Expected: PASS with all concept metadata and placements typed, readiness-safe
+hook order, profile-specific guidance, and fully visible help in both browser
+engines at desktop and 320px.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/concepts/conceptCatalog.ts apps/web/src/concepts/conceptCatalog.test.ts apps/web/src/components/controls/HyperparamPanel.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx
+git add apps/web/src/concepts/conceptCatalog.ts apps/web/src/concepts/conceptCatalog.test.ts apps/web/src/components/controls/HyperparamPanel.tsx apps/web/src/components/controls/HyperparamPanel.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx tests/e2e/playground-smoke.spec.ts
 git commit -m "feat(web): explain core training concepts"
 ~~~
 
@@ -1808,49 +2042,114 @@ git commit -m "feat(web): explain core training concepts"
 - Modify: apps/web/src/components/controls/PresetCard.test.tsx
 - Modify: apps/web/src/components/controls/RunHistoryPanel.tsx
 - Modify: apps/web/src/components/controls/RunHistoryPanel.test.tsx
+- Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
 - Export a readonly `STATE_EFFECTS` map for `training-reset`, `reshuffle-split`, `lesson-start`, `preset-apply`, and `saved-recipe-apply`.
-- Every value is one sentence beginning `Changes:` and containing `Preserves:`. Copy must match actual store/worker behavior and distinguish recipe, generated data/split, model weights/optimizer, checkpoints, lesson progress, and stored run evidence.
-- Use the shared strings in visible notes or accessible descriptions at each corresponding action; do not duplicate literals in components.
+- Every value is one exact reviewed sentence beginning `Changes:` and containing
+  `Preserves:`. Copy matches actual store/worker behavior: reset preserves the
+  deterministic generated examples and split; reshuffle increments the data
+  seed and replaces them; lesson/preset/saved-recipe application starts a fresh
+  runtime; none of the five actions deletes experiment-memory records.
+- Each action button directly owns a persistent `aria-describedby` reference to
+  its shared string. Tooltip relationships on wrapper elements do not count.
+  Descriptions are ordinary non-live content, unique across component
+  instances, and components do not duplicate the literals.
+- Rename both inaccurate legacy reset labels to the exact accessible and visible
+  name `Reset training`.
+- Replace RunHistoryPanel's hard-coded `run-name-guidance` ID with an
+  instance-owned `useId` value while adding one visible saved-recipe effects
+  note per panel. Apply buttons may share that note within one panel, but two
+  mounted panels must not share IDs.
 
 - [ ] **Step 1: Write failing contract and integration tests**
 
+Lock key order, frozen identity, and the full exact map; a regex-only check is
+insufficient:
+
 ~~~ts
-for (const copy of Object.values(STATE_EFFECTS)) {
-    expect(copy).toMatch(/^Changes: .+ Preserves: .+$/);
-}
+const EXPECTED_STATE_EFFECTS = {
+    'training-reset': 'Changes: reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: the current recipe, generated examples, train/test membership, lesson progress, and stored run evidence.',
+    'reshuffle-split': "Changes: increments the recipe's data seed, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: every other recipe setting, lesson progress, and stored run evidence.",
+    'lesson-start': "Changes: replaces the current recipe with the lesson recipe, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, replaces in-session checkpoints with a new step-0 checkpoint, and starts lesson progress at step 1; Preserves: the document's test-data and discretization options and stored run evidence.",
+    'preset-apply': "Changes: applying a different preset replaces the recipe, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: the document's test-data and discretization options, lesson state, and stored run evidence.",
+    'saved-recipe-apply': "Changes: replaces the current recipe with the saved recipe and starts a fresh step-0 run with regenerated examples and train/test membership, reinitialized model weights and optimizer state, new step-0 evaluation evidence, and a new in-session checkpoint; Preserves: the document's test-data and discretization options, lesson state, and every stored run record, but does not restore the saved run's trained parameters or evidence into the live run.",
+} as const;
+expect(Object.keys(STATE_EFFECTS)).toEqual(Object.keys(EXPECTED_STATE_EFFECTS));
+expect(Object.isFrozen(STATE_EFFECTS)).toBe(true);
+expect(STATE_EFFECTS).toEqual(EXPECTED_STATE_EFFECTS);
 ~~~
 
-Assert each action is associated with its shared description using `aria-describedby`, tooltip content, or visible text appropriate to the existing control.
+For each component, assert the action itself has `aria-describedby`, every
+referenced ID resolves, and `toHaveAccessibleDescription` equals the matching
+shared string. Render two component instances and prove their owned IDs are
+unique. RunHistoryPanel may share one effects ID among Apply buttons within a
+panel, but must use a different effects/run-name ID in the second panel.
+Assert each resolved description is outside every `aria-live`, status, or alert
+ancestor. Assert both TrainingControls and DataPanel visibly render the exact
+button text `Reset training`, not merely that an overriding aria-label supplies
+that name. Assert both DataPanel action tooltips expose the matching shared
+constants so stale Cause/Effect copy cannot contradict their descriptions.
+Preserve Zustand/localStorage isolation and update the existing Guided Lesson
+consequence assertion and reset accessible-name queries. Include
+`PresetPanel.test.tsx` in the gate because it proves the actual preset-apply
+behavior even though it need not change.
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/copy/stateEffects.test.ts src/components/controls/TrainingControls.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/GuidedLessonPanel.test.tsx src/components/controls/PresetCard.test.tsx src/components/controls/RunHistoryPanel.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/copy/stateEffects.test.ts src/components/controls/TrainingControls.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/GuidedLessonPanel.test.tsx src/components/controls/PresetCard.test.tsx src/components/controls/PresetPanel.test.tsx src/components/controls/RunHistoryPanel.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because the shared contract does not exist.
+Expected: FAIL because the map, direct action descriptions, unique panel IDs,
+and accurate reset names do not exist.
 
 - [ ] **Step 3: Define and consume one authoritative copy map**
 
 ~~~ts
 export const STATE_EFFECTS = Object.freeze({
-    'training-reset': 'Changes: model weights, optimizer state, training progress, and checkpoints. Preserves: the current recipe, generated data, split membership, and saved runs.',
-    // remaining actions use verified behavior-specific wording
+    'training-reset': 'Changes: reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: the current recipe, generated examples, train/test membership, lesson progress, and stored run evidence.',
+    'reshuffle-split': "Changes: increments the recipe's data seed, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: every other recipe setting, lesson progress, and stored run evidence.",
+    'lesson-start': "Changes: replaces the current recipe with the lesson recipe, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, replaces in-session checkpoints with a new step-0 checkpoint, and starts lesson progress at step 1; Preserves: the document's test-data and discretization options and stored run evidence.",
+    'preset-apply': "Changes: applying a different preset replaces the recipe, regenerates examples and train/test membership, reinitializes model weights and optimizer state, resets training progress and live evidence, and replaces in-session checkpoints with a new step-0 checkpoint; Preserves: the document's test-data and discretization options, lesson state, and stored run evidence.",
+    'saved-recipe-apply': "Changes: replaces the current recipe with the saved recipe and starts a fresh step-0 run with regenerated examples and train/test membership, reinitialized model weights and optimizer state, new step-0 evaluation evidence, and a new in-session checkpoint; Preserves: the document's test-data and discretization options, lesson state, and every stored run record, but does not restore the saved run's trained parameters or evidence into the live run.",
 } as const);
 ~~~
 
-Inspect each action before finalizing its string. If code behavior and existing copy disagree, keep production behavior unchanged and describe the behavior the tests prove.
+Keep production behavior unchanged. In TrainingControls, make Reset directly
+describe a persistent hidden `training-reset` string and let its Tooltip consume
+the same constant. In DataPanel, derive separate reshuffle/reset effect IDs from
+the existing unconditional Task 17 ID stem; the Reshuffle button references
+`reshuffle-split`, while its reset button is renamed `Reset training` and
+references `training-reset`. Both DataPanel action Tooltips must consume those
+same matching constants; remove their contradictory bespoke Cause/Effect text.
+In GuidedLessonPanel, give the visible shared
+lesson-start consequence paragraph an instance ID and reference it from Start.
+PresetCard uses `useId`, describes its button directly, and feeds the same
+`preset-apply` constant to its Tooltip. RunHistoryPanel uses an instance-owned
+visible `saved-recipe-apply` note referenced by every Apply button, plus an
+instance-owned run-name guidance ID.
 
 - [ ] **Step 4: Run GREEN**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/copy/stateEffects.test.ts src/components/controls/TrainingControls.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/GuidedLessonPanel.test.tsx src/components/controls/PresetCard.test.tsx src/components/controls/RunHistoryPanel.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/copy/stateEffects.test.ts src/components/controls/TrainingControls.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/GuidedLessonPanel.test.tsx src/components/controls/PresetCard.test.tsx src/components/controls/PresetPanel.test.tsx src/components/controls/RunHistoryPanel.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS with all five controls tied to shared accurate descriptions.
+Run: pnpm --filter @nn-playground/engine exec vitest run src/__tests__/datasets.test.ts --pool=forks --reporter=dot
+
+Run: pnpm --filter @nn-playground/web exec vitest run src/worker/training.worker.v2.test.ts src/hooks/useTraining.test.tsx src/store/usePlaygroundStore.test.ts --pool=forks --reporter=dot
+
+Run: pnpm --filter @nn-playground/web typecheck
+
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --grep "curated presets|saved runs survive|touch shell"
+
+Expected: PASS with every action directly tied to shared accurate descriptions,
+reset/reshuffle/runtime invariants unchanged, the compact reset locator renamed
+to `Reset training`, and no saved-run loss.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/copy/stateEffects.ts apps/web/src/copy/stateEffects.test.ts apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/GuidedLessonPanel.tsx apps/web/src/components/controls/GuidedLessonPanel.test.tsx apps/web/src/components/controls/PresetCard.tsx apps/web/src/components/controls/PresetCard.test.tsx apps/web/src/components/controls/RunHistoryPanel.tsx apps/web/src/components/controls/RunHistoryPanel.test.tsx
+git add apps/web/src/copy/stateEffects.ts apps/web/src/copy/stateEffects.test.ts apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx apps/web/src/components/controls/DataPanel.tsx apps/web/src/components/controls/DataPanel.test.tsx apps/web/src/components/controls/GuidedLessonPanel.tsx apps/web/src/components/controls/GuidedLessonPanel.test.tsx apps/web/src/components/controls/PresetCard.tsx apps/web/src/components/controls/PresetCard.test.tsx apps/web/src/components/controls/RunHistoryPanel.tsx apps/web/src/components/controls/RunHistoryPanel.test.tsx tests/e2e/playground-smoke.spec.ts
 git commit -m "feat(web): standardize state effect disclosures"
 ~~~
 
@@ -1863,10 +2162,19 @@ git commit -m "feat(web): standardize state effect disclosures"
 - Create: apps/web/src/hooks/useTimedState.test.tsx
 
 **Interfaces:**
-- The setter function retains identity across rerenders.
-- A pending timeout resets to the latest `defaultValue` when it fires.
-- Each call schedules using the `duration` current at call time; changing duration does not retroactively reschedule an already pending timer.
-- Unmount and replacement calls clear the pending timer exactly once.
+- Preserve the exact public return type `[T, (value: T) => void]`; the setter
+  does not accept React functional updates.
+- The setter retains identity across rerenders, including React StrictMode.
+- `defaultValue` is the initial value and reset target. Changing it does not
+  immediately overwrite the visible value; an active timeout reads the latest
+  rendered `defaultValue` when it fires.
+- Each call captures the current `duration`. Changing duration never reschedules
+  an active timeout, while a later call through the same stable setter uses the
+  new duration.
+- A replacement call clears the prior timer exactly once and leaves one active
+  timer. Unmount clears once, nulls the timer ref, and permanently makes a
+  retained setter a no-op so late async completions cannot schedule orphaned
+  work. A timeout updates state only while it still owns the active ref.
 
 - [ ] **Step 1: Write failing fake-timer rerender tests**
 
@@ -1879,36 +2187,80 @@ act(() => vi.advanceTimersByTime(100));
 expect(result.current[0]).toBe('ready');
 ~~~
 
-Also prove that a call made after duration changes uses the new duration and that replacing a timed value cancels the older timer.
+Wrap every hook render in StrictMode. Prove changing duration does not move an
+active 100ms deadline, then a call made through the retained setter uses the
+new 10ms duration. Spy on `clearTimeout` to prove replacement and unmount each
+clear once, timer count returns to zero, and a retained setter invoked after
+unmount creates no timer. Assert the exact tuple type with `expectTypeOf`.
+Restore real timers and all spies in `afterEach` so no timer leaks across tests.
 
 - [ ] **Step 2: Run RED**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useTimedState.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because the setter is recreated and timeout closure holds the old default.
+Expected: FAIL for unstable setter identity/stale default, stale duration through
+the retained setter, and a retained post-unmount setter creating a timer.
 
 - [ ] **Step 3: Synchronize refs and memoize the setter**
 
 ~~~ts
-const defaultValueRef = useRef(defaultValue);
-const durationRef = useRef(duration);
-defaultValueRef.current = defaultValue;
-durationRef.current = duration;
+export function useTimedState<T>(
+    defaultValue: T,
+    duration: number,
+): [T, (value: T) => void] {
+    const [value, setValue] = useState<T>(defaultValue);
+    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const defaultValueRef = useRef(defaultValue);
+    const durationRef = useRef(duration);
+    const mountedRef = useRef(true);
 
-const setTimed = useCallback((next: T) => {
-    clearPendingTimeout();
-    setValue(next);
-    timeoutRef.current = setTimeout(() => setValue(defaultValueRef.current), durationRef.current);
-}, []);
+    defaultValueRef.current = defaultValue;
+    durationRef.current = duration;
+
+    const clearPendingTimeout = useCallback(() => {
+        if (timeoutRef.current === null) return;
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+    }, []);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            clearPendingTimeout();
+        };
+    }, [clearPendingTimeout]);
+
+    const setTimed = useCallback((next: T) => {
+        if (!mountedRef.current) return;
+        clearPendingTimeout();
+        setValue(next);
+        const timeoutId = setTimeout(() => {
+            if (timeoutRef.current !== timeoutId) return;
+            timeoutRef.current = null;
+            if (mountedRef.current) setValue(defaultValueRef.current);
+        }, durationRef.current);
+        timeoutRef.current = timeoutId;
+    }, [clearPendingTimeout]);
+
+    return [value, setTimed];
+}
 ~~~
 
-Use stable internal cleanup without placing changing props in the callback dependency list.
+Import `useCallback`. Keep all changing values behind refs, re-arm
+`mountedRef` in effect setup for StrictMode, and null ownership on every clear
+or successful timeout.
 
 - [ ] **Step 4: Run GREEN**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useTimedState.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS with deterministic timer counts and latest-input semantics.
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/controls/CodeExportPanel.test.tsx src/components/controls/ConfigPanel.test.tsx --pool=forks --reporter=dot
+
+Run: pnpm --filter @nn-playground/web typecheck
+
+Expected: PASS with deterministic timer ownership, latest-input semantics,
+StrictMode-safe cleanup, post-unmount no-op behavior, and unchanged consumers.
 
 - [ ] **Step 5: Commit**
 
@@ -1926,9 +2278,36 @@ git commit -m "fix(web): stabilize timed state resets"
 - Modify: apps/web/src/components/common/CollapsiblePanel.test.tsx
 
 **Interfaces:**
-- Add required prop `storageId: string`, validated against `^[a-z0-9]+(?:-[a-z0-9]+)*$` in development, and persist under `panel-v2-${storageId}`.
-- When the v2 key is absent, read the former title-derived `panel-${normalizedTitle}` key once, write the valid value to the v2 key, and remove the legacy key only after the new write succeeds.
-- A visible title change never changes persisted state, and unique call-site IDs prevent collisions.
+- Add required prop `storageId: string`. In development, reject values not
+  matching `^[a-z0-9]+(?:-[a-z0-9]+)*$` with a deterministic error before any
+  storage access. Production skips that assertion and uses the supplied ID
+  verbatim; never normalize it. Persist under `panel-v2-${storageId}`.
+- `storageId` is immutable for a mounted component. Capture the initial value;
+  a development rerender with a different value throws, while production keeps
+  the captured identity. A caller changing identity must remount with
+  `key={storageId}`. Changing only `title` retains React state and the v2 key.
+- On initial mount, read the v2 key first. Exact `true` and `false` are valid. A
+  valid v2 value wins without reading/touching legacy state. Invalid non-null v2
+  falls back to `defaultExpanded`, is best-effort removed after commit, and
+  never revives the legacy key.
+- Only when v2 is absent, read the exact former key
+  `panel-${initialTitle.toLowerCase().replace(/\s+/g, '-')}`. Valid legacy state
+  initializes memory, then migrates after commit: write v2 first and remove
+  legacy only if that write succeeds. A failed v2 write retains legacy; a failed
+  legacy removal retains both. Invalid legacy state falls back to the default,
+  writes no v2 value, and is best-effort removed.
+- Throwing/unavailable `localStorage`, `getItem`, `setItem`, or `removeItem`
+  never escapes; reads fall back and toggles still update memory. No storage
+  write occurs during render. Guard the initial read so it is not re-executed
+  as a `useRef(read(...))` argument on rerenders, and clear pending migration
+  ownership before the effect attempt so StrictMode replay cannot repeat it.
+- A storage/getItem exception is not the same as an absent key: stop that
+  initialization/migration attempt, use `defaultExpanded`, and perform no
+  further storage read/write/remove. Apply the same stop rule if legacy read
+  itself throws.
+- Unique IDs prevent simultaneous v2 collisions; duplicate IDs intentionally
+  share storage and remain a caller error. This component remains client-only
+  because its Tooltip already portals to `document.body`; SSR is not added here.
 
 - [ ] **Step 1: Write failing key, migration, and rename tests**
 
@@ -1940,17 +2319,52 @@ rerender(<CollapsiblePanel storageId="network" title="New Title">x</CollapsibleP
 expect(screen.getByRole('button', { name: /New Title/ })).toHaveAttribute('aria-expanded', 'false');
 ~~~
 
-Test an invalid legacy value, localStorage write failure, and two panels with similar titles but distinct IDs.
+Add exact tests for:
+
+- empty, uppercase, underscore, leading/trailing-hyphen, and doubled-hyphen IDs
+  throwing before any storage call in development;
+- valid v2 precedence with no legacy read/removal; invalid v2 fallback/removal
+  with no legacy revival;
+- successful migration call order (`setItem(v2)` before `removeItem(legacy)`),
+  invalid legacy default/no v2 write/removal, v2 write failure retaining legacy,
+  and removal failure retaining both keys;
+- throwing storage getter/getItem falling back, and throwing toggle setItem
+  still updating React state;
+- title rerender retaining state, performing no new legacy lookup, and writing
+  the original v2 key; storageId rerender following the mount-stable contract;
+- two same/similar-title panels with distinct IDs toggling independently;
+- every existing lazy-mount, accessibility, ResizeObserver, and performance
+  case updated with a durable semantic ID.
+
+Capture the shared `window.localStorage` property descriptor outside the suite,
+restore it after every test, then clear it. `vi.restoreAllMocks()` does not undo
+`Object.defineProperty`; use prototype method spies for operation failures and
+restore a throwing property getter in `finally` or through the descriptor.
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/common/CollapsiblePanel.test.tsx src/components/layout/Sidebar.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/common/CollapsiblePanel.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because storage remains title-derived and call sites have no IDs.
+Run: pnpm --filter @nn-playground/web typecheck
+
+Expected: FAIL because the component neither accepts nor uses `storageId`,
+persistence remains title-derived, and migration ordering/ownership plus
+mount-stable identity are absent.
 
 - [ ] **Step 3: Implement v2 identity and verify the call-site inventory**
 
-Search `rg -n 'CollapsiblePanel' apps/web/src --glob '*.tsx'`. The current production inventory has no rendered call sites, so update all test fixtures with durable IDs and record that finding in the implementer report. If a production call site appears because an earlier task introduced one, add its owning file to this task brief before editing and assign a durable semantic ID. Keep the legacy-key helper private for migration only.
+Search rendered call sites with
+`rg -n '<CollapsiblePanel\b' apps/web/src --glob '*.tsx'`, then separately audit
+all symbol imports. The current inventory is zero production renderers and 11
+test fixtures, all in `CollapsiblePanel.test.tsx`; update every fixture with a
+durable ID and record the inventory. If a production renderer appears, amend
+Files/staging before editing it.
+
+Capture initial `storageId`/title, validate before storage I/O, and use guarded
+initial-read metadata containing the expanded value plus at most one pending
+post-commit cleanup/migration. In the effect, clear pending ownership before
+attempting any operation. Use safe storage helpers for getter and method errors.
+Keep the legacy normalizer private and only for the initial-title fallback.
 
 ~~~tsx
 <CollapsiblePanel storageId="data" title="Data" defaultExpanded>
@@ -1964,9 +2378,13 @@ Do not reset React state when only `title` changes. Continue treating storage fa
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/components/common/CollapsiblePanel.test.tsx --pool=forks --reporter=dot
 
-Run: pnpm --filter @nn-playground/web exec tsc --noEmit
+Run: pnpm --filter @nn-playground/web typecheck
 
-Expected: PASS and no call site omits `storageId`.
+Run: pnpm --filter @nn-playground/web build
+
+Expected: PASS for the migration/error/identity matrix, both production and test
+TypeScript configs, the production build, and no rendered fixture omitting
+`storageId`.
 
 - [ ] **Step 5: Commit**
 
@@ -1984,11 +2402,24 @@ git commit -m "feat(web): stabilize panel persistence keys"
 - Create: apps/web/src/hooks/useExperimentMemoryStorageSync.test.tsx
 - Modify: apps/web/src/App.tsx
 - Modify: apps/web/src/App.test.tsx
+- Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
 - The mounted app listens for `storage` events whose `storageArea` is localStorage and whose key is `EXPERIMENT_MEMORY_STORAGE_KEY`, `LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY`, or `null` from `localStorage.clear()`.
 - Each accepted event invokes the store's existing queued `hydrate()` exactly once. Unrelated/session-storage events are ignored, and cleanup removes the listener.
 - Native same-document localStorage writes do not emit `storage`; do not synthesize events in production or create a second persistence queue.
+- Treat `storageArea: null` as unrelated. Safely capture `window.localStorage`
+  once inside the effect; if its getter throws, install no listener.
+- The singleton store already performs initial hydration at module construction;
+  this hook handles later external changes. Accepted rapid events each enqueue
+  one existing `hydrate`, but queued runs may all observe the newest bytes.
+  Per-tab queues do not solve cross-tab last-writer-wins or distributed merge.
+- Apply after Task 19. Mount the hook unconditionally at root App scope before
+  the incompatible-document early return. Task 25 `panel-v2-*` keys remain
+  ignored, while key null stays accepted because clear removes memory keys too.
+- Import both exported memory-key constants; never duplicate strings. Native
+  Chromium/WebKit coverage uses two pages to prove other-document delivery and
+  the writing document's intentional lack of a storage event.
 
 - [ ] **Step 1: Write failing lifecycle and filtering tests**
 
@@ -1998,24 +2429,74 @@ window.dispatchEvent(new StorageEvent('storage', {
     key: EXPERIMENT_MEMORY_STORAGE_KEY,
     storageArea: window.localStorage,
 }));
-await waitFor(() => expect(hydrate).toHaveBeenCalledTimes(1));
+expect(hydrate).toHaveBeenCalledTimes(1);
 ~~~
 
-Cover legacy key, `key: null`, unrelated key, sessionStorage, and unmount cleanup. In App test, prove the hook is mounted once.
+Wrap hook tests in StrictMode and prove exactly one active listener: current key,
+legacy key, and localStorage `key: null` each invoke hydrate once. Unrelated key,
+sessionStorage, and null storage area do not. After unmount, an otherwise valid
+event does nothing. In one mounted StrictMode instance, dispatch current,
+legacy, and null-key events and assert three hydrate calls, proving accepted
+events are not coalesced. Except for the safe-getter test, use the browser-shaped
+jsdom storage from `src/test/setup.ts` without redefining it.
+
+For the safe-getter test, capture the exact `window.localStorage` property
+descriptor, replace it with a throwing `SecurityError` getter only inside
+`try/finally`, and restore that exact descriptor before cleanup. Assert rendering
+does not throw, no storage listener is installed, and hydrate is never called.
+
+In App tests, hoist/mock the hook, clear the mock in `beforeEach`, and assert it
+was called in the incompatible-document branch. Do not assert render-call count:
+hooks run on every render and StrictMode probes twice.
+
+Add a real two-page Playwright test. After both pages reach worker readiness,
+save one run in the owner and require the peer History drawer to hydrate from
+zero to one. Then clear localStorage in the owner: owner memory stays at one
+(same-document writes emit no event), while peer rehydrates to zero.
+
+~~~ts
+test('cross-tab saved-run memory follows native localStorage events', async ({ context, page }) => {
+    await loadPlayground(page);
+    const peer = await context.newPage();
+    await loadPlayground(peer);
+
+    const peerHistory = await openDrawer(peer, 'History');
+    await expect(peerHistory.getByRole('article')).toHaveCount(0);
+    const ownerHistory = await openDrawer(page, 'History');
+    await ownerHistory.getByRole('button', { name: 'Save current run' }).click();
+    await expect(ownerHistory.getByRole('article')).toHaveCount(1);
+    await expect(peerHistory.getByRole('article')).toHaveCount(1);
+
+    await page.evaluate(() => window.localStorage.clear());
+    await expect(ownerHistory.getByRole('article')).toHaveCount(1);
+    await expect(peerHistory.getByRole('article')).toHaveCount(0);
+});
+~~~
 
 - [ ] **Step 2: Run RED**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useExperimentMemoryStorageSync.test.tsx src/App.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because the lifecycle hook does not exist.
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --grep "cross-tab saved-run memory"
+
+Expected: Vitest FAILS because the hook/root wiring do not exist. The build
+succeeds and Chromium FAILS because peer memory never rehydrates.
 
 - [ ] **Step 3: Add one app-owned storage listener**
 
 ~~~ts
 export function useExperimentMemoryStorageSync(): void {
     useEffect(() => {
+        let localStorageArea: Storage;
+        try {
+            localStorageArea = window.localStorage;
+        } catch {
+            return;
+        }
         const onStorage = (event: StorageEvent) => {
-            if (event.storageArea !== window.localStorage) return;
+            if (event.storageArea !== localStorageArea) return;
             if (event.key !== null && !MEMORY_KEYS.has(event.key)) return;
             void useExperimentMemoryStore.getState().hydrate();
         };
@@ -2025,18 +2506,28 @@ export function useExperimentMemoryStorageSync(): void {
 }
 ~~~
 
-Mount it at App lifecycle scope, not inside the conditional History drawer.
+Mount it at App lifecycle scope before reading/branching on document
+compatibility, not inside the conditional History drawer. Keep `MEMORY_KEYS`
+module-local and source it from the two store exports.
 
 - [ ] **Step 4: Run GREEN**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useExperimentMemoryStorageSync.test.tsx src/App.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useExperimentMemoryStorageSync.test.tsx src/store/experimentMemoryStore.test.ts src/App.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS with exact filtering and cleanup.
+Run: pnpm --filter @nn-playground/web typecheck
+
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "cross-tab saved-run memory"
+
+Expected: PASS with exact filtering/StrictMode cleanup, unchanged memory-store
+queue semantics, root incompatible-state wiring, and native two-page delivery
+in both browsers.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/hooks/useExperimentMemoryStorageSync.ts apps/web/src/hooks/useExperimentMemoryStorageSync.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx
+git add apps/web/src/hooks/useExperimentMemoryStorageSync.ts apps/web/src/hooks/useExperimentMemoryStorageSync.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx tests/e2e/playground-smoke.spec.ts
 git commit -m "feat(web): sync saved runs across tabs"
 ~~~
 
@@ -2050,53 +2541,124 @@ git commit -m "feat(web): sync saved runs across tabs"
 - Modify: package.json
 
 **Interfaces:**
-- Export `runPerformanceGates(runCommand)` for deterministic Node tests. It executes named `engine` and `web` commands sequentially, even after a non-zero result or thrown spawn error.
-- The CLI streams child output, prints a final line for each suite (`PASS` or `FAIL`), and exits non-zero when either suite fails.
-- Root `pnpm test:perf` delegates to this script; package-specific perf commands remain directly runnable.
+- Export frozen `PERFORMANCE_GATES`, `runPerformanceGates(runCommand)`,
+  `resolvePnpmInvocation(gate, platform, env)`, and injectable
+  `main({ runCommand = runPnpmGate, writeLine = console.log } = {})` so CLI
+  calls with no argument and tests inject dependencies through the same API.
+- The runner receives one frozen gate and resolves `{ code: number | null,
+  signal: string | null }`; it may throw/reject for synchronous or emitted
+  spawn errors. Execute engine then web strictly sequentially and always try
+  both after non-zero, signal, null status, or runner error.
+- A suite passes only for `{ code: 0, signal: null }`. Preserve each result's
+  name/code/signal and normalized single-line error; return aggregate
+  `{ exitCode: 0 | 1, results }`, normalizing every aggregate failure to 1.
+- Stream children with `stdio: 'inherit'`. After both attempts, print exactly
+  one ordered summary line per suite with PASS or FAIL plus an exit, signal, or
+  spawn-error reason. Set `process.exitCode = await main()` rather than calling
+  `process.exit`, so inherited output and summaries flush.
+- Literal summaries are `[perf] engine: PASS`, `[perf] web: FAIL (exit 2)`,
+  `[perf] engine: FAIL (signal SIGTERM)`, `[perf] engine: FAIL (spawn error:
+  <single-line message>)`, or `[perf] engine: FAIL (no exit status)`.
+- Guard CLI execution with `process.argv[1] !== undefined` before resolving it,
+  then compare `import.meta.url` to
+  `pathToFileURL(resolve(process.argv[1])).href`; imports without argv never
+  spawn or throw. Import process, console, and other globals from `node:`
+  modules; Task 9 does not grant Node globals to this directory.
+- Root `test:perf` is exactly `node scripts/run-performance-gates.mjs`;
+  package-specific perf commands remain runnable. The resolver is exact:
+  non-Windows returns `{ command: 'pnpm', args: [...gate.args] }`; win32 returns
+  `{ command: env.ComSpec ?? 'cmd.exe', args: ['/d', '/s', '/c', 'pnpm.cmd',
+  ...gate.args] }`. Both use `shell: false`; never spawn `pnpm.cmd` directly.
+  Do not claim complete Windows support because the current web package perf
+  script itself remains POSIX-only.
+- CI performance execution is outside this task; final whole-program
+  verification already invokes the root gate.
 
 - [ ] **Step 1: Write a failing Node orchestration test**
+
+Use dynamic imports inside individual tests so the independent root-script
+assertion still runs while the implementation module is missing. The injected
+runner returns the real child-close shape:
 
 ~~~js
 const calls = [];
 const result = await runPerformanceGates(async (gate) => {
     calls.push(gate.name);
-    return gate.name === 'engine' ? 1 : 0;
+    return gate.name === 'engine'
+        ? { code: 1, signal: null }
+        : { code: 0, signal: null };
 });
 assert.deepEqual(calls, ['engine', 'web']);
 assert.equal(result.exitCode, 1);
 ~~~
 
-Also cover both pass, web-only failure, and thrown runner failure while still reaching the other suite.
+Cover both pass; engine-only, web-only, and both failure; strict sequential
+completion; thrown/rejected engine still reaching web; signal with null code;
+defensive null-code/null-signal; emitted spawn error followed by close settling
+once; exact POSIX argv/options and explicit Windows cmd invocation;
+exact ordered two-line summaries for pass/exit/signal/spawn failure; import
+without default-runner invocation; and package.json containing exactly
+`"test:perf": "node scripts/run-performance-gates.mjs"` with no `&&`.
 
 - [ ] **Step 2: Run RED**
 
 Run: node --test scripts/run-performance-gates.test.mjs
 
-Expected: FAIL because the orchestration module does not exist and the root script short-circuits with `&&`.
+Expected: FAIL for the missing module; the independent package-script assertion
+also fails because the current root command contains `&&`. The missing-module
+failure alone does not prove short-circuiting.
 
 - [ ] **Step 3: Implement child-process aggregation**
 
-Use `spawn` with `stdio: 'inherit'`, `shell: false`, and the current platform's pnpm executable. Resolve each exit/error into a result instead of rejecting the overall loop. Guard CLI execution with an `import.meta.url` entrypoint check so tests can import without spawning real suites.
+Listen for child `close(code, signal)`, not just `exit`, so reporting follows
+stdio closure. Convert synchronous spawn throws and emitted errors into results;
+guard settlement because Node may emit `close` after `error`. Resolve platform
+invocation separately and keep argv tokenized.
 
 ~~~js
 export const PERFORMANCE_GATES = Object.freeze([
-    { name: 'engine', args: ['--filter', '@nn-playground/engine', 'test:perf'] },
-    { name: 'web', args: ['--filter', '@nn-playground/web', 'test:perf'] },
+    Object.freeze({
+        name: 'engine',
+        args: Object.freeze(['--filter', '@nn-playground/engine', 'test:perf']),
+    }),
+    Object.freeze({
+        name: 'web',
+        args: Object.freeze(['--filter', '@nn-playground/web', 'test:perf']),
+    }),
 ]);
 ~~~
 
 - [ ] **Step 4: Run GREEN and exercise the real combined gate**
 
+Run: node --check scripts/run-performance-gates.mjs
+
 Run: node --test scripts/run-performance-gates.test.mjs
+
+Run: pnpm exec eslint scripts/run-performance-gates.mjs scripts/run-performance-gates.test.mjs
 
 Run: pnpm test:perf
 
-Expected: Unit test PASS. The real command must print both suite conclusions; its overall status reflects the current calibrated budgets from Task 10.
+Expected: syntax, unit, and lint gates PASS. The real command streams both
+children and prints both final conclusions even when one fails. Status is zero
+only when both calibrated suites pass, otherwise normalized one after both were
+attempted.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Review exact scope**
+
+Run: git add package.json scripts/run-performance-gates.mjs scripts/run-performance-gates.test.mjs
+
+Run: git diff --cached --check
+
+Run: git diff --cached --name-only
+
+Expected staged set exactly `package.json`,
+`scripts/run-performance-gates.mjs`, and
+`scripts/run-performance-gates.test.mjs`. Do not edit/stage CI, package-specific
+perf configurations, plans, or prototypes.
+
+- [ ] **Step 6: Commit**
 
 ~~~bash
-git add scripts/run-performance-gates.mjs scripts/run-performance-gates.test.mjs package.json
 git commit -m "test: aggregate independent performance gates"
 ~~~
 
@@ -2111,8 +2673,18 @@ git commit -m "test: aggregate independent performance gates"
 
 **Interfaces:**
 - Add `@axe-core/playwright` as a direct root development dependency; do not depend on the transitive `axe-core` bundled under `jest-axe`.
-- Scan the built app after worker readiness at desktop and 390 by 844 compact viewports in both Chromium and WebKit.
+- A self-contained spec explicitly generates desktop 1280x720 and compact
+  390x844 cases; Chromium/WebKit projects then produce exactly four scans.
+- Scan only after the Run workspace reaches real step-0 evidence convergence:
+  idle status, full evaluation step 0, and checkpoint timeline Step 0.
 - Fail on any Axe violation whose impact is `serious` or `critical`. Any future exception must name a rule, a tightly scoped selector, rationale, and a repository issue URL in the test; this task adds no blanket exclusions.
+- Collect page errors and console errors for every case and fail after each
+  test. Format violations with impact, rule/help URL, exact targets, and failure
+  summaries so browser output is actionable.
+- Prohibit Axe `.exclude()`, `.disableRules()`, `.withRules()`, `.withTags()`,
+  and `runOnly`. A future exception must filter only a single rule's single
+  tight node selector, retain all unmatched nodes, explain why, and link
+  `https://github.com/DenseDevKev/neural-network-playground/issues/<number>`.
 
 - [ ] **Step 1: Add the direct test dependency and a failing production scan**
 
@@ -2121,30 +2693,123 @@ Run: pnpm add -Dw @axe-core/playwright@^4.10.2
 Create the spec with its expected-zero assertion before changing application markup:
 
 ~~~ts
-const results = await new AxeBuilder({ page }).analyze();
-const blocking = results.violations.filter(({ impact }) => impact === 'serious' || impact === 'critical');
-expect(blocking, formatViolations(blocking)).toEqual([]);
+import AxeBuilder from '@axe-core/playwright';
+import { expect, test, type Page } from '@playwright/test';
+
+type AxeViolations = Awaited<ReturnType<AxeBuilder['analyze']>>['violations'];
+const browserErrors = new WeakMap<Page, string[]>();
+
+test.beforeEach(({ page }) => {
+    const errors: string[] = [];
+    browserErrors.set(page, errors);
+    page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
+    page.on('console', (message) => {
+        if (message.type() === 'error') errors.push(`console.error: ${message.text()}`);
+    });
+});
+
+test.afterEach(({ page }) => {
+    const errors = browserErrors.get(page) ?? [];
+    expect(errors, `Unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
+});
+
+function formatViolations(violations: AxeViolations): string {
+    return violations.map((violation) => [
+        `[${violation.impact?.toUpperCase() ?? 'UNKNOWN'}] ${violation.id}: ${violation.help}`,
+        violation.helpUrl,
+        ...violation.nodes.map((node, index) => (
+            `  ${index + 1}. ${JSON.stringify(node.target)}`
+            + `${node.failureSummary ? `\n     ${node.failureSummary}` : ''}`
+        )),
+    ].join('\n')).join('\n\n');
+}
+
+async function loadReadyPlayground(page: Page): Promise<void> {
+    await page.goto('/');
+    await expect(page.getByRole('main', {
+        name: 'Neural network playground workspace',
+    })).toBeVisible();
+    const run = page.getByRole('button', { name: 'run', exact: true });
+    if (await run.getAttribute('aria-pressed') !== 'true') await run.click();
+    await expect(page.getByRole('group', { name: 'Status bar' }))
+        .toHaveAttribute('data-status', 'idle');
+    await expect(page.locator('section[role="region"][aria-label="Current run"]'))
+        .toContainText(/Full evaluation \d+ at step 0\b/);
+    await expect(page.getByRole('slider', { name: 'Checkpoint timeline' }))
+        .toHaveAttribute('aria-valuetext', 'Step 0');
+}
+
+const SCAN_CASES = [
+    { name: 'desktop accessibility', width: 1280, height: 720 },
+    { name: '390px compact accessibility', width: 390, height: 844 },
+] as const;
+
+for (const scanCase of SCAN_CASES) {
+    test.describe(scanCase.name, () => {
+        test.use({ viewport: { width: scanCase.width, height: scanCase.height } });
+        test('has no serious or critical Axe violations', async ({ page }) => {
+            await loadReadyPlayground(page);
+            const results = await new AxeBuilder({ page }).analyze();
+            const blocking = results.violations.filter(
+                ({ impact }) => impact === 'serious' || impact === 'critical',
+            );
+            expect(blocking, formatViolations(blocking)).toEqual([]);
+        });
+    });
+}
 ~~~
 
 - [ ] **Step 2: Run RED against a fresh production build**
 
+Temporarily insert an unlabeled image immediately before `analyze()`:
+
+~~~ts
+await page.evaluate(() => {
+    const probe = document.createElement('img');
+    probe.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+    probe.width = 1;
+    probe.height = 1;
+    probe.dataset.axeRedProbe = '';
+    document.body.prepend(probe);
+});
+~~~
+
 Run: pnpm build
 
-Run: pnpm exec playwright test tests/e2e/accessibility.spec.ts --project=chromium --project=webkit
+Run: pnpm exec playwright test tests/e2e/accessibility.spec.ts --project=chromium --grep "desktop accessibility"
 
-Expected: The new executable gate runs all four browser/viewport cases and FAILS on any discovered serious/critical production violation. If it is already green, record the pre-implementation scan as the executable characterization RED exception and continue only after review confirms the test would fail for an injected serious violation.
+Expected: FAIL containing the `image-alt` rule with critical impact. Remove the
+probe manually and verify no probe diff remains. This controlled mutation is
+mandatory even if the genuine baseline is already green.
 
 - [ ] **Step 3: Fix only violations proven by the scan**
 
-Prefer semantic HTML, names, relationships, and token-level contrast corrections in the owning components/styles. Add each required source/test file to this task's file list in the implementer report before staging. Verify one controlled mutation causes the Axe assertion to fail, then revert the mutation.
+Prefer semantic HTML, names, relationships, and token-level contrast corrections
+in owners. Before editing application source, record each observed Axe rule,
+target, owning source file, and focused test, then add those exact paths to the
+active Task 28 file list/report. If source changes, run its focused Vitest,
+web typecheck, and focused ESLint. Do not add an exception in this task.
 
 - [ ] **Step 4: Run GREEN in the required matrix**
 
 Run: pnpm build
 
+Run: pnpm exec playwright test tests/e2e/accessibility.spec.ts --project=chromium --project=webkit --list
+
 Run: pnpm exec playwright test tests/e2e/accessibility.spec.ts --project=chromium --project=webkit
 
-Expected: PASS for desktop Chromium, compact Chromium, desktop WebKit, and compact WebKit, with zero serious/critical violations and no page/console errors.
+Run: pnpm exec eslint tests/e2e/accessibility.spec.ts
+
+Run: pnpm install --frozen-lockfile
+
+Run: pnpm list -w @axe-core/playwright --depth 0
+
+Run: test -f tests/e2e/accessibility.spec.ts && ! rg -n '\.(exclude|disableRules|withRules|withTags)\(|\brunOnly\b' tests/e2e/accessibility.spec.ts
+
+Expected: `--list` reports exactly four Task 28 cases. Desktop Chromium,
+compact Chromium, desktop WebKit, and compact WebKit PASS with zero
+serious/critical violations and no browser errors; lint/frozen lock/direct-root
+dependency checks pass, and the executable scope-method scan returns no match.
 
 - [ ] **Step 5: Commit**
 
@@ -2164,6 +2829,8 @@ git commit -m "test(e2e): scan production accessibility"
 **Interfaces:**
 - Run one shared compact reachability journey at both 320 by 844 and 390 by 844 using generated, uniquely named tests.
 - At both widths assert no document/shell horizontal overflow, all critical and graph/evidence controls from Task 20 are at least 44 by 44, active evidence tabs remain visible, compact evaluation outcome from Task 21 is reachable, drawers close and restore focus, and browser errors remain empty.
+- Reuse Task 23's exact compact reset locator `Reset training`; do not restore
+  legacy reset wording when extracting the shared journey.
 - Reuse Task 20's one module-level graph/evidence locator/assertion helper. After
   any Code/drawer/profile journey state, explicitly return to Run + Boundary
   before calling it. Replace Task 20's standalone 390 test when the matrix
@@ -2254,7 +2921,8 @@ git commit -m "test(e2e): cover two phone widths"
 - [ ] **Step 1: Write failing seam, bridge, and browser tests**
 
 ~~~ts
-expect(consumeE2EWorkerFault(new URL('https://example.test/?e2eWorkerFault=startup-once'), storage, true))
+const url = new URL('https://example.test/?e2eWorkerFault=startup-once');
+expect(consumeE2EWorkerFault(url, storage, true))
     .toBe('startup-once');
 expect(consumeE2EWorkerFault(url, storage, true)).toBeNull();
 expect(consumeE2EWorkerFault(url, storage, false)).toBeNull();
@@ -2271,7 +2939,9 @@ full-evaluation step 0, and checkpoint timeline step 0 must agree. Then click
 restoration across reload. The disabled-build test navigates with the same query,
 proves no alertdialog through initial evidence convergence, and also completes
 one real step, so an early idle state cannot false-pass. Assert no unexpected
-console/page errors beyond the deliberately injected labeled error.
+console or page errors in either build. The deliberately injected worker fault
+is expected application state delivered through the bridge/store/modal path;
+it must not be logged or thrown as a browser error.
 
 - [ ] **Step 2: Run RED unit tests**
 
@@ -2299,7 +2969,7 @@ initializeWorker(prepared).catch((error) => {
 });
 ~~~
 
-Bridge tests prove the helper returns false without a subscriber and delivers a protocol-v2 `error` message through `onSnapshot` when subscribed. Hook tests prove the injected branch is reached only after subscription, that neither the mount initializer nor prepared-document synchronization invokes worker initialization, and that the same worker error as a native bridge error reaches the store. Place fault selection outside worker scientific logic. Add root scripts `build:e2e` and `test:e2e:recovery`; configure the recovery command to build with `VITE_E2E_FAULTS=1` and run only `--grep @fault-enabled` against the exact generated dist.
+Bridge tests prove the helper returns false without a subscriber and delivers a protocol-v2 `error` message through `onSnapshot` when subscribed. Hook tests prove the injected branch is reached only after subscription, that neither the mount initializer nor prepared-document synchronization invokes worker initialization, and that the same worker error as a native bridge error reaches the store. Place fault selection outside worker scientific logic. Add exact root scripts `build:e2e` and `test:e2e:recovery`; the latter runs `build:e2e` with `VITE_E2E_FAULTS=1`, then the two-browser worker-recovery spec with only `--grep @fault-enabled` against that generated dist.
 
 Wrap the hook harness in StrictMode and prove effect replay queues exactly one
 bridge error after the replacement subscription, while the sticky suppression
@@ -2311,9 +2981,7 @@ not re-enable initialization in the same document.
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/testing/e2eFaults.test.ts src/worker/workerBridge.test.ts src/hooks/useTraining.test.tsx src/App.test.tsx --pool=forks --reporter=dot
 
-Run: pnpm run build:e2e
-
-Run: pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --project=chromium --project=webkit --grep "@fault-enabled"
+Run: pnpm run test:e2e:recovery
 
 Expected: Unit tests PASS. Both browsers show the genuine focused modal, reload through the real recovery control, reach ready state, and advance training with zero retries.
 
@@ -2348,8 +3016,7 @@ pnpm test
 pnpm test:perf
 pnpm build
 pnpm exec playwright test --project=chromium --project=webkit --grep-invert "@fault-enabled"
-pnpm run build:e2e
-pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --project=chromium --project=webkit --grep "@fault-enabled"
+pnpm run test:e2e:recovery
 pnpm build
 pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --project=chromium --project=webkit --grep "@fault-disabled"
 git diff --check 047c341..HEAD
