@@ -11,6 +11,7 @@ import { selectScientificEvidence } from './store/evidenceSelectors.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import { useTraining } from './hooks/useTraining.ts';
 import { useModalFocusContainment } from './hooks/useModalFocusContainment.ts';
+import { useExperimentMemoryStorageSync } from './hooks/useExperimentMemoryStorageSync.ts';
 import { Header } from './components/layout/Header.tsx';
 import { BuildRunShell } from './components/layout/BuildRunShell.tsx';
 import {
@@ -47,6 +48,7 @@ import {
 import { resolveTrainingShortcut } from './shortcuts/trainingShortcuts.ts';
 
 export default function App() {
+    useExperimentMemoryStorageSync();
     const access = usePlaygroundStore((state) => state.access);
     const startFresh = usePlaygroundStore((state) => state.startFresh);
     useEffect(() => {

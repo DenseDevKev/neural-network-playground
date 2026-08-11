@@ -14,6 +14,7 @@ import {
 } from '@nn-playground/shared';
 
 const useTrainingMount = vi.hoisted(() => vi.fn());
+const useExperimentMemoryStorageSync = vi.hoisted(() => vi.fn());
 
 const trainingMock = {
     play: vi.fn(),
@@ -93,6 +94,10 @@ vi.mock('./hooks/useTraining.ts', () => ({
         useTrainingMount();
         return trainingMock;
     },
+}));
+
+vi.mock('./hooks/useExperimentMemoryStorageSync.ts', () => ({
+    useExperimentMemoryStorageSync,
 }));
 
 vi.mock('./components/layout/Header.tsx', () => ({
@@ -194,6 +199,7 @@ describe('App accessibility shell', () => {
         trainingMock.reset.mockReset();
         trainingMock.restoreCheckpoint.mockReset();
         useTrainingMount.mockClear();
+        useExperimentMemoryStorageSync.mockClear();
 
         const prepared = await prepareExperimentDocument(DEFAULT_EXPERIMENT_DOCUMENT);
         if (!prepared.ok) throw new Error('default experiment fixture did not prepare');
@@ -307,6 +313,7 @@ describe('App accessibility shell', () => {
 
         render(<App />);
 
+        expect(useExperimentMemoryStorageSync).toHaveBeenCalled();
         expect(useTrainingMount).not.toHaveBeenCalled();
         expect(screen.getByRole('main', { name: 'Experiment compatibility' }))
             .toBeInTheDocument();

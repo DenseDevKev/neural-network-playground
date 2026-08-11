@@ -461,6 +461,23 @@ test('saved runs survive reload and reapply their complete recipe', async ({ pag
     await expectEvidenceAtStep(page, 0);
 });
 
+test('cross-tab saved-run memory follows native localStorage events', async ({ context, page }) => {
+    await loadPlayground(page);
+    const peer = await context.newPage();
+    await loadPlayground(peer);
+
+    const peerHistory = await openDrawer(peer, 'History');
+    await expect(peerHistory.getByRole('article')).toHaveCount(0);
+    const ownerHistory = await openDrawer(page, 'History');
+    await ownerHistory.getByRole('button', { name: 'Save current run' }).click();
+    await expect(ownerHistory.getByRole('article')).toHaveCount(1);
+    await expect(peerHistory.getByRole('article')).toHaveCount(1);
+
+    await page.evaluate(() => window.localStorage.clear());
+    await expect(ownerHistory.getByRole('article')).toHaveCount(1);
+    await expect(peerHistory.getByRole('article')).toHaveCount(0);
+});
+
 test('paused scientific state survives every audience profile and disclosure state', async ({ page }) => {
     await loadPlayground(page);
     await applyPreset(page, RECIPES.xor);
