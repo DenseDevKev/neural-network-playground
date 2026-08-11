@@ -879,10 +879,15 @@ git commit -m "feat(web): choose runs for comparison"
 **Files:**
 - Modify: apps/web/src/components/layout/Header.tsx
 - Modify: apps/web/src/components/layout/Header.test.tsx
+- Modify: apps/web/src/__tests__/appShell.integration.test.tsx
 
 **Interfaces:**
 - Workspace view references a persistent or help-triggered description available by pointer, focus, and touch.
 - Switching view retains its existing state-only callback.
+- Scope amendment (2026-08-11): the keyboard-accessible help trigger is a
+  legitimate tab stop between the Build/Run switch and Audience control. Update
+  the existing app-shell tab-order assertion; do not hide the trigger with a
+  negative tab index or weaken keyboard access to preserve stale order.
 
 - [ ] **Step 1: Write a failing accessible-description test**
 
@@ -894,7 +899,7 @@ expect(screen.getByRole('group', { name: 'Workspace view' })).toHaveAccessibleDe
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
 Expected: FAIL because the view group has no explanation.
 
@@ -904,14 +909,14 @@ Use the exact tested copy in an element referenced by aria-describedby and expos
 
 - [ ] **Step 4: Run GREEN**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS and existing view-switch mutation tests remain green.
+Expected: PASS; the help trigger is present in keyboard order and existing view-switch mutation tests remain green.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx
+git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/__tests__/appShell.integration.test.tsx
 git commit -m "feat(web): explain build and run views"
 ~~~
 
@@ -923,10 +928,13 @@ git commit -m "feat(web): explain build and run views"
 - Modify: apps/web/src/components/layout/Header.tsx
 - Modify: apps/web/src/components/layout/Header.test.tsx
 - Modify: apps/web/src/productShell/audienceProfiles.test.ts
+- Modify: apps/web/src/__tests__/appShell.integration.test.tsx
 
 **Interfaces:**
 - Visible label and accessible name become Workspace profile.
 - Stored audience values beginner, explore, and lab remain unchanged.
+- The app-shell keyboard/selector assertion uses the new accessible name; its
+  prior `Audience mode` query is part of the executable RED.
 
 - [ ] **Step 1: Write the failing label and invariance test**
 
@@ -939,7 +947,7 @@ expect(onExperimentChange).not.toHaveBeenCalled();
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/productShell/audienceProfiles.test.ts src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
 Expected: FAIL because the current accessible name is Audience mode and visible label is Mode.
 
@@ -949,14 +957,14 @@ Render Workspace as the visible label, Workspace profile as the accessible name,
 
 - [ ] **Step 4: Run GREEN**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/productShell/audienceProfiles.test.ts --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/productShell/audienceProfiles.test.ts src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS with the same stored values and state behavior.
+Expected: PASS with the same stored values/state behavior and the updated app-shell selector.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/productShell/audienceProfiles.test.ts
+git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/productShell/audienceProfiles.test.ts apps/web/src/__tests__/appShell.integration.test.tsx
 git commit -m "feat(web): clarify workspace profiles"
 ~~~
 
