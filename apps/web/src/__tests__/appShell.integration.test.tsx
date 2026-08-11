@@ -231,6 +231,10 @@ describe('App shell integration', () => {
             phase: 'build',
             activeTabLeft: 'data',
             activeTabRight: 'boundary',
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+            lessonCueDismissed: false,
+            hasStartedLesson: false,
         });
         useExperimentMemoryStore.setState({
             hydrationStatus: 'ready',
@@ -362,6 +366,103 @@ describe('App shell integration', () => {
         await user.click(screen.getByRole('button', { name: 'History' }));
         expect(screen.getByRole('dialog', { name: 'History' })).toBeInTheDocument();
         expect(await screen.findByText('Mock Run History')).toBeInTheDocument();
+    });
+
+    it('waits for accepted-run hydration, then opens Lessons without mutating app state', async () => {
+        const user = userEvent.setup();
+        useExperimentMemoryStore.setState({ hydrationStatus: 'loading', records: Object.freeze([]) });
+        window.history.replaceState(null, '', '#first-visit-cue');
+
+        const preparedRef = INITIAL_PREPARED;
+        const recipeRef = INITIAL_PREPARED.document.recipe;
+        const trainingBefore = useTrainingStore.getState();
+        const audienceBefore = useLayoutStore.getState().audienceMode;
+        const viewBefore = useLayoutStore.getState().view;
+        const hashBefore = window.location.hash;
+
+        render(<App />);
+        expect(screen.queryByRole('button', { name: 'Start a 3-minute lesson' }))
+            .not.toBeInTheDocument();
+
+        act(() => {
+            useExperimentMemoryStore.setState({
+                hydrationStatus: 'ready',
+                records: Object.freeze([]),
+            });
+        });
+        const openLesson = await screen.findByRole('button', { name: 'Start a 3-minute lesson' });
+        await user.click(openLesson);
+
+        expect(screen.getByRole('dialog', { name: 'Lessons' })).toBeInTheDocument();
+        const playground = usePlaygroundStore.getState();
+        expect(playground.access.status).toBe('ready');
+        if (playground.access.status === 'ready') {
+            expect(playground.access.prepared).toBe(preparedRef);
+            expect(playground.access.prepared.document.recipe).toBe(recipeRef);
+        }
+        expect(useTrainingStore.getState()).toBe(trainingBefore);
+        expect(useLayoutStore.getState()).toMatchObject({
+            audienceMode: audienceBefore,
+            view: viewBefore,
+            lessonCueDismissed: false,
+            hasStartedLesson: false,
+        });
+        expect(window.location.hash).toBe(hashBefore);
+        expect(trainingMock.play).not.toHaveBeenCalled();
+        expect(trainingMock.pause).not.toHaveBeenCalled();
+        expect(trainingMock.step).not.toHaveBeenCalled();
+        expect(trainingMock.reset).not.toHaveBeenCalled();
+        expect(trainingMock.restoreCheckpoint).not.toHaveBeenCalled();
+    });
+
+    it('dismisses and persists the cue without mutating recipe, training, workspace, or URL', async () => {
+        const user = userEvent.setup();
+        window.history.replaceState(null, '', '#dismiss-first-visit-cue');
+        const preparedRef = INITIAL_PREPARED;
+        const recipeRef = INITIAL_PREPARED.document.recipe;
+        const trainingBefore = useTrainingStore.getState();
+        const audienceBefore = useLayoutStore.getState().audienceMode;
+        const viewBefore = useLayoutStore.getState().view;
+        const hashBefore = window.location.hash;
+
+        const mounted = render(<App />);
+        await user.click(await screen.findByRole('button', { name: 'Dismiss lesson suggestion' }));
+
+        expect(screen.queryByRole('region', { name: 'Getting started' }))
+            .not.toBeInTheDocument();
+        const playground = usePlaygroundStore.getState();
+        expect(playground.access.status).toBe('ready');
+        if (playground.access.status === 'ready') {
+            expect(playground.access.prepared).toBe(preparedRef);
+            expect(playground.access.prepared.document.recipe).toBe(recipeRef);
+        }
+        expect(useTrainingStore.getState()).toBe(trainingBefore);
+        expect(useLayoutStore.getState()).toMatchObject({
+            audienceMode: audienceBefore,
+            view: viewBefore,
+            lessonCueDismissed: true,
+            hasStartedLesson: false,
+        });
+        expect(window.location.hash).toBe(hashBefore);
+        const stored = JSON.parse(window.localStorage.getItem('nn-playground-layout') ?? '{}');
+        expect(stored.state?.lessonCueDismissed).toBe(true);
+
+        mounted.unmount();
+        render(<App />);
+        expect(screen.queryByRole('button', { name: 'Start a 3-minute lesson' }))
+            .not.toBeInTheDocument();
+    });
+
+    it('does not show the cue to an established user with an accepted saved run', () => {
+        useExperimentMemoryStore.setState({
+            hydrationStatus: 'ready',
+            records: Object.freeze([{ id: 'accepted-run' }]) as never,
+        });
+
+        render(<App />);
+
+        expect(screen.queryByRole('region', { name: 'Getting started' }))
+            .not.toBeInTheDocument();
     });
 
     it('opens Advanced Tools without requesting diagnostics and collapses hidden Build targets atomically', async () => {

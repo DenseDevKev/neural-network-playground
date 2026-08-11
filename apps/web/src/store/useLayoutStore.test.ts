@@ -17,6 +17,8 @@ describe('useLayoutStore', () => {
             codeExportTab: 'pseudocode',
             activeLessonId: null,
             activeLessonStepIndex: null,
+            lessonCueDismissed: false,
+            hasStartedLesson: false,
         });
     });
 
@@ -212,10 +214,67 @@ describe('useLayoutStore', () => {
         useLayoutStore.getState().setActiveLessonStep('lesson-xor-hidden-layers', 1);
         expect(useLayoutStore.getState().activeLessonId).toBe('lesson-xor-hidden-layers');
         expect(useLayoutStore.getState().activeLessonStepIndex).toBe(1);
+        expect(useLayoutStore.getState().hasStartedLesson).toBe(true);
 
         useLayoutStore.getState().clearActiveLessonStep();
         expect(useLayoutStore.getState().activeLessonId).toBeNull();
         expect(useLayoutStore.getState().activeLessonStepIndex).toBeNull();
+        expect(useLayoutStore.getState().hasStartedLesson).toBe(true);
+    });
+
+    it('dismisses the first-visit lesson cue without changing other layout state', () => {
+        const before = useLayoutStore.getState();
+
+        before.dismissLessonCue();
+
+        expect(useLayoutStore.getState()).toMatchObject({
+            lessonCueDismissed: true,
+            hasStartedLesson: false,
+            view: before.view,
+            audienceMode: before.audienceMode,
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
+    });
+
+    it('persists sticky lesson history while keeping active lesson fields transient', async () => {
+        useLayoutStore.getState().dismissLessonCue();
+        useLayoutStore.getState().setActiveLessonStep('lesson-xor-hidden-layers', 2);
+
+        const stored = JSON.parse(window.localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}');
+        expect(stored.version).toBe(0);
+        expect(stored.state?.lessonCueDismissed).toBe(true);
+        expect(stored.state?.hasStartedLesson).toBe(true);
+        expect(stored.state?.activeLessonId).toBeUndefined();
+        expect(stored.state?.activeLessonStepIndex).toBeUndefined();
+
+        const freshStore = createLayoutStore();
+        await Promise.resolve(freshStore.persist.rehydrate());
+        expect(freshStore.getState()).toMatchObject({
+            lessonCueDismissed: true,
+            hasStartedLesson: true,
+            activeLessonId: null,
+            activeLessonStepIndex: null,
+        });
+    });
+
+    it('sanitizes sticky lesson flags as actual booleans', async () => {
+        window.localStorage.setItem(
+            LAYOUT_STORAGE_KEY,
+            JSON.stringify({
+                state: {
+                    lessonCueDismissed: 'true',
+                    hasStartedLesson: true,
+                },
+                version: 0,
+            }),
+        );
+
+        const freshStore = createLayoutStore();
+        await Promise.resolve(freshStore.persist.rehydrate());
+
+        expect(freshStore.getState().lessonCueDismissed).toBe(false);
+        expect(freshStore.getState().hasStartedLesson).toBe(true);
     });
 
     it('rehydrates state from localStorage with a fresh store instance', async () => {

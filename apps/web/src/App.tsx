@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useLayoutStore } from './store/useLayoutStore.ts';
+import { useExperimentMemoryStore } from './store/experimentMemoryStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { selectScientificEvidence } from './store/evidenceSelectors.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
@@ -23,6 +24,7 @@ import {
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
 import { GuidedLessonPanel } from './components/controls/GuidedLessonPanel.tsx';
+import { FirstVisitLessonCue } from './components/controls/FirstVisitLessonCue.tsx';
 import { RecipeSummaryCard } from './components/controls/RecipeSummaryCard.tsx';
 import { CurrentRunCard } from './components/controls/CurrentRunCard.tsx';
 import type { LessonTarget } from './lessons/lessonRegistry.ts';
@@ -74,6 +76,14 @@ function CompatiblePlayground() {
     const advancedToolsOpen = useLayoutStore((s) => s.advancedToolsOpen);
     const setActiveEvidenceView = useLayoutStore((s) => s.setActiveEvidenceView);
     const setAdvancedToolsOpen = useLayoutStore((s) => s.setAdvancedToolsOpen);
+    const lessonCueDismissed = useLayoutStore((s) => s.lessonCueDismissed);
+    const hasStartedLesson = useLayoutStore((s) => s.hasStartedLesson);
+    const hasActiveLesson = useLayoutStore((s) => s.activeLessonId !== null);
+    const dismissLessonCue = useLayoutStore((s) => s.dismissLessonCue);
+    const historyReady = useExperimentMemoryStore((s) => s.hydrationStatus === 'ready');
+    const hasSavedRuns = useExperimentMemoryStore((s) => (
+        s.hydrationStatus === 'ready' && s.records.length > 0
+    ));
     const status = useTrainingStore((s) => s.status);
     const dataConfigLoading = useTrainingStore((s) => s.dataConfigLoading);
     const networkConfigLoading = useTrainingStore((s) => s.networkConfigLoading);
@@ -99,6 +109,9 @@ function CompatiblePlayground() {
     }, []);
     const toggleSurface = useCallback((surface: DrawerSurfaceId) => {
         setOpenSurface((current) => current === surface ? null : surface);
+    }, []);
+    const openLessons = useCallback(() => {
+        setOpenSurface('lessons');
     }, []);
     const closeSurface = useCallback(() => {
         if (openSurface) {
@@ -308,6 +321,17 @@ function CompatiblePlayground() {
                         onSelectEvidence={setActiveEvidenceView}
                         openSurface={openSurface}
                         onCloseSurface={closeSurface}
+                        firstVisitLessonCue={(
+                            <FirstVisitLessonCue
+                                historyReady={historyReady}
+                                lessonCueDismissed={lessonCueDismissed}
+                                hasSavedRuns={hasSavedRuns}
+                                hasStartedLesson={hasStartedLesson}
+                                hasActiveLesson={hasActiveLesson}
+                                onOpenLessons={openLessons}
+                                onDismiss={dismissLessonCue}
+                            />
+                        )}
                         recipeContent={<RecipeSummaryCard />}
                         runContent={<CurrentRunCard />}
                         dataContent={leftTabContent.data}

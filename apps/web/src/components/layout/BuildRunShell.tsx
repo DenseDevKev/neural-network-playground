@@ -35,6 +35,7 @@ interface BuildRunShellProps {
     onSelectEvidence: (view: EvidenceViewId) => void;
     openSurface: DrawerSurfaceId | null;
     onCloseSurface: () => void;
+    firstVisitLessonCue: ReactNode;
 
     recipeContent: ReactNode;
     runContent: ReactNode;
@@ -141,6 +142,7 @@ export const BuildRunShell = memo(function BuildRunShell({
     onSelectEvidence,
     openSurface,
     onCloseSurface,
+    firstVisitLessonCue,
     recipeContent,
     runContent,
     dataContent,
@@ -218,6 +220,7 @@ export const BuildRunShell = memo(function BuildRunShell({
                             <InstrumentModule title="Current Recipe" phase="build" targets="experiment">
                                 {recipeContent}
                             </InstrumentModule>
+                            {firstVisitLessonCue}
                             <InstrumentModule title="Data" phase="build" targets="data">
                                 {dataContent}
                             </InstrumentModule>

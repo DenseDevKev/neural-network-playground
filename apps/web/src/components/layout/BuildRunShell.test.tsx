@@ -34,6 +34,7 @@ function shellProps(overrides: Partial<React.ComponentProps<typeof BuildRunShell
         onSelectEvidence: vi.fn(),
         openSurface: null,
         onCloseSurface: vi.fn(),
+        firstVisitLessonCue: <aside role="region" aria-label="Fresh lesson cue">Lesson cue</aside>,
         recipeContent: <div>Recipe content</div>,
         runContent: <div>Run content</div>,
         dataContent: <div>{BUILD_MARKERS.data}</div>,
@@ -146,6 +147,18 @@ describe('BuildRunShell', () => {
         const expandedRegion = screen.getByRole('region', { name: 'Workspace tools' });
         expect(expandedRegion).toHaveAttribute('id', ADVANCED_TOOLS_REGION_ID);
         expect(screen.getByText(/advanced tools are visible/i)).toBeInTheDocument();
+    });
+
+    it('places the first-visit lesson cue beside Current Recipe in Build only', () => {
+        const { rerender } = render(<BuildRunShell {...shellProps()} />);
+
+        const recipe = screen.getByRole('region', { name: 'Current Recipe' });
+        const cue = screen.getByRole('region', { name: 'Fresh lesson cue' });
+        expect(recipe.nextElementSibling).toBe(cue);
+
+        rerender(<BuildRunShell {...shellProps({ view: 'run' })} />);
+        expect(screen.queryByRole('region', { name: 'Fresh lesson cue' }))
+            .not.toBeInTheDocument();
     });
 
     it('resolves the legacy History evidence alias to Boundary', () => {

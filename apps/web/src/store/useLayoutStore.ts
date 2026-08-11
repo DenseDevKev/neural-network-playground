@@ -62,6 +62,8 @@ const DEFAULT_LAYOUT_STATE = {
     codeExportTab: 'pseudocode' as CodeExportTab,
     activeLessonId: null as string | null,
     activeLessonStepIndex: null as number | null,
+    lessonCueDismissed: false as boolean,
+    hasStartedLesson: false as boolean,
 };
 
 const VALID_PHASES = WORKSPACE_VIEWS;
@@ -87,6 +89,8 @@ export interface LayoutStore {
     codeExportTab: CodeExportTab;
     activeLessonId: string | null;
     activeLessonStepIndex: number | null;
+    lessonCueDismissed: boolean;
+    hasStartedLesson: boolean;
 
     setView: (view: WorkspaceView) => void;
     setActiveRecipeSection: (section: RecipeSectionId) => void;
@@ -102,6 +106,7 @@ export interface LayoutStore {
     setCodeExportTab: (tab: CodeExportTab) => void;
     setActiveLessonStep: (lessonId: string, stepIndex: number) => void;
     clearActiveLessonStep: () => void;
+    dismissLessonCue: () => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -155,6 +160,12 @@ function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STA
             : DEFAULT_LAYOUT_STATE.codeExportTab,
         activeLessonId: null,
         activeLessonStepIndex: null,
+        lessonCueDismissed: typeof state.lessonCueDismissed === 'boolean'
+            ? state.lessonCueDismissed
+            : DEFAULT_LAYOUT_STATE.lessonCueDismissed,
+        hasStartedLesson: typeof state.hasStartedLesson === 'boolean'
+            ? state.hasStartedLesson
+            : DEFAULT_LAYOUT_STATE.hasStartedLesson,
     };
 }
 
@@ -256,11 +267,13 @@ export function createLayoutStore() {
                 setActiveLessonStep: (activeLessonId, activeLessonStepIndex) => set({
                     activeLessonId,
                     activeLessonStepIndex,
+                    hasStartedLesson: true,
                 }),
                 clearActiveLessonStep: () => set({
                     activeLessonId: null,
                     activeLessonStepIndex: null,
                 }),
+                dismissLessonCue: () => set({ lessonCueDismissed: true }),
             }),
             {
                 name: LAYOUT_STORAGE_KEY,
@@ -271,7 +284,10 @@ export function createLayoutStore() {
                     codeExportTab: state.codeExportTab,
                     audienceMode: state.audienceMode,
                     advancedToolsOpen: state.advancedToolsOpen,
+                    lessonCueDismissed: state.lessonCueDismissed,
+                    hasStartedLesson: state.hasStartedLesson,
                 }),
+                version: 0,
                 merge: (persistedState, currentState) => ({
                     ...currentState,
                     ...sanitizePersistedLayoutState(persistedState),
