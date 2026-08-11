@@ -929,12 +929,15 @@ git commit -m "feat(web): explain build and run views"
 - Modify: apps/web/src/components/layout/Header.test.tsx
 - Modify: apps/web/src/productShell/audienceProfiles.test.ts
 - Modify: apps/web/src/__tests__/appShell.integration.test.tsx
+- Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
 - Visible label and accessible name become Workspace profile.
 - Stored audience values beginner, explore, and lab remain unchanged.
 - The app-shell keyboard/selector assertion uses the new accessible name; its
   prior `Audience mode` query is part of the executable RED.
+- The Playwright audience-mode helper uses the new accessible name while its
+  internal helper/storage terminology and stored values remain unchanged.
 
 - [ ] **Step 1: Write the failing label and invariance test**
 
@@ -945,11 +948,19 @@ expect(onAudienceModeChange).toHaveBeenCalledWith('lab');
 expect(onExperimentChange).not.toHaveBeenCalled();
 ~~~
 
+Update the existing app-shell selectors and Playwright helper to query
+`Workspace profile`; those selector changes are part of RED and must not alter
+the profile-cycle scientific-state assertions.
+
 - [ ] **Step 2: Run RED**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/productShell/audienceProfiles.test.ts src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because the current accessible name is Audience mode and visible label is Mode.
+Run: pnpm build
+
+Run: pnpm test:e2e -- tests/e2e/playground-smoke.spec.ts
+
+Expected: FAIL because the current accessible name is Audience mode and visible label is Mode; the updated Playwright helper cannot yet resolve Workspace profile.
 
 - [ ] **Step 3: Update labels without changing enum or persistence keys**
 
@@ -959,12 +970,16 @@ Render Workspace as the visible label, Workspace profile as the accessible name,
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/components/layout/Header.test.tsx src/productShell/audienceProfiles.test.ts src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS with the same stored values/state behavior and the updated app-shell selector.
+Run: pnpm build
+
+Run: pnpm test:e2e -- tests/e2e/playground-smoke.spec.ts
+
+Expected: PASS with the same stored values/state behavior, updated app-shell selectors, and the paused-run/compact Playwright invariants still green.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/productShell/audienceProfiles.test.ts apps/web/src/__tests__/appShell.integration.test.tsx
+git add apps/web/src/components/layout/Header.tsx apps/web/src/components/layout/Header.test.tsx apps/web/src/productShell/audienceProfiles.test.ts apps/web/src/__tests__/appShell.integration.test.tsx tests/e2e/playground-smoke.spec.ts
 git commit -m "feat(web): clarify workspace profiles"
 ~~~
 
