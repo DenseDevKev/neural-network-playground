@@ -80,6 +80,12 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).toMatch(
             /@media \(max-width: 900px\)[\s\S]*?\.forge-transport-cluster \.training-shortcuts > summary \{[\s\S]*?min-height: 44px;/,
         );
+        expect(css).toMatch(
+            /\.forge-transport-cluster \.training-shortcuts\[open\] dl \{[^}]*display: grid;/,
+        );
+        expect(css).not.toMatch(
+            /\.forge-transport-cluster \.training-shortcuts dl \{[^}]*display\s*:/,
+        );
     });
 
     it('keeps topology controls attached to a single graph toolbar surface', () => {

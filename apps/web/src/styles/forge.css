@@ -1420,7 +1420,7 @@
     outline-offset: 2px;
 }
 
-.forge-transport-cluster .training-shortcuts dl {
+.forge-transport-cluster .training-shortcuts[open] dl {
     position: absolute;
     z-index: 80;
     bottom: calc(100% + 6px);

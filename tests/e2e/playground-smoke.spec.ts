@@ -490,6 +490,35 @@ test('reduced motion collapses shell animation and transition timing', async ({ 
     await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
 });
 
+test.describe('800px compact shell', () => {
+    test.use({ viewport: { width: 800, height: 844 } });
+
+    test('keyboard shortcuts disclosure hides definitions when closed', async ({ page }) => {
+        await page.route('https://fonts.googleapis.com/**', (route) => (
+            route.fulfill({ contentType: 'text/css', body: '' })
+        ));
+        await loadPlayground(page);
+
+        const details = timeline(page).getByRole('group', { name: 'Keyboard shortcuts' });
+        const summary = details.locator('summary');
+        const definitions = details.locator('dl');
+
+        await expect(details).not.toHaveAttribute('open', '');
+        await expect(definitions).toBeHidden();
+        await expect(definitions).not.toHaveCSS('display', 'grid');
+
+        await expect(summary).toBeVisible();
+        await summary.click();
+        await expect(details).toHaveAttribute('open', '');
+        await expect(definitions).toBeVisible();
+
+        await summary.click();
+        await expect(details).not.toHaveAttribute('open', '');
+        await expect(definitions).toBeHidden();
+        await expect(definitions).not.toHaveCSS('display', 'grid');
+    });
+});
+
 test.describe('320px touch shell', () => {
     test.use({
         viewport: { width: 320, height: 844 },
