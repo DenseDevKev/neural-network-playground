@@ -1085,17 +1085,47 @@ git commit -m "feat(web): expose training shortcuts"
 - Modify: apps/web/src/components/controls/DataPanel.test.tsx
 
 **Interfaces:**
-- Train ratio input has a stable ID, label, output association, and value text such as 70 percent training, 30 percent test.
-- Noise input has a stable ID, label, output association, and value text such as 15 percent noise.
+- Each DataPanel instance derives stable, unique input/output IDs from an
+  unconditional `useId` call made before the recipe guard; multiple panels must
+  not collide.
+- Train ratio has a native label, associated output, and value text such as 70
+  percent training, 30 percent test. Its rounded train value and complementary
+  test value always total 100.
+- Noise has a native label, associated output, and value text such as 15 percent
+  noise. Preserve the controlled recipe value rather than independently
+  rounding it.
+- Keep native range behavior and existing bounds; remove overriding aria-labels
+  so accessible names are exactly Train ratio and Noise.
 
 - [ ] **Step 1: Write failing accessible-value tests**
 
 ~~~tsx
-expect(screen.getByRole('slider', { name: 'Train ratio' })).toHaveAttribute(
+const trainSlider = screen.getByRole('slider', { name: 'Train ratio' });
+const noiseSlider = screen.getByRole('slider', { name: 'Noise' });
+expect(trainSlider).toHaveAttribute(
     'aria-valuetext',
     '50 percent training, 50 percent test',
 );
-expect(screen.getByRole('slider', { name: 'Noise' })).toHaveAttribute('aria-valuetext', '0 percent noise');
+expect(noiseSlider).toHaveAttribute('aria-valuetext', '0 percent noise');
+
+const trainId = trainSlider.id;
+expect(document.querySelector(`label[for="${trainId}"]`)).toHaveTextContent('Train ratio');
+expect(document.getElementById(trainSlider.getAttribute('aria-describedby') ?? '')?.tagName)
+    .toBe('OUTPUT');
+~~~
+
+Assert both sliders have nonempty IDs, matching native labels, outputs whose
+`htmlFor` points back to their input, exact initial visible/value text, and the
+same IDs after sequential changes to 70/30 and 15 percent. Update the existing
+queries from `Train/test split percentage`/`Noise level`. Render two DataPanels
+in one root and prove all input/output IDs are distinct and correctly owned.
+Because `output` has implicit status semantics, narrow the existing singular
+loading-status assertion to the `Generating data...` status instead of removing
+output semantics.
+
+~~~tsx
+const loadingStatus = screen.getByText('Generating data...').closest('[role="status"]');
+expect(loadingStatus).toHaveTextContent('Generating data...');
 ~~~
 
 - [ ] **Step 2: Run RED**
@@ -1107,18 +1137,23 @@ Expected: FAIL because the sliders use standalone aria-label values without asso
 - [ ] **Step 3: Add label, output, and value text**
 
 ~~~tsx
-<label htmlFor={trainRatioId}>Train ratio</label>
-<output id={trainRatioOutputId} htmlFor={trainRatioId}>{trainPercent}%</output>
+<label className="control-label" htmlFor={trainRatioId}>Train ratio</label>
+<output className="control-value" id={trainRatioOutputId} htmlFor={trainRatioId}>{trainPercent}%</output>
 <input id={trainRatioId} aria-describedby={trainRatioOutputId} aria-valuetext={`${trainPercent} percent training, ${testPercent} percent test`} />
 ~~~
 
-Mirror the structure for noise.
+Mirror the structure for noise. Derive `trainPercent` once with `Math.round` and
+derive `testPercent` as its complement. Keep the inputs controlled by the recipe
+with no local state, custom role, key handler, or tab index. Preserve the same
+`control-label` and `control-value` classes for Noise.
 
 - [ ] **Step 4: Run GREEN**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/components/controls/DataPanel.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS for initial and changed values.
+Run: pnpm --filter @nn-playground/web typecheck
+
+Expected: PASS for initial/changed values, stable unique ownership, and native range behavior.
 
 - [ ] **Step 5: Commit**
 
@@ -1375,6 +1410,12 @@ git commit -m "feat(web): surface compact evaluation outcome"
 - Extend `ConceptId` with `learning-rate`, `train-test-split`, and `epoch`.
 - Every entry includes a plain definition, extended explanation, aliases, at least one example, related concepts, difficulty, profiles, and an existing valid UI target where applicable.
 - Place `ConceptHelp` beside the visible Learning rate label, Train ratio label, and Epoch label; guidance remains controlled by the current audience profile.
+- Preserve Task 17's native Train ratio label/output association. The help
+  button is a sibling of its `<label>`, never nested inside or substituted for
+  the label.
+- Call `useAudienceGuidanceLevel()` unconditionally before DataPanel and
+  HyperparamPanel recipe/prepared early returns; TrainingControls already calls
+  it unconditionally. Readiness transitions must not change hook order.
 
 - [ ] **Step 1: Write failing catalog and placement tests**
 
@@ -1408,11 +1449,21 @@ Define learning rate as update scale, split as fixed membership used to separate
 
 Use the existing component props/store selectors for `guidanceLevel`; do not introduce a second help implementation.
 
+For DataPanel, wrap a sibling label and help control rather than replacing the
+Task 17 label:
+
+~~~tsx
+<span className="control-label">
+    <label htmlFor={trainRatioId}>Train ratio</label>
+    <ConceptHelp conceptId="train-test-split" guidanceLevel={guidanceLevel} />
+</span>
+~~~
+
 - [ ] **Step 4: Run GREEN and typecheck**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/concepts/conceptCatalog.test.ts src/components/controls/HyperparamPanel.test.tsx src/components/controls/DataPanel.test.tsx src/components/controls/TrainingControls.test.tsx --pool=forks --reporter=dot
 
-Run: pnpm --filter @nn-playground/web exec tsc --noEmit
+Run: pnpm --filter @nn-playground/web typecheck
 
 Expected: PASS with all concept metadata and placements typed.
 
