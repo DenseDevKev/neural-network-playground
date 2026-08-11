@@ -72,8 +72,17 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
     render() {
         if (this.state.error) {
+            const retryStatus = this.state.retrying
+                ? 'Retrying…'
+                : this.state.retryError
+                    ? `Retry failed: ${this.state.retryError}`
+                    : '';
+
             return (
-                <div className={this.props.className}>
+                <div className={this.props.className} aria-busy={this.state.retrying}>
+                    <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                        {retryStatus}
+                    </span>
                     <EmptyState
                         icon="⚠"
                         title={this.props.title}

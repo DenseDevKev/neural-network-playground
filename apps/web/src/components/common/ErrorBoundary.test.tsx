@@ -37,6 +37,10 @@ describe('ErrorBoundary', () => {
         expect(screen.getByText('Workspace unavailable')).toBeInTheDocument();
         expect(screen.getByText(/A section failed to render\. Boom/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveAttribute('aria-atomic', 'true');
+        expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
+        expect(screen.getByRole('status')).toBeEmptyDOMElement();
+        expect(screen.getByRole('status').parentElement).toHaveAttribute('aria-busy', 'false');
     });
 
     it('resets the boundary and calls onRetry', async () => {
@@ -100,10 +104,13 @@ describe('ErrorBoundary', () => {
         expect(screen.getByText('Workspace unavailable')).toBeInTheDocument();
         expect(screen.getByText('A section failed to render. Boom')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Retrying…' })).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('Retrying…');
+        expect(screen.getByRole('status').parentElement).toHaveAttribute('aria-busy', 'true');
 
         deferred.resolve();
 
         expect(await screen.findByText('Healthy content')).toBeInTheDocument();
+        expect(screen.queryByRole('status')).not.toBeInTheDocument();
     });
 
     it('shows a safe retry error and leaves Try again actionable when an async retry fails', async () => {
@@ -122,8 +129,10 @@ describe('ErrorBoundary', () => {
 
         await user.click(screen.getByRole('button', { name: 'Try again' }));
 
-        expect(await screen.findByText(/reset failed/i)).toBeInTheDocument();
+        expect(await screen.findByRole('status')).toHaveTextContent('Retry failed: reset failed');
         expect(screen.getByText(/A section failed to render\. Boom/)).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('Retry failed: reset failed');
+        expect(screen.getByRole('status').parentElement).toHaveAttribute('aria-busy', 'false');
     });
 });
