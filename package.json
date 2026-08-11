@@ -11,7 +11,7 @@
     "test": "pnpm -r test",
     "test:e2e": "playwright test",
     "test:engine": "pnpm --filter @nn-playground/engine test",
-    "test:perf": "pnpm --filter @nn-playground/engine test:perf && pnpm --filter @nn-playground/web test:perf",
+    "test:perf": "node scripts/run-performance-gates.mjs",
     "bench": "pnpm --filter @nn-playground/engine bench",
     "lint": "eslint .",
     "clean": "pnpm -r exec rm -rf dist node_modules"
