@@ -12,8 +12,10 @@ import {
     switchDataset,
 } from '../../store/recipeEdits.ts';
 import { LoadingState } from '../common/LoadingState.tsx';
+import { ConceptHelp } from '../common/ConceptHelp.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { DATASET_TOOLTIPS } from '../../data/datasetInsights.ts';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 const CLASSIFICATION_DATASETS: { id: DatasetId; label: string }[] = [
     { id: 'circle', label: 'Circle' },
@@ -53,6 +55,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
     const testCount = useTrainingStore((state) => state.testPoints.length);
     const configError = useTrainingStore((state) => state.configError);
     const configErrorSource = useTrainingStore((state) => state.configErrorSource);
+    const guidanceLevel = useAudienceGuidanceLevel();
     const controlId = useId();
     const trainRatioId = `${controlId}-train-ratio`;
     const trainRatioOutputId = `${controlId}-train-ratio-output`;
@@ -180,7 +183,14 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             </div>
 
             <div className="control-row">
-                <label className="control-label" htmlFor={trainRatioId}>Train ratio</label>
+                <span className="control-label">
+                    <label htmlFor={trainRatioId}>Train ratio</label>
+                    <ConceptHelp
+                        conceptId="train-test-split"
+                        guidanceLevel={guidanceLevel}
+                        className="concept-help--viewport-overlay"
+                    />
+                </span>
                 <output
                     className="control-value"
                     id={trainRatioOutputId}

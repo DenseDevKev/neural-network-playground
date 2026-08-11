@@ -183,6 +183,10 @@
     top: auto;
     bottom: calc(100% + 6px);
 }
+.forge-shell .concept-help.concept-help--viewport-overlay .concept-help__content {
+    position: fixed;
+    inset: auto 12px 36px auto;
+}
 .forge-shell .concept-help--block {
     display: grid;
     justify-items: start;

@@ -219,6 +219,45 @@ describe('TrainingControls', () => {
     expect(screen.getByText('Epoch 4')).toBeInTheDocument();
   });
 
+  it('explains epoch beside the exact progress text with audience-specific guidance', async () => {
+    const user = userEvent.setup();
+    const training = createTrainingMock();
+    useTrainingStore.setState({ latestLiveSignal: liveSignal(4, 20, 4) });
+    render(<TrainingControls training={training} />);
+
+    const epochText = screen.getByText('Epoch 4', { selector: 'span' });
+    const trigger = screen.getByRole('button', { name: 'Learn about Epoch' });
+    expect(epochText.nextElementSibling).toBe(trigger.parentElement);
+    expect(trigger.parentElement).toHaveClass(
+      'concept-help--above',
+      'concept-help--end',
+      'concept-help--viewport-overlay',
+    );
+
+    await user.click(trigger);
+    const region = screen.getByRole('region', { name: 'Epoch' });
+    expect(region).toHaveTextContent('Epoch');
+    expect(region).toHaveTextContent(
+      'One epoch is one complete pass through the current training set.',
+    );
+    expect(region).toHaveTextContent(getConceptById('epoch')?.extendedExplanation ?? '');
+    expect(region).toHaveTextContent(getConceptById('epoch')?.examples?.[0] ?? '');
+
+    await user.click(trigger);
+    act(() => useLayoutStore.setState({ audienceMode: 'lab' }));
+    await user.click(screen.getByRole('button', { name: 'Learn about Epoch' }));
+    const compactRegion = screen.getByRole('region', { name: 'Epoch' });
+    expect(compactRegion).toHaveTextContent(
+      'One epoch is one complete pass through the current training set.',
+    );
+    expect(compactRegion).not.toHaveTextContent(
+      getConceptById('epoch')?.extendedExplanation ?? '',
+    );
+    expect(compactRegion).not.toHaveTextContent(
+      getConceptById('epoch')?.examples?.[0] ?? '',
+    );
+  });
+
   it('shows the newer forced evaluation model instead of a stale live signal after pause', () => {
     const training = createTrainingMock();
     useTrainingStore.setState({

@@ -235,11 +235,37 @@ async function expectFullyInViewport(page: Page, locator: Locator): Promise<void
     expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
 }
 
-async function expectConceptHelpInViewport(page: Page, concept: 'Data loss' | 'Checkpoint') {
+const VIEWPORT_OVERLAY_CONCEPTS: ReadonlySet<string> = new Set([
+    'Epoch',
+    'Train/test split',
+    'Learning rate',
+]);
+
+async function expectConceptHelpInViewport(
+    page: Page,
+    concept: 'Data loss' | 'Checkpoint' | 'Epoch' | 'Train/test split' | 'Learning rate',
+) {
     const trigger = page.getByRole('button', { name: `Learn about ${concept}` }).first();
     await trigger.click();
     const panel = page.getByRole('region', { name: concept });
     await expectFullyInViewport(page, panel);
+    if (VIEWPORT_OVERLAY_CONCEPTS.has(concept)) {
+        await expect(trigger.locator('xpath=..')).toHaveClass(/concept-help--viewport-overlay/);
+        const cornersAreExposed = await panel.evaluate((element) => {
+            const rect = element.getBoundingClientRect();
+            const points = [
+                [rect.left + 4, rect.top + 4],
+                [rect.right - 4, rect.top + 4],
+                [rect.left + 4, rect.bottom - 4],
+                [rect.right - 4, rect.bottom - 4],
+            ];
+            return points.every(([x, y]) => {
+                const hit = document.elementFromPoint(x, y);
+                return hit !== null && (hit === element || element.contains(hit));
+            });
+        });
+        expect(cornersAreExposed).toBe(true);
+    }
     await trigger.press('Escape');
     await expect(panel).toBeHidden();
     await expect(trigger).toBeFocused();
@@ -492,6 +518,12 @@ test('concept help remains fully visible in the desktop Run workspace', async ({
     await loadPlayground(page);
     await expectConceptHelpInViewport(page, 'Data loss');
     await expectConceptHelpInViewport(page, 'Checkpoint');
+    await expectConceptHelpInViewport(page, 'Epoch');
+    await page.getByRole('group', { name: 'Workspace view' })
+        .getByRole('button', { name: 'build', exact: true })
+        .click();
+    await expectConceptHelpInViewport(page, 'Train/test split');
+    await expectConceptHelpInViewport(page, 'Learning rate');
 });
 
 test('reduced motion collapses shell animation and transition timing', async ({ page }) => {
@@ -600,6 +632,18 @@ test.describe('320px touch shell', () => {
     test('keeps critical controls reachable, sized, focused, and unclipped', async ({ page }) => {
         await loadPlayground(page);
 
+        await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Epoch' }));
+        await expectConceptHelpInViewport(page, 'Epoch');
+        const workspaceView = page.getByRole('group', { name: 'Workspace view' });
+        await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
+        for (const concept of ['Train/test split', 'Learning rate'] as const) {
+            await expectMinimumTouchTarget(
+                page.getByRole('button', { name: `Learn about ${concept}` }),
+            );
+            await expectConceptHelpInViewport(page, concept);
+        }
+        await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
+
         const compactOutcome = page.getByRole('group', { name: 'Evaluation outcome' });
         const compactOutcomeSummary = compactOutcome.locator('summary');
         const compactOutcomeBody = compactOutcome.locator('.forge-compact-outcome__body');
@@ -628,10 +672,11 @@ test.describe('320px touch shell', () => {
         await compactOutcomeSummary.click();
         await expect(compactOutcome).not.toHaveAttribute('open', '');
 
+        await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Data loss' }));
         await expectConceptHelpInViewport(page, 'Data loss');
+        await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Checkpoint' }));
         await expectConceptHelpInViewport(page, 'Checkpoint');
 
-        const workspaceView = page.getByRole('group', { name: 'Workspace view' });
         const criticalTargets = [
             workspaceView.getByRole('button', { name: 'build', exact: true }),
             workspaceView.getByRole('button', { name: 'run', exact: true }),

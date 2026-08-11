@@ -237,7 +237,14 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                 {currentModel && (
                     <>
                         <span>Step {currentModel.step.toLocaleString()}</span>
-                        <span>Epoch {currentModel.epoch}</span>
+                        <span>
+                            <span>Epoch {currentModel.epoch}</span>
+                            <ConceptHelp
+                                conceptId="epoch"
+                                guidanceLevel={guidanceLevel}
+                                className="concept-help--above concept-help--end concept-help--viewport-overlay"
+                            />
+                        </span>
                     </>
                 )}
             </div>

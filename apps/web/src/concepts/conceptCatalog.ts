@@ -9,6 +9,9 @@ export const CONCEPT_IDS = Object.freeze([
     'activation',
     'gradient',
     'checkpoint',
+    'learning-rate',
+    'train-test-split',
+    'epoch',
 ] as const);
 
 export type ConceptId = (typeof CONCEPT_IDS)[number];
@@ -135,6 +138,52 @@ export const CONCEPTS: readonly ConceptEntry[] = Object.freeze([
         difficulty: 'beginner',
         examples: [
             'Restore Step 500 to inspect that model again, then resume from its parameters and optimizer state.',
+        ],
+    }),
+    freezeEntry({
+        id: 'learning-rate',
+        canonicalTerm: 'Learning rate',
+        plainDefinition:
+            'The learning rate sets the scale of each optimizer update to the model’s parameters.',
+        extendedExplanation:
+            'The optimizer uses the learning rate to scale parameter updates. Larger values can move faster but may overshoot or make loss unstable; smaller values can be steadier but slower. A schedule can change the rate as training proceeds.',
+        aliases: ['step size', 'optimizer learning rate', 'update scale'],
+        related: ['gradient', 'training-objective'],
+        profiles: ALL_PROFILES,
+        difficulty: 'beginner',
+        examples: [
+            'With plain SGD, learning rate 0.1 moves a parameter ten times as far as 0.01 for the same gradient.',
+        ],
+        uiTarget: 'hyperparams',
+    }),
+    freezeEntry({
+        id: 'train-test-split',
+        canonicalTerm: 'Train/test split',
+        plainDefinition:
+            'The train/test split assigns generated examples to a training set used for fitting and a held-out test set used only for evaluation.',
+        extendedExplanation:
+            'Membership is deterministic and stays fixed while the current prepared experiment trains. Data-recipe changes or Reshuffle split rebuild membership. Test examples never drive weight updates; full-split test evidence measures held-out performance at the same model step.',
+        aliases: ['data split', 'training test split', 'held-out split'],
+        related: ['data-loss', 'training-objective'],
+        profiles: ALL_PROFILES,
+        difficulty: 'beginner',
+        examples: [
+            'With 200 generated examples and a 70% train ratio, 140 train and 60 are held out for test.',
+        ],
+        uiTarget: 'data',
+    }),
+    freezeEntry({
+        id: 'epoch',
+        canonicalTerm: 'Epoch',
+        plainDefinition: 'One epoch is one complete pass through the current training set.',
+        extendedExplanation:
+            'The worker shuffles the training examples, processes each one once in mini-batches, and increments Epoch only after the full training set is consumed. The final batch may be smaller than the configured batch size. Epoch counts data passes, not convergence or model quality.',
+        aliases: ['training epoch', 'data pass', 'full training pass'],
+        related: ['learning-rate', 'checkpoint'],
+        profiles: ALL_PROFILES,
+        difficulty: 'beginner',
+        examples: [
+            'With 150 training examples and batch size 64, one epoch completes after batches of 64, 64, and 22 examples.',
         ],
     }),
 ]);

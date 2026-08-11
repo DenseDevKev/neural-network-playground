@@ -8,6 +8,8 @@ import {
 import { DataPanel } from './DataPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { getConceptById } from '../../concepts/conceptCatalog.ts';
 import {
     currentPreparedForTest,
     installLegacyDataProjectionForTest,
@@ -45,6 +47,7 @@ describe('DataPanel V2 recipe controls', () => {
     beforeEach(async () => {
         await restoreDocument();
         resetTrainingTransaction();
+        useLayoutStore.setState({ audienceMode: 'beginner' });
     });
 
     it('renders the canonical recipe instead of a contradictory legacy data projection', () => {
@@ -94,8 +97,13 @@ describe('DataPanel V2 recipe controls', () => {
         expect(noiseId).not.toBe('');
         expect(trainOutputId).not.toBe('');
         expect(noiseOutputId).not.toBe('');
-        expect(document.querySelector(`label[for="${trainId}"]`))
-            .toHaveTextContent('Train ratio');
+        const trainLabel = document.querySelector(`label[for="${trainId}"]`);
+        expect(trainLabel).toHaveTextContent('Train ratio');
+        expect(trainLabel?.parentElement).toHaveClass('control-label');
+        expect(trainLabel?.nextElementSibling).toHaveClass(
+            'concept-help',
+            'concept-help--viewport-overlay',
+        );
         expect(document.querySelector(`label[for="${noiseId}"]`))
             .toHaveTextContent('Noise');
 
@@ -132,6 +140,68 @@ describe('DataPanel V2 recipe controls', () => {
         expect(document.getElementById(noiseOutputId)).toHaveTextContent('15%');
         expect(screen.getByRole('slider', { name: 'Train ratio' }).id).toBe(trainId);
         expect(screen.getByRole('slider', { name: 'Noise' }).id).toBe(noiseId);
+    });
+
+    it('explains the train/test split beside the native label with audience-specific guidance', async () => {
+        const user = userEvent.setup();
+        render(<DataPanel onReset={vi.fn()} />);
+
+        const slider = screen.getByRole('slider', { name: 'Train ratio' });
+        const label = document.querySelector(`label[for="${slider.id}"]`);
+        const trigger = screen.getByRole('button', { name: 'Learn about Train/test split' });
+        expect(label?.nextElementSibling).toBe(trigger.parentElement);
+
+        await user.click(trigger);
+        const region = screen.getByRole('region', { name: 'Train/test split' });
+        expect(region).toHaveTextContent('Train/test split');
+        expect(region).toHaveTextContent(
+            'The train/test split assigns generated examples to a training set used for fitting and a held-out test set used only for evaluation.',
+        );
+        expect(region).toHaveTextContent(
+            getConceptById('train-test-split')?.extendedExplanation ?? '',
+        );
+        expect(region).toHaveTextContent(
+            getConceptById('train-test-split')?.examples?.[0] ?? '',
+        );
+
+        await user.click(trigger);
+        act(() => useLayoutStore.setState({ audienceMode: 'lab' }));
+        await user.click(screen.getByRole('button', { name: 'Learn about Train/test split' }));
+        const compactRegion = screen.getByRole('region', { name: 'Train/test split' });
+        expect(compactRegion).toHaveTextContent(
+            'The train/test split assigns generated examples to a training set used for fitting and a held-out test set used only for evaluation.',
+        );
+        expect(compactRegion).not.toHaveTextContent(
+            getConceptById('train-test-split')?.extendedExplanation ?? '',
+        );
+        expect(compactRegion).not.toHaveTextContent(
+            getConceptById('train-test-split')?.examples?.[0] ?? '',
+        );
+    });
+
+    it('keeps guidance hook order stable from incompatible to ready', () => {
+        const prepared = currentPreparedForTest()!;
+        act(() => usePlaygroundStore.setState({
+            access: {
+                status: 'incompatible',
+                prepared: null,
+                source: { kind: 'url', rawHash: '#invalid' },
+                issues: [{
+                    code: 'invalid-field',
+                    path: '$',
+                    message: 'No compatible version-2 experiment is active',
+                }],
+            },
+        }));
+        const { rerender } = render(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByText('No compatible version-2 experiment is active.'))
+            .toBeInTheDocument();
+        act(() => usePlaygroundStore.setState({ access: { status: 'ready', prepared } }));
+        rerender(<DataPanel onReset={vi.fn()} />);
+
+        expect(screen.getByRole('button', { name: 'Learn about Train/test split' }))
+            .toBeInTheDocument();
     });
 
     it('renders precision-sensitive recipe values without lossy rounding', async () => {

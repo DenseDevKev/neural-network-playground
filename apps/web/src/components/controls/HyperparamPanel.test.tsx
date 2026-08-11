@@ -12,6 +12,8 @@ import {
     type PlaygroundStore,
 } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { getConceptById } from '../../concepts/conceptCatalog.ts';
 import {
     currentPreparedForTest,
     installLegacyTrainingProjectionForTest,
@@ -51,6 +53,7 @@ describe('HyperparamPanel canonical V2 controls', () => {
             .replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
         expect(restored.ok).toBe(true);
         resetTrainingTransaction();
+        useLayoutStore.setState({ audienceMode: 'beginner' });
     });
 
     afterEach(() => {
@@ -78,6 +81,63 @@ describe('HyperparamPanel canonical V2 controls', () => {
         } finally {
             removeLegacyProjection();
         }
+    });
+
+    it('explains learning rate beside its visible label with audience-specific guidance', async () => {
+        const user = userEvent.setup();
+        render(<HyperparamPanel />);
+
+        const trigger = screen.getByRole('button', { name: 'Learn about Learning rate' });
+        expect(trigger.closest('.control-label')).toHaveTextContent('Learning rate');
+        expect(trigger.parentElement).toHaveClass('concept-help--viewport-overlay');
+
+        await user.click(trigger);
+        const region = screen.getByRole('region', { name: 'Learning rate' });
+        expect(region).toHaveTextContent('Learning rate');
+        expect(region).toHaveTextContent(
+            'The learning rate sets the scale of each optimizer update to the model’s parameters.',
+        );
+        expect(region).toHaveTextContent(getConceptById('learning-rate')?.extendedExplanation ?? '');
+        expect(region).toHaveTextContent(getConceptById('learning-rate')?.examples?.[0] ?? '');
+
+        await user.click(trigger);
+        act(() => useLayoutStore.setState({ audienceMode: 'lab' }));
+        await user.click(screen.getByRole('button', { name: 'Learn about Learning rate' }));
+        const compactRegion = screen.getByRole('region', { name: 'Learning rate' });
+        expect(compactRegion).toHaveTextContent(
+            'The learning rate sets the scale of each optimizer update to the model’s parameters.',
+        );
+        expect(compactRegion).not.toHaveTextContent(
+            getConceptById('learning-rate')?.extendedExplanation ?? '',
+        );
+        expect(compactRegion).not.toHaveTextContent(
+            getConceptById('learning-rate')?.examples?.[0] ?? '',
+        );
+    });
+
+    it('keeps guidance hook order stable from incompatible to ready', () => {
+        const prepared = currentPreparedForTest()!;
+        act(() => usePlaygroundStore.setState({
+            access: {
+                status: 'incompatible',
+                prepared: null,
+                source: { kind: 'url', rawHash: '#invalid' },
+                issues: [{
+                    code: 'invalid-field',
+                    path: '$',
+                    message: 'No compatible version-2 experiment is active',
+                }],
+            },
+        }));
+        const { rerender } = render(<HyperparamPanel />);
+
+        expect(screen.getByText('No compatible version-2 experiment is active.'))
+            .toBeInTheDocument();
+        act(() => usePlaygroundStore.setState({ access: { status: 'ready', prepared } }));
+        rerender(<HyperparamPanel />);
+
+        expect(screen.getByRole('button', { name: 'Learn about Learning rate' }))
+            .toBeInTheDocument();
     });
 
     it('switches step, cosine, and constant schedules with exact explicit defaults', async () => {

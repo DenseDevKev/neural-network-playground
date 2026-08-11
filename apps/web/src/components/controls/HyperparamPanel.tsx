@@ -14,7 +14,9 @@ import {
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { LoadingState } from '../common/LoadingState.tsx';
+import { ConceptHelp } from '../common/ConceptHelp.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
+import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 type NumericCommit = (value: number) => Promise<boolean>;
 
@@ -99,6 +101,7 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
     const isLoading = useTrainingStore((state) => state.trainingConfigLoading);
     const configError = useTrainingStore((state) => state.configError);
     const configErrorSource = useTrainingStore((state) => state.configErrorSource);
+    const guidanceLevel = useAudienceGuidanceLevel();
 
     if (!prepared) {
         return (
@@ -163,7 +166,14 @@ export const HyperparamPanel = memo(function HyperparamPanel() {
                 <div className="forge-section__label">Objective &amp; schedule</div>
 
                 <div className="control-row">
-                    <span className="control-label">Learning rate</span>
+                    <span className="control-label">
+                        Learning rate
+                        <ConceptHelp
+                            conceptId="learning-rate"
+                            guidanceLevel={guidanceLevel}
+                            className="concept-help--viewport-overlay"
+                        />
+                    </span>
                     <Tooltip content="Cause: larger learning rates take bigger weight updates. Effect: training can move faster, but too large can overshoot and make loss jump.">
                         <select
                             className="select"

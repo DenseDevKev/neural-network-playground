@@ -152,6 +152,19 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).not.toContain('var(--accent-cyan)');
     });
 
+    it('pins viewport-overlay concept help after label-relative modifiers', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+        const aboveIndex = css.indexOf('.forge-shell .concept-help--above .concept-help__content');
+        const overlayIndex = css.indexOf(
+            '.forge-shell .concept-help.concept-help--viewport-overlay .concept-help__content',
+        );
+
+        expect(overlayIndex).toBeGreaterThan(aboveIndex);
+        expect(css).toMatch(
+            /\.forge-shell \.concept-help\.concept-help--viewport-overlay \.concept-help__content\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*auto 12px 36px auto;/,
+        );
+    });
+
     it('keeps the keyboard shortcut disclosure visible, full-width, and touch-sized on compact screens', () => {
         const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
 
