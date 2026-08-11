@@ -58,18 +58,27 @@ const RECIPES = {
 
 const browserErrors = new WeakMap<Page, string[]>();
 
-test.beforeEach(({ page }) => {
+function collectBrowserErrors(page: Page): string[] {
     const errors: string[] = [];
     browserErrors.set(page, errors);
     page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
     page.on('console', (message) => {
         if (message.type() === 'error') errors.push(`console.error: ${message.text()}`);
     });
+    return errors;
+}
+
+function expectNoBrowserErrors(page: Page): void {
+    const errors = browserErrors.get(page) ?? [];
+    expect(errors, `Unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
+}
+
+test.beforeEach(({ page }) => {
+    collectBrowserErrors(page);
 });
 
 test.afterEach(async ({ page }) => {
-    const errors = browserErrors.get(page) ?? [];
-    expect(errors, `Unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
+    expectNoBrowserErrors(page);
 });
 
 function statusBar(page: Page): Locator {
@@ -464,6 +473,7 @@ test('saved runs survive reload and reapply their complete recipe', async ({ pag
 test('cross-tab saved-run memory follows native localStorage events', async ({ context, page }) => {
     await loadPlayground(page);
     const peer = await context.newPage();
+    collectBrowserErrors(peer);
     await loadPlayground(peer);
 
     const peerHistory = await openDrawer(peer, 'History');
@@ -476,6 +486,9 @@ test('cross-tab saved-run memory follows native localStorage events', async ({ c
     await page.evaluate(() => window.localStorage.clear());
     await expect(ownerHistory.getByRole('article')).toHaveCount(1);
     await expect(peerHistory.getByRole('article')).toHaveCount(0);
+
+    expectNoBrowserErrors(peer);
+    await peer.close();
 });
 
 test('paused scientific state survives every audience profile and disclosure state', async ({ page }) => {
