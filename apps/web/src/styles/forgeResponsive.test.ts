@@ -2,6 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+function extractMediaBlocks(css: string, header: string): string[] {
+    const blocks: string[] = [];
+    let cursor = 0;
+    while (true) {
+        const headerIndex = css.indexOf(header, cursor);
+        if (headerIndex < 0) return blocks;
+        const open = css.indexOf('{', headerIndex);
+        if (open < 0) throw new Error(`Missing block for ${header}`);
+        let depth = 1;
+        let index = open + 1;
+        for (; index < css.length && depth > 0; index += 1) {
+            if (css[index] === '{') depth += 1;
+            if (css[index] === '}') depth -= 1;
+        }
+        if (depth !== 0) throw new Error(`Unclosed block for ${header}`);
+        blocks.push(css.slice(open + 1, index - 1));
+        cursor = index;
+    }
+}
+
 describe('forge Build/Run instrument CSS', () => {
     it('defines local hierarchy polish tokens without overriding base tokens', () => {
         const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
@@ -47,6 +67,27 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).toContain('.forge-buildrun__transport[data-status="running"]');
         expect(css).toContain('.forge-buildrun__topology-stage .network-graph-toolbar');
         expect(css).toContain('height: 300px');
+    });
+
+    it('touch-sizes compact graph and evidence controls in one owning media block', () => {
+        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+        const compactBlocks = extractMediaBlocks(css, '@media (max-width: 900px)');
+        const owningBlock = compactBlocks.find((block) => {
+            const targets = block.match(
+                /\.forge-buildrun__topology-stage \.network-graph-toolbar button\s*,\s*\.forge-buildrun__topology-stage \.network-graph-legend__filter\s*,\s*\.forge-buildrun__evidence-body \.decision-overlay-controls button\s*\{([^}]*)\}/,
+            );
+            const summary = block.match(
+                /\.forge-buildrun__topology-stage \.network-graph-summary\s*\{([^}]*)\}/,
+            );
+            return Boolean(
+                targets
+                && /min-width:\s*44px/.test(targets[1])
+                && /min-height:\s*44px/.test(targets[1])
+                && summary
+                && /top:\s*62px/.test(summary[1]),
+            );
+        });
+        expect(owningBlock).toBeDefined();
     });
 
     it('styles app scrollbars with dark chrome', () => {

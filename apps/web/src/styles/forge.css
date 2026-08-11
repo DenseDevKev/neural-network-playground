@@ -2900,6 +2900,12 @@
         min-height: 44px;
         height: auto;
     }
+    .forge-buildrun__topology-stage .network-graph-toolbar button,
+    .forge-buildrun__topology-stage .network-graph-legend__filter,
+    .forge-buildrun__evidence-body .decision-overlay-controls button {
+        min-width: 44px;
+        min-height: 44px;
+    }
     .forge-buildrun__topology-stage .network-graph-toolbar {
         inset: 0 0 auto 0;
         display: flex;
@@ -2918,7 +2924,7 @@
         display: none;
     }
     .forge-buildrun__topology-stage .network-graph-summary {
-        top: 38px;
+        top: 62px;
         left: 8px;
         right: 8px;
         max-width: none;

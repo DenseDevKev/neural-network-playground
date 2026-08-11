@@ -259,6 +259,38 @@ async function expectMinimumTouchTarget(locator: Locator, minimum = 44): Promise
     }
 }
 
+function graphAndEvidenceTargets(page: Page): readonly Locator[] {
+    const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
+    const modes = toolbar.getByRole('group', { name: 'Topology view mode' });
+    const legend = page.getByLabel('Edge weight legend', { exact: true });
+    const boundaryPanel = page.getByRole('tabpanel', { name: 'Boundary', exact: true });
+    const overlays = boundaryPanel.getByLabel('Decision overlay controls', { exact: true });
+    return [
+        toolbar.getByRole('button', { name: 'Zoom out graph', exact: true }),
+        toolbar.getByRole('button', { name: 'Zoom in graph', exact: true }),
+        toolbar.getByRole('button', { name: 'Fit graph to view', exact: true }),
+        modes.getByRole('button', { name: 'Weights', exact: true }),
+        modes.getByRole('button', { name: 'Activations', exact: true }),
+        legend.getByRole('button', { name: 'Show all edges', exact: true }),
+        legend.getByRole('button', { name: 'Show only strong edges', exact: true }),
+        legend.getByRole('button', { name: 'Show positive edges', exact: true }),
+        legend.getByRole('button', { name: 'Show negative edges', exact: true }),
+        overlays.getByRole('button', { name: 'Output', exact: true }),
+        overlays.getByRole('button', { name: 'Uncertain', exact: true }),
+        overlays.getByRole('button', { name: 'Errors', exact: true }),
+        overlays.getByRole('button', { name: 'Split', exact: true }),
+    ];
+}
+
+async function expectGraphAndEvidenceTargets(page: Page): Promise<void> {
+    for (const target of graphAndEvidenceTargets(page)) {
+        await expect(target).toHaveCount(1);
+        await target.scrollIntoViewIfNeeded();
+        await expectFullyInViewport(page, target);
+        await expectMinimumTouchTarget(target);
+    }
+}
+
 async function touchTap(page: Page, locator: Locator): Promise<void> {
     const box = await locator.boundingBox();
     expect(box, 'expected a measurable touch target').not.toBeNull();
@@ -518,6 +550,43 @@ test.describe('800px compact shell', () => {
         await expect(details).not.toHaveAttribute('open', '');
         await expect(definitions).toBeHidden();
         await expect(definitions).not.toHaveCSS('display', 'grid');
+    });
+});
+
+test.describe('390px graph and evidence targets', () => {
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+    test('keeps every compact graph and evidence target reachable', async ({ page }) => {
+        await loadPlayground(page);
+        const boundaryTab = page.getByRole('tab', { name: 'Boundary', exact: true });
+        await boundaryTab.click();
+        await expect(boundaryTab).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await expectGraphAndEvidenceTargets(page);
+
+        const overflow = await page.evaluate(() => {
+            const shell = document.querySelector<HTMLElement>('.forge-shell');
+            if (!shell) throw new Error('forge shell is missing');
+            return {
+                document: document.documentElement.scrollWidth
+                    <= document.documentElement.clientWidth + 1,
+                shell: shell.scrollWidth <= shell.clientWidth + 1,
+            };
+        });
+        expect(overflow).toEqual({ document: true, shell: true });
+
+        const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
+        const summary = page.locator(
+            '.forge-buildrun__topology-stage .network-graph-summary',
+        );
+        const toolbarBox = await toolbar.boundingBox();
+        const summaryBox = await summary.boundingBox();
+        expect(toolbarBox).not.toBeNull();
+        expect(summaryBox).not.toBeNull();
+        if (toolbarBox && summaryBox) {
+            expect(summaryBox.y - (toolbarBox.y + toolbarBox.height))
+                .toBeGreaterThanOrEqual(6);
+        }
     });
 });
 
