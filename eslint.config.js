@@ -24,6 +24,12 @@ export default [
     // ── Base JS recommended (all files) ──
     js.configs.recommended,
 
+    // ── Node globals scoped to prototype tests ──
+    {
+        files: ['prototypes/**/tests/**/*.mjs'],
+        languageOptions: { globals: globals.node },
+    },
+
     // ── TypeScript recommended (all TS/TSX files) ──
     ...tseslint.configs.recommended.map((config) => ({
         ...config,
