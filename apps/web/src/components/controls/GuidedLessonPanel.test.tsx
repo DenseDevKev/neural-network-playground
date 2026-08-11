@@ -205,6 +205,88 @@ describe('GuidedLessonPanel', () => {
         expect(screen.getByRole('button', { name: 'Start lesson and reset' })).toBeInTheDocument();
     });
 
+    it('opens Boundary for a boundary observation when Loss was persisted', async () => {
+        const user = userEvent.setup();
+        useLayoutStore.setState({
+            activeEvidenceView: 'loss',
+            activeTabRight: 'loss',
+        });
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await screen.findByText('Step 1 of 4');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+
+        expect(useLayoutStore.getState()).toMatchObject({
+            view: 'run',
+            activeEvidenceView: 'boundary',
+            activeTabRight: 'boundary',
+        });
+        expect(screen.getByText(
+            'Select Step once, then watch the XOR decision boundary update in Boundary.',
+        )).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+    });
+
+    it('opens Loss for a loss observation when Boundary was persisted', async () => {
+        const user = userEvent.setup();
+        useLayoutStore.setState({
+            activeEvidenceView: 'boundary',
+            activeTabRight: 'boundary',
+        });
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        await user.selectOptions(
+            screen.getByRole('combobox', { name: 'Guided lesson' }),
+            'lesson-learning-rate-tuning',
+        );
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await screen.findByText('Step 1 of 4');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+
+        expect(useLayoutStore.getState()).toMatchObject({
+            view: 'run',
+            activeEvidenceView: 'loss',
+            activeTabRight: 'loss',
+        });
+        expect(screen.getByText(
+            'Select Step once, then compare the new and previous points in Loss.',
+        )).toBeVisible();
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
+    });
+
+    it('returns an edit-reset-compare action to Build Hyperparameters and preselects Loss', async () => {
+        const user = userEvent.setup();
+        render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
+
+        await user.selectOptions(
+            screen.getByRole('combobox', { name: 'Guided lesson' }),
+            'lesson-regularization-overfitting',
+        );
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await screen.findByText('Step 1 of 4');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        act(() => useLayoutStore.getState().setActiveEvidenceView('boundary'));
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+
+        expect(useLayoutStore.getState()).toMatchObject({
+            view: 'build',
+            activeRecipeSection: 'hyperparams',
+            activeTabLeft: 'hyperparams',
+            activeEvidenceView: 'loss',
+            activeTabRight: 'loss',
+        });
+        expect(screen.getByText(
+            'Change Penalty, select Reset, run training, then compare the train/test gap in Loss.',
+        )).toBeVisible();
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+    });
+
     it('shows a training-step action and Done transition without gating or advancing Next', async () => {
         const user = userEvent.setup();
         const staleSignal = {
@@ -228,7 +310,7 @@ describe('GuidedLessonPanel', () => {
 
         expect(screen.getByText('Try this')).toBeVisible();
         expect(screen.getByText(
-            'Select Step once, then compare the new loss point with the previous point.',
+            'Select Step once, then compare the new and previous points in Loss.',
         )).toBeVisible();
         expect(screen.queryByText('Done')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();

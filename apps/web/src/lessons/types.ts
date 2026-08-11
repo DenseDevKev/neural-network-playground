@@ -1,5 +1,5 @@
 import type { RecipeRef } from '@nn-playground/shared';
-import type { LeftTabId, PhaseMode } from '../store/useLayoutStore.ts';
+import type { EvidenceViewId, LeftTabId, PhaseMode } from '../store/useLayoutStore.ts';
 
 export type LessonTarget = 'data' | 'features' | 'network' | 'hyperparams' | 'transport';
 
@@ -15,6 +15,7 @@ export interface LessonStep {
     target: LessonTarget;
     tab?: LeftTabId;
     phase?: PhaseMode;
+    evidenceView?: EvidenceViewId;
     expectedOutcome?: string;
     explanationRuleIds?: readonly string[];
     completion?: LessonCompletionRule;

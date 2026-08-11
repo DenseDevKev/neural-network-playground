@@ -5,10 +5,24 @@ import {
     getLessonDefinition,
     getLessonRecipe,
     LESSON_DEFINITIONS,
+    type LessonStep,
     VALID_LESSON_TARGETS,
 } from './lessonRegistry.ts';
 
 const APPROVED_MULTICLASS_LESSON_ID = 'lesson-three-class-softmax';
+
+const RUN_OBSERVATION_SURFACES = new Map<string, 'boundary' | 'loss'>([
+    ['train-in-small-moves', 'boundary'],
+    ['train-linear-boundary', 'boundary'],
+    ['train-plane-fit', 'loss'],
+    ['train-circle-boundary', 'boundary'],
+    ['train-feature-model', 'boundary'],
+    ['train-spiral-boundary', 'boundary'],
+    ['connect-rate-to-loss', 'loss'],
+    ['compare-training-and-holdout', 'loss'],
+    ['train-and-read-uncertainty', 'boundary'],
+    ['train-class-regions', 'boundary'],
+]);
 
 function hasFunctionValue(value: unknown): boolean {
     if (typeof value === 'function') return true;
@@ -204,6 +218,72 @@ describe('lesson registry invariants', () => {
                 expect(step.tryThis, `${lesson.id}:${step.id}`)
                     .toMatch(observableTermsByTarget[step.target]);
             }
+        }
+    });
+
+    it('keeps Build actions on controls visible in their selected module', () => {
+        const visibleBuildActions = new Map<string, RegExp>([
+            ['read-xor-pattern', /XOR.*samples.*noise.*train\/test/i],
+            ['inspect-gaussian-data', /Gaussian.*samples.*noise.*train\/test/i],
+            ['switch-to-regression', /Problem.*Regression.*Plane/i],
+            ['read-circle-shape', /Circle.*Samples.*Train ratio.*Noise/i],
+            ['read-spiral-twist', /Spiral.*Samples.*Train ratio.*Noise/i],
+            ['inspect-noise-controls', /Noise.*noise value.*Dataset lab/i],
+            ['prefer-smooth-boundaries', /hidden layers.*neuron widths.*Hidden activation/i],
+            ['read-three-clusters', /Problem.*Multiclass classification.*Three-Class/i],
+        ]);
+        const unavailablePlotTerms = /\b(?:class colors?|clusters?|continuous target values?|outer ring|point pattern|quadrants?|spiral arms?)\b/i;
+
+        for (const lesson of LESSON_DEFINITIONS) {
+            for (const step of lesson.steps) {
+                const expected = visibleBuildActions.get(step.id);
+                if (!expected) continue;
+                expect(step.tryThis, `${lesson.id}:${step.id}`).toMatch(expected);
+                expect(step.tryThis, `${lesson.id}:${step.id}`).not.toMatch(unavailablePlotTerms);
+            }
+        }
+
+        expect(visibleBuildActions.size).toBe(8);
+    });
+
+    it('routes every Run observation to its required evidence surface', () => {
+        let runSteps = 0;
+
+        for (const lesson of LESSON_DEFINITIONS) {
+            for (const step of lesson.steps) {
+                if (!('phase' in step) || step.phase !== 'run') continue;
+                runSteps++;
+                const expectedSurface = RUN_OBSERVATION_SURFACES.get(step.id);
+                expect(expectedSurface, `${lesson.id}:${step.id}`).toBeDefined();
+                expect('evidenceView' in step ? step.evidenceView : undefined)
+                    .toBe(expectedSurface);
+                expect(step.tryThis, `${lesson.id}:${step.id}`)
+                    .toMatch(expectedSurface === 'boundary' ? /\bBoundary\b/ : /\bLoss\b/);
+            }
+        }
+
+        expect(runSteps).toBe(RUN_OBSERVATION_SURFACES.size);
+    });
+
+    it('routes edit-reset-compare actions through Build Hyperparameters and preselects Loss', () => {
+        const editSteps: LessonStep[] = [];
+        for (const lesson of LESSON_DEFINITIONS) {
+            for (const step of lesson.steps) {
+                if (['retry-with-smaller-steps', 'simplify-or-regularize'].includes(step.id)) {
+                    editSteps.push(step);
+                }
+            }
+        }
+
+        expect(editSteps).toHaveLength(2);
+        for (const step of editSteps) {
+            expect(step).toMatchObject({
+                target: 'hyperparams',
+                tab: 'hyperparams',
+                phase: 'build',
+                evidenceView: 'loss',
+            });
+            expect(step.tryThis).toMatch(/Change .*Reset.*run training.*Loss/);
         }
     });
 

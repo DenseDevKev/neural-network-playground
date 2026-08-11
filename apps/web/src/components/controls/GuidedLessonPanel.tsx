@@ -94,6 +94,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const currentModel = useTrainingStore((s) => s.latestLiveSignal?.model ?? null);
     const view = useLayoutStore((s) => s.view);
     const setActiveRecipeSection = useLayoutStore((s) => s.setActiveRecipeSection);
+    const setActiveEvidenceView = useLayoutStore((s) => s.setActiveEvidenceView);
     const setView = useLayoutStore((s) => s.setView);
     const setActiveLessonStep = useLayoutStore((s) => s.setActiveLessonStep);
     const clearActiveLessonStep = useLayoutStore((s) => s.clearActiveLessonStep);
@@ -122,10 +123,11 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     const focusStep = useCallback(
         (step: LessonStep) => {
             if (step.tab) setActiveRecipeSection(step.tab);
+            if (step.evidenceView) setActiveEvidenceView(step.evidenceView);
             if (step.phase) setView(step.phase);
             onHighlightChange?.(step.target);
         },
-        [onHighlightChange, setActiveRecipeSection, setView],
+        [onHighlightChange, setActiveEvidenceView, setActiveRecipeSection, setView],
     );
 
     useEffect(() => {
