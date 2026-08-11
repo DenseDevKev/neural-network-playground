@@ -1,7 +1,9 @@
+import { StrictMode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+    DEFAULT_EXPERIMENT_DOCUMENT,
     EXPERIMENT_MEMORY_ENVELOPE_KIND,
     EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS,
     PREPARED_PRESETS,
@@ -100,6 +102,11 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         window.localStorage.clear();
         workerApi.captureRunArtifact.mockReset();
         vi.restoreAllMocks();
+        await act(async () => {
+            const result = await usePlaygroundStore.getState()
+                .replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+            if (!result.ok) throw new Error('Could not reset the playground document for the test.');
+        });
         await hydrateSingleton();
     });
 
@@ -126,6 +133,40 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         const persisted = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) ?? '';
         expect(persisted).toContain('"kind":"nn-playground-run"');
         expect(persisted).not.toMatch(/weights|biases|parameters/i);
+    });
+
+    it('re-enables saving after a successful capture under StrictMode', async () => {
+        const prepared = currentPreparedForTest()!;
+        workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
+            makeRecord(prepared, metadata.id, 'Strict capture')
+        ));
+
+        render(
+            <StrictMode>
+                <RunHistoryPanel />
+            </StrictMode>,
+        );
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+
+        expect(await screen.findByRole('article', { name: 'Strict capture' })).toBeInTheDocument();
+        const saveButton = await screen.findByRole('button', { name: 'Save current run' });
+        expect(saveButton).toBeEnabled();
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY))
+            .toContain('"title":"Strict capture"');
+    });
+
+    it('re-enables saving and announces a rejected capture under StrictMode', async () => {
+        workerApi.captureRunArtifact.mockRejectedValue(new Error('Strict capture rejected'));
+
+        render(
+            <StrictMode>
+                <RunHistoryPanel />
+            </StrictMode>,
+        );
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+
+        expect(await screen.findByRole('alert')).toHaveTextContent('Strict capture rejected');
+        expect(screen.getByRole('button', { name: 'Save current run' })).toBeEnabled();
     });
 
     it('trims a custom run name, gives it to the worker as metadata, and renders the saved title', async () => {

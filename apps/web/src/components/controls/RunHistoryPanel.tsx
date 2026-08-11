@@ -138,8 +138,11 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const runTitleTooLong = Array.from(trimmedRunTitle).length
         > EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS;
 
-    useEffect(() => () => {
-        mountedRef.current = false;
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
     }, []);
 
     const saveCurrentRun = useCallback(async () => {
