@@ -2271,15 +2271,24 @@ Wrap every hook render in StrictMode. Prove changing duration does not move an
 active 100ms deadline, then a call made through the retained setter uses the
 new 10ms duration. Spy on `clearTimeout` to prove replacement and unmount each
 clear once, timer count returns to zero, and a retained setter invoked after
-unmount creates no timer. Assert the exact tuple type with `expectTypeOf`.
-Restore real timers and all spies in `afterEach` so no timer leaks across tests.
+unmount creates no timer. After enabling fake timers, spy on
+`globalThis.setTimeout` while delegating to the fake-timer implementation and
+capture the hook timer deterministically by installing/clearing the spy
+immediately before the first setter call or selecting the call with the expected
+duration. Replace its timer with a second setter call, manually invoke the
+captured stale callback, and prove it cannot reset or overwrite the newer
+visible value; advancing the owned second timer still performs the one valid
+reset. Assert the exact tuple type with `expectTypeOf`. In `afterEach`, use the
+exact order `vi.clearAllTimers(); vi.restoreAllMocks(); vi.useRealTimers();` so
+restoring the spy cannot reinstall an already-uninstalled fake `setTimeout`.
 
 - [ ] **Step 2: Run RED**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useTimedState.test.tsx --pool=forks --reporter=dot
 
 Expected: FAIL for unstable setter identity/stale default, stale duration through
-the retained setter, and a retained post-unmount setter creating a timer.
+the retained setter, a retained post-unmount setter creating a timer, and the
+captured stale callback overwriting the replacement value.
 
 - [ ] **Step 3: Synchronize refs and memoize the setter**
 
