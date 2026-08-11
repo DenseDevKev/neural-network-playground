@@ -12,6 +12,36 @@ import {
     readSharedSnapshot,
 } from './sharedSnapshot.ts';
 
+type NumberAtomicsArray =
+    | Int8Array
+    | Uint8Array
+    | Int16Array
+    | Uint16Array
+    | Int32Array
+    | Uint32Array;
+type BigIntAtomicsArray = BigInt64Array | BigUint64Array;
+
+function atomicsLoadMock(
+    loadNumber: (array: NumberAtomicsArray, index: number, actual: number) => number,
+): typeof Atomics.load {
+    const realLoad = Atomics.load;
+
+    function load(array: NumberAtomicsArray, index: number): number;
+    function load(array: BigIntAtomicsArray, index: number): bigint;
+    function load(
+        array: NumberAtomicsArray | BigIntAtomicsArray,
+        index: number,
+    ): number | bigint {
+        if (array instanceof BigInt64Array || array instanceof BigUint64Array) {
+            return realLoad(array, index);
+        }
+        const actual = realLoad(array, index);
+        return loadNumber(array, index, actual);
+    }
+
+    return load;
+}
+
 describe('sharedSnapshot', () => {
     afterEach(() => {
         vi.restoreAllMocks();
@@ -126,18 +156,15 @@ describe('sharedSnapshot', () => {
             FLAG_OUTPUT_GRID | FLAG_NEURON_GRIDS,
         );
 
-        const realLoad = Atomics.load;
         let startLoads = 0;
-        const loadInt32 = (array: Int32Array, index: number): number => {
+        const load = atomicsLoadMock((array, index, actual) => {
             if (array === views.control && index === CTL_SEQ_START) {
                 startLoads++;
                 if (startLoads === 1) return 99;
             }
-            return realLoad(array, index);
-        };
-        vi.spyOn(Atomics, 'load').mockImplementation(
-            loadInt32 as unknown as typeof Atomics.load,
-        );
+            return actual;
+        });
+        vi.spyOn(Atomics, 'load').mockImplementation(load);
 
         const outputDst = new Float32Array(4);
         const neuronDst = new Float32Array(4);
@@ -155,16 +182,13 @@ describe('sharedSnapshot', () => {
         const views = allocSharedSnapshotViews(2, 1);
         publishSharedSnapshot(views, new Float32Array([1, 2, 3, 4]), null, FLAG_OUTPUT_GRID);
 
-        const realLoad = Atomics.load;
-        const loadInt32 = (array: Int32Array, index: number): number => {
+        const load = atomicsLoadMock((array, index, actual) => {
             if (array === views.control && index === CTL_SEQ_START) {
-                return realLoad(array, index) + 1;
+                return actual + 1;
             }
-            return realLoad(array, index);
-        };
-        vi.spyOn(Atomics, 'load').mockImplementation(
-            loadInt32 as unknown as typeof Atomics.load,
-        );
+            return actual;
+        });
+        vi.spyOn(Atomics, 'load').mockImplementation(load);
 
         expect(readSharedSnapshot(views, new Float32Array(4), null, 2)).toBeNull();
     });

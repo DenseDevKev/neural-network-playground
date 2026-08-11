@@ -12,7 +12,10 @@ import {
     type PlaygroundStore,
 } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
+import {
+    currentPreparedForTest,
+    installLegacyTrainingProjectionForTest,
+} from '../../test/playgroundStoreTestUtils.ts';
 import { HyperparamPanel } from './HyperparamPanel.tsx';
 
 const originalEditRecipe: PlaygroundStore['editRecipe'] = usePlaygroundStore.getState().editRecipe;
@@ -55,17 +58,26 @@ describe('HyperparamPanel canonical V2 controls', () => {
         vi.restoreAllMocks();
     });
 
-    it('reads canonical training values and renders classification objective/output as derived', () => {
-        render(<HyperparamPanel />);
+    it('reads canonical training values instead of a contradictory legacy projection', () => {
+        const removeLegacyProjection = installLegacyTrainingProjectionForTest({
+            learningRate: 10,
+            batchSize: 64,
+        });
+        try {
+            render(<HyperparamPanel />);
 
-        expect(screen.getByRole('combobox', { name: 'Learning rate' })).toHaveValue('0.03');
-        expect(screen.getByRole('combobox', { name: 'Batch size' })).toHaveValue('10');
-        expect(screen.getByText('Binary cross-entropy with logits')).toBeInTheDocument();
-        expect(screen.getByText('sigmoid')).toBeInTheDocument();
-        expect(screen.queryByRole('combobox', { name: 'Loss' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('combobox', { name: /output activation/i })).not.toBeInTheDocument();
-        expect(screen.queryByRole('combobox', { name: 'Weight initialization' }))
-            .not.toBeInTheDocument();
+            expect(screen.getByRole('combobox', { name: 'Learning rate' })).toHaveValue('0.03');
+            expect(screen.getByRole('combobox', { name: 'Batch size' })).toHaveValue('10');
+            expect(screen.getByText('Binary cross-entropy with logits')).toBeInTheDocument();
+            expect(screen.getByText('sigmoid')).toBeInTheDocument();
+            expect(screen.queryByRole('combobox', { name: 'Loss' })).not.toBeInTheDocument();
+            expect(screen.queryByRole('combobox', { name: /output activation/i }))
+                .not.toBeInTheDocument();
+            expect(screen.queryByRole('combobox', { name: 'Weight initialization' }))
+                .not.toBeInTheDocument();
+        } finally {
+            removeLegacyProjection();
+        }
     });
 
     it('switches step, cosine, and constant schedules with exact explicit defaults', async () => {

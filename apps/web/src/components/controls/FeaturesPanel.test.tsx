@@ -8,7 +8,10 @@ import {
 import { FeaturesPanel } from './FeaturesPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
+import {
+    currentPreparedForTest,
+    installLegacyFeaturesProjectionForTest,
+} from '../../test/playgroundStoreTestUtils.ts';
 
 async function restoreDocument(document: ExperimentDocumentV2 = DEFAULT_EXPERIMENT_DOCUMENT) {
     const restored = await usePlaygroundStore.getState().replaceDocument(document);
@@ -44,12 +47,24 @@ describe('FeaturesPanel V2 recipe controls', () => {
         resetTrainingTransaction();
     });
 
-    it('renders canonical feature IDs from the prepared experiment', () => {
-        render(<FeaturesPanel />);
+    it('renders canonical feature IDs instead of a contradictory legacy projection', () => {
+        const removeLegacyProjection = installLegacyFeaturesProjectionForTest({
+            x: false,
+            y: false,
+            xSquared: true,
+        });
+        try {
+            render(<FeaturesPanel />);
 
-        expect(screen.getByRole('button', { name: 'X₁' })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('button', { name: 'X₂' })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('button', { name: 'X₁²' })).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.getByRole('button', { name: 'X₁' }))
+                .toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByRole('button', { name: 'X₂' }))
+                .toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByRole('button', { name: 'X₁²' }))
+                .toHaveAttribute('aria-pressed', 'false');
+        } finally {
+            removeLegacyProjection();
+        }
     });
 
     it('publishes exact canonical feature order and a new recipe fingerprint', async () => {

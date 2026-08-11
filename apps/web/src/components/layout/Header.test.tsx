@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { Header } from './Header';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { installLegacyTrainingSnapshotForTest } from '../../test/playgroundStoreTestUtils.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import {
     ADVANCED_TOOLS_REGION_ID,
@@ -95,18 +96,26 @@ describe('Header', () => {
                 objective: { regularizationPenalty: 0.01, trainTotalObjective: 0.2445 },
             },
         });
+        const removeLegacySnapshot = installLegacyTrainingSnapshotForTest({
+            epoch: 99,
+            trainLoss: 9,
+            testLoss: 8,
+        });
+        try {
+            renderHeader();
 
-        renderHeader();
-
-        expect(screen.getByText('0012')).toBeInTheDocument();
-        expect(screen.getByText('0.1234')).toBeInTheDocument();
-        expect(screen.getByText(/Batch trend \(EMA\).*step 1,240/i)).toBeInTheDocument();
-        expect(screen.getByText(/Train data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
-        expect(screen.getByText(/Test data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
-        expect(screen.getByText('0.2345')).toBeInTheDocument();
-        expect(screen.getByText('0.5678')).toBeInTheDocument();
-        expect(screen.getByText('49.3%')).toBeInTheDocument();
-        expect(screen.queryByText('9.0000')).not.toBeInTheDocument();
+            expect(screen.getByText('0012')).toBeInTheDocument();
+            expect(screen.getByText('0.1234')).toBeInTheDocument();
+            expect(screen.getByText(/Batch trend \(EMA\).*step 1,240/i)).toBeInTheDocument();
+            expect(screen.getByText(/Train data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
+            expect(screen.getByText(/Test data loss \(full split\).*step 1,230/i)).toBeInTheDocument();
+            expect(screen.getByText('0.2345')).toBeInTheDocument();
+            expect(screen.getByText('0.5678')).toBeInTheDocument();
+            expect(screen.getByText('49.3%')).toBeInTheDocument();
+            expect(screen.queryByText('9.0000')).not.toBeInTheDocument();
+        } finally {
+            removeLegacySnapshot();
+        }
     });
 
     it('uses the primary header play button to start and pause training', async () => {

@@ -6,6 +6,7 @@ import { ConfusionMatrix } from './ConfusionMatrix.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
+import { installLegacyTrainingSnapshotForTest } from '../../test/playgroundStoreTestUtils.ts';
 import { resetFrameBuffer, updateFrameBuffer } from '../../worker/frameBuffer.ts';
 
 function prepared(id: string) {
@@ -63,20 +64,26 @@ describe('ConfusionMatrix paired evaluation provenance', () => {
         expect(screen.getByText(/paired full test evaluation/i)).toBeInTheDocument();
     });
 
-    it('ignores contradictory frame matrices and binds only to latestEvaluation', () => {
+    it('binds only to paired evaluation despite contradictory legacy and frame matrices', () => {
         updateFrameBuffer({ confusionMatrix: { tn: 1, fp: 2, fn: 3, tp: 4 } });
         useTrainingStore.setState({
             latestEvaluation: binaryPair(basePair),
             testPoints: [{ x: 0, y: 0, label: 1 }],
         });
+        const removeLegacySnapshot = installLegacyTrainingSnapshotForTest({
+            testMetrics: { confusionMatrix: { tn: 9, fp: 9, fn: 9, tp: 9 } },
+        });
+        try {
+            render(<ConfusionMatrix />);
 
-        render(<ConfusionMatrix />);
-
-        expect(screen.getByLabelText('TN cell')).toHaveTextContent('40');
-        expect(screen.getByLabelText('TP cell')).toHaveTextContent('35');
-        expect(screen.queryByText('9')).not.toBeInTheDocument();
-        expect(screen.getByText(/Evaluation 31 · model step 1,230 · all 90 test samples/i))
-            .toBeInTheDocument();
+            expect(screen.getByLabelText('TN cell')).toHaveTextContent('40');
+            expect(screen.getByLabelText('TP cell')).toHaveTextContent('35');
+            expect(screen.queryByText('9')).not.toBeInTheDocument();
+            expect(screen.getByText(/Evaluation 31 · model step 1,230 · all 90 test samples/i))
+                .toBeInTheDocument();
+        } finally {
+            removeLegacySnapshot();
+        }
     });
 
     it('renders a worker-authored multiclass matrix from the paired test evaluation', () => {

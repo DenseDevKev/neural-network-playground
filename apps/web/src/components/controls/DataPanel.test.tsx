@@ -8,7 +8,10 @@ import {
 import { DataPanel } from './DataPanel';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
-import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
+import {
+    currentPreparedForTest,
+    installLegacyDataProjectionForTest,
+} from '../../test/playgroundStoreTestUtils.ts';
 
 async function restoreDocument(document: ExperimentDocumentV2 = DEFAULT_EXPERIMENT_DOCUMENT) {
     const restored = await usePlaygroundStore.getState().replaceDocument(document);
@@ -44,13 +47,26 @@ describe('DataPanel V2 recipe controls', () => {
         resetTrainingTransaction();
     });
 
-    it('renders canonical recipe data from the prepared experiment', () => {
-        render(<DataPanel onReset={vi.fn()} />);
+    it('renders the canonical recipe instead of a contradictory legacy data projection', () => {
+        const removeLegacyProjection = installLegacyDataProjectionForTest({
+            dataset: 'xor',
+            problemType: 'classification',
+            noise: 49,
+            trainTestRatio: 0.9,
+            numSamples: 1_000,
+        });
+        try {
+            render(<DataPanel onReset={vi.fn()} />);
 
-        expect(screen.getByLabelText('Dataset settings: 300 samples, 0 noise, 50% train'))
-            .toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Circle' })).toHaveAttribute('aria-pressed', 'true');
-        expect(screen.getByRole('button', { name: 'XOR' })).toHaveAttribute('aria-pressed', 'false');
+            expect(screen.getByLabelText('Dataset settings: 300 samples, 0 noise, 50% train'))
+                .toBeInTheDocument();
+            expect(screen.getByRole('button', { name: 'Circle' }))
+                .toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByRole('button', { name: 'XOR' }))
+                .toHaveAttribute('aria-pressed', 'false');
+        } finally {
+            removeLegacyProjection();
+        }
     });
 
     it('presents problem kind as a derived read-only value while keeping every dataset reachable', () => {
