@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
 import type {
     ExperimentRunRecordV2,
     RejectedExperimentRunRecordV2,
@@ -8,9 +8,21 @@ import { getWorkerApi } from '../../worker/workerBridge.ts';
 import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { createDefaultRunTitle } from './runTitle.ts';
+import { reconcileComparisonSelection } from './runComparisonSelection.ts';
 
 function recordLabel(record: ExperimentRunRecordV2): string {
     return record.title ?? record.id;
+}
+
+function comparisonRecordLabel(
+    record: ExperimentRunRecordV2,
+    records: readonly ExperimentRunRecordV2[],
+): string {
+    const label = recordLabel(record);
+    const duplicate = records.some((candidate) => (
+        candidate.id !== record.id && recordLabel(candidate) === label
+    ));
+    return duplicate ? `${label} (${record.id})` : label;
 }
 
 function formatMetric(value: number): string {
@@ -72,10 +84,18 @@ function RejectedRecord({ record }: { record: RejectedExperimentRunRecordV2 }) {
     );
 }
 
-function SavedRunComparison({ records }: { records: readonly ExperimentRunRecordV2[] }) {
-    if (records.length < 2) return null;
-    const current = records[0];
-    const baseline = records[1];
+function SavedRunComparison({
+    current,
+    baseline,
+    currentLabel,
+    baselineLabel,
+}: {
+    current: ExperimentRunRecordV2;
+    baseline: ExperimentRunRecordV2;
+    currentLabel: string;
+    baselineLabel: string;
+}) {
+    const headingId = useId();
     const currentEvaluation = current.snapshot.evaluation;
     const baselineEvaluation = baseline.snapshot.evaluation;
     const comparable = currentEvaluation.dataset.datasetKey === baselineEvaluation.dataset.datasetKey
@@ -88,16 +108,18 @@ function SavedRunComparison({ records }: { records: readonly ExperimentRunRecord
         if (currentLoss === baselineLoss) {
             summary = `Equal test data loss at ${formatMetric(currentLoss)}`;
         } else {
-            const winner = currentLoss < baselineLoss ? current : baseline;
-            summary = `${recordLabel(winner)} has lower test data loss by ${formatMetric(
+            const winnerLabel = currentLoss < baselineLoss ? currentLabel : baselineLabel;
+            summary = `${winnerLabel} has lower test data loss by ${formatMetric(
                 Math.abs(currentLoss - baselineLoss),
             )}`;
         }
     }
 
     return (
-        <section className="inspection__layer" role="group" aria-label="Saved run comparison">
-            <div className="inspection__layer-name">Saved run comparison</div>
+        <section className="inspection__layer" role="group" aria-labelledby={headingId}>
+            <h3 id={headingId} className="inspection__layer-name">
+                Saved run comparison: {currentLabel} and {baselineLabel}
+            </h3>
             <div className="inspection__stat-value" style={{ marginTop: 6 }}>{summary}</div>
             {!comparable && (
                 <div className="inspection__empty" style={{ marginTop: 6 }}>
@@ -132,11 +154,25 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const [saving, setSaving] = useState(false);
     const [actionError, setActionError] = useState<string | null>(null);
     const [runTitle, setRunTitle] = useState('');
+    const [comparisonSelection, setComparisonSelection] = useState<readonly string[] | null>(null);
+    const comparisonGuidanceId = useId();
     const savingRef = useRef(false);
     const mountedRef = useRef(true);
     const trimmedRunTitle = runTitle.trim();
     const runTitleTooLong = Array.from(trimmedRunTitle).length
         > EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS;
+    const initialComparisonSelection = hydrationStatus === 'ready'
+        ? records.slice(0, 2).map((record) => record.id)
+        : [];
+    const selectedComparisonIds = reconcileComparisonSelection(
+        comparisonSelection ?? initialComparisonSelection,
+        records,
+        null,
+    );
+    const selectedComparisonRecords = selectedComparisonIds.flatMap((id) => {
+        const record = records.find((candidate) => candidate.id === id);
+        return record ? [record] : [];
+    });
 
     useEffect(() => {
         mountedRef.current = true;
@@ -144,6 +180,11 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
             mountedRef.current = false;
         };
     }, []);
+
+    useEffect(() => {
+        if (hydrationStatus !== 'ready') return;
+        setComparisonSelection((current) => current ?? records.slice(0, 2).map((record) => record.id));
+    }, [hydrationStatus, records]);
 
     const saveCurrentRun = useCallback(async () => {
         if (savingRef.current || pendingSave !== null || runTitleTooLong) return;
@@ -192,6 +233,15 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
             setActionError(result.issues.map((entry) => entry.message).join(' '));
         }
     }, [prepared, replaceDocument]);
+
+    const deleteSavedRecord = useCallback(async (id: string) => {
+        const removed = await removeRecord(id);
+        if (!removed || !mountedRef.current) return;
+        const currentRecords = useExperimentMemoryStore.getState().records;
+        setComparisonSelection((current) => current === null
+            ? current
+            : reconcileComparisonSelection(current, currentRecords, null));
+    }, [removeRecord]);
 
     return (
         <div className="run-history-panel">
@@ -367,60 +417,99 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                 </div>
             ) : (
                 <>
-                    <div className="inspection__layers" style={{ marginTop: 12 }}>
-                        {records.map((record) => (
-                            <article key={record.id} className="inspection__layer" aria-label={recordLabel(record)}>
-                                <div className="inspection__layer-name">{recordLabel(record)}</div>
-                                <div className="inspection__stat-row">
-                                    <span className="inspection__stat-label">Model revision</span>
-                                    <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
-                                        {record.snapshot.model.revision.toLocaleString()}
-                                    </span>
-                                </div>
-                                <div className="inspection__stat-row">
-                                    <span className="inspection__stat-label">Train / test data loss</span>
-                                    <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
-                                        {formatMetric(record.snapshot.evaluation.train.values.dataLoss)} /{' '}
-                                        {formatMetric(record.snapshot.evaluation.test.values.dataLoss)}
-                                    </span>
-                                </div>
-                                <div className="inspection__empty" style={{ marginTop: 6 }}>
-                                    Full evaluation at step {record.snapshot.model.step.toLocaleString()};{' '}
-                                    {record.snapshot.evaluation.train.basis.sampleCount.toLocaleString()} train and{' '}
-                                    {record.snapshot.evaluation.test.basis.sampleCount.toLocaleString()} test samples.
-                                </div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                                    <button
-                                        type="button"
-                                        className="btn btn--ghost btn--sm"
-                                        onClick={() => { void applySavedRecipe(record); }}
+                    <fieldset
+                        aria-describedby={comparisonGuidanceId}
+                        style={{ border: 0, margin: '12px 0 0', minWidth: 0, padding: 0 }}
+                    >
+                        <legend className="inspection__layer-name">Runs to compare</legend>
+                        <div id={comparisonGuidanceId} className="inspection__empty" style={{ marginBottom: 8 }}>
+                            Choose up to two saved runs. Selecting a third replaces the earliest choice.
+                        </div>
+                        <div className="inspection__layers">
+                            {records.map((record) => {
+                                const comparisonLabel = comparisonRecordLabel(record, records);
+                                return (
+                                    <article
+                                        key={record.id}
+                                        className="inspection__layer"
+                                        aria-label={recordLabel(record)}
                                     >
-                                        Apply saved recipe
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="btn btn--ghost btn--sm"
-                                        onClick={() => downloadText(
-                                            `${record.id}.json`,
-                                            JSON.stringify(record, null, 2),
-                                        )}
-                                        aria-label={`Download evidence for ${recordLabel(record)}`}
-                                    >
-                                        Download evidence
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className="btn btn--ghost btn--sm"
-                                        onClick={() => { void removeRecord(record.id); }}
-                                        aria-label={`Delete ${recordLabel(record)}`}
-                                    >
-                                        Delete
-                                    </button>
-                                </div>
-                            </article>
-                        ))}
-                    </div>
-                    <SavedRunComparison records={records} />
+                                        <div className="inspection__layer-name">{recordLabel(record)}</div>
+                                        <label style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedComparisonIds.includes(record.id)}
+                                                onChange={() => setComparisonSelection((current) => (
+                                                    reconcileComparisonSelection(
+                                                        current ?? initialComparisonSelection,
+                                                        records,
+                                                        record.id,
+                                                    )
+                                                ))}
+                                            />
+                                            <span>Compare {comparisonLabel}</span>
+                                        </label>
+                                        <div className="inspection__stat-row">
+                                            <span className="inspection__stat-label">Model revision</span>
+                                            <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
+                                                {record.snapshot.model.revision.toLocaleString()}
+                                            </span>
+                                        </div>
+                                        <div className="inspection__stat-row">
+                                            <span className="inspection__stat-label">Train / test data loss</span>
+                                            <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
+                                                {formatMetric(record.snapshot.evaluation.train.values.dataLoss)} /{' '}
+                                                {formatMetric(record.snapshot.evaluation.test.values.dataLoss)}
+                                            </span>
+                                        </div>
+                                        <div className="inspection__empty" style={{ marginTop: 6 }}>
+                                            Full evaluation at step {record.snapshot.model.step.toLocaleString()};{' '}
+                                            {record.snapshot.evaluation.train.basis.sampleCount.toLocaleString()}{' '}
+                                            train and{' '}
+                                            {record.snapshot.evaluation.test.basis.sampleCount.toLocaleString()}{' '}
+                                            test samples.
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                                            <button
+                                                type="button"
+                                                className="btn btn--ghost btn--sm"
+                                                onClick={() => { void applySavedRecipe(record); }}
+                                            >
+                                                Apply saved recipe
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn btn--ghost btn--sm"
+                                                onClick={() => downloadText(
+                                                    `${record.id}.json`,
+                                                    JSON.stringify(record, null, 2),
+                                                )}
+                                                aria-label={`Download evidence for ${recordLabel(record)}`}
+                                            >
+                                                Download evidence
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn btn--ghost btn--sm"
+                                                onClick={() => { void deleteSavedRecord(record.id); }}
+                                                aria-label={`Delete ${recordLabel(record)}`}
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    </fieldset>
+                    {selectedComparisonRecords.length === 2 && (
+                        <SavedRunComparison
+                            current={selectedComparisonRecords[0]}
+                            baseline={selectedComparisonRecords[1]}
+                            currentLabel={comparisonRecordLabel(selectedComparisonRecords[0], records)}
+                            baselineLabel={comparisonRecordLabel(selectedComparisonRecords[1], records)}
+                        />
+                    )}
                 </>
             )}
         </div>

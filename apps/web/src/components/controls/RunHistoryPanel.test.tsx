@@ -33,6 +33,7 @@ const IDS = [
     '00000000-0000-0000-0000-000000000001',
     '00000000-0000-0000-0000-000000000002',
     '00000000-0000-0000-0000-000000000003',
+    '00000000-0000-0000-0000-000000000004',
 ] as const;
 
 function preset(id: (typeof PREPARED_PRESETS)[number]['id']) {
@@ -363,7 +364,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
         render(<RunHistoryPanel />);
 
-        const comparison = screen.getByRole('group', { name: 'Saved run comparison' });
+        const comparison = screen.getByRole('group', { name: /Saved run comparison/ });
         expect(comparison).toHaveTextContent('Not directly comparable');
         expect(comparison).not.toHaveTextContent(/winner|lower by|better/i);
     });
@@ -377,8 +378,137 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
         render(<RunHistoryPanel />);
 
-        expect(screen.getByRole('group', { name: 'Saved run comparison' }))
+        expect(screen.getByRole('group', { name: /Saved run comparison/ }))
             .toHaveTextContent('Tuned has lower test data loss by 0.2000');
+    });
+
+    it('compares two nonadjacent choices, prunes a deleted choice, and preserves order across updates', async () => {
+        const prepared = preset('circle-one-layer');
+        const first = makeRecord(prepared, IDS[0], 'First', 0.8);
+        const middle = makeRecord(prepared, IDS[1], 'Middle', 0.2);
+        const latest = makeRecord(prepared, IDS[2], 'Latest', 0.5);
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(first);
+            await useExperimentMemoryStore.getState().saveRecord(middle);
+            await useExperimentMemoryStore.getState().saveRecord(latest);
+        });
+
+        const view = render(<RunHistoryPanel />);
+        const latestChoice = screen.getByRole('checkbox', { name: 'Compare Latest' });
+        const middleChoice = screen.getByRole('checkbox', { name: 'Compare Middle' });
+        const firstChoice = screen.getByRole('checkbox', { name: 'Compare First' });
+        expect(latestChoice).toBeChecked();
+        expect(middleChoice).toBeChecked();
+        expect(firstChoice).not.toBeChecked();
+
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(
+                makeRecord(prepared, IDS[3], 'Newly saved', 0.1),
+            );
+        });
+        expect(screen.getByRole('checkbox', { name: 'Compare Newly saved' })).not.toBeChecked();
+        expect(latestChoice).toBeChecked();
+        expect(middleChoice).toBeChecked();
+
+        await userEvent.click(middleChoice);
+        await userEvent.click(firstChoice);
+
+        let comparison = screen.getByRole('group', {
+            name: 'Saved run comparison: Latest and First',
+        });
+        expect(comparison).toHaveTextContent('Latest has lower test data loss by 0.3000');
+        expect(comparison).not.toHaveTextContent('Middle');
+
+        act(() => {
+            useExperimentMemoryStore.setState({
+                records: [
+                    first,
+                    middle,
+                    latest,
+                    makeRecord(prepared, IDS[3], 'Newly saved', 0.1),
+                ],
+            });
+        });
+        comparison = screen.getByRole('group', {
+            name: 'Saved run comparison: Latest and First',
+        });
+        expect(comparison).toBeInTheDocument();
+
+        await userEvent.click(screen.getByRole('button', { name: 'Delete Latest' }));
+        await waitFor(() => expect(screen.queryByRole('article', { name: 'Latest' }))
+            .not.toBeInTheDocument());
+        expect(screen.queryByRole('group', { name: /Saved run comparison/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('checkbox', { name: 'Compare First' })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Compare Middle' })).not.toBeChecked();
+
+        act(() => {
+            useExperimentMemoryStore.setState({
+                records: [
+                    first,
+                    middle,
+                    latest,
+                    makeRecord(prepared, IDS[3], 'Newly saved', 0.1),
+                ],
+            });
+        });
+        expect(screen.getByRole('checkbox', { name: 'Compare Latest' })).not.toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Compare First' })).toBeChecked();
+
+        view.unmount();
+        render(<RunHistoryPanel />);
+        expect(screen.getByRole('checkbox', { name: 'Compare First' })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Compare Middle' })).toBeChecked();
+    });
+
+    it('uses distinct human labels for duplicate long titles in controls and the heading', async () => {
+        const prepared = preset('circle-one-layer');
+        const title = `Duplicate ${'🧠'.repeat(50)}`;
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(
+                makeRecord(prepared, IDS[0], title, 0.6),
+            );
+            await useExperimentMemoryStore.getState().saveRecord(
+                makeRecord(prepared, IDS[1], title, 0.4),
+            );
+        });
+
+        render(<RunHistoryPanel />);
+
+        expect(screen.getByRole('checkbox', { name: `Compare ${title} (${IDS[0]})` }))
+            .toBeChecked();
+        expect(screen.getByRole('checkbox', { name: `Compare ${title} (${IDS[1]})` }))
+            .toBeChecked();
+        expect(screen.getByRole('group', {
+            name: `Saved run comparison: ${title} (${IDS[1]}) and ${title} (${IDS[0]})`,
+        })).toHaveTextContent(`${title} (${IDS[1]}) has lower test data loss by 0.2000`);
+    });
+
+    it('keeps the warning local when only objective identity differs', async () => {
+        const prepared = preset('circle-one-layer');
+        const baseline = makeRecord(prepared, IDS[0], 'Baseline objective', 0.6);
+        const changed = makeRecord(prepared, IDS[1], 'Changed objective', 0.4);
+        const incompatible = {
+            ...changed,
+            snapshot: {
+                ...changed.snapshot,
+                evaluation: {
+                    ...changed.snapshot.evaluation,
+                    objectiveKey: `${changed.snapshot.evaluation.objectiveKey}:different`,
+                },
+            },
+        } as ExperimentRunRecordV2;
+        act(() => {
+            useExperimentMemoryStore.setState({ records: [incompatible, baseline] });
+        });
+
+        render(<RunHistoryPanel />);
+
+        const comparison = screen.getByRole('group', { name: /Saved run comparison/ });
+        expect(comparison).toHaveTextContent('Not directly comparable');
+        expect(comparison).toHaveTextContent(
+            'Dataset and objective identities must both match before losses can be ranked.',
+        );
+        expect(screen.queryByRole('alert')).toBeNull();
     });
 
     it('preserves legacy bytes through dismissal and deletes only explicitly', async () => {
