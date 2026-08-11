@@ -134,6 +134,41 @@ describe('DataPanel V2 recipe controls', () => {
         expect(screen.getByRole('slider', { name: 'Noise' }).id).toBe(noiseId);
     });
 
+    it('renders precision-sensitive recipe values without lossy rounding', async () => {
+        const experimentDocument: ExperimentDocumentV2 = {
+            ...DEFAULT_EXPERIMENT_DOCUMENT,
+            recipe: {
+                ...DEFAULT_EXPERIMENT_DOCUMENT.recipe,
+                data: {
+                    ...DEFAULT_EXPERIMENT_DOCUMENT.recipe.data,
+                    trainFraction: 0.505,
+                    noise: 0.05,
+                },
+            },
+        };
+        await restoreDocument(experimentDocument);
+        render(<DataPanel onReset={vi.fn()} />);
+
+        const trainSlider = screen.getByRole('slider', { name: 'Train ratio' });
+        const noiseSlider = screen.getByRole('slider', { name: 'Noise' });
+        const trainOutput = document.getElementById(
+            trainSlider.getAttribute('aria-describedby') ?? '',
+        );
+        const noiseOutput = document.getElementById(
+            noiseSlider.getAttribute('aria-describedby') ?? '',
+        );
+
+        expect((trainSlider as HTMLInputElement).value).toBe('51');
+        expect(trainOutput).toHaveTextContent(/^51%$/);
+        expect(trainSlider).toHaveAttribute(
+            'aria-valuetext',
+            '51 percent training, 49 percent test',
+        );
+        expect((noiseSlider as HTMLInputElement).value).toBe('0.05');
+        expect(noiseOutput).toHaveTextContent(/^0\.05%$/);
+        expect(noiseSlider).toHaveAttribute('aria-valuetext', '0.05 percent noise');
+    });
+
     it('keeps slider and output ownership unique across two panels', () => {
         render(
             <>
