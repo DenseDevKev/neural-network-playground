@@ -250,14 +250,17 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                                     About {selectedLesson.estimatedMinutes} min
                                 </div>
                             )}
+                            <p className="guided-lesson__consequence">
+                                Changes: replaces the current recipe and resets training. Preserves: saved runs.
+                            </p>
                             <button
                                 type="button"
                                 className="btn btn--accent btn--sm guided-lesson__start"
                                 onClick={startLesson}
-                                aria-label="Start guided lesson"
+                                aria-label="Start lesson and reset"
                                 disabled={isStarting}
                             >
-                                {isStarting ? 'Starting...' : 'Start'}
+                                {isStarting ? 'Starting...' : 'Start lesson and reset'}
                             </button>
                         </>
                     )}

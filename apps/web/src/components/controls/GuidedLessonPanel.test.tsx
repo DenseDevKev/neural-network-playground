@@ -122,7 +122,7 @@ describe('GuidedLessonPanel', () => {
         const target = getLessonRecipe(getLessonDefinition()!);
 
         render(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
 
         await waitFor(() => {
             expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
@@ -143,12 +143,29 @@ describe('GuidedLessonPanel', () => {
         expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
     });
 
+    it('discloses the reset consequence before starting without leaving a start control active', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        render(<GuidedLessonPanel onReset={onReset} onHighlightChange={vi.fn()} />);
+
+        expect(screen.getByText(/replaces the current recipe and resets training/i)).toBeVisible();
+        const startButton = screen.getByRole('button', { name: 'Start lesson and reset' });
+        expect(startButton).toBeEnabled();
+
+        await user.click(startButton);
+        await screen.findByText('Step 1 of 4');
+
+        expect(onReset).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText(/replaces the current recipe and resets training/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Start lesson and reset' })).not.toBeInTheDocument();
+    });
+
     it('runs through lesson navigation and clears the highlight on finish', async () => {
         const user = userEvent.setup();
         const onHighlightChange = vi.fn();
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={onHighlightChange} />);
 
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await screen.findByText('Step 1 of 4');
 
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
@@ -175,7 +192,7 @@ describe('GuidedLessonPanel', () => {
             activeLessonId: null,
             activeLessonStepIndex: null,
         });
-        expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Start lesson and reset' })).toBeInTheDocument();
     });
 
     it('opens a hidden Beginner lesson target without changing audience mode', async () => {
@@ -187,7 +204,7 @@ describe('GuidedLessonPanel', () => {
             screen.getByRole('combobox', { name: 'Guided lesson' }),
             'lesson-feature-engineering-circle',
         );
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
 
         await waitFor(() => {
             expect(useLayoutStore.getState()).toMatchObject({
@@ -207,7 +224,7 @@ describe('GuidedLessonPanel', () => {
 
         const regression = getLessonDefinition('lesson-regression-plane-baseline')!;
         await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), regression.id);
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await waitFor(() => {
             expect(currentPreparedForTest()?.compiled.task.kind).toBe('regression');
         });
@@ -223,7 +240,7 @@ describe('GuidedLessonPanel', () => {
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
         const multiclass = getLessonDefinition('lesson-three-class-softmax')!;
         await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), multiclass.id);
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await waitFor(() => {
             expect(currentPreparedForTest()?.compiled.task.kind)
                 .toBe('multiclass-classification');
@@ -268,7 +285,7 @@ describe('GuidedLessonPanel', () => {
                     screen.getByRole('combobox', { name: 'Guided lesson' }),
                     lesson.id,
                 );
-                await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+                await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
 
                 await waitFor(() => {
                     expect(
@@ -314,7 +331,7 @@ describe('GuidedLessonPanel', () => {
         const { container } = render(
             <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
         );
-        const startButton = screen.getByRole('button', { name: 'Start guided lesson' });
+        const startButton = screen.getByRole('button', { name: 'Start lesson and reset' });
         await user.click(startButton);
 
         expect(deferred.applyRecipe).toHaveBeenCalledTimes(1);
@@ -364,7 +381,7 @@ describe('GuidedLessonPanel', () => {
         const { container } = render(
             <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
         );
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await waitFor(() => {
             expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
@@ -408,7 +425,7 @@ describe('GuidedLessonPanel', () => {
         const { container } = render(
             <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
         );
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await waitFor(() => {
             expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
@@ -437,7 +454,7 @@ describe('GuidedLessonPanel', () => {
         usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
 
         render(<GuidedLessonPanel onReset={vi.fn()} />);
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await act(async () => {
             useTrainingStore.getState().beginConfigChange('network');
             const newerEdit = await usePlaygroundStore.getState().editRecipe(
@@ -474,7 +491,7 @@ describe('GuidedLessonPanel', () => {
         const { unmount } = render(
             <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
         );
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await waitFor(() => {
             expect(currentPreparedForTest()?.identities.canonicalRecipeKey)
                 .toBe(target.prepared.identities.canonicalRecipeKey);
@@ -503,7 +520,7 @@ describe('GuidedLessonPanel', () => {
         usePlaygroundStore.setState({ applyRecipe: vi.fn(() => pending) });
 
         const { unmount } = render(<GuidedLessonPanel onReset={vi.fn()} />);
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         unmount();
 
         await act(async () => {
@@ -543,7 +560,7 @@ describe('GuidedLessonPanel', () => {
         const { container, rerender } = render(
             <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
         );
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
 
         const alert = await screen.findByRole('alert');
         expect(alert).toHaveTextContent('Deliberate failure');
@@ -565,14 +582,14 @@ describe('GuidedLessonPanel', () => {
 
         rerender(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
         expect(screen.getByRole('alert')).toHaveTextContent('Deliberate failure');
-        expect(screen.getByRole('button', { name: 'Start guided lesson' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Start lesson and reset' })).toBeEnabled();
     });
 
     it('preserves explicit button semantics and keyboard lesson navigation', async () => {
         const user = userEvent.setup();
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
 
-        const startButton = screen.getByRole('button', { name: 'Start guided lesson' });
+        const startButton = screen.getByRole('button', { name: 'Start lesson and reset' });
         expect(startButton).toHaveAttribute('type', 'button');
         await user.click(startButton);
 
@@ -610,7 +627,7 @@ describe('GuidedLessonPanel', () => {
 
         expect(screen.getByRole('button', { name: 'Expand guided lesson drawer' }))
             .toHaveAttribute('aria-expanded', 'false');
-        expect(screen.queryByRole('button', { name: 'Start guided lesson' })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Start lesson and reset' })).not.toBeInTheDocument();
     });
 
     it('clears the active highlight when an active lesson unmounts', async () => {
@@ -620,7 +637,7 @@ describe('GuidedLessonPanel', () => {
             <GuidedLessonPanel onReset={vi.fn()} onHighlightChange={onHighlightChange} />,
         );
 
-        await user.click(screen.getByRole('button', { name: 'Start guided lesson' }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await waitFor(() => expect(onHighlightChange).toHaveBeenLastCalledWith('data'));
         unmount();
 
