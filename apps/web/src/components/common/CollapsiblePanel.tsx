@@ -3,6 +3,7 @@ import { Tooltip } from './Tooltip.tsx';
 import { createAppMeasureName } from '../../performance/interactionMeasures.ts';
 
 interface CollapsiblePanelProps {
+    storageId: string;
     title: string;
     children: React.ReactNode;
     defaultExpanded?: boolean;
@@ -13,33 +14,114 @@ interface CollapsiblePanelProps {
     fallback?: React.ReactNode;
 }
 
-function getPanelStorageKey(title: string): string {
+const STORAGE_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+type PendingStorageOperation =
+    | { type: 'remove'; key: string }
+    | { type: 'migrate'; legacyKey: string; value: 'true' | 'false'; v2Key: string };
+
+interface InitialPanelState {
+    isExpanded: boolean;
+    pendingStorageOperation: PendingStorageOperation | null;
+}
+
+function getLegacyPanelStorageKey(title: string): string {
     return `panel-${title.toLowerCase().replace(/\s+/g, '-')}`;
 }
 
-function readSavedExpandedState(title: string, defaultExpanded: boolean): {
-    isExpanded: boolean;
-    hasInvalidSavedState: boolean;
-} {
+function getV2PanelStorageKey(storageId: string): string {
+    return `panel-v2-${storageId}`;
+}
+
+function getStorage(): Storage | null {
     try {
-        const savedState = window.localStorage.getItem(getPanelStorageKey(title));
-        if (savedState === 'true') {
-            return { isExpanded: true, hasInvalidSavedState: false };
-        }
-        if (savedState === 'false') {
-            return { isExpanded: false, hasInvalidSavedState: false };
-        }
-        if (savedState !== null) {
-            return { isExpanded: defaultExpanded, hasInvalidSavedState: true };
-        }
+        return window.localStorage ?? null;
     } catch {
-        // Ignore localStorage read failures and fall back to defaults.
+        return null;
+    }
+}
+
+function readStorageValue(storage: Storage, key: string): { ok: true; value: string | null } | { ok: false } {
+    try {
+        return { ok: true, value: storage.getItem(key) };
+    } catch {
+        return { ok: false };
+    }
+}
+
+function writeStorageValue(storage: Storage, key: string, value: string): boolean {
+    try {
+        storage.setItem(key, value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function removeStorageValue(storage: Storage, key: string): void {
+    try {
+        storage.removeItem(key);
+    } catch {
+        // Storage cleanup is best effort.
+    }
+}
+
+function readInitialPanelState(
+    storageId: string,
+    initialTitle: string,
+    defaultExpanded: boolean,
+): InitialPanelState {
+    const storage = getStorage();
+    if (!storage) {
+        return { isExpanded: defaultExpanded, pendingStorageOperation: null };
     }
 
-    return { isExpanded: defaultExpanded, hasInvalidSavedState: false };
+    const v2Key = getV2PanelStorageKey(storageId);
+    const v2Read = readStorageValue(storage, v2Key);
+    if (!v2Read.ok) {
+        return { isExpanded: defaultExpanded, pendingStorageOperation: null };
+    }
+    if (v2Read.value === 'true' || v2Read.value === 'false') {
+        return {
+            isExpanded: v2Read.value === 'true',
+            pendingStorageOperation: null,
+        };
+    }
+    if (v2Read.value !== null) {
+        return {
+            isExpanded: defaultExpanded,
+            pendingStorageOperation: { type: 'remove', key: v2Key },
+        };
+    }
+
+    const legacyKey = getLegacyPanelStorageKey(initialTitle);
+    const legacyRead = readStorageValue(storage, legacyKey);
+    if (!legacyRead.ok) {
+        return { isExpanded: defaultExpanded, pendingStorageOperation: null };
+    }
+    if (legacyRead.value === 'true' || legacyRead.value === 'false') {
+        return {
+            isExpanded: legacyRead.value === 'true',
+            pendingStorageOperation: {
+                type: 'migrate',
+                legacyKey,
+                value: legacyRead.value,
+                v2Key,
+            },
+        };
+    }
+    if (legacyRead.value !== null) {
+        return {
+            isExpanded: defaultExpanded,
+            pendingStorageOperation: { type: 'remove', key: legacyKey },
+        };
+    }
+
+    return { isExpanded: defaultExpanded, pendingStorageOperation: null };
 }
 
 export function CollapsiblePanel({
+    storageId,
     title,
     children,
     defaultExpanded = true,
@@ -49,7 +131,29 @@ export function CollapsiblePanel({
     lazyMount = false,
     fallback = null,
 }: CollapsiblePanelProps) {
-    const initialStateRef = useRef(readSavedExpandedState(title, defaultExpanded));
+    if (import.meta.env.DEV && !STORAGE_ID_PATTERN.test(storageId)) {
+        throw new Error(
+            `Invalid CollapsiblePanel storageId "${storageId}". Expected lowercase kebab-case matching /^[a-z0-9]+(?:-[a-z0-9]+)*$/.`,
+        );
+    }
+
+    const initialStorageIdRef = useRef(storageId);
+    if (import.meta.env.DEV && initialStorageIdRef.current !== storageId) {
+        throw new Error(
+            `CollapsiblePanel storageId cannot change while mounted. Remount with key={storageId}. Initial: "${initialStorageIdRef.current}"; received: "${storageId}".`,
+        );
+    }
+
+    const initialTitleRef = useRef(title);
+    const initialStateRef = useRef<InitialPanelState | null>(null);
+    if (initialStateRef.current === null) {
+        initialStateRef.current = readInitialPanelState(
+            initialStorageIdRef.current,
+            initialTitleRef.current,
+            defaultExpanded,
+        );
+    }
+
     const [isExpanded, setIsExpanded] = useState(initialStateRef.current.isExpanded);
     const [hasMountedContent, setHasMountedContent] = useState(
         !lazyMount || initialStateRef.current.isExpanded,
@@ -65,16 +169,26 @@ export function CollapsiblePanel({
     const measurementIdRef = useRef<string | null>(null);
 
     useEffect(() => {
-        if (!initialStateRef.current.hasInvalidSavedState) {
+        const pendingOperation = initialStateRef.current?.pendingStorageOperation ?? null;
+        if (!pendingOperation) {
             return;
         }
 
-        try {
-            window.localStorage.removeItem(getPanelStorageKey(title));
-        } catch {
-            // Ignore localStorage write failures and continue with in-memory state.
+        initialStateRef.current!.pendingStorageOperation = null;
+        const storage = getStorage();
+        if (!storage) {
+            return;
         }
-    }, [title]);
+
+        if (pendingOperation.type === 'remove') {
+            removeStorageValue(storage, pendingOperation.key);
+            return;
+        }
+
+        if (writeStorageValue(storage, pendingOperation.v2Key, pendingOperation.value)) {
+            removeStorageValue(storage, pendingOperation.legacyKey);
+        }
+    }, []);
 
     useEffect(() => {
         if (isExpanded) {
@@ -139,10 +253,13 @@ export function CollapsiblePanel({
                 });
             }
 
-            try {
-                window.localStorage.setItem(getPanelStorageKey(title), String(next));
-            } catch {
-                // Ignore localStorage write failures and continue with in-memory state.
+            const storage = getStorage();
+            if (storage) {
+                writeStorageValue(
+                    storage,
+                    getV2PanelStorageKey(initialStorageIdRef.current),
+                    String(next),
+                );
             }
             setAnnouncement(`${title} ${next ? 'expanded' : 'collapsed'}`);
             return next;
