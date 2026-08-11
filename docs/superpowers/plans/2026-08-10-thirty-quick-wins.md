@@ -3081,7 +3081,6 @@ git commit -m "test(e2e): cover two phone widths"
 - Modify: apps/web/src/hooks/useTraining.test.tsx
 - Modify: apps/web/src/vite-env.d.ts
 - Modify: package.json
-- Modify: playwright.config.ts
 
 **Interfaces:**
 - This task runs after and consumes Task 19's worker-modal containment; do not
@@ -3145,6 +3144,13 @@ initializeWorker(prepared).catch((error) => {
 
 Bridge tests prove the helper returns false without a subscriber and delivers a protocol-v2 `error` message through `onSnapshot` when subscribed. Hook tests prove the injected branch is reached only after subscription, that neither the mount initializer nor prepared-document synchronization invokes worker initialization, and that the same worker error as a native bridge error reaches the store. Place fault selection outside worker scientific logic. Add exact root scripts `build:e2e` and `test:e2e:recovery`; the latter runs `build:e2e` with `VITE_E2E_FAULTS=1`, then the two-browser worker-recovery spec with only `--grep @fault-enabled` against that generated dist.
 
+Use these exact root script values:
+
+~~~json
+"build:e2e": "VITE_E2E_FAULTS=1 pnpm build",
+"test:e2e:recovery": "pnpm run build:e2e && playwright test tests/e2e/worker-recovery.spec.ts --project=chromium --project=webkit --grep \"@fault-enabled\""
+~~~
+
 Wrap the hook harness in StrictMode and prove effect replay queues exactly one
 bridge error after the replacement subscription, while the sticky suppression
 ref short-circuits both replayed mount/prepared effects and initialization stays
@@ -3172,7 +3178,7 @@ step.
 - [ ] **Step 6: Commit**
 
 ~~~bash
-git add apps/web/src/testing/e2eFaults.ts apps/web/src/testing/e2eFaults.test.ts tests/e2e/worker-recovery.spec.ts apps/web/src/worker/workerBridge.ts apps/web/src/worker/workerBridge.test.ts apps/web/src/hooks/useTraining.ts apps/web/src/hooks/useTraining.test.tsx apps/web/src/vite-env.d.ts package.json playwright.config.ts
+git add apps/web/src/testing/e2eFaults.ts apps/web/src/testing/e2eFaults.test.ts tests/e2e/worker-recovery.spec.ts apps/web/src/worker/workerBridge.ts apps/web/src/worker/workerBridge.test.ts apps/web/src/hooks/useTraining.ts apps/web/src/hooks/useTraining.test.tsx apps/web/src/vite-env.d.ts package.json
 git commit -m "test(e2e): prove worker failure recovery"
 ~~~
 
