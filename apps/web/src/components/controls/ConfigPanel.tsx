@@ -59,7 +59,9 @@ export const ConfigPanel = memo(function ConfigPanel({ onReset }: ConfigPanelPro
     }, [setStatus]);
 
     const reportSuccess = useCallback((message: string) => {
-        if (mounted.current) setStatus(message);
+        if (!mounted.current) return;
+        setError(null);
+        setStatus(message);
     }, [setStatus]);
 
     const finishImport = useCallback(() => {

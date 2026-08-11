@@ -154,6 +154,24 @@ describe('ConfigPanel strict V2 transport', () => {
         expect(screen.getByRole('alert')).toHaveTextContent(/could not copy url/i);
     });
 
+    it('replaces a failed URL copy alert with URL copied feedback on a later copy', async () => {
+        (navigator.clipboard.writeText as ReturnType<typeof vi.fn>)
+            .mockRejectedValueOnce(new Error('permission denied'));
+        render(<ConfigPanel onReset={vi.fn()} />);
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(/could not copy url/i);
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+        });
+
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('URL copied');
+    });
+
     it('announces unavailable clipboard support after synchronizing', async () => {
         Object.defineProperty(navigator, 'clipboard', {
             value: undefined,
@@ -222,6 +240,26 @@ describe('ConfigPanel strict V2 transport', () => {
         expect(screen.getByRole('status')).toHaveTextContent('Exported');
     });
 
+    it('replaces a failed JSON export alert with Exported feedback on a later export', async () => {
+        (URL.createObjectURL as ReturnType<typeof vi.fn>)
+            .mockImplementationOnce(() => {
+                throw new Error('URL creation failed');
+            });
+        render(<ConfigPanel onReset={vi.fn()} />);
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /export json/i }));
+        });
+        expect(screen.getByRole('alert')).toHaveTextContent(/could not export experiment/i);
+
+        await act(async () => {
+            fireEvent.click(screen.getByRole('button', { name: /export json/i }));
+        });
+
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.getByRole('status')).toHaveTextContent('Exported');
+    });
+
     it('shows a structured persistent error and creates no blob without an active V2 document', async () => {
         vi.useFakeTimers();
         usePlaygroundStore.setState({
@@ -285,6 +323,30 @@ describe('ConfigPanel strict V2 transport', () => {
         expect(onReset).toHaveBeenCalledTimes(1);
         expect(currentPrepared()?.document).toEqual(target.document);
         expect(currentPrepared()?.identities).toEqual(target.identities);
+    });
+
+    it('replaces a failed JSON import alert with Imported feedback on a later import', async () => {
+        const onReset = vi.fn();
+        const target = currentPrepared()!;
+        const { container } = render(<ConfigPanel onReset={onReset} />);
+        const input = fileInput(container);
+
+        fireEvent.click(screen.getByRole('button', { name: /import json/i }));
+        await selectFile(input, new File(['{'], 'invalid.json', {
+            type: 'application/json',
+        }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('$: invalid experiment JSON');
+
+        fireEvent.click(screen.getByRole('button', { name: /import json/i }));
+        await selectFile(input, new File(
+            [encodeExperimentJson(target.document)],
+            'valid.json',
+            { type: 'application/json' },
+        ));
+
+        expect(await screen.findByRole('status')).toHaveTextContent('Imported');
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(onReset).toHaveBeenCalledTimes(1);
     });
 
     it('keeps import publication callbacks active through the StrictMode effect probe', async () => {
