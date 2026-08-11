@@ -2764,6 +2764,8 @@ git commit -m "test: aggregate independent performance gates"
 - Create: tests/e2e/accessibility.spec.ts
 - Modify: package.json
 - Modify: pnpm-lock.yaml
+- Modify: apps/web/src/components/visualization/NetworkGraphCanvas.tsx
+- Modify: apps/web/src/components/visualization/NetworkGraphCanvas.test.tsx
 
 **Interfaces:**
 - Add `@axe-core/playwright` as a direct root development dependency; do not depend on the transitive `axe-core` bundled under `jest-axe`.
@@ -2775,8 +2777,15 @@ git commit -m "test: aggregate independent performance gates"
 - Collect page errors and console errors for every case and fail after each
   test. Format violations with impact, rule/help URL, exact targets, and failure
   summaries so browser output is actionable.
-- Prohibit Axe `.exclude()`, `.disableRules()`, `.withRules()`, `.withTags()`,
-  and `runOnly`. A future exception must filter only a single rule's single
+- The genuine pre-implementation production scan fails all four cases on one
+  serious `role-img-alt` violation at
+  `canvas[aria-describedby="network-graph-desc"]`. Give that canvas the exact
+  accessible name `Neural network graph` while retaining its dynamic
+  `aria-describedby` summary; add no exception.
+- Prohibit Axe `.exclude()`, `.include()`, `.options()`, `.disableRules()`,
+  `.withRules()`, `.withTags()`, and `runOnly`. Every scan must retain the
+  literal whole-page `new AxeBuilder({ page }).analyze()` shape. A future
+  exception must filter only a single rule's single
   tight node selector, retain all unmatched nodes, explain why, and link
   `https://github.com/DenseDevKev/neural-network-playground/issues/<number>`.
 
@@ -2853,7 +2862,22 @@ for (const scanCase of SCAN_CASES) {
 }
 ~~~
 
+Add a focused owner test before changing the canvas. It must require both the
+new exact accessible name and the existing dynamic description, so replacing
+the scientific summary with a generic label is not accepted:
+
+~~~tsx
+const graph = screen.getByRole('img', { name: 'Neural network graph' });
+expect(graph).toHaveAccessibleDescription(/Neural network:/);
+expect(graph).toHaveAttribute('aria-describedby', 'network-graph-desc');
+~~~
+
 - [ ] **Step 2: Run RED against a fresh production build**
+
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/visualization/NetworkGraphCanvas.test.tsx --pool=forks --reporter=dot
+
+Expected: FAIL because the canvas has `role="img"` and a description but no
+accessible name.
 
 Temporarily insert an unlabeled image immediately before `analyze()`:
 
@@ -2873,16 +2897,18 @@ Run: pnpm build
 Run: pnpm exec playwright test tests/e2e/accessibility.spec.ts --project=chromium --grep "desktop accessibility"
 
 Expected: FAIL containing the `image-alt` rule with critical impact. Remove the
-probe manually and verify no probe diff remains. This controlled mutation is
-mandatory even if the genuine baseline is already green.
+probe manually and verify no probe diff remains. The unmodified production
+baseline also reports the genuine serious `role-img-alt` canvas violation in
+all four browser/viewport cases; the controlled mutation must still prove the
+independent critical `image-alt` gate.
 
-- [ ] **Step 3: Fix only violations proven by the scan**
+- [ ] **Step 3: Fix the proven graph-canvas violation without an exception**
 
-Prefer semantic HTML, names, relationships, and token-level contrast corrections
-in owners. Before editing application source, record each observed Axe rule,
-target, owning source file, and focused test, then add those exact paths to the
-active Task 28 file list/report. If source changes, run its focused Vitest,
-web typecheck, and focused ESLint. Do not add an exception in this task.
+Add `aria-label="Neural network graph"` to the existing `role="img"` canvas and
+keep `aria-describedby="network-graph-desc"` unchanged. Do not replace, hide,
+or flatten the current dynamic network-shape summary. Record the observed
+`role-img-alt` rule, target, owner, and focused test in the Task 28 report. Do
+not change other application source and do not add an Axe exception.
 
 - [ ] **Step 4: Run GREEN in the required matrix**
 
@@ -2894,22 +2920,33 @@ Run: pnpm exec playwright test tests/e2e/accessibility.spec.ts --project=chromiu
 
 Run: pnpm exec eslint tests/e2e/accessibility.spec.ts
 
+Run: pnpm --filter @nn-playground/web exec vitest run src/components/visualization/NetworkGraphCanvas.test.tsx --pool=forks --reporter=dot
+
+Run: pnpm --filter @nn-playground/web typecheck
+
+Run: pnpm exec eslint apps/web/src/components/visualization/NetworkGraphCanvas.tsx apps/web/src/components/visualization/NetworkGraphCanvas.test.tsx tests/e2e/accessibility.spec.ts
+
 Run: pnpm install --frozen-lockfile
 
 Run: pnpm list -w @axe-core/playwright --depth 0
 
-Run: test -f tests/e2e/accessibility.spec.ts && ! rg -n '\.(exclude|disableRules|withRules|withTags)\(|\brunOnly\b' tests/e2e/accessibility.spec.ts
+Run: test -f tests/e2e/accessibility.spec.ts
+
+Run: ! rg -n '\.(exclude|include|options|disableRules|withRules|withTags)\(|\brunOnly\b' tests/e2e/accessibility.spec.ts
+
+Run: rg -n 'new AxeBuilder\(\{ page \}\)\.analyze\(\)' tests/e2e/accessibility.spec.ts
 
 Expected: `--list` reports exactly four Task 28 cases. Desktop Chromium,
 compact Chromium, desktop WebKit, and compact WebKit PASS with zero
 serious/critical violations and no browser errors; lint/frozen lock/direct-root
-dependency checks pass, and the executable scope-method scan returns no match.
+dependency checks pass, the exact whole-page builder shape is present, and the
+executable prohibited-method scan returns no match. The graph canvas has the
+exact accessible name plus its existing dynamic description.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add tests/e2e/accessibility.spec.ts package.json pnpm-lock.yaml
-# Add only any source and focused unit-test files required by observed Axe failures.
+git add tests/e2e/accessibility.spec.ts package.json pnpm-lock.yaml apps/web/src/components/visualization/NetworkGraphCanvas.tsx apps/web/src/components/visualization/NetworkGraphCanvas.test.tsx
 git commit -m "test(e2e): scan production accessibility"
 ~~~
 
