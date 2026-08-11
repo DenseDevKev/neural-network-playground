@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { axe } from 'jest-axe';
 import { Header } from './Header';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
@@ -164,6 +165,9 @@ describe('Header', () => {
 
         const switcher = screen.getByRole('group', { name: 'Workspace view' });
         expect(switcher).toBeInTheDocument();
+        expect(switcher).toHaveAccessibleDescription(
+            'Build changes the recipe. Run trains and inspects it. Switching views does not start or reset training.',
+        );
 
         expect(screen.getByRole('button', { name: /build/i })).toBeInTheDocument();
         expect(screen.getByRole('button', { name: /run/i })).toBeInTheDocument();
@@ -173,15 +177,77 @@ describe('Header', () => {
         expect(screen.queryByRole('button', { name: 'split' })).not.toBeInTheDocument();
     });
 
-    it('updates the workspace view when Build or Run is clicked', async () => {
+    it('explains Build and Run by pointer, keyboard, and touch-safe activation', async () => {
         const user = userEvent.setup();
         renderHeader();
+
+        const trigger = screen.getByRole('button', { name: 'About workspace views' });
+        const contentId = trigger.getAttribute('aria-controls');
+        const descriptionId = screen.getByRole('group', { name: 'Workspace view' })
+            .getAttribute('aria-describedby');
+
+        expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        expect(contentId).toBe('forge-workspace-view-description');
+        expect(descriptionId).toBe('forge-workspace-view-description');
+        expect(document.querySelectorAll('[id="forge-workspace-view-description"]')).toHaveLength(1);
+        expect(document.getElementById('forge-workspace-view-description')).toHaveClass('sr-only');
+
+        fireEvent.mouseEnter(trigger);
+        expect(document.getElementById(contentId ?? '')).toBe(
+            screen.getByRole('region', { name: 'Build and Run views' }),
+        );
+        fireEvent.mouseLeave(trigger);
+        expect(screen.queryByRole('region', { name: 'Build and Run views' })).not.toBeInTheDocument();
+        expect(document.getElementById('forge-workspace-view-description')).toBeInTheDocument();
+
+        fireEvent.focus(trigger);
+        expect(screen.getByRole('region', { name: 'Build and Run views' })).toBeInTheDocument();
+        fireEvent.blur(trigger);
+        expect(screen.queryByRole('region', { name: 'Build and Run views' })).not.toBeInTheDocument();
+
+        await user.click(trigger);
+        expect(trigger).toHaveAttribute('aria-expanded', 'true');
+        const visibleExplanation = screen.getByRole('region', { name: 'Build and Run views' });
+        expect(visibleExplanation).toBeVisible();
+        expect(visibleExplanation).not.toHaveClass('sr-only');
+        expect(visibleExplanation).toHaveTextContent(
+            'Build changes the recipe. Run trains and inspects it. Switching views does not start or reset training.',
+        );
+
+        await user.keyboard('{Escape}');
+        expect(trigger).toHaveAttribute('aria-expanded', 'false');
+        expect(screen.queryByRole('region', { name: 'Build and Run views' })).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+    });
+
+    it('updates only workspace view state when Build or Run is clicked', async () => {
+        const user = userEvent.setup();
+        const training = {
+            ...createTrainingMock(),
+            reset: vi.fn(),
+        };
+        useTrainingStore.setState({ status: 'running' });
+        const trainingStateBefore = useTrainingStore.getState();
+        renderHeader({ training });
 
         await user.click(screen.getByRole('button', { name: /run/i }));
         expect(useLayoutStore.getState().view).toBe('run');
 
         await user.click(screen.getByRole('button', { name: /build/i }));
         expect(useLayoutStore.getState().view).toBe('build');
+        expect(useTrainingStore.getState()).toBe(trainingStateBefore);
+        expect(training.play).not.toHaveBeenCalled();
+        expect(training.pause).not.toHaveBeenCalled();
+        expect(training.reset).not.toHaveBeenCalled();
+    });
+
+    it('has no automated accessibility violations with the workspace explanation open', async () => {
+        const user = userEvent.setup();
+        const { container } = renderHeader();
+
+        await user.click(screen.getByRole('button', { name: 'About workspace views' }));
+
+        expect((await axe(container)).violations).toHaveLength(0);
     });
 
     it('changes audience mode through a described native select and announces only explicit choices', async () => {

@@ -303,6 +303,7 @@ describe('App shell integration', () => {
             screen.getByRole('link', { name: 'Skip to main content' }),
             header.getByRole('button', { name: 'build' }),
             header.getByRole('button', { name: 'run' }),
+            header.getByRole('button', { name: 'About workspace views' }),
             header.getByRole('combobox', { name: 'Audience mode' }),
             header.getByRole('button', { name: 'Presets' }),
             header.getByRole('button', { name: 'Lessons' }),

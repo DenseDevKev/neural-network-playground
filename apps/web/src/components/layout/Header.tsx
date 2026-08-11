@@ -31,6 +31,10 @@ const SURFACE_LABELS = {
     history: 'History',
 } as const;
 
+const WORKSPACE_VIEW_DESCRIPTION =
+    'Build changes the recipe. Run trains and inspects it. Switching views does not start or reset training.';
+const WORKSPACE_VIEW_DESCRIPTION_ID = 'forge-workspace-view-description';
+
 function useFlash(value: string) {
     const prev = useRef(value);
     const [flash, setFlash] = useState(false);
@@ -63,6 +67,9 @@ export const Header = memo(function Header({
     const setView = useLayoutStore((s) => s.setView);
     const setAudienceMode = useLayoutStore((s) => s.setAudienceMode);
     const [modeAnnouncement, setModeAnnouncement] = useState('');
+    const [workspaceHelpOpen, setWorkspaceHelpOpen] = useState(false);
+    const workspaceHelpPinnedRef = useRef(false);
+    const workspaceHelpTriggerRef = useRef<HTMLButtonElement>(null);
     const audienceProfile = getAudienceProfile(audienceMode);
 
     const evidence = useMemo(() => selectScientificEvidence({
@@ -93,7 +100,12 @@ export const Header = memo(function Header({
 
             <div className="forge-topbar__divider" aria-hidden />
 
-            <div className="forge-phase" role="group" aria-label="Workspace view">
+            <div
+                className="forge-phase"
+                role="group"
+                aria-label="Workspace view"
+                aria-describedby={WORKSPACE_VIEW_DESCRIPTION_ID}
+            >
                 {(['build', 'run'] as const).map((nextView) => (
                     <button
                         key={nextView}
@@ -105,6 +117,50 @@ export const Header = memo(function Header({
                         <i aria-hidden /><span>{nextView}</span>
                     </button>
                 ))}
+                <span
+                    className="concept-help"
+                    onMouseEnter={() => setWorkspaceHelpOpen(true)}
+                    onMouseLeave={() => {
+                        if (!workspaceHelpPinnedRef.current) setWorkspaceHelpOpen(false);
+                    }}
+                    onFocus={() => setWorkspaceHelpOpen(true)}
+                    onBlur={() => {
+                        workspaceHelpPinnedRef.current = false;
+                        setWorkspaceHelpOpen(false);
+                    }}
+                    onKeyDown={(event) => {
+                        if (event.key !== 'Escape' || !workspaceHelpOpen) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        workspaceHelpPinnedRef.current = false;
+                        setWorkspaceHelpOpen(false);
+                        workspaceHelpTriggerRef.current?.focus();
+                    }}
+                >
+                    <button
+                        ref={workspaceHelpTriggerRef}
+                        className="concept-help__trigger"
+                        type="button"
+                        aria-label="About workspace views"
+                        aria-expanded={workspaceHelpOpen}
+                        aria-controls={WORKSPACE_VIEW_DESCRIPTION_ID}
+                        onClick={() => {
+                            workspaceHelpPinnedRef.current = !workspaceHelpPinnedRef.current;
+                            setWorkspaceHelpOpen(workspaceHelpPinnedRef.current);
+                        }}
+                    >
+                        <span aria-hidden="true">?</span>
+                    </button>
+                    <span
+                        id={WORKSPACE_VIEW_DESCRIPTION_ID}
+                        className={workspaceHelpOpen ? 'forge-audience-mode__note' : 'sr-only'}
+                        role={workspaceHelpOpen ? 'region' : undefined}
+                        aria-label={workspaceHelpOpen ? 'Build and Run views' : undefined}
+                        style={workspaceHelpOpen ? { maxWidth: '280px' } : undefined}
+                    >
+                        {WORKSPACE_VIEW_DESCRIPTION}
+                    </span>
+                </span>
             </div>
 
             <div className="forge-topbar__divider" aria-hidden />
