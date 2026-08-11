@@ -39,6 +39,7 @@ import { isWorkerReadyMessage } from './workerReadiness.ts';
 let _worker: Worker | null = null;
 let _comlinkApi: Comlink.Remote<TrainingWorkerApi> | null = null;
 let _streamPort: MessagePort | null = null;
+let _streamSetupPromise: Promise<void> | null = null;
 const WORKER_READINESS_TIMEOUT_MS = 5_000;
 
 interface WorkerReadinessState {
@@ -302,26 +303,53 @@ export async function getWorkerApi(): Promise<Comlink.Remote<TrainingWorkerApi>>
  * Set up the MessageChannel for streaming snapshot delivery.
  * Call this once after the worker is initialized.
  */
-export async function setupStreamChannel(): Promise<void> {
-    if (_streamPort) return; // Already set up
+export function setupStreamChannel(): Promise<void> {
+    if (_streamPort) return Promise.resolve(); // Already set up
+    if (_streamSetupPromise) return _streamSetupPromise;
 
+    const setupPromise = setUpStreamChannelOnce();
+    _streamSetupPromise = setupPromise;
+    const clearPendingSetup = () => {
+        if (_streamSetupPromise === setupPromise) _streamSetupPromise = null;
+    };
+    void setupPromise.then(clearPendingSetup, clearPendingSetup);
+    return setupPromise;
+}
+
+async function setUpStreamChannelOnce(): Promise<void> {
     const api = await getWorkerApi();
     if (_streamPort) return;
 
     const channel = new MessageChannel();
-    _streamPort = channel.port1;
+    try {
+        // Pass port2 to the worker via Comlink before publishing port1 locally.
+        await api.setStreamPort(Comlink.transfer(channel.port2, [channel.port2]));
 
-    // Pass port2 to the worker via Comlink
-    await api.setStreamPort(Comlink.transfer(channel.port2, [channel.port2]));
+        if (_comlinkApi !== api) {
+            throw new Error('Training worker terminated during stream setup');
+        }
 
-    // Listen for streamed messages on port1
-    _streamPort.addEventListener('message', (event: MessageEvent<unknown>) => {
-        handleWorkerMessage(event.data);
-    });
-    _streamPort.onmessageerror = () => {
-        emitWorkerError('Stream port message deserialization error');
-    };
-    _streamPort.start();
+        // Another setup may have completed while the RPC was in flight.
+        if (_streamPort) {
+            channel.port1.close();
+            channel.port2.close();
+            return;
+        }
+
+        // Listen for streamed messages on port1
+        channel.port1.addEventListener('message', (event: MessageEvent<unknown>) => {
+            handleWorkerMessage(event.data);
+        });
+        channel.port1.onmessageerror = () => {
+            emitWorkerError('Stream port message deserialization error');
+        };
+        channel.port1.start();
+        _streamPort = channel.port1;
+    } catch (error) {
+        channel.port1.close();
+        channel.port2.close();
+        throw error;
+    }
 }
 
 // ── Message Handling ──
@@ -810,6 +838,7 @@ export function onSnapshot(callback: SnapshotCallback): () => void {
 
 export function terminateWorker(): void {
     stopRenderLoop();
+    _streamSetupPromise = null;
     if (_streamPort) {
         _streamPort.close();
         _streamPort = null;

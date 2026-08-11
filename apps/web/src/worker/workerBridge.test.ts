@@ -72,6 +72,10 @@ vi.stubGlobal('Worker', class FakeWorker {
 
 // ── Stub MessageChannel ──
 let messageChannelConstructCount = 0;
+const fakeMessageChannels: Array<{
+    port1: typeof fakePort1;
+    port2: typeof fakePort2;
+}> = [];
 let fakePort1: {
     addEventListener: ReturnType<typeof vi.fn>;
     onmessageerror: (() => void) | null;
@@ -79,7 +83,7 @@ let fakePort1: {
     start: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
 };
-let fakePort2: { [key: string]: unknown };
+let fakePort2: { close: ReturnType<typeof vi.fn> };
 
 vi.stubGlobal('MessageChannel', class FakeMessageChannel {
     port1: typeof fakePort1;
@@ -93,9 +97,10 @@ vi.stubGlobal('MessageChannel', class FakeMessageChannel {
             start: vi.fn(),
             close: vi.fn(),
         };
-        fakePort2 = {};
+        fakePort2 = { close: vi.fn() };
         this.port1 = fakePort1;
         this.port2 = fakePort2;
+        fakeMessageChannels.push({ port1: fakePort1, port2: fakePort2 });
     }
 });
 
@@ -148,6 +153,7 @@ describe('workerBridge readiness gating', () => {
         fakeWorkerInstance = null;
         autoAnnounceWorkerReady = false;
         messageChannelConstructCount = 0;
+        fakeMessageChannels.length = 0;
         comlinkStub.api.setStreamPort.mockReset().mockResolvedValue(undefined);
         comlinkStub.api.updateDemand.mockReset().mockResolvedValue(undefined);
         comlinkStub.transfer.mockClear();
@@ -196,6 +202,46 @@ describe('workerBridge readiness gating', () => {
         expect(messageChannelConstructCount).toBe(1);
         expect(comlinkStub.transfer).toHaveBeenCalledWith(fakePort2, [fakePort2]);
         expect(comlinkStub.api.setStreamPort).toHaveBeenCalledTimes(1);
+    });
+
+    it('cleans up a rejected channel and shares one retry across concurrent callers', async () => {
+        let resolveSecondAttempt!: () => void;
+        comlinkStub.api.setStreamPort
+            .mockRejectedValueOnce(new Error('transfer failed'))
+            .mockImplementationOnce(() => new Promise<void>((resolve) => {
+                resolveSecondAttempt = resolve;
+            }));
+
+        const firstAttempt = setupStreamChannel();
+        fakeWorkerInstance!.dispatchMessage(VALID_WORKER_READY_MESSAGE);
+        await expect(firstAttempt).rejects.toThrow('transfer failed');
+
+        const rejectedChannel = fakeMessageChannels[0];
+        expect(rejectedChannel.port1.close).toHaveBeenCalledTimes(1);
+        expect(rejectedChannel.port2.close).toHaveBeenCalledTimes(1);
+        expect(rejectedChannel.port1.addEventListener).not.toHaveBeenCalled();
+
+        const secondAttempt = setupStreamChannel();
+        const concurrentAttempt = setupStreamChannel();
+        await vi.waitFor(() => {
+            expect(comlinkStub.api.setStreamPort).toHaveBeenCalledTimes(2);
+        });
+        expect(fakeMessageChannels).toHaveLength(2);
+
+        resolveSecondAttempt();
+        await expect(secondAttempt).resolves.toBeUndefined();
+        await expect(concurrentAttempt).resolves.toBeUndefined();
+
+        const installedChannel = fakeMessageChannels[1];
+        expect(installedChannel.port1.close).not.toHaveBeenCalled();
+        expect(installedChannel.port2.close).not.toHaveBeenCalled();
+        expect(installedChannel.port1.addEventListener).toHaveBeenCalledWith(
+            'message',
+            expect.any(Function),
+        );
+
+        postStreamCommand({ type: 'pause' });
+        expect(installedChannel.port1.postMessage).toHaveBeenCalledWith({ type: 'pause' });
     });
 
     it('ignores malformed and unrelated worker messages until readiness times out', async () => {
