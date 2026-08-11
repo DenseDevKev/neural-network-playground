@@ -2965,12 +2965,17 @@ git commit -m "test(e2e): scan production accessibility"
 - Reuse Task 20's one module-level graph/evidence locator/assertion helper. After
   any Code/drawer/profile journey state, explicitly return to Run + Boundary
   before calling it. Replace Task 20's standalone 390 test when the matrix
-  absorbs it so the locator inventory does not drift or run twice.
+  absorbs it so the locator inventory does not drift or run twice. Move its
+  runtime toolbar-to-summary assertion into the shared helper: at both widths,
+  `summary.y - (toolbar.y + toolbar.height) >= 6` remains required.
 - At both widths reach the Task 16 Keyboard shortcuts summary, prove touch
   activation opens the native disclosure without starting/resetting training,
   close it, then focus it and prove native Space activation opens it without
   the global training shortcut intercepting the key.
 - Do not use conditional assertions that weaken one viewport.
+- Preserve the independent Task 16 800px disclosure test, Task 22 desktop
+  concept-help test, and Task 26 cross-tab test; parameterize only the existing
+  compact journey and remove only Task 20's absorbed standalone 390 graph test.
 
 - [ ] **Step 1: Parameterize the current test and require 390-specific evidence**
 
@@ -3007,15 +3012,53 @@ restoration checks.
 Before the Task 20 assertions, explicitly select Run and the exact Boundary tab,
 assert no drawer dialog is open, then call the existing shared helper. Remove
 the prior standalone `390px graph and evidence targets` test rather than copying
-its 13 accessible names into this journey.
+its 13 accessible names into this journey. Extend that helper after its existing
+target loop with the absorbed geometry gate so it runs once per width:
+
+~~~ts
+const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
+const summary = page.locator(
+    '.forge-buildrun__topology-stage .network-graph-summary',
+);
+const toolbarBox = await toolbar.boundingBox();
+const summaryBox = await summary.boundingBox();
+expect(toolbarBox).not.toBeNull();
+expect(summaryBox).not.toBeNull();
+if (toolbarBox && summaryBox) {
+    expect(summaryBox.y - (toolbarBox.y + toolbarBox.height))
+        .toBeGreaterThanOrEqual(6);
+}
+~~~
+
+Exercise Boundary, Loss, and Confusion as active tabs: scroll each into view,
+click it, assert `aria-selected="true"`, require the 44px target, then use
+`expectFullyInViewport` without a second corrective scroll so the assertion
+proves the active tab remains visible. For Keyboard shortcuts, use the existing real `touchTap` helper for
+open and close, then focus the summary and press Space. Before the snapshot,
+require exact status `idle`, exact current step `0`, and non-null, nonempty
+generation/revision strings; compare that complete object exactly after all
+three activations.
 
 - [ ] **Step 4: Run GREEN in both browser engines**
 
 Run: pnpm build
 
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "touch shell" --list
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --list --grep "cross-tab saved-run memory|concept help remains fully visible|keyboard shortcuts disclosure hides definitions"
+
 Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "touch shell"
 
-Expected: Four tests PASS at zero retries, with both named widths represented for each browser.
+Run: pnpm exec eslint tests/e2e/playground-smoke.spec.ts
+
+Run: ! rg -n '390px graph and evidence targets' tests/e2e/playground-smoke.spec.ts
+
+Run: git diff --check
+
+Expected: `--list` reports exactly four tests; four tests PASS at zero retries,
+with both named widths represented for each browser. The absorbed standalone
+name is absent, the independent Task 16/22/26 list reports exactly three
+Chromium tests, and lint/diff checks pass.
 
 - [ ] **Step 5: Commit**
 
