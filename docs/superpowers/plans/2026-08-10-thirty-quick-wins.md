@@ -997,40 +997,75 @@ git commit -m "feat(web): clarify workspace profiles"
 - Modify: apps/web/src/styles/forgeResponsive.test.ts
 
 **Interfaces:**
-- Consumes TRAINING_SHORTCUTS from Task 1 as the sole list of shortcut labels and descriptions.
-- Renders a native details disclosure named Keyboard shortcuts that remains visible at compact breakpoints.
+- Extends `TRAINING_SHORTCUTS` from Task 1 into the authoritative
+  code/label/description/action registry and derives shortcut resolution plus
+  rendered definitions from it; do not maintain a second code/action map.
+- Renders a default-closed native `details` disclosure named Keyboard shortcuts
+  as a direct child of `.training-bar`, immediately after
+  `.training-bar__controls`. It remains visible at compact breakpoints and its
+  summary has a 44-pixel compact target.
+- Global training shortcuts ignore the implicitly focusable native `summary`
+  (and other focusable descendants), preserving native disclosure keyboard
+  behavior instead of preventing Space or triggering training.
 
 - [ ] **Step 1: Write failing shared-list and responsive UI tests**
 
 ~~~tsx
-await user.click(screen.getByText('Keyboard shortcuts'));
-expect(screen.getByText('Space')).toBeVisible();
-expect(screen.getByText('Play or pause training')).toBeVisible();
-expect(screen.getByText('R')).toBeVisible();
+// Extend the existing helper to accept `code = 'KeyR'` instead of hard-coding KeyR.
+const nativeDetails = document.createElement('details');
+const nativeSummary = document.createElement('summary');
+nativeDetails.append(nativeSummary);
+expect(resolveFromTarget(nativeSummary, 'Space')).toBeNull();
+
+const details = screen.getByRole('group', { name: 'Keyboard shortcuts' });
+const summary = within(details).getByText('Keyboard shortcuts');
+expect(details).not.toHaveAttribute('open');
+await user.click(summary);
+expect(details).toHaveAttribute('open');
+
+const terms = within(details).getAllByRole('term');
+const definitions = within(details).getAllByRole('definition');
+expect(terms.map((term) => term.textContent))
+    .toEqual(TRAINING_SHORTCUTS.map(({ label }) => label));
+expect(definitions.map((definition) => definition.textContent))
+    .toEqual(TRAINING_SHORTCUTS.map(({ description }) => description));
 ~~~
 
-Assert the rendered shortcut count equals TRAINING_SHORTCUTS.length.
+Assert all supported codes resolve to their registry action on the page
+background, all three resolve to null from a native summary, and both rendered
+term/definition arrays have `TRAINING_SHORTCUTS.length`. The responsive
+stylesheet has a positive full-width rule plus a 44-pixel summary target. Scope
+duplicate `Space` and `R` queries within the disclosure because inline badges
+already use those strings.
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/shortcuts/trainingShortcuts.test.ts src/components/controls/TrainingControls.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/shortcuts/trainingShortcuts.test.ts src/components/controls/TrainingControls.test.tsx src/styles/forgeResponsive.test.ts --pool=forks --reporter=dot
 
-Expected: FAIL because no disclosure exists.
+Expected: FAIL because no disclosure or compact rule exists and the shortcut resolver intercepts keys from a native summary.
 
 - [ ] **Step 3: Render the shared definitions in a compact disclosure**
 
 ~~~tsx
-<details className="training-shortcuts">
+<details className="training-shortcuts" aria-label="Keyboard shortcuts">
     <summary>Keyboard shortcuts</summary>
     <dl>{TRAINING_SHORTCUTS.map(renderShortcutDefinition)}</dl>
 </details>
 ~~~
 
-Do not hide .training-shortcuts in the max-width 900px rules that hide inline badges.
+Render the disclosure as a direct child of `.training-bar`, immediately after
+`.training-bar__controls`. Within its `dl`, render one `dt > kbd` and one `dd`
+per registry item. Keep native disclosure state and activation—do not add custom
+key handlers, roles, `tabIndex`, or React open state. Preserve the existing explicit `tabindex` guard, add the implicit
+`HTMLElement.tabIndex >= 0` focusability guard, and derive the handler lookup
+and existing inline shortcut labels from the registry. Do not hide
+`.training-shortcuts` in the max-width 900px rules that hide inline badges.
 
 - [ ] **Step 4: Run GREEN and static responsive test**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/shortcuts/trainingShortcuts.test.ts src/components/controls/TrainingControls.test.tsx src/styles/forgeResponsive.test.ts --pool=forks --reporter=dot
+
+Run: pnpm --filter @nn-playground/web typecheck
 
 Expected: PASS with definitions and responsive visibility aligned.
 
@@ -1759,8 +1794,12 @@ git commit -m "test(e2e): scan production accessibility"
 - Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
-- Run the existing compact reachability journey unchanged at both 320 by 844 and 390 by 844 using generated, uniquely named tests.
+- Run one shared compact reachability journey at both 320 by 844 and 390 by 844 using generated, uniquely named tests.
 - At both widths assert no document/shell horizontal overflow, all critical and graph/evidence controls from Task 20 are at least 44 by 44, active evidence tabs remain visible, compact evaluation outcome from Task 21 is reachable, drawers close and restore focus, and browser errors remain empty.
+- At both widths reach the Task 16 Keyboard shortcuts summary, prove touch
+  activation opens the native disclosure without starting/resetting training,
+  close it, then focus it and prove native Space activation opens it without
+  the global training shortcut intercepting the key.
 - Do not use conditional assertions that weaken one viewport.
 
 - [ ] **Step 1: Parameterize the current test and require 390-specific evidence**
@@ -1784,7 +1823,16 @@ Expected: FAIL with `No tests found` because no 390px scenario exists. This RED 
 
 - [ ] **Step 3: Extract one shared compact journey and instantiate both viewports**
 
-Keep locators and assertions in one function to prevent drift. Extend it with the Task 20 graph/evidence targets, Task 21 disclosure, active-tab-in-viewport measurement, and the existing focus restoration checks.
+Keep locators and assertions in one function to prevent drift. Before activating
+the Task 16 shortcut summary, call `scrollIntoViewIfNeeded()`, assert it is fully
+inside the viewport, and run `expectMinimumTouchTarget(summary)`. Snapshot the
+status bar `data-status`, current step, current-run `data-model-generation`, and
+current-run `data-model-revision`; require that exact snapshot after touch open,
+touch close, and native Space open. For the keyboard action use
+`await summary.focus()`, assert focus, then `await summary.press('Space')`.
+Extend the same journey with Task 20 graph/evidence targets, Task 21 outcome
+disclosure, active-tab-in-viewport measurement, and the existing focus
+restoration checks.
 
 - [ ] **Step 4: Run GREEN in both browser engines**
 
