@@ -995,6 +995,7 @@ git commit -m "feat(web): clarify workspace profiles"
 - Modify: apps/web/src/components/controls/TrainingControls.test.tsx
 - Modify: apps/web/src/styles/forge.css
 - Modify: apps/web/src/styles/forgeResponsive.test.ts
+- Modify: tests/e2e/playground-smoke.spec.ts
 
 **Interfaces:**
 - Extends `TRAINING_SHORTCUTS` from Task 1 into the authoritative
@@ -1007,6 +1008,8 @@ git commit -m "feat(web): clarify workspace profiles"
 - Global training shortcuts ignore the implicitly focusable native `summary`
   (and other focusable descendants), preserving native disclosure keyboard
   behavior instead of preventing Space or triggering training.
+- Author styles apply the definition-list grid only while details is open; the
+  closed native disclosure keeps its `dl` hidden in the built app.
 
 - [ ] **Step 1: Write failing shared-list and responsive UI tests**
 
@@ -1038,11 +1041,23 @@ stylesheet has a positive full-width rule plus a 44-pixel summary target. Scope
 duplicate `Space` and `R` queries within the disclosure because inline badges
 already use those strings.
 
+Add a compact built-app browser test named `keyboard shortcuts disclosure hides
+definitions when closed`: at 800 by 844, assert the `dl` is hidden while details
+lacks `open`, visible after pointer activation, and hidden again after closing.
+This computed-visibility assertion guards against author `display` rules
+overriding the user-agent closed-details behavior.
+
 - [ ] **Step 2: Run RED**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/shortcuts/trainingShortcuts.test.ts src/components/controls/TrainingControls.test.tsx src/styles/forgeResponsive.test.ts --pool=forks --reporter=dot
 
-Expected: FAIL because no disclosure or compact rule exists and the shortcut resolver intercepts keys from a native summary.
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "keyboard shortcuts disclosure hides definitions when closed"
+
+Expected: FAIL because no disclosure or compact rule exists, the shortcut
+resolver intercepts keys from a native summary, and the built-app browser gate
+cannot observe correct closed/open visibility.
 
 - [ ] **Step 3: Render the shared definitions in a compact disclosure**
 
@@ -1060,6 +1075,8 @@ key handlers, roles, `tabIndex`, or React open state. Preserve the existing expl
 `HTMLElement.tabIndex >= 0` focusability guard, and derive the handler lookup
 and existing inline shortcut labels from the registry. Do not hide
 `.training-shortcuts` in the max-width 900px rules that hide inline badges.
+Scope the popover layout rule to `.training-shortcuts[open] dl`; never apply an
+author `display` value to the closed definition list.
 
 - [ ] **Step 4: Run GREEN and static responsive test**
 
@@ -1067,12 +1084,16 @@ Run: pnpm --filter @nn-playground/web exec vitest run src/shortcuts/trainingShor
 
 Run: pnpm --filter @nn-playground/web typecheck
 
+Run: pnpm build
+
+Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "keyboard shortcuts disclosure hides definitions when closed"
+
 Expected: PASS with definitions and responsive visibility aligned.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/shortcuts/trainingShortcuts.ts apps/web/src/shortcuts/trainingShortcuts.test.ts apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx apps/web/src/styles/forge.css apps/web/src/styles/forgeResponsive.test.ts
+git add apps/web/src/shortcuts/trainingShortcuts.ts apps/web/src/shortcuts/trainingShortcuts.test.ts apps/web/src/components/controls/TrainingControls.tsx apps/web/src/components/controls/TrainingControls.test.tsx apps/web/src/styles/forge.css apps/web/src/styles/forgeResponsive.test.ts tests/e2e/playground-smoke.spec.ts
 git commit -m "feat(web): expose training shortcuts"
 ~~~
 
@@ -1325,58 +1346,109 @@ git commit -m "fix(web): quiet live metric announcements"
 - Create: apps/web/src/hooks/useModalFocusContainment.test.tsx
 - Modify: apps/web/src/App.tsx
 - Modify: apps/web/src/App.test.tsx
+- Modify: apps/web/src/__tests__/training.integration.test.tsx
+- Modify: apps/web/src/__tests__/appShell.integration.test.tsx
 
 **Interfaces:**
-- useModalFocusContainment(active, dialogRef, backgroundRef) focuses the dialog, traps Tab and Shift+Tab, toggles inert plus aria-hidden on background, and restores prior focus on deactivation.
-- The worker alertdialog remains named and described by its current title and description.
+- `useModalFocusContainment(active, dialogRef, backgroundRef)` is scoped to the
+  app's one worker-error modal; simultaneous active modal instances are not a
+  supported contract. It performs DOM work only in effects.
+- Render the unchanged named/described alertdialog through a body portal outside
+  the `.forge-shell`; keep the entire three-row shell under `backgroundRef` so
+  no wrapper breaks its CSS grid.
+- On activation, capture prior focus, focus the dialog with `preventScroll`, then
+  lease exact `inert` and `aria-hidden` state for every background body sibling,
+  including Header's current/future body portals. Observe body children while
+  active so a newly mounted portal is also leased. Exclude the modal portal and
+  its ancestors.
+- Query enabled/visible focusables inside the dialog fresh for every Tab. Always
+  prevent Tab and wrap forward/reverse; with none, focus the dialog. A document
+  `focusin` guard redirects programmatic escape because jsdom and some fallback
+  environments do not enforce inert.
+- Escape is a contained no-op for this fatal modal; it cannot close a drawer or
+  Advanced Tools behind the dialog. While worker error is active, Space,
+  ArrowRight, and R do not reach global training shortcuts. Refresh page remains
+  the only recovery action.
+- On deactivate/unmount, remove only attributes leased by this hook, restore all
+  preexisting inert/aria-hidden values exactly, then restore prior focus only if
+  its element is connected and focusable. StrictMode setup/cleanup/setup must
+  not capture the dialog as the opener or leak attributes/listeners.
 
 - [ ] **Step 1: Write failing focus-cycle and background tests**
 
 ~~~tsx
 triggerWorkerError();
 expect(dialog).toHaveFocus();
-expect(workspace).toHaveAttribute('inert');
+expect(shell).toHaveAttribute('inert');
+expect(shell).toHaveAttribute('aria-hidden', 'true');
 await user.tab();
 expect(within(dialog).getByRole('button', { name: 'Refresh page' })).toHaveFocus();
 ~~~
 
-Add Shift+Tab wrapping and prior-focus restoration after clearing the error.
+In a hook harness cover two controls, zero controls, disabled/hidden exclusion,
+dynamic insertion/removal, focus outside redirected by `focusin`, forward and
+reverse wrap, exact preservation of preexisting attributes, deactivation and
+unmount restoration, detached opener without throw, and StrictMode. Assert the
+portal dialog is not inside the shell and Header's body-level help target is
+also inert/hidden while the modal is open.
+
+Explicitly activate the hook, append/render a new direct body portal, wait for
+it to receive inert plus the owned aria-hidden value, then deactivate/unmount
+and prove its exact preexisting values are restored. In appShell integration,
+mount the real Header and prove its actual body help portal is leased; App and
+training integration mocks alone do not cover that path.
+
+In App/integration tests focus the skip link before the worker error, assert the
+named/described dialog receives focus, then prove Escape leaves the error and
+drawer/Advanced Tools state unchanged and all three global shortcuts invoke no
+training callback. Clearing the store error restores the skip link and removes
+only owned background attributes. Extend the real worker-error integration path
+with dialog focus/background assertions.
 
 - [ ] **Step 2: Run RED**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useModalFocusContainment.test.tsx src/App.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useModalFocusContainment.test.tsx src/App.test.tsx src/__tests__/training.integration.test.tsx src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
-Expected: FAIL because only initial container focus exists.
+Expected: FAIL because only initial container focus exists; background/portals
+remain exposed, focus can escape, and global handlers still act behind it.
 
 - [ ] **Step 3: Implement the focused hook and background wrapper**
 
-~~~ts
-useEffect(() => {
-    if (!active) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const background = backgroundRef.current;
-    background?.setAttribute('inert', '');
-    background?.setAttribute('aria-hidden', 'true');
-    return () => {
-        background?.removeAttribute('inert');
-        background?.removeAttribute('aria-hidden');
-        previous?.focus();
-    };
-}, [active, backgroundRef]);
-~~~
+Use one activation effect that owns prior focus, background leases, the body
+child observer, keydown containment, and `focusin` containment. Preserve each
+node's `hasAttribute` state and exact value before changing it. The focusable
+query includes enabled links/buttons/inputs/selects/textarea/contenteditable and
+nonnegative tabindex, excluding hidden, disabled, inert, or aria-hidden
+ancestors. Do not use cached focusable lists.
 
-The keydown handler cycles only focusable elements inside dialogRef.
+The lease set is `backgroundRef.current` plus every direct body child that does
+not contain the dialog; collapse duplicate/nested ownership safely and exclude
+the modal portal/ancestors. All `document`, `window`, and `MutationObserver`
+access in the hook remains inside the active effect.
+
+Move the existing alertdialog to a render-safe portal guarded as
+`typeof document === 'undefined' ? null : createPortal(..., document.body)` and
+wrap the normal skip link, announcer, Header, main workspace, and StatusBar in
+the ref-owned `.forge-shell`. Guard both App global key handlers when
+`workerError` is active; the hook's capture handler independently contains
+Escape/Tab.
 
 - [ ] **Step 4: Run GREEN**
 
-Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useModalFocusContainment.test.tsx src/App.test.tsx --pool=forks --reporter=dot
+Run: pnpm --filter @nn-playground/web exec vitest run src/hooks/useModalFocusContainment.test.tsx src/App.test.tsx src/__tests__/training.integration.test.tsx src/__tests__/appShell.integration.test.tsx --pool=forks --reporter=dot
 
-Expected: PASS for forward, reverse, background, and restoration behavior.
+Run: pnpm --filter @nn-playground/web typecheck
+
+Run: pnpm build
+
+Expected: PASS for dynamic forward/reverse containment, programmatic escape,
+single-modal background/portal ownership, StrictMode, restoration, App handler
+suppression, and the real worker-error path.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/web/src/hooks/useModalFocusContainment.ts apps/web/src/hooks/useModalFocusContainment.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx
+git add apps/web/src/hooks/useModalFocusContainment.ts apps/web/src/hooks/useModalFocusContainment.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx apps/web/src/__tests__/training.integration.test.tsx apps/web/src/__tests__/appShell.integration.test.tsx
 git commit -m "feat(web): contain worker error focus"
 ~~~
 
@@ -2019,13 +2091,14 @@ git commit -m "test(e2e): cover two phone widths"
 - Modify: apps/web/src/worker/workerBridge.test.ts
 - Modify: apps/web/src/hooks/useTraining.ts
 - Modify: apps/web/src/hooks/useTraining.test.tsx
-- Modify: apps/web/src/App.tsx
-- Modify: apps/web/src/App.test.tsx
 - Modify: apps/web/src/vite-env.d.ts
 - Modify: package.json
 - Modify: playwright.config.ts
 
 **Interfaces:**
+- This task runs after and consumes Task 19's worker-modal containment; do not
+  reimplement focus trapping, background leases, or shortcut suppression in the
+  fault seam.
 - Add compile-time boolean `VITE_E2E_FAULTS`; normal `pnpm build` leaves all URL-controlled fault behavior disabled.
 - In an enabled E2E build, query `e2eWorkerFault=startup-once` causes one deterministic worker startup failure per tab session, records consumption in sessionStorage, and then routes through `workerBridge`'s existing `emitWorkerError` message, the installed `onSnapshot` subscriber, `useTraining`'s error handler, and the real store/modal path.
 - The existing recovery action reloads the page; the consumed session marker prevents a second injected failure, and the test proves worker readiness plus a real training step afterward.
@@ -2040,7 +2113,18 @@ expect(consumeE2EWorkerFault(url, storage, true)).toBeNull();
 expect(consumeE2EWorkerFault(url, storage, false)).toBeNull();
 ~~~
 
-Name the enabled recovery test with tag `@fault-enabled` and the normal-build guard with tag `@fault-disabled`. The enabled test navigates with the query, expects the named alertdialog to receive focus with inert background, activates `Refresh page`, waits for ready state, runs one training step, and asserts no unexpected console/page errors beyond the deliberately injected labeled error.
+Name the enabled recovery test with tag `@fault-enabled` and the normal-build
+guard with tag `@fault-disabled`. The enabled test navigates with the query,
+expects the named/described alertdialog to receive focus and the shell to be
+inert/aria-hidden, proves Tab and Shift+Tab remain on the Refresh page action,
+then activates it. After the real reload, wait for the modal to disappear,
+background attributes to clear, and real evidence convergence: status step 0,
+full-evaluation step 0, and checkpoint timeline step 0 must agree. Then click
+`Run one training step` and wait for step 1; do not assert old-document focus
+restoration across reload. The disabled-build test navigates with the same query,
+proves no alertdialog through initial evidence convergence, and also completes
+one real step, so an early idle state cannot false-pass. Assert no unexpected
+console/page errors beyond the deliberately injected labeled error.
 
 - [ ] **Step 2: Run RED unit tests**
 
@@ -2070,6 +2154,12 @@ initializeWorker(prepared).catch((error) => {
 
 Bridge tests prove the helper returns false without a subscriber and delivers a protocol-v2 `error` message through `onSnapshot` when subscribed. Hook tests prove the injected branch is reached only after subscription, that neither the mount initializer nor prepared-document synchronization invokes worker initialization, and that the same worker error as a native bridge error reaches the store. Place fault selection outside worker scientific logic. Add root scripts `build:e2e` and `test:e2e:recovery`; configure the recovery command to build with `VITE_E2E_FAULTS=1` and run only `--grep @fault-enabled` against the exact generated dist.
 
+Wrap the hook harness in StrictMode and prove effect replay queues exactly one
+bridge error after the replacement subscription, while the sticky suppression
+ref short-circuits both replayed mount/prepared effects and initialization stays
+at zero until the page reloads. Consuming the session marker on the replay must
+not re-enable initialization in the same document.
+
 - [ ] **Step 4: Run GREEN units and production recovery**
 
 Run: pnpm --filter @nn-playground/web exec vitest run src/testing/e2eFaults.test.ts src/worker/workerBridge.test.ts src/hooks/useTraining.test.tsx src/App.test.tsx --pool=forks --reporter=dot
@@ -2086,12 +2176,14 @@ Run: pnpm build
 
 Run: pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --project=chromium --project=webkit --grep "@fault-disabled"
 
-Expected: PASS: the query cannot inject a fault in a normal production build.
+Expected: PASS: the query cannot inject a fault in a normal production build;
+both browsers converge on step-0 evidence with no modal and complete one real
+step.
 
 - [ ] **Step 6: Commit**
 
 ~~~bash
-git add apps/web/src/testing/e2eFaults.ts apps/web/src/testing/e2eFaults.test.ts tests/e2e/worker-recovery.spec.ts apps/web/src/worker/workerBridge.ts apps/web/src/worker/workerBridge.test.ts apps/web/src/hooks/useTraining.ts apps/web/src/hooks/useTraining.test.tsx apps/web/src/App.tsx apps/web/src/App.test.tsx apps/web/src/vite-env.d.ts package.json playwright.config.ts
+git add apps/web/src/testing/e2eFaults.ts apps/web/src/testing/e2eFaults.test.ts tests/e2e/worker-recovery.spec.ts apps/web/src/worker/workerBridge.ts apps/web/src/worker/workerBridge.test.ts apps/web/src/hooks/useTraining.ts apps/web/src/hooks/useTraining.test.tsx apps/web/src/vite-env.d.ts package.json playwright.config.ts
 git commit -m "test(e2e): prove worker failure recovery"
 ~~~
 
