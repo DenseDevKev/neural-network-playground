@@ -1955,33 +1955,47 @@ help sibling carries `concept-help--above concept-help--end`.
 
 Extend `expectConceptHelpInViewport` in `playground-smoke.spec.ts` rather than
 replacing its current terms; its union becomes `Data loss | Checkpoint | Epoch |
-Train/test split | Learning rate`. In addition to its bounding-box check,
-sample every disclosure corner four pixels inward with `document.elementFromPoint`
-and require the hit element to be the region or one of its descendants. This
-proves an in-viewport box is not clipped by an overflow ancestor:
+Train/test split | Learning rate`. Keep the existing trigger, open/close,
+focus, Escape, and bounding-box checks for all five. For the three new
+viewport-overlay concepts only, select the requirement from an explicit concept
+name set (never by detecting the implementation class), assert the parent owns
+`concept-help--viewport-overlay`, then sample every disclosure corner four
+pixels inward with `document.elementFromPoint`. This proves the three new boxes
+are not clipped by an overflow ancestor without redefining the existing static
+Data loss or timeline Checkpoint surfaces:
 
 ~~~ts
-const cornersAreExposed = await region.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    const points = [
-        [rect.left + 4, rect.top + 4],
-        [rect.right - 4, rect.top + 4],
-        [rect.left + 4, rect.bottom - 4],
-        [rect.right - 4, rect.bottom - 4],
-    ];
-    return points.every(([x, y]) => {
-        const hit = document.elementFromPoint(x, y);
-        return hit !== null && (hit === element || element.contains(hit));
+const viewportOverlayConcepts = new Set([
+    'Epoch',
+    'Train/test split',
+    'Learning rate',
+]);
+if (viewportOverlayConcepts.has(concept)) {
+    await expect(panel.locator('..')).toHaveClass(/concept-help--viewport-overlay/);
+    const cornersAreExposed = await panel.evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const points = [
+            [rect.left + 4, rect.top + 4],
+            [rect.right - 4, rect.top + 4],
+            [rect.left + 4, rect.bottom - 4],
+            [rect.right - 4, rect.bottom - 4],
+        ];
+        return points.every(([x, y]) => {
+            const hit = document.elementFromPoint(x, y);
+            return hit !== null && (hit === element || element.contains(hit));
+        });
     });
-});
-expect(cornersAreExposed).toBe(true);
+    expect(cornersAreExposed).toBe(true);
+}
 ~~~
 
 In the desktop concept-help test, verify Epoch in Run, then switch to Build and
 verify Train/test split and Learning rate. In the 320px touch-shell journey do
 the same, require each trigger to meet the existing 44px target and each open
-region to be fully in the viewport and corner-exposed, then return to Run before
-the journey's existing Run-only assertions.
+region to be fully in the viewport; require the three new overlay regions to be
+corner-exposed, then return to Run before the journey's existing Run-only
+assertions. Leave Data loss's existing block placement and Checkpoint's existing
+timeline placement unchanged.
 
 Add a static CSS regression proving the exact scoped modifier owns fixed
 positioning and the complete inset. The selector must be more specific than the
@@ -2080,8 +2094,9 @@ Run: pnpm build
 Run: pnpm exec playwright test tests/e2e/playground-smoke.spec.ts --project=chromium --project=webkit --grep "concept help|320px touch shell"
 
 Expected: PASS with all concept metadata and placements typed, readiness-safe
-hook order, profile-specific guidance, and fully visible, corner-exposed help in
-both browser engines at desktop and 320px.
+hook order, profile-specific guidance, and fully visible help in both browser
+engines at desktop and 320px, including explicit corner exposure for the three
+new viewport-overlay concepts.
 
 - [ ] **Step 5: Commit**
 
