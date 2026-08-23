@@ -5,7 +5,11 @@ import {
     type ScalarActivationType,
     type WeightInitType,
 } from '@nn-playground/engine';
-import { MAX_HIDDEN_LAYERS } from '@nn-playground/shared';
+import {
+    MAX_HIDDEN_LAYERS,
+    MAX_NEURONS_PER_LAYER,
+    MIN_NEURONS_PER_LAYER,
+} from '@nn-playground/shared';
 import { commitRecipeEdit } from '../../store/commitRecipeEdit.ts';
 import {
     setHiddenActivation,
@@ -34,8 +38,6 @@ const INITIALIZATIONS: ReadonlyArray<{ value: WeightInitType; label: string }> =
     { value: 'uniform', label: 'Uniform' },
     { value: 'zeros', label: 'Zeros' },
 ];
-const MIN_NEURONS_PER_LAYER = 1;
-const MAX_NEURONS_PER_LAYER = 16;
 const DEFAULT_NEW_LAYER_WIDTH = 4;
 
 function NeuronCountControl({
@@ -60,7 +62,10 @@ function NeuronCountControl({
         }
         const nextValue = Number(draft);
         if (nextValue === value) return;
-        await onCommit(nextValue);
+        // A rejected transaction leaves the stored value untouched; snap the
+        // draft back so the input cannot keep displaying a rejected number.
+        const committed = await onCommit(nextValue);
+        if (!committed) setDraft(String(value));
     };
 
     return (

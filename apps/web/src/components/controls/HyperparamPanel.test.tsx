@@ -342,7 +342,7 @@ describe('HyperparamPanel canonical V2 controls', () => {
         expect(screen.getByText('Maximum for this split: 10')).toBeInTheDocument();
     });
 
-    it('retains the exact prepared state and invalid draft when numeric validation fails', async () => {
+    it('retains the exact prepared state and restores the stored draft when numeric validation fails', async () => {
         const user = userEvent.setup();
         render(<HyperparamPanel />);
         await user.selectOptions(screen.getByRole('combobox', { name: 'LR schedule' }), 'step');
@@ -355,8 +355,10 @@ describe('HyperparamPanel canonical V2 controls', () => {
         const scheduleError = await screen.findByText(/recipe\.training\.schedule\.interval/);
         expect(scheduleError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(beforeInvalid);
+        // A rejected commit snaps the draft back to the stored value instead
+        // of leaving the rejected number displayed.
         expect(screen.getByRole('spinbutton', { name: 'Step schedule interval' }))
-            .toHaveValue(0);
+            .toHaveValue(100);
     });
 
     it('does not rebuild the runtime when an exact numeric field is blurred unchanged', async () => {

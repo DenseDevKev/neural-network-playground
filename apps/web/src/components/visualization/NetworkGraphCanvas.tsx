@@ -114,11 +114,20 @@ const HeatmapTile = memo(function HeatmapTile({ grid, gridSize }: HeatmapTilePro
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
+        // Match the backing store to device pixels so tiles stay crisp next
+        // to the DPI-aware graph canvas behind them.
+        const dpr = window.devicePixelRatio || 1;
+        const backingSize = Math.max(HEATMAP_SIZE, Math.round(HEATMAP_SIZE * dpr));
+        if (canvas.width !== backingSize || canvas.height !== backingSize) {
+            canvas.width = backingSize;
+            canvas.height = backingSize;
+        }
         const src = getSourceCanvas(gridSize);
         writeNormalizedHeatmap(grid, src.imageData, 220);
         src.ctx.putImageData(src.imageData, 0, 0);
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
         ctx.drawImage(src.canvas, 0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
     }, [grid, gridSize]);
@@ -327,6 +336,11 @@ export function NetworkGraphCanvas() {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 800, height: 400 });
+    // Latest observed size without participating in render identity, so the
+    // auto-fit effect does not re-run (and reset user pan/zoom) on resizes.
+    const containerSizeRef = useRef(containerSize);
+    containerSizeRef.current = containerSize;
+    const [isDragging, setIsDragging] = useState(false);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -336,6 +350,7 @@ export function NetworkGraphCanvas() {
             if (!entry) return;
             const { width, height } = entry.contentRect;
             if (width > 0 && height > 0) {
+                containerSizeRef.current = { width, height };
                 setContainerSize({ width, height });
             }
         });
@@ -358,6 +373,8 @@ export function NetworkGraphCanvas() {
         const canvasHeight = Math.max(h, maxNodes * nodeGap + PAD_Y * 2);
         return { canvasWidth, canvasHeight, layerGap, nodeGap };
     }, [containerSize, layers, maxNodes]);
+    const canvasSizeRef = useRef({ width: canvasWidth, height: canvasHeight });
+    canvasSizeRef.current = { width: canvasWidth, height: canvasHeight };
 
     const nodePositions: NodePos[][] = useMemo(() => {
         const startX = (canvasWidth - (layers.length - 1) * layerGap) / 2;
@@ -465,22 +482,38 @@ export function NetworkGraphCanvas() {
     const layerStatsHint = useMemo(() => getLayerStatsHint(layerStats), [layerStats]);
 
     const fitGraphToView = useCallback(() => {
-        if (containerSize.width <= 0 || containerSize.height <= 0) return;
+        const { width, height } = containerSizeRef.current;
+        const { width: contentWidth, height: contentHeight } = canvasSizeRef.current;
+        if (width <= 0 || height <= 0 || contentWidth <= 0 || contentHeight <= 0) return;
         const fitZoom = clampZoom(Math.min(
-            containerSize.width / canvasWidth,
-            containerSize.height / canvasHeight,
+            width / contentWidth,
+            height / contentHeight,
             1,
         ));
         setViewport({
             zoom: fitZoom,
-            panX: (containerSize.width - canvasWidth * fitZoom) / 2,
-            panY: (containerSize.height - canvasHeight * fitZoom) / 2,
+            panX: (width - contentWidth * fitZoom) / 2,
+            panY: (height - contentHeight * fitZoom) / 2,
         });
-    }, [containerSize.width, containerSize.height, canvasWidth, canvasHeight]);
+    }, []);
 
+    // Re-fit only when the topology or feature set changes; plain container
+    // resizes preserve the user's pan/zoom.
     useEffect(() => {
         fitGraphToView();
     }, [fitGraphToView, layersKey, activeFeatures.length]);
+
+    // The very first real container measurement defines the initial view.
+    // Fitting here (post-render) guarantees canvasSizeRef already reflects
+    // the measured size; later resizes must not discard the user's pan/zoom,
+    // so the fit is latched after it runs once.
+    const didInitialFitRef = useRef(false);
+    useEffect(() => {
+        if (didInitialFitRef.current) return;
+        if (containerSize.width <= 0 || containerSize.height <= 0) return;
+        didInitialFitRef.current = true;
+        fitGraphToView();
+    }, [containerSize, fitGraphToView]);
 
     const zoomGraph = useCallback((direction: 1 | -1) => {
         setViewport((current) => {
@@ -673,6 +706,7 @@ export function NetworkGraphCanvas() {
     const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
         if (event.button !== 0) return;
         dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+        setIsDragging(true);
         if (event.currentTarget.setPointerCapture) {
             event.currentTarget.setPointerCapture(event.pointerId);
         }
@@ -682,33 +716,42 @@ export function NetworkGraphCanvas() {
     const finishPointerDrag = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
         if (dragRef.current?.pointerId === event.pointerId) {
             dragRef.current = null;
+            setIsDragging(false);
             if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
                 event.currentTarget.releasePointerCapture(event.pointerId);
             }
         }
     }, []);
 
-    const handleWheel = useCallback((event: React.WheelEvent<HTMLCanvasElement>) => {
-        event.preventDefault();
+    // React attaches delegated wheel listeners as passive, so preventDefault()
+    // there is a no-op and zooming would also scroll the workspace. A native
+    // non-passive listener is required for the zoom gesture.
+    useEffect(() => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const screenX = event.clientX - rect.left;
-        const screenY = event.clientY - rect.top;
-        setViewport((current) => {
-            const nextZoom = clampZoom(event.deltaY < 0 ? current.zoom * ZOOM_STEP : current.zoom / ZOOM_STEP);
-            const worldX = (screenX - current.panX) / current.zoom;
-            const worldY = (screenY - current.panY) / current.zoom;
-            return {
-                zoom: nextZoom,
-                panX: screenX - worldX * nextZoom,
-                panY: screenY - worldY * nextZoom,
-            };
-        });
-    }, []);
+        if (!canvas) return undefined;
+        const handleWheel = (event: WheelEvent) => {
+            event.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const screenX = event.clientX - rect.left;
+            const screenY = event.clientY - rect.top;
+            setViewport((current) => {
+                const nextZoom = clampZoom(event.deltaY < 0 ? current.zoom * ZOOM_STEP : current.zoom / ZOOM_STEP);
+                const worldX = (screenX - current.panX) / current.zoom;
+                const worldY = (screenY - current.panY) / current.zoom;
+                return {
+                    zoom: nextZoom,
+                    panX: screenX - worldX * nextZoom,
+                    panY: screenY - worldY * nextZoom,
+                };
+            });
+        };
+        canvas.addEventListener('wheel', handleWheel, { passive: false });
+        return () => canvas.removeEventListener('wheel', handleWheel);
+    }, [setViewport]);
 
     const handlePointerLeave = useCallback(() => {
         dragRef.current = null;
+        setIsDragging(false);
         setHoveredEdge(null);
         setHoveredNode(null);
         setTooltip(null);
@@ -770,14 +813,13 @@ export function NetworkGraphCanvas() {
                     width: '100%',
                     height: '100%',
                     display: 'block',
-                    cursor: dragRef.current ? 'grabbing' : hoveredNode || hoveredEdge ? 'pointer' : 'grab',
+                    cursor: isDragging ? 'grabbing' : hoveredNode || hoveredEdge ? 'pointer' : 'grab',
                 }}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={finishPointerDrag}
                 onPointerCancel={finishPointerDrag}
                 onPointerLeave={handlePointerLeave}
-                onWheel={handleWheel}
             />
 
             <div className="network-graph-summary" aria-label="Architecture summary">

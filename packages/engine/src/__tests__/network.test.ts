@@ -212,6 +212,23 @@ describe('Network training', () => {
         )).toThrow(RangeError);
     });
 
+    it('trains past cosine anneal completion when the schedule decays to lr = 0', () => {
+        const net = new Network(makeConfig());
+        const training: TrainingConfig = {
+            ...defaultTraining,
+            lrSchedule: { type: 'cosine', totalSteps: 3, minLr: 0 },
+        };
+
+        for (let i = 0; i < 6; i++) {
+            expect(() => net.trainBatch([[0, 0], [1, 1]], [[0], [1]], training)).not.toThrow();
+        }
+
+        // Weights stay pinned once the annealed lr holds at zero.
+        const frozen = net.getWeights();
+        net.trainBatch([[0, 0], [1, 1]], [[0], [1]], training);
+        expect(net.getWeights()).toEqual(frozen);
+    });
+
     it('preserves recent gradient magnitudes for layer stats after a batch update', () => {
         const net = new Network(makeConfig());
 

@@ -8,7 +8,7 @@ export const DEFAULT_NUM_SAMPLES = 300;
 export const GRID_SIZE = 40; // heatmap resolution (40×40 = 1600 predictions)
 
 export const MAX_HIDDEN_LAYERS = 6;
-export const MAX_NEURONS_PER_LAYER = 32;
+export const MAX_NEURONS_PER_LAYER = 16;
 export const MIN_NEURONS_PER_LAYER = 1;
 export const MIN_TRAIN_TEST_RATIO = 0.1;
 export const MAX_TRAIN_TEST_RATIO = 0.9;

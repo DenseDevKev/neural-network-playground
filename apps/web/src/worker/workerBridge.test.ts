@@ -19,7 +19,27 @@ comlinkStub.wrap.mockImplementation(() => comlinkStub.api);
 vi.mock('comlink', () => ({
     wrap: comlinkStub.wrap,
     transfer: comlinkStub.transfer,
+    releaseProxy: vi.fn(),
 }));
+
+// ── Frame-buffer failure injection ──
+// Delegates to the real module unless a test arms failNextUpdate, mimicking
+// strict-artifact rejection inside updateFrameBuffer.
+const frameBufferTestControls = vi.hoisted(() => ({ failNextUpdate: false }));
+
+vi.mock('./frameBuffer.ts', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('./frameBuffer.ts')>();
+    return {
+        ...actual,
+        updateFrameBuffer: (...args: Parameters<typeof actual.updateFrameBuffer>) => {
+            if (frameBufferTestControls.failNextUpdate) {
+                frameBufferTestControls.failNextUpdate = false;
+                throw new Error('injected strict artifact failure');
+            }
+            return actual.updateFrameBuffer(...args);
+        },
+    };
+});
 
 function createComlinkApi() {
     return {
@@ -1985,5 +2005,83 @@ describe('workerBridge streamed snapshots', () => {
         expect((receivedMessages[1].msg as WorkerSnapshotMessage).snapshotId).toBe(3);
         expect(getFrameBuffer().outputGrid).toEqual(new Float32Array([3, 3, 3, 3]));
         expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
+    });
+
+    it('stops the render loop on a frame-application failure but still acks and stays restartable', () => {
+        const listener = getRegisteredStreamListener();
+        const before = getFrameBuffer();
+
+        frameBufferTestControls.failNextUpdate = true;
+        startRenderLoop();
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(receivedMessages.at(-1)?.msg).toMatchObject({
+            type: 'error',
+            message: expect.stringContaining('injected strict artifact failure'),
+        });
+        expect(getFrameBuffer()).toBe(before);
+        // The back-pressure gate must never wedge shut.
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({
+            type: 'frameAck',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+        });
+        // The loop stops instead of rescheduling, so startRenderLoop can revive it.
+        expect(rafCallback).toBeNull();
+
+        startRenderLoop();
+        expect(rafCallback).not.toBeNull();
+        listener({ data: makeStrictSnapshotMessage(2) } as MessageEvent);
+        runNextAnimationFrame();
+        expect(receivedMessages.at(-1)?.msg).toMatchObject({
+            type: 'snapshot',
+            model: { generationId: 1, revision: 2 },
+        });
+    });
+
+    it('does not resurrect the render loop when the snapshot callback stops it mid-frame', () => {
+        const listener = getRegisteredStreamListener();
+        unsubscribe();
+        receivedMessages = [];
+        unsubscribe = onSnapshot((msg) => {
+            receivedMessages.push({
+                msg: msg as WorkerToMainMessage,
+                frameVersion: getFrameBuffer().version,
+            });
+            if (msg.type === 'snapshot' && (msg as WorkerSnapshotMessage).snapshotId === 4) {
+                stopRenderLoop();
+            }
+        });
+
+        startRenderLoop();
+        listener({ data: makeStrictSnapshotMessage(4) } as MessageEvent);
+        runNextAnimationFrame();
+
+        expect(receivedMessages.at(-1)?.msg).toMatchObject({ type: 'snapshot', snapshotId: 4 });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({
+            type: 'frameAck',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+        });
+        // stopRenderLoop ran from inside the rAF callback; the loop must stay stopped.
+        expect(rafCallback).toBeNull();
+    });
+
+    it('completes worker termination when the final flush fails', () => {
+        const listener = getRegisteredStreamListener();
+        const worker = fakeWorkerInstance!;
+
+        startRenderLoop();
+        listener({ data: makeStrictSnapshotMessage(5) } as MessageEvent);
+
+        frameBufferTestControls.failNextUpdate = true;
+        terminateWorker();
+
+        expect(worker.terminate).toHaveBeenCalledTimes(1);
+        expect(fakePort1.close).toHaveBeenCalledTimes(1);
+        // Even a failed final frame releases the back-pressure gate.
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({
+            type: 'frameAck',
+            protocolVersion: WORKER_PROTOCOL_VERSION,
+        });
     });
 });

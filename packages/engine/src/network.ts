@@ -1319,7 +1319,9 @@ export class Network {
         }
         assertTrainingHyperparams(training);
         const lr = computeLearningRate(training.learningRate, this.currentStep, training.lrSchedule);
-        assertFiniteInRange(lr, 'effective learningRate', 0, Number.POSITIVE_INFINITY);
+        // A decay schedule may legitimately anneal to lr = 0 (e.g. cosine with
+        // minLr: 0), matching the V2 update path contract.
+        assertFiniteInRange(lr, 'effective learningRate', 0, Number.POSITIVE_INFINITY, { minInclusive: true });
 
         try {
             const clipScale = this.prepareLegacyObjectiveGradient(training, batchSize);

@@ -93,12 +93,59 @@ describe("codeExport", () => {
         null,
       );
 
-      expect(output).toContain("momentum = 0.7");
+      expect(output).not.toContain("momentum =");
       expect(output).toContain("gradient_clip = 0.5");
       expect(output).toContain("adam_beta1 = 0.8");
       expect(output).toContain("adam_beta2 = 0.98");
       expect(output).toContain("huber_delta = 0.75");
       expect(output).toContain("lr_schedule = step(step_size=25, gamma=0.5)");
+    });
+
+    it("prints momentum only for the optimizer that uses it", () => {
+      const output = generatePseudocode(
+        mockConfig,
+        { ...DEFAULT_TRAINING, optimizer: "sgdMomentum", momentum: 0.7 },
+        DEFAULT_FEATURES,
+        null,
+      );
+      expect(output).toContain("optimizer = SGD+Momentum");
+      expect(output).toContain("momentum = 0.7");
+
+      const plainSgd = generatePseudocode(
+        mockConfig,
+        { ...DEFAULT_TRAINING, optimizer: "sgd" },
+        DEFAULT_FEATURES,
+        null,
+      );
+      expect(plainSgd).toContain("optimizer = SGD");
+      expect(plainSgd).not.toContain("momentum =");
+    });
+
+    it.each(["l1", "l2"] as const)(
+      "describes %s regularization in the training block",
+      (kind) => {
+        const output = generatePseudocode(
+          mockConfig,
+          {
+            ...DEFAULT_TRAINING,
+            regularization: kind,
+            regularizationRate: 0.01,
+          },
+          DEFAULT_FEATURES,
+          null,
+        );
+        expect(output).toContain(`regularization = ${kind.toUpperCase()}(rate=0.01)`);
+      },
+    );
+
+    it("omits the regularization line for unpenalized objectives", () => {
+      const output = generatePseudocode(
+        mockConfig,
+        { ...DEFAULT_TRAINING, regularization: "none", regularizationRate: 0 },
+        DEFAULT_FEATURES,
+        null,
+      );
+      expect(output).not.toContain("regularization =");
     });
 
     it("describes multiclass output and categorical loss without mislabeling it as Huber", () => {
@@ -331,7 +378,72 @@ describe("codeExport", () => {
         null,
       );
 
-      expect(output).toContain("tf.train.adam(0.03, 0.8, 0.98)");
+      expect(output).toContain("tf.train.adam(0.03, 0.8, 0.98, 1e-8)");
+    });
+
+    it("threads a recipe-tuned Adam epsilon and Huber delta through TFJS output", () => {
+      const output = generateTFJS(
+        mockConfig,
+        {
+          ...DEFAULT_TRAINING,
+          optimizer: "adam",
+          adamEps: 3e-7,
+          lossType: "huber",
+          huberDelta: 2.25,
+        },
+        DEFAULT_FEATURES,
+        null,
+      );
+
+      expect(output).toContain("tf.train.adam(0.03, 0.9, 0.999, 3e-7)");
+      expect(output).toContain("const huberDelta = 2.25;");
+      expect(output).toContain("absErr.lessEqual(huberDelta)");
+      expect(output).toContain(".where(err.square().mul(0.5), absErr.mul(huberDelta)");
+      expect(output).not.toContain("loss: 'huberLoss'");
+    });
+
+    it("emits LeakyReLU as a separate layer TensorFlow.js supports", () => {
+      const output = generateTFJS(
+        { ...mockConfig, activation: "leakyRelu" as const },
+        DEFAULT_TRAINING,
+        DEFAULT_FEATURES,
+        null,
+      );
+
+      expect(output).toContain("activation: 'linear'");
+      expect(output).toContain("model.add(tf.layers.leakyReLU({ alpha: 0.01 }));");
+      expect(output).not.toContain("activation: 'leakyRelu'");
+    });
+
+    it.each(["l1", "l2"] as const)(
+      "adds %s kernel regularizers to every dense layer in TFJS output",
+      (kind) => {
+        const output = generateTFJS(
+          mockConfig,
+          {
+            ...DEFAULT_TRAINING,
+            regularization: kind,
+            regularizationRate: 0.01,
+          },
+          DEFAULT_FEATURES,
+          null,
+        );
+        const expected = kind === "l2"
+          ? "tf.regularizers.l2({ l2: 0.01 })"
+          : "tf.regularizers.l1({ l1: 0.01 })";
+        // Hidden layer + output layer both carry the penalty.
+        expect(output.match(new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))).toHaveLength(2);
+      },
+    );
+
+    it("omits kernel regularizers for unpenalized TFJS objectives", () => {
+      const output = generateTFJS(
+        mockConfig,
+        { ...DEFAULT_TRAINING, regularization: "none", regularizationRate: 0 },
+        DEFAULT_FEATURES,
+        null,
+      );
+      expect(output).not.toContain("kernelRegularizer");
     });
 
     it("maps categorical cross-entropy for multiclass TFJS export", () => {

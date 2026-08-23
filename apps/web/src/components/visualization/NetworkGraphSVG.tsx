@@ -156,12 +156,22 @@ const HeatmapCanvas = memo(function HeatmapCanvas({ grid, gridSize }: HeatmapCan
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        // Match the backing store to device pixels so tiles stay crisp on
+        // high-DPI displays.
+        const dpr = window.devicePixelRatio || 1;
+        const backingSize = Math.max(HEATMAP_SIZE, Math.round(HEATMAP_SIZE * dpr));
+        if (canvas.width !== backingSize || canvas.height !== backingSize) {
+            canvas.width = backingSize;
+            canvas.height = backingSize;
+        }
+
         const src = getSourceCanvas(gridSize);
         writeNormalizedHeatmap(grid, src.imageData, 220);
         src.ctx.putImageData(src.imageData, 0, 0);
 
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
         ctx.drawImage(src.canvas, 0, 0, HEATMAP_SIZE, HEATMAP_SIZE);
     }, [grid, gridSize]);
@@ -169,8 +179,6 @@ const HeatmapCanvas = memo(function HeatmapCanvas({ grid, gridSize }: HeatmapCan
     return (
         <canvas
             ref={canvasRef}
-            width={HEATMAP_SIZE}
-            height={HEATMAP_SIZE}
             style={{
                 width: '100%',
                 height: '100%',

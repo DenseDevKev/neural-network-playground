@@ -196,7 +196,6 @@ export const useTrainingStore = create<TrainingStore>((set, get) => ({
                 activationHistogramsVersion: frameVersions.activationHistogramsVersion,
                 multiclassBoundaryVersion: frameVersions.multiclassBoundaryVersion,
                 checkpointTimeline: checkpointTimeline ?? state.checkpointTimeline,
-                workerError: null,
             };
         });
     },

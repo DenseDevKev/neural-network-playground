@@ -48,7 +48,11 @@ function ExactNumberInput({
         }
         const nextValue = Number(raw);
         if (nextValue === value) return;
-        void onCommit(nextValue);
+        // A rejected transaction leaves the stored value untouched; snap the
+        // draft back so the input cannot keep displaying a rejected number.
+        void onCommit(nextValue).then((committed) => {
+            if (!committed) setDraft(String(value));
+        });
     };
 
     return (

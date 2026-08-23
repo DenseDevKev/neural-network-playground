@@ -98,7 +98,11 @@ describe('NetworkConfigPanel canonical V2 controls', () => {
         const widthError = await screen.findByText(/recipe\.model\.hiddenLayers\[0\]/);
         expect(widthError.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
         expect(currentPreparedForTest()).toBe(beforeInvalid);
-        expect(input).toHaveValue(99);
+        // A rejected commit snaps the draft back to the stored value instead
+        // of leaving the rejected number displayed.
+        await waitFor(() => {
+            expect(input).toHaveValue(12);
+        });
     });
 
     it('uses exact hidden activation and initialization variants', async () => {

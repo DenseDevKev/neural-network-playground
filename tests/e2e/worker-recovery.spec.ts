@@ -48,6 +48,12 @@ test('@fault-enabled recovers from an injected startup failure', async ({ page }
     const errors = collectBrowserErrors(page);
     await page.goto('/?e2eWorkerFault=startup-once');
 
+    // Fault injection only exists in bundles built with VITE_E2E_FAULTS=1
+    // (test:e2e:recovery); the plain smoke build must skip this scenario.
+    const faultsCompiledIn = await page.evaluate(() =>
+        (window as { __nnpE2EFaultsEnabled?: boolean }).__nnpE2EFaultsEnabled === true);
+    test.skip(!faultsCompiledIn, 'Bundle was built without VITE_E2E_FAULTS=1');
+
     const dialog = page.getByRole('alertdialog', { name: 'Worker connection lost' });
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAttribute('aria-describedby', 'worker-error-description');

@@ -3,8 +3,10 @@ import {
     DEFAULT_DEMAND,
     DEFAULT_EXPERIMENT_DOCUMENT,
     GRID_SIZE,
+    MAX_ACTIVE_FEATURE_COUNT,
     MAX_HIDDEN_LAYERS,
     MAX_NEURONS_PER_LAYER,
+    MAX_OUTPUT_CLASSES,
     WORKER_PROTOCOL_VERSION,
     isCaptureCheckpointRequestV2,
     isCaptureRunRequestV2,
@@ -374,7 +376,8 @@ describe('strict V2 streaming protocol', () => {
             neuronGridLayout: { count: neuronCount, gridSize: gridSize + 1 },
         })).toBe(false);
 
-        const maximumNeuronCount = MAX_HIDDEN_LAYERS * MAX_NEURONS_PER_LAYER + 3;
+        const maximumNeuronCount = MAX_HIDDEN_LAYERS * MAX_NEURONS_PER_LAYER
+            + MAX_ACTIVE_FEATURE_COUNT + MAX_OUTPUT_CLASSES;
         for (const invalidNeuronCount of [
             0,
             1.5,

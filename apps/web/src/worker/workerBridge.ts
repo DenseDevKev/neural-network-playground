@@ -5,6 +5,7 @@
 // - rAF-gated rendering loop that applies at most one snapshot per animation frame
 
 import * as Comlink from 'comlink';
+import { releaseProxy } from 'comlink';
 import type { TrainingWorkerApi } from './training.worker.ts';
 import type {
     WorkerToMainMessage,
@@ -674,13 +675,21 @@ function attachStrictArtifactProvenance(
     }
 }
 
-function rafLoop(): void {
-    if (_rafId === null) return; // Stopped
+function describeApplyFailure(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+}
 
-    if (_pendingSnapshot) {
-        const msg = _pendingSnapshot;
-        _pendingSnapshot = null;
-
+/**
+ * Apply one pending worker message to the frame buffer and the subscriber.
+ *
+ * The back-pressure ack is always delivered — including after a failure — so
+ * the worker's awaitingAck gate can never wedge shut. Application failures
+ * surface through emitWorkerError, whose handler stops this render loop;
+ * callers must therefore treat any invocation as potentially having stopped
+ * the loop and never blindly reschedule afterwards.
+ */
+function applyPendingSnapshotMessage(msg: WorkerToMainMessage): void {
+    try {
         // Write heavy arrays to frame buffer
         if (msg.type === 'snapshot') {
             const patch = buildSnapshotFramePatch(
@@ -698,7 +707,17 @@ function rafLoop(): void {
 
         // Notify the subscriber (typically updates useTrainingStore scalars)
         if (_onSnapshot) _onSnapshot(msg);
-
+    } catch (error) {
+        emitWorkerError('Failed to apply a streamed frame from the worker: ' + describeApplyFailure(error));
+        // Stop the render loop deliberately: a failed strict-frame application
+        // leaves buffer identity unresolved, so retrying cannot recover and
+        // would spin forever. startRenderLoop may restart it once the runtime
+        // re-initializes.
+        if (_rafId !== null) {
+            cancelAnimationFrame(_rafId);
+            _rafId = null;
+        }
+    } finally {
         // Ack snapshots to release the worker's back-pressure gate. Status/
         // error messages bypass the gate, so they don't need an ack.
         if (msg.type === 'snapshot' && _streamPort) {
@@ -707,6 +726,21 @@ function rafLoop(): void {
                 protocolVersion: WORKER_PROTOCOL_VERSION,
             });
         }
+    }
+}
+
+function rafLoop(): void {
+    if (_rafId === null) return; // Stopped
+
+    if (_pendingSnapshot) {
+        const msg = _pendingSnapshot;
+        _pendingSnapshot = null;
+
+        applyPendingSnapshotMessage(msg);
+
+        // The failure path above or the snapshot callback itself may have
+        // stopped the loop synchronously; never resurrect a stopped loop.
+        if (_rafId === null) return;
     }
 
     _rafId = requestAnimationFrame(rafLoop);
@@ -732,26 +766,7 @@ export function stopRenderLoop(): void {
     if (_pendingSnapshot && _onSnapshot) {
         const msg = _pendingSnapshot;
         _pendingSnapshot = null;
-        if (msg.type === 'snapshot') {
-            const patch = buildSnapshotFramePatch(
-                msg,
-                _currentRunId,
-                _sharedViews,
-                _sharedViewsRunId,
-                _sharedOutputReadBuf,
-                _sharedNeuronReadBuf,
-                _sharedNeuronGridLayout,
-            );
-            updateFrameBuffer(patch, { requireArtifactProvenance: true });
-            rotateCommittedSharedReadBuffers(patch);
-        }
-        _onSnapshot(msg);
-        if (msg.type === 'snapshot' && _streamPort) {
-            _streamPort.postMessage({
-                type: 'frameAck',
-                protocolVersion: WORKER_PROTOCOL_VERSION,
-            });
-        }
+        applyPendingSnapshotMessage(msg);
     }
 }
 
@@ -859,6 +874,13 @@ export function terminateWorker(): void {
         }
         if (_workerReadiness) clearPendingWorkerReadiness(_workerReadiness);
         _workerReadiness = null;
+        if (_comlinkApi) {
+            try {
+                _comlinkApi[releaseProxy]();
+            } catch {
+                // Best-effort: the proxy may already be dead if teardown raced.
+            }
+        }
         _worker.terminate();
         _worker = null;
         _comlinkApi = null;

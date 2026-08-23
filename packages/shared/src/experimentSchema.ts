@@ -53,6 +53,8 @@ const FEATURE_IDS = [
 const FEATURE_INDEX = new Map<string, number>(
     FEATURE_IDS.map((featureId, index) => [featureId, index]),
 );
+export const MAX_ACTIVE_FEATURE_COUNT = FEATURE_IDS.length as number;
+export const MAX_OUTPUT_CLASSES = 3 as const;
 const DATASET_ID_SET = new Set<string>(DATASET_IDS);
 const HIDDEN_ACTIVATIONS = new Set<ScalarActivationType>([
     'relu',

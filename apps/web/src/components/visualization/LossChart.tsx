@@ -215,10 +215,20 @@ export const LossChart = memo(function LossChart() {
             <div className="loss-chart__legend" aria-label="Metric series">
                 {tab === 'loss' ? (
                     <>
-                        <span>Batch trend (EMA)</span>
-                        <span>Train data loss (full split)</span>
-                        <span>Test data loss (full split)</span>
+                        <span>
+                            <span className="loss-chart__swatch loss-chart__swatch--trend" aria-hidden="true" />
+                            Batch trend (EMA)
+                        </span>
+                        <span>
+                            <span className="loss-chart__swatch loss-chart__swatch--train" aria-hidden="true" />
+                            Train data loss (full split)
+                        </span>
+                        <span>
+                            <span className="loss-chart__swatch loss-chart__swatch--test" aria-hidden="true" />
+                            Test data loss (full split)
+                        </span>
                         <span className="loss-chart__legend-concept">
+                            <span className="loss-chart__swatch loss-chart__swatch--objective" aria-hidden="true" />
                             <span>Training objective</span>
                             <ConceptHelp
                                 conceptId="training-objective"
@@ -229,8 +239,14 @@ export const LossChart = memo(function LossChart() {
                     </>
                 ) : (
                     <>
-                        <span>Train accuracy (full split)</span>
-                        <span>Test accuracy (full split)</span>
+                        <span>
+                            <span className="loss-chart__swatch loss-chart__swatch--train" aria-hidden="true" />
+                            Train accuracy (full split)
+                        </span>
+                        <span>
+                            <span className="loss-chart__swatch loss-chart__swatch--test" aria-hidden="true" />
+                            Test accuracy (full split)
+                        </span>
                     </>
                 )}
             </div>

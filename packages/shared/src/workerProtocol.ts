@@ -8,7 +8,12 @@ import type {
     MulticlassConfusionMatrixData,
     ActivationHistogramLayer,
 } from '@nn-playground/engine';
-import { canonicalRecipeKey, validateExperimentDocument } from './experimentSchema.js';
+import {
+    MAX_ACTIVE_FEATURE_COUNT,
+    MAX_OUTPUT_CLASSES,
+    canonicalRecipeKey,
+    validateExperimentDocument,
+} from './experimentSchema.js';
 import { createStableJsonSnapshot } from './canonicalJson.js';
 import {
     parseArtifactProvenance,
@@ -1351,7 +1356,13 @@ export interface WorkerSharedBuffersMessage {
 }
 
 const SHARED_CONTROL_WORD_COUNT = 8;
-const MAX_SHARED_NEURON_COUNT = MAX_HIDDEN_LAYERS * MAX_NEURONS_PER_LAYER + 3;
+// Upper bound for shared neuron-grid layout validation: the worst-case
+// network is every hidden layer at max width plus input features and output
+// classes. Keep this derived from schema caps so it can never undercount.
+const MAX_SHARED_NEURON_COUNT
+    = MAX_HIDDEN_LAYERS * MAX_NEURONS_PER_LAYER
+    + MAX_ACTIVE_FEATURE_COUNT
+    + MAX_OUTPUT_CLASSES;
 
 function exactSharedArrayBufferByteLength(value: unknown): number | null {
     if (typeof SharedArrayBuffer !== 'function') return null;

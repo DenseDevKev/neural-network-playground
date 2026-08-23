@@ -1151,7 +1151,7 @@ function installStagedV2State(staged: V2RuntimeBuild, generationId: number): voi
     state.epoch = 0;
     state.batchStart = 0;
     state.running = false;
-    state.trainLoopTimer = null;
+    clearTrainLoopTimer();
     state.runId = generationId;
     state.snapshotId = 0;
     // A fresh strict generation must return its initially demanded boundary
@@ -2150,6 +2150,18 @@ function trainOneStepV2(): {
 
 const TRAIN_TICK_INTERVAL_MS = 1000 / 60;
 
+/**
+ * Cancel a pending training tick. Generation swaps and restores must cancel
+ * (not merely drop) the outstanding handle, otherwise the orphaned callback
+ * fires later and clobbers the next generation's timer cell.
+ */
+function clearTrainLoopTimer(): void {
+    if (state.trainLoopTimer !== null) {
+        clearTimeout(state.trainLoopTimer);
+        state.trainLoopTimer = null;
+    }
+}
+
 function scheduleNextTick(): void {
     if (state.trainLoopTimer !== null || !state.running) return;
     state.trainLoopTimer = setTimeout(() => {
@@ -2317,10 +2329,7 @@ function startInternalLoop(): void {
 
 function stopInternalLoop(): void {
     state.running = false;
-    if (state.trainLoopTimer !== null) {
-        clearTimeout(state.trainLoopTimer);
-        state.trainLoopTimer = null;
-    }
+    clearTrainLoopTimer();
     // Drop the gate — a paused loop must not block a later resume on an ack
     // for a snapshot we no longer care about.
     resetAck();
@@ -2811,7 +2820,7 @@ function prepareRestoreCandidate(
         state.batchStart = checkpoint.cursor.batchStart;
         state.shuffledIndices = Array.from(checkpoint.cursor.shuffledIndices);
         state.running = false;
-        state.trainLoopTimer = null;
+        clearTrainLoopTimer();
         state.gpuPredictor = null;
         state.sharedViews = null;
         state.restoredCheckpointId = checkpointId;

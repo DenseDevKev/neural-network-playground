@@ -60,6 +60,58 @@ function lrScheduleStr(training: TrainingConfig): string | null {
     return `cosine(total_steps=${schedule.totalSteps}, min_lr=${schedule.minLr})`;
 }
 
+/** Human-readable regularization summary; null when the objective is unpenalized. */
+function regularizationSummary(training: TrainingConfig): string | null {
+    if (training.regularization === 'none' || !(training.regularizationRate > 0)) return null;
+    return training.regularization === 'l2'
+        ? `L2(rate=${training.regularizationRate})`
+        : `L1(rate=${training.regularizationRate})`;
+}
+
+/**
+ * TensorFlow.js kernel regularizer reproducing the engine's weight penalty
+ * (L1: rate·Σ|w|, L2: rate·Σw²/2, applied to kernels only); null when off.
+ */
+function tfjsKernelRegularizer(training: TrainingConfig): string | null {
+    if (training.regularization === 'none' || !(training.regularizationRate > 0)) return null;
+    return training.regularization === 'l2'
+        ? `tf.regularizers.l2({ l2: ${training.regularizationRate} })`
+        : `tf.regularizers.l1({ l1: ${training.regularizationRate} })`;
+}
+
+/**
+ * Emit one dense layer (plus its activation when TensorFlow.js has no matching
+ * built-in identifier, i.e. LeakyReLU must be a separate layer).
+ */
+function appendTfjsDenseLayer(
+    code: string,
+    opts: {
+        units: number;
+        activation: string;
+        inputShape: string;
+        kernelRegularizer: string | null;
+    },
+): string {
+    const regularizerLine = opts.kernelRegularizer
+        ? `  kernelRegularizer: ${opts.kernelRegularizer},\n`
+        : '';
+    if (opts.activation === 'leakyRelu') {
+        code += `model.add(tf.layers.dense({\n`;
+        code += `  units: ${opts.units},\n`;
+        code += `  activation: 'linear',${opts.inputShape}\n`;
+        code += regularizerLine;
+        code += `}));\n`;
+        code += `model.add(tf.layers.leakyReLU({ alpha: 0.01 }));\n\n`;
+    } else {
+        code += `model.add(tf.layers.dense({\n`;
+        code += `  units: ${opts.units},\n`;
+        code += `  activation: '${opts.activation}',${opts.inputShape}\n`;
+        code += regularizerLine;
+        code += `}));\n\n`;
+    }
+    return code;
+}
+
 /**
  * Generate pseudocode description of the network.
  */
@@ -98,10 +150,14 @@ export function generatePseudocode(
 
     code += `TRAINING:\n`;
     code += `  loss = ${lossStr(training.lossType)}\n`;
+    const regularization = regularizationSummary(training);
+    if (regularization) code += `  regularization = ${regularization}\n`;
     code += `  optimizer = ${training.optimizer === 'sgd' ? 'SGD' : training.optimizer === 'sgdMomentum' ? 'SGD+Momentum' : 'Adam'}\n`;
     code += `  learning_rate = ${training.learningRate}\n`;
     code += `  batch_size = ${training.batchSize}\n`;
-    code += `  momentum = ${training.momentum}\n`;
+    if (training.optimizer === 'sgdMomentum') {
+        code += `  momentum = ${training.momentum}\n`;
+    }
     code += `  gradient_clip = ${training.gradientClip ?? 'off'}\n`;
     if (training.optimizer === 'adam') {
         code += `  adam_beta1 = ${training.adamBeta1 ?? 0.9}\n`;
@@ -220,20 +276,25 @@ export function generateTFJS(
     code += `// Features: [${feats.join(', ')}]\n\n`;
     code += `const model = tf.sequential();\n\n`;
 
+    const kernelRegularizer = tfjsKernelRegularizer(training);
     for (let l = 0; l < config.hiddenLayers.length; l++) {
-        const inputShape = l === 0 ? `, inputShape: [${config.inputSize}]` : '';
-        code += `model.add(tf.layers.dense({\n`;
-        code += `  units: ${config.hiddenLayers[l]},\n`;
-        code += `  activation: '${act}'${inputShape},\n`;
-        code += `}));\n\n`;
+        const inputShape = l === 0 ? ` inputShape: [${config.inputSize}],` : '';
+        code = appendTfjsDenseLayer(code, {
+            units: config.hiddenLayers[l],
+            activation: act,
+            inputShape,
+            kernelRegularizer,
+        });
     }
 
     // Output layer
-    const outputInputShape = config.hiddenLayers.length === 0 ? `, inputShape: [${config.inputSize}]` : '';
-    code += `model.add(tf.layers.dense({\n`;
-    code += `  units: ${config.outputSize},\n`;
-    code += `  activation: '${outAct}'${outputInputShape},\n`;
-    code += `}));\n\n`;
+    const outputInputShape = config.hiddenLayers.length === 0 ? ` inputShape: [${config.inputSize}],` : '';
+    code = appendTfjsDenseLayer(code, {
+        units: config.outputSize,
+        activation: outAct,
+        inputShape: outputInputShape,
+        kernelRegularizer,
+    });
 
     // Compile
     const lossMap: Record<string, string> = {
@@ -242,15 +303,31 @@ export function generateTFJS(
         categoricalCrossEntropy: 'categoricalCrossentropy',
         huber: 'huberLoss',
     };
+    // TensorFlow.js compiled-loss strings pin Huber's transition point to 1;
+    // a custom closure is the only way to honor a recipe-tuned delta while
+    // matching the engine objective (0.5·a² below δ, δ·(a−δ/2) above).
+    if (training.lossType === 'huber') {
+        code += `const huberDelta = ${training.huberDelta ?? 1};\n\n`;
+    }
     const optMap: Record<string, string> = {
         sgd: `tf.train.sgd(${training.learningRate})`,
         sgdMomentum: `tf.train.momentum(${training.learningRate}, ${training.momentum})`,
-        adam: `tf.train.adam(${training.learningRate}, ${training.adamBeta1 ?? 0.9}, ${training.adamBeta2 ?? 0.999})`,
+        adam: `tf.train.adam(${training.learningRate}, ${training.adamBeta1 ?? 0.9}, ${training.adamBeta2 ?? 0.999}, ${training.adamEps ?? 1e-8})`,
     };
 
     code += `model.compile({\n`;
     code += `  optimizer: ${optMap[training.optimizer] || 'tf.train.sgd(0.03)'},\n`;
-    code += `  loss: '${lossMap[training.lossType] || 'meanSquaredError'}',\n`;
+    if (training.lossType === 'huber') {
+        code += `  loss: (yTrue, yPred) => {\n`;
+        code += `    const err = yTrue.sub(yPred);\n`;
+        code += `    const absErr = err.abs();\n`;
+        code += `    return absErr.lessEqual(huberDelta)\n`;
+        code += `        .where(err.square().mul(0.5), absErr.mul(huberDelta).sub(0.5 * huberDelta * huberDelta))\n`;
+        code += `        .mean();\n`;
+        code += `  },\n`;
+    } else {
+        code += `  loss: '${lossMap[training.lossType] || 'meanSquaredError'}',\n`;
+    }
     code += `  metrics: ['accuracy'],\n`;
     code += `});\n\n`;
 

@@ -67,7 +67,9 @@ describe('useTrainingStore strict V2 frames', () => {
         expect(state.frameVersion).toBe(7);
         expect(state.latestLiveSignal).toBeNull();
         expect(state.latestEvaluation).toBeNull();
-        expect(state.workerError).toBeNull();
+        // Visual frames must never clear a fatal worker error; only explicit
+        // recovery paths (clearWorkerError) may.
+        expect(state.workerError).toBe('previous error');
     });
 
     it('publishes the multiclass boundary frame version from streamed frame versions', () => {

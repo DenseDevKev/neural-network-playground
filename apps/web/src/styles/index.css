@@ -1601,6 +1601,34 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     color: color-mix(in srgb, var(--text-secondary) 88%, var(--color-accent));
 }
 
+/* Legend swatches mirror the canvas series colors exactly. */
+.loss-chart__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding: 6px 10px 0;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+
+.loss-chart__legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.loss-chart__swatch {
+    width: 10px;
+    height: 2px;
+    border-radius: 1px;
+    flex-shrink: 0;
+}
+
+.loss-chart__swatch--trend { background: #f6c85f; }
+.loss-chart__swatch--train { background: #00e5c3; }
+.loss-chart__swatch--test { background: #7c5cfc; }
+.loss-chart__swatch--objective { background: #ff8f70; }
+
 .loss-chart canvas {
     width: 100%;
     height: 140px;
