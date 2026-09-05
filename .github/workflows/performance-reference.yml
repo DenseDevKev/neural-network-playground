@@ -1,0 +1,75 @@
+name: Performance reference qualification
+
+on:
+  push:
+    branches: [codex/nn-forge-release-roadmap]
+    paths: [.github/workflows/performance-reference.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ae09b9863ae90f8fb2f62545834fcc138755ba9a
+          path: performance-baseline
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
+        working-directory: performance-baseline
+      - name: Record the reference environment and both immutable revisions
+        shell: bash
+        run: |
+          mkdir -p performance-reference
+          git rev-parse HEAD > performance-reference/candidate-sha.txt
+          git -C performance-baseline rev-parse HEAD > performance-reference/baseline-sha.txt
+          node --version > performance-reference/node-version.txt
+          pnpm --version > performance-reference/pnpm-version.txt
+          uname -a > performance-reference/os.txt
+          sw_vers >> performance-reference/os.txt
+          sysctl -n machdep.cpu.brand_string > performance-reference/cpu.txt
+          sysctl hw.ncpu hw.memsize >> performance-reference/cpu.txt
+          node -p 'process.arch' >> performance-reference/cpu.txt
+          test "$(node -p 'process.arch')" = arm64
+          printf 'pass,revision,exit_code\n' > performance-reference/exits.csv
+      - name: Run all five paired collections without changing any performance threshold
+        shell: bash
+        run: |
+          failed=0
+          for pass in 1 2 3 4 5; do
+            order='baseline candidate'
+            if [ $((pass % 2)) -eq 0 ]; then order='candidate baseline'; fi
+            for revision in $order; do
+              directory=.
+              if [ "$revision" = baseline ]; then directory=performance-baseline; fi
+              { date -u; uptime; ps -Ao pid,pcpu,comm; } > "performance-reference/host-${pass}-${revision}.txt"
+              set +e
+              (cd "$directory" && pnpm test:perf) 2>&1 | tee "performance-reference/${pass}-${revision}.log"
+              result=${PIPESTATUS[0]}
+              set -e
+              printf '%s,%s,%s\n' "$pass" "$revision" "$result" >> performance-reference/exits.csv
+              if [ "$result" -ne 0 ]; then failed=1; fi
+            done
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-reference-${{ github.sha }}
+          path: performance-reference/
+          retention-days: 7
