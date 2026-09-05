@@ -3,41 +3,53 @@ name: Qualification investigation
 on:
   push:
     branches: [codex/nn-forge-release-roadmap]
-    paths:
-      - .github/workflows/qualification-investigation.yml
-  workflow_dispatch:
+    paths: [.github/workflows/qualification-investigation.yml]
 
 permissions:
   contents: read
 
 jobs:
-  font-package-intake:
+  register-reviewed-lockfile-blob:
+    if: github.ref == 'refs/heads/codex/nn-forge-release-roadmap'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-      - name: Resolve exact self-hosted font package inputs without changing repository refs
-        run: pnpm --filter @nn-playground/web add --save-exact --lockfile-only --ignore-scripts @fontsource/inter@5.3.0 @fontsource/space-grotesk@5.3.0
-      - name: Capture lockfile and package metadata only
+      - name: Prepare only the three reviewed lockfile additions
         shell: bash
         run: |
-          mkdir font-intake
-          cp apps/web/package.json font-intake/web-package.json
-          cp pnpm-lock.yaml font-intake/pnpm-lock.yaml
-          git rev-parse HEAD > font-intake/source-sha.txt
-          npm view @fontsource/inter@5.3.0 version dist.integrity dist.tarball license --json > font-intake/inter-metadata.json
-          npm view @fontsource/space-grotesk@5.3.0 version dist.integrity dist.tarball license --json > font-intake/space-grotesk-metadata.json
-          git diff --stat > font-intake/change-summary.txt
+          node --input-type=module <<'JS'
+          import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          let content = readFileSync('pnpm-lock.yaml', 'utf8');
+          const changes = [
+            ['  apps/web:\n    dependencies:\n', "      '@fontsource/inter':\n        specifier: 5.3.0\n        version: 5.3.0\n      '@fontsource/space-grotesk':\n        specifier: 5.3.0\n        version: 5.3.0\n", false],
+            ["  '@humanfs/core@0.19.2':\n    resolution:", "  '@fontsource/inter@5.3.0':\n    resolution: {integrity: sha512-RofMylZmjlJEfELXeNHFWBRcSs75rGU/6bV2S2jfnvv/3rPXPGe0LgUJTklcHZ9lM4OZmAVFhcJPnACfb91A3g==}\n\n  '@fontsource/space-grotesk@5.3.0':\n    resolution: {integrity: sha512-ksnGizDPXIDuvqcTYTSrmZ+evx9sDlS8rp7+42BQ7wU+spt3twEoXfbJz672C+5CLg6VeUQwRy5RXshWb67LcQ==}\n\n", true],
+            ["  '@exodus/bytes@1.15.0': {}\n", "\n  '@fontsource/inter@5.3.0': {}\n\n  '@fontsource/space-grotesk@5.3.0': {}\n", false],
+          ];
+          for (const [anchor, addition, before] of changes) {
+            if (content.split(anchor).length !== 2) throw new Error('Ambiguous lockfile anchor');
+            content = content.replace(anchor, before ? addition + anchor : anchor + addition);
+          }
+          const bytes = Buffer.from(content);
+          const sha = createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+          if (sha !== '0f95025a6cb614998f597db18e9eeafad57800d5') throw new Error('Reviewed lockfile digest mismatch');
+          mkdirSync('font-intake');
+          writeFileSync('font-intake/blob-request.json', JSON.stringify({ content, encoding: 'utf-8' }));
+          writeFileSync('font-intake/expected-sha.txt', sha + '\n');
+          JS
+      - name: Register the reviewed Git blob only; do not create commits or update refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/blobs" --input font-intake/blob-request.json --jq .sha > font-intake/registered-sha.txt
+          diff font-intake/expected-sha.txt font-intake/registered-sha.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: font-package-intake-${{ github.sha }}
-          path: font-intake/
+          name: reviewed-font-lockfile-${{ github.sha }}
+          path: font-intake/*sha.txt
           retention-days: 7
