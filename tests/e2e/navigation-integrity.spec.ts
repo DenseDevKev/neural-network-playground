@@ -5,6 +5,10 @@ for (const activation of ['keyboard', 'pointer'] as const) {
         await page.goto('./');
         const main = page.getByRole('main', { name: 'Neural network playground workspace' });
         await expect(main).toBeVisible();
+        await page.getByRole('button', { name: 'Presets', exact: true }).click();
+        const presets = page.getByRole('dialog', { name: 'Presets' });
+        await presets.getByRole('button', { name: 'Apply preset: XOR Needs Hidden Layers' }).click();
+        await expect(presets).toBeHidden();
         await page.getByRole('button', { name: 'run', exact: true }).click();
         const run = page.locator('section[role="region"][aria-label="Current run"]');
         await expect(run).toContainText(/Full evaluation \d+ at step 0(?![0-9,])/);
