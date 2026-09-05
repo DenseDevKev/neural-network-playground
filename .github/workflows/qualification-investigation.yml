@@ -1,0 +1,43 @@
+name: Qualification investigation
+
+on:
+  push:
+    branches: [codex/nn-forge-release-roadmap]
+    paths:
+      - .github/workflows/qualification-investigation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  font-package-intake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Resolve exact self-hosted font package inputs without changing repository refs
+        run: pnpm --filter @nn-playground/web add --save-exact --lockfile-only --ignore-scripts @fontsource/inter@5.3.0 @fontsource/space-grotesk@5.3.0
+      - name: Capture lockfile and package metadata only
+        shell: bash
+        run: |
+          mkdir font-intake
+          cp apps/web/package.json font-intake/web-package.json
+          cp pnpm-lock.yaml font-intake/pnpm-lock.yaml
+          git rev-parse HEAD > font-intake/source-sha.txt
+          npm view @fontsource/inter@5.3.0 version dist.integrity dist.tarball license --json > font-intake/inter-metadata.json
+          npm view @fontsource/space-grotesk@5.3.0 version dist.integrity dist.tarball license --json > font-intake/space-grotesk-metadata.json
+          git diff --stat > font-intake/change-summary.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: font-package-intake-${{ github.sha }}
+          path: font-intake/
+          retention-days: 7
