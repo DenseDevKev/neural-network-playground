@@ -49,6 +49,8 @@ jobs:
       - run: pnpm test
       - name: Build normal production output
         run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Check production bundle budgets
+        run: pnpm test:bundle
       - name: Record exact normal build
         shell: bash
         run: |
