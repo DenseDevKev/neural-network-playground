@@ -293,7 +293,17 @@ function CompatiblePlayground() {
     return (
         <>
         <div className="forge-shell" ref={backgroundRef}>
-            <a className="skip-link" href="#main-content">Skip to main content</a>
+            <a
+                className="skip-link"
+                href="#main-content"
+                onClick={(event) => {
+                    // The URL fragment is the experiment document, not shell navigation.
+                    event.preventDefault();
+                    document.getElementById('main-content')?.focus();
+                }}
+            >
+                Skip to main content
+            </a>
 
             <AccessibilityAnnouncer
                 status={status}
