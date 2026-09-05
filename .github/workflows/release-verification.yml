@@ -43,7 +43,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Verify infrastructure helpers
-        run: node --test scripts/playwright-target.test.mjs scripts/serve-release-fixture.test.mjs scripts/run-performance-gates.test.mjs
+        run: node --test scripts/*.test.mjs
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
@@ -93,7 +93,7 @@ jobs:
         if: matrix.mode == 'subpath'
         shell: bash
         run: |
-          node scripts/serve-release-fixture.mjs apps/web/dist 4174 > release-fixture.log 2>&1 &
+          node scripts/serve-release-fixture.mjs apps/web/dist 4174 > "release-fixture.log" 2>&1 &
           fixture_pid=$!
           trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
           ready=0
@@ -102,10 +102,10 @@ jobs:
               ready=1
               break
             fi
-            kill -0 "$fixture_pid" || { cat release-fixture.log; exit 1; }
+            kill -0 "$fixture_pid" || { cat "release-fixture.log"; exit 1; }
             sleep 1
           done
-          test "$ready" -eq 1 || { cat release-fixture.log; exit 1; }
+          test "$ready" -eq 1 || { cat "release-fixture.log"; exit 1; }
           PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
       - name: Verify opt-in fault recovery
         if: matrix.mode == 'recovery'
@@ -157,6 +157,24 @@ jobs:
       - name: Run unchanged performance gates
         shell: bash
         run: pnpm test:perf 2>&1 | tee performance-evidence/performance.log
+      - name: Check out the pinned performance baseline
+        if: always()
+        uses: actions/checkout@v4
+        with:
+          ref: ae09b9863ae90f8fb2f62545834fcc138755ba9a
+          path: performance-baseline
+          persist-credentials: false
+      - name: Install baseline dependencies
+        if: always()
+        working-directory: performance-baseline
+        run: pnpm install --frozen-lockfile
+      - name: Run baseline gates on the same runner without relaxing limits
+        if: always()
+        working-directory: performance-baseline
+        shell: bash
+        run: |
+          git rev-parse HEAD > ../performance-evidence/baseline-sha.txt
+          pnpm test:perf 2>&1 | tee ../performance-evidence/baseline-performance.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

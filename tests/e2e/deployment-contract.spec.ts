@@ -133,7 +133,7 @@ test('project hosting resolves lazy evidence and reopens an unchanged shared rec
             await readyAtZero(peer, sharedURL);
             await peer.getByRole('combobox', { name: 'Workspace profile' }).selectOption('lab');
             await peer.getByRole('button', { name: 'build', exact: true }).click();
-            await expect(peer.getByRole('region', { name: 'Recipe summary', exact: true })).toHaveText(recipe);
+            await expect(peer.getByRole('region', { name: 'Recipe summary', exact: true })).toHaveText(recipe, { useInnerText: true });
             await expect(peer.getByLabel('Architecture summary', { exact: true })).toHaveText(architecture ?? '');
             expect(peer.url()).toBe(sharedURL);
             expect(peerObserved.errors).toEqual([]);
