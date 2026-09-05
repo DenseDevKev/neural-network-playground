@@ -29,3 +29,31 @@ jobs:
           name: release-source-${{ github.sha }}
           path: ${{ runner.temp }}/release-source/
           retention-days: 7
+
+  navigation-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: node --test scripts/playwright-target.test.mjs
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Exercise real skip-link navigation
+        run: pnpm exec playwright test tests/e2e/navigation-integrity.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: navigation-contract-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
