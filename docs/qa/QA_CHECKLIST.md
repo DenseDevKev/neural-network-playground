@@ -7,10 +7,12 @@ Use this checklist for local verification, browser smoke tests, accessibility pa
 Run from the repository root:
 
 ```bash
-pnpm --filter @nn-playground/web exec tsc --noEmit
+node --test scripts/*.test.mjs
+pnpm typecheck
 pnpm test
 pnpm lint
 pnpm build
+pnpm test:bundle
 ```
 
 For performance-sensitive or runtime-adjacent changes, also run:
@@ -23,6 +25,7 @@ For checked-in Chromium and WebKit smoke coverage, build first and then run:
 
 ```bash
 pnpm build
+pnpm test:bundle
 pnpm test:e2e
 ```
 
@@ -42,6 +45,54 @@ pnpm --filter @nn-playground/shared test
 pnpm --filter @nn-playground/engine test
 pnpm --filter @nn-playground/web dev --host 127.0.0.1
 ```
+
+## Release targets and recovery
+
+The default suite starts an isolated production preview. To verify the actual
+non-isolated project-path fallback, first build normally, then run the fixture
+in a separate terminal:
+
+```bash
+node scripts/serve-release-fixture.mjs apps/web/dist 4174
+```
+
+Execute the unchanged browser suite against that fixture:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
+```
+
+An explicit base URL never starts or falls back to preview. Do not set
+`PLAYWRIGHT_PORT` at the same time. Invalid target settings must fail closed.
+The external-only deployment tests intentionally skip on isolated preview and
+must run in both browsers on the non-isolated fixture. Record these separately
+from normal builds' two expected fault-enabled skips.
+
+The recovery build is test-only. Run it with external target overrides unset,
+then restore and verify a clean build before any deployment:
+
+```bash
+pnpm test:e2e:recovery
+env -u VITE_E2E_FAULTS pnpm build
+pnpm test:bundle
+pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
+```
+
+These shell examples use POSIX environment syntax. On other shells, remove the
+same variables using that shell's environment commands. Preserve the recovery
+report before the normal test run overwrites Playwright's report directory.
+`.github/workflows/release-verification.yml` performs this separation automatically.
+
+`tests/e2e/font-delivery.spec.ts` requires the actual font faces at every existing
+requested weight, same-origin resource loads, and two native reloads. Do not add
+font request interception, console-error suppression, or disabled isolation to
+make this check pass. The original fault-recovery console assertion stays intact.
+
+Record exact product/test SHAs, browser versions, commands, exits, named skips,
+resource evidence, and artifact digests in the
+[release verification record](../superpowers/verification/2026-09-05-release-roadmap.md).
+Performance records must include the measured hardware and the unchanged
+baseline on the same host; a failing baseline is not a candidate performance pass.
 
 ## Browser QA Modes
 
@@ -79,8 +130,8 @@ Do not claim browser QA passed unless Mode A or Mode B was actually executed.
 
 - Check at 320px and at a compact viewport such as 390x844.
 - Repeat the primary flow at 200% browser zoom or equivalent text enlargement.
-- Dock layout remains usable.
-- Unsupported layout buttons are disabled rather than silently failing.
+- Build and Run remain usable without legacy global layout modes.
+- Workspace profile, navigation, and disclosure preserve the experiment state.
 - Tabs and action buttons do not overflow their containers.
 - Training controls remain reachable.
 - Guided lesson drawer can expand/collapse.

@@ -1,117 +1,154 @@
 # Deployment Guide
 
-Neural Network Playground is a fully static single-page application (SPA).
-There is no backend, no runtime environment variables, and no build-time
-secrets — the entire app runs in the browser.
+NN.FORGE is a static React/Vite SPA. Training runs in a browser worker; there is
+no backend, runtime API key, or required runtime environment variable.
 
-## GitHub Pages (recommended)
+The [roadmap](superpowers/plans/2026-09-05-nn-forge-release-roadmap.md) and
+[verification record](superpowers/verification/2026-09-05-release-roadmap.md)
+distinguish the authoritative `main` product, branch qualification, and an actual
+published release. A successful build is not proof of a deployed site. The JavaScript gzip check
+measures JavaScript only; it does not claim a total font/CSS transfer or startup-time budget.
 
-### Prerequisites
+## GitHub Pages: owner decision first
 
-- A GitHub account
-- The repository forked to your account (or push access to the original)
-- GitHub Pages enabled in the repository Settings
+For a private repository, verify account eligibility for Pages and explicitly
+approve the website's audience. Keeping source private does not automatically
+make the delivered website private. Do not change repository visibility to work
+around a Pages setting or entitlement failure.
 
-### Fork-and-deploy flow
+After approval, the owner selects **Settings → Pages → Source → GitHub Actions**.
+The initial September 5 deployment failed with `HttpError: Not Found` and
+`Ensure GitHub Pages has been enabled`; that result was a repository-settings
+blocker, not an application build failure. Do not alter code to conceal it.
 
-1. **Fork** the repository on GitHub.
-2. Open your fork's **Actions** tab and enable workflows for the fork.
-3. Go to your fork's **Settings → Pages**.
-4. Under **Source**, select **GitHub Actions**.
-5. Push a commit to `main`. The `CI` workflow must pass lint, tests, build, and
-   Chromium/WebKit smoke for that commit.
-6. A successful CI push run allows `.github/workflows/deploy.yml` to build and
-   deploy. It checks out the exact tested SHA and will:
-   - Install dependencies with pnpm 9
-   - Build the app (`pnpm build` → `apps/web/dist/`)
-   - Upload the `dist` folder as a Pages artifact
-   - Deploy to `https://<your-username>.github.io/<repo-name>/`
+### Existing deployment chain
 
-Maintainers can also trigger **Actions → Deploy to GitHub Pages → Run
-workflow**. A manual dispatch builds the explicitly selected ref and is the
-intentional escape hatch for forks or recovery; it does not claim a preceding
-CI result.
+A successful `CI` push run for the current `main` SHA permits
+`.github/workflows/deploy.yml` to rebuild and deploy that exact tested SHA.
+Failed, cancelled, pull-request, non-main, and stale-main runs are excluded by
+the workflow's existing conditions. The artifact is `apps/web/dist/`.
 
-Automatic deployment does not race CI: failed, cancelled, pull-request, and
-non-`main` CI runs cannot start the deploy job. A completed CI run for a stale
-`main` SHA is also ignored when a newer commit has already reached `main`.
+Manual dispatch builds the selected ref and does not itself prove preceding CI.
+Before a manual release, record the selected full SHA and its completed
+qualification results. Do not silently substitute a newer head for a pinned
+release candidate.
 
-### Notes
+The separate `Release verification` workflow is read-only and does not deploy.
+Its independent jobs retain failures instead of allowing one failed job to hide
+other results. Main's CI success does not imply that its performance or
+fault-enabled recovery checks ran; verify the actual job list.
 
-- The workflow uses **Node 20** and **pnpm 9** — these match the declared
-  `engines` in `package.json`.
-- Automatic deploys rebuild the exact `workflow_run.head_sha` that passed CI;
-  they never silently deploy a newer untested `main` commit.
-- No secrets are needed.
-- The `vite.config.ts` uses `VITE_BASE` when provided and defaults to
-  `base: './'`, so all asset paths are relative and the app works correctly
-  in any subdirectory URL.
+The expected default project address is:
 
-## Self-hosting on any static file server
+```text
+https://densedevkev.github.io/neural-network-playground/
+```
 
-The production build output is a standard set of static files in
-`apps/web/dist/`. Any web server that can serve static files works
-(Nginx, Apache, Caddy, S3 + CloudFront, Netlify, Vercel, etc.).
+This example is not a deployment receipt. The successful deploy job's `page_url`
+is authoritative. Record the actual deployment SHA, run/attempt, artifact ID and
+digest, URL, timestamp, and subsequent live browser results.
 
-### Build locally
+## Build and self-host
+
+Use the repository toolchain and frozen lockfile:
 
 ```bash
-# Install dependencies (Node >= 20, pnpm >= 9 recommended)
-pnpm install
-
-# Produce a production build
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
 pnpm build
+pnpm test:bundle
 ```
 
-The output lands in `apps/web/dist/`. Copy that directory to your host.
+Serve the complete `apps/web/dist/` directory. Preserve the generated asset names
+and `font-licenses.txt`; do not publish a partial directory or an injected-fault
+build. Inter and Space Grotesk are packaged dependencies and load from the app's
+origin rather than Google Fonts. No runtime font CDN is required.
 
-### Nginx example
-
-```nginx
-server {
-    listen 80;
-    server_name example.com;
-    root /var/www/neural-network-playground;
-    index index.html;
-
-    # All routes fall back to index.html (hash routing handles the rest)
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-```
-
-### Serving from a sub-path
-
-The default `vite.config.ts` sets `base: './'`, which makes all asset
-URLs relative. This means the app works whether it is hosted at
-`https://example.com/` or `https://example.com/tools/nn-playground/`
-without any extra configuration.
-
-If you need an **absolute** base path (e.g. for a reverse proxy that
-rewrites paths), override it at build time:
+`apps/web/vite.config.ts` defaults to `base: './'`. A project URL must retain its
+trailing slash so relative assets resolve below the project directory. For a
+host needing an absolute base, use the existing build-time override:
 
 ```bash
 VITE_BASE=/tools/nn-playground/ pnpm build
+pnpm test:bundle
 ```
 
-The build already reads `VITE_BASE`, so no config edit is needed.
+Hash state describes the experiment; it is not server-side routing. Missing JS,
+CSS, or font assets must produce real HTTP errors, not an HTML fallback with
+status 200. Ensure the server uses JavaScript and font MIME types correctly.
 
-## Environment
+## Verify the real destination
 
-- **No backend required.** All training runs entirely in the browser using
-  a Web Worker. There is no API server, database, or authentication.
-- **No runtime environment variables required.** The build works with default
-  settings out of the box. `VITE_BASE` is optional build-time configuration
-  for hosts that require an absolute asset base path.
-- **Privacy.** No data leaves the browser — training data, weights, and
-  network configurations are never transmitted to any server.
+Install Playwright's Chromium and WebKit browsers in the verification environment.
+With `PLAYWRIGHT_BASE_URL` unset, `pnpm test:e2e` starts an isolated local preview.
+An explicit base URL disables preview startup; an unavailable target fails rather
+than falling back to a different app. Do not also set `PLAYWRIGHT_PORT`.
 
-## Troubleshooting
+To exercise a non-isolated host before publication, build normally, start this
+fixture in one terminal, and leave it running for the test command:
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Blank page after deploy | Wrong base path | Ensure `base: './'` in `vite.config.ts` |
-| Assets 404 on sub-path | Absolute asset URLs | Keep `base: './'` (relative assets) |
-| Old version still showing | Browser cache | Hard-refresh or clear cache |
-| Worker fails silently | COOP/COEP headers | Set `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (required for `SharedArrayBuffer`; the app works without them but some features may be limited) |
+```bash
+node scripts/serve-release-fixture.mjs apps/web/dist 4174
+```
+
+In another terminal:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
+```
+
+After owner-authorized publication, run against the exact confirmed `page_url`:
+
+```bash
+PLAYWRIGHT_BASE_URL=https://densedevkev.github.io/neural-network-playground/ pnpm test:e2e
+```
+
+Use fresh automated contexts, not the owner's stored browser profile. Preserve
+reports, named skips, browser versions, target metadata, and resource evidence.
+The external-only deployment checks must execute on the non-isolated fixture
+and selected Pages contract. An HTTP 200 alone is not browser verification.
+
+## Isolation and transport
+
+Development and preview deliberately set COOP/COEP headers. The worker uses
+shared buffers where supported and naturally falls back to transferable messages
+when the document is not isolated. Non-isolation on Pages is expected and is not
+by itself a broken-worker diagnosis. Do not weaken the isolated preview to make
+resource errors disappear.
+
+Training data and model computation remain in the browser. The hosting server
+receives ordinary static asset requests. Sharing/exporting is a user action that
+can disclose an experiment recipe; a shared URL does not resume trained weights.
+
+## Fault-injection builds are never release artifacts
+
+With external target overrides unset:
+
+```bash
+pnpm test:e2e:recovery
+# Preserve its report before a subsequent run overwrites it.
+env -u VITE_E2E_FAULTS pnpm build
+pnpm test:bundle
+pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
+```
+
+The clean rebuild and fault-disabled assertions are mandatory after recovery
+testing. The examples use POSIX environment syntax; other shells must remove the
+same variables explicitly. Never upload the recovery bundle to Pages.
+
+## Troubleshooting and maintenance boundaries
+
+| Observation | Required response |
+|---|---|
+| Pages deployment says to enable Pages | Confirm owner consent, eligibility, and the repository setting; preserve the failed run |
+| Project assets return 404 | Inspect the actual `page_url`, trailing slash, emitted relative URLs, and uploaded directory |
+| Font reload fails | Run the real font-delivery and recovery cases; do not mock font responses or suppress console errors |
+| SharedArrayBuffer is unavailable | Check actual isolation; the transferable fallback must still train and publish paired evidence |
+| Engine timing limits fail | Retain raw output and compare the pinned baseline on the same measured host; do not raise limits |
+| Vite emits its 200 kB chunk warning | Record it; it is not an executable budget failure or an automatic code-splitting mandate |
+| GitHub annotates Node action-runtime deprecation | Separate the action's own runtime from the Node version selected for project commands |
+
+The existing workflows select Node 20 and pnpm 9 for project commands. Project
+support remains declared by `package.json`; this work does not change it.

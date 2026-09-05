@@ -43,7 +43,7 @@ neural-network-playground/
 │   │   ├── activations.ts
 │   │   ├── losses.ts
 │   │   ├── optimizers.ts
-│   │   └── __tests__/    # 144+ unit tests
+│   │   └── __tests__/    # Numerical correctness tests
 │   └── shared/           # Shared utilities (presets, URL state, code export)
 ```
 
@@ -106,16 +106,28 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 pnpm test          # Run all tests
 pnpm test:engine   # Run engine tests only
 pnpm build         # Production build
+pnpm test:bundle   # Enforce reviewed JavaScript gzip limits after build
 pnpm lint          # Lint all files
 pnpm test:perf     # Run repository performance gates
 pnpm test:e2e      # Run Chromium and WebKit smoke tests against a built app
 ```
 
+## Project status and roadmap
+
+`main` is the authoritative product. Work on an execution branch is not a release.
+See the [consolidated roadmap](docs/superpowers/plans/2026-09-05-nn-forge-release-roadmap.md),
+[verification record](docs/superpowers/verification/2026-09-05-release-roadmap.md), and
+[historical-plan reconciliation](docs/superpowers/README.md) before treating an old
+unchecked plan as unfinished work. The production UI remains one Build/Run shell;
+Precision Lab is a separately gated later milestone.
+
 ## 🚢 Deployment
 
 The app is a fully static SPA — no backend and no runtime environment variables.
-After CI passes for a pushed `main` SHA, GitHub Actions rebuilds and deploys
-that exact tested commit to GitHub Pages.
+Once the owner has approved public publication and enabled Pages with GitHub
+Actions, successful CI for a pushed `main` SHA permits deployment of that exact
+tested commit. A private source repository does not make its Pages site private.
+The separate release-verification workflow never publishes the application.
 For self-hosting or custom base-path configuration, see
 [docs/deployment.md](docs/deployment.md).
 
@@ -127,10 +139,12 @@ local end-to-end run because Playwright serves the production output through
 Vite preview.
 
 ```bash
-pnpm --filter @nn-playground/web exec tsc --noEmit
+node --test scripts/*.test.mjs
+pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
+pnpm test:bundle
 pnpm test:perf
 pnpm test:e2e
 ```
@@ -152,6 +166,15 @@ cross-browser coverage, accessibility checks, and release evidence expectations.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR guidelines.
 
+## Typography
+
+Inter and Space Grotesk are supplied by exactly pinned Fontsource packages and
+served from the application origin. Native reloads must not depend on Google
+Fonts or weaken cross-origin isolation. The original families and requested
+weights remain; the production build includes `font-licenses.txt`.
+
 ## 📄 License
 
-[Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0) — inspired by [TensorFlow Playground](https://github.com/tensorflow/playground) by Daniel Smilkov & Shan Carter.
+Application code: [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+Fonts retain their [SIL Open Font License notices](apps/web/public/font-licenses.txt).
+Inspired by [TensorFlow Playground](https://github.com/tensorflow/playground) by Daniel Smilkov & Shan Carter.
