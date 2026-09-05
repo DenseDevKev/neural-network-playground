@@ -1,0 +1,31 @@
+name: Release verification
+
+on:
+  push:
+    branches: [codex/nn-forge-release-roadmap]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture exact tracked source
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-source"
+          git rev-parse HEAD > "$RUNNER_TEMP/release-source/source-sha.txt"
+          git archive --format=tar.gz --output="$RUNNER_TEMP/release-source/source.tar.gz" HEAD
+          sha256sum "$RUNNER_TEMP/release-source/source.tar.gz" > "$RUNNER_TEMP/release-source/source.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-source-${{ github.sha }}
+          path: ${{ runner.temp }}/release-source/
+          retention-days: 7
