@@ -46,7 +46,7 @@ async function ensureRunView(page: Page): Promise<void> {
 
 test('@fault-enabled recovers from an injected startup failure', async ({ page }) => {
     const errors = collectBrowserErrors(page);
-    await page.goto('/?e2eWorkerFault=startup-once');
+    await page.goto('./?e2eWorkerFault=startup-once');
 
     // Fault injection only exists in bundles built with VITE_E2E_FAULTS=1
     // (test:e2e:recovery); the plain smoke build must skip this scenario.
@@ -85,7 +85,7 @@ test('@fault-enabled recovers from an injected startup failure', async ({ page }
 
 test('@fault-disabled normal builds ignore the fault query', async ({ page }) => {
     const errors = collectBrowserErrors(page);
-    await page.goto('/?e2eWorkerFault=startup-once');
+    await page.goto('./?e2eWorkerFault=startup-once');
     await expect(page.getByRole('alertdialog', { name: 'Worker connection lost' })).toHaveCount(0);
     await ensureRunView(page);
     await expectEvidenceConvergence(page, 0);

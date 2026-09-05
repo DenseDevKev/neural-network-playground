@@ -155,7 +155,7 @@ async function ensureRunView(page: Page): Promise<void> {
 }
 
 async function loadPlayground(page: Page): Promise<void> {
-    await page.goto('/');
+    await page.goto('./');
     await expect(page.getByRole('main', { name: 'Neural network playground workspace' })).toBeVisible();
     await ensureRunView(page);
     await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');

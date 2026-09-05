@@ -30,7 +30,7 @@ function formatViolations(violations: AxeViolations): string {
 }
 
 async function loadReadyPlayground(page: Page): Promise<void> {
-    await page.goto('/');
+    await page.goto('./');
     await expect(page.getByRole('main', {
         name: 'Neural network playground workspace',
     })).toBeVisible();
