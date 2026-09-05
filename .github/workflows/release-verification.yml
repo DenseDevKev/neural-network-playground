@@ -30,7 +30,7 @@ jobs:
           path: ${{ runner.temp }}/release-source/
           retention-days: 7
 
-  navigation-contract:
+  correctness:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,18 +42,124 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: node --test scripts/playwright-target.test.mjs
+      - name: Verify infrastructure helpers
+        run: node --test scripts/playwright-target.test.mjs scripts/serve-release-fixture.test.mjs scripts/run-performance-gates.test.mjs
       - run: pnpm lint
       - run: pnpm typecheck
-      - run: pnpm build
+      - run: pnpm test
+      - name: Build normal production output
+        run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Record exact normal build
+        shell: bash
+        run: |
+          mkdir -p release-evidence
+          git rev-parse HEAD > release-evidence/source-sha.txt
+          node --version > release-evidence/node-version.txt
+          pnpm --version > release-evidence/pnpm-version.txt
+          (cd apps/web/dist && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > release-evidence/dist.sha256
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: release-build-${{ github.sha }}
+          path: |
+            apps/web/dist/
+            release-evidence/
+          retention-days: 7
+
+  browsers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [preview, subpath, recovery]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium webkit
-      - name: Exercise real skip-link navigation
-        run: pnpm exec playwright test tests/e2e/navigation-integrity.spec.ts
+      - name: Build normal production output
+        run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Verify the normal preview
+        if: matrix.mode == 'preview'
+        run: pnpm test:e2e
+      - name: Verify actual project-subpath hosting without isolation headers
+        if: matrix.mode == 'subpath'
+        shell: bash
+        run: |
+          node scripts/serve-release-fixture.mjs apps/web/dist 4174 > release-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:4174/neural-network-playground/ > /dev/null; then
+              ready=1
+              break
+            fi
+            kill -0 "$fixture_pid" || { cat release-fixture.log; exit 1; }
+            sleep 1
+          done
+          test "$ready" -eq 1 || { cat release-fixture.log; exit 1; }
+          PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
+      - name: Verify opt-in fault recovery
+        if: matrix.mode == 'recovery'
+        run: pnpm test:e2e:recovery
+      - name: Preserve fault-enabled report before the normal rebuild
+        if: always() && matrix.mode == 'recovery'
+        shell: bash
+        run: |
+          mkdir -p recovery-evidence
+          if [ -d playwright-report ]; then mv playwright-report recovery-evidence/playwright-report; fi
+          if [ -d test-results ]; then mv test-results recovery-evidence/test-results; fi
+      - name: Rebuild without fault injection
+        if: always() && matrix.mode == 'recovery'
+        run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Verify restored normal output ignores fault requests
+        if: always() && matrix.mode == 'recovery'
+        run: pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: navigation-contract-${{ github.sha }}
+          name: release-browser-${{ matrix.mode }}-${{ github.sha }}
           path: |
             playwright-report/
             test-results/
+            recovery-evidence/
+            release-fixture.log
+          retention-days: 7
+
+  performance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Record performance host
+        shell: bash
+        run: |
+          mkdir -p performance-evidence
+          git rev-parse HEAD > performance-evidence/source-sha.txt
+          node --version > performance-evidence/node-version.txt
+          lscpu > performance-evidence/cpu.txt
+          uname -a > performance-evidence/os.txt
+      - name: Run unchanged performance gates
+        shell: bash
+        run: pnpm test:perf 2>&1 | tee performance-evidence/performance.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-performance-${{ github.sha }}
+          path: performance-evidence/
           retention-days: 7
