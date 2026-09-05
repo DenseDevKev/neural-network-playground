@@ -1,19 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
 import process from 'node:process';
+import { resolvePlaywrightTarget } from './scripts/playwright-target.mjs';
 
 const isCI = Boolean(process.env.CI);
-const requestedPort = process.env.PLAYWRIGHT_PORT ?? '4173';
-if (!/^\d+$/.test(requestedPort)) {
-    throw new Error('PLAYWRIGHT_PORT must be an integer between 1 and 65535');
-}
-const port = Number(requestedPort);
-if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
-    throw new Error('PLAYWRIGHT_PORT must be an integer between 1 and 65535');
-}
-const baseURL = `http://127.0.0.1:${port}`;
+const target = resolvePlaywrightTarget(process.env);
+const baseURL = target.baseURL;
 
 export default defineConfig({
     testDir: './tests/e2e',
+    metadata: { targetMode: target.mode, baseURL },
     timeout: 45_000,
     expect: {
         timeout: 10_000,
@@ -43,10 +38,10 @@ export default defineConfig({
             use: { ...devices['Desktop Safari'] },
         },
     ],
-    webServer: {
-        command: `pnpm --filter @nn-playground/web preview --host 127.0.0.1 --port ${port} --strictPort`,
+    webServer: target.mode === 'local' ? {
+        command: `pnpm --filter @nn-playground/web preview --host 127.0.0.1 --port ${target.port} --strictPort`,
         url: baseURL,
         reuseExistingServer: false,
         timeout: 120_000,
-    },
+    } : undefined,
 });
