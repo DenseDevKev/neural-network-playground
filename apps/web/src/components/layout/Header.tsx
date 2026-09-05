@@ -247,11 +247,14 @@ export const Header = memo(function Header({
                 </label>
                 <span
                     id="forge-audience-mode-profile-description"
-                    className="forge-audience-mode__note"
+                    className="forge-audience-mode__note sr-only"
                 >
                     {audienceProfile.description}
                 </span>
-                <span id="forge-audience-mode-description" className="forge-audience-mode__note">
+                <span
+                    id="forge-audience-mode-description"
+                    className="forge-audience-mode__note sr-only"
+                >
                     Profiles change visible tools and guidance only.
                 </span>
                 <span

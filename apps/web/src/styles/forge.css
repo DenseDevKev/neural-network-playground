@@ -655,6 +655,9 @@
         0 0 0 4px var(--border-focus),
         0 0 18px rgba(188, 135, 254, 0.28);
 }
+.header__mobile-play {
+    display: none;
+}
 @keyframes forge-flash {
     0%, 100% { transform: scale(1); text-shadow: 0 0 0 transparent; }
     50%       { transform: scale(1.05); text-shadow: 0 0 8px currentColor; }
@@ -2393,7 +2396,7 @@
     --forge-instrument-line-strong: rgba(160, 154, 210, 0.24);
     --forge-instrument-hover: rgba(129, 236, 255, 0.07);
     --forge-instrument-active: rgba(155, 137, 255, 0.16);
-    grid-template-rows: 52px minmax(0, 1fr) 24px;
+    grid-template-rows: 60px minmax(0, 1fr) 24px;
 }
 
 .forge-shell,
@@ -2419,7 +2422,7 @@
 
 .forge-topbar {
     min-width: 0;
-    gap: 10px;
+    gap: 6px;
     background: rgba(9, 10, 14, 0.985);
     border-bottom-color: rgba(160, 154, 210, 0.16);
     box-shadow: none;
@@ -2767,6 +2770,22 @@
     }
 }
 
+@media (min-width: 901px) and (max-width: 1400px) {
+    .forge-shell {
+        grid-template-rows: 100px minmax(0, 1fr) 24px;
+    }
+    .forge-topbar {
+        flex-wrap: wrap;
+        min-height: 100px;
+        padding-block: 8px;
+    }
+    .forge-topbar__metrics {
+        order: 3;
+        width: 100%;
+        overflow-x: auto;
+    }
+}
+
 @media (max-width: 900px) {
     .forge-shell {
         grid-template-rows: auto minmax(0, 1fr) 24px;
@@ -2839,6 +2858,7 @@
         line-height: 1.2;
     }
     .header__mobile-play {
+        display: inline-flex;
         width: 44px;
         min-width: 44px;
         height: 44px;

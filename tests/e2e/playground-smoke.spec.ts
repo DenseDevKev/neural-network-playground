@@ -569,6 +569,54 @@ test('concept help remains fully visible in the desktop Run workspace', async ({
     await expectConceptHelpInViewport(page, 'Learning rate');
 });
 
+for (const width of [1440, 1401, 1280, 950, 901] as const) {
+    test.describe(`${width}px desktop header`, () => {
+        test.use({ viewport: { width, height: 720 } });
+
+        test('keeps every global control inside the header and viewport', async ({ page }) => {
+            await page.route('https://fonts.googleapis.com/**', (route) => (
+                route.fulfill({ contentType: 'text/css', body: '' })
+            ));
+            await loadPlayground(page);
+
+            const geometry = await page.getByRole('banner').evaluate((header) => {
+                const headerRect = header.getBoundingClientRect();
+                const controls = Array.from(header.querySelectorAll<HTMLElement>('button, select'))
+                    .filter((control) => getComputedStyle(control).display !== 'none')
+                    .map((control) => {
+                        const rect = control.getBoundingClientRect();
+                        return {
+                            name: control.getAttribute('aria-label')
+                                ?? control.textContent?.trim()
+                                ?? control.tagName,
+                            insideHeader: rect.left >= headerRect.left - 1
+                                && rect.right <= headerRect.right + 1
+                                && rect.top >= headerRect.top - 1
+                                && rect.bottom <= headerRect.bottom + 1,
+                            insideViewport: rect.left >= -1
+                                && rect.right <= window.innerWidth + 1
+                                && rect.top >= -1
+                                && rect.bottom <= window.innerHeight + 1,
+                        };
+                    });
+                return {
+                    horizontalOverflow: header.scrollWidth - header.clientWidth,
+                    verticalOverflow: header.scrollHeight - header.clientHeight,
+                    controls,
+                };
+            });
+
+            expect(geometry.horizontalOverflow).toBeLessThanOrEqual(1);
+            expect(geometry.verticalOverflow).toBeLessThanOrEqual(1);
+            expect(geometry.controls.length).toBeGreaterThanOrEqual(8);
+            expect(geometry.controls.filter((control) => !control.insideHeader))
+                .toEqual([]);
+            expect(geometry.controls.filter((control) => !control.insideViewport))
+                .toEqual([]);
+        });
+    });
+}
+
 test('reduced motion collapses shell animation and transition timing', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await loadPlayground(page);
