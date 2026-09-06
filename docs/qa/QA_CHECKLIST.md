@@ -1,163 +1,198 @@
-# QA Checklist
+# NN.FORGE QA checklist
 
-Use this checklist for local verification, browser smoke tests, accessibility passes, and release handoffs. It complements automated tests; it does not replace them.
+This checklist separates local developer checks from release qualification. Do not mark a release green from only one layer.
 
-## Canonical Commands
-
-Run from the repository root:
+## 1. Fast local correctness
 
 ```bash
-pnpm --filter @nn-playground/web exec tsc --noEmit
-pnpm test
+pnpm install --frozen-lockfile
+node --test scripts/*.test.mjs
 pnpm lint
+pnpm typecheck
+pnpm test
 pnpm build
+pnpm test:bundle
 ```
 
-For performance-sensitive or runtime-adjacent changes, also run:
+Expected current package counts at the September 6 release baseline:
+
+- engine: 497 tests;
+- shared: 334 tests;
+- web: 1,043 tests;
+- total package tests: 1,874;
+- helper tests after performance comparator: 88.
+
+The build may still print Vite's generic configured 200 kB chunk warning. The reviewed JavaScript release contract is `pnpm test:bundle`, not the generic warning.
+
+## 2. JavaScript bundle contract
+
+`pnpm test:bundle` must pass all fixed limits:
+
+| Dimension | Maximum gzip bytes |
+|---|---:|
+| application entry | 152,245 |
+| InspectionPanel | 7,373 |
+| all JavaScript including worker | 234,161 |
+
+The checker fails closed for missing/ambiguous entry or Inspection chunks, symlinks/traversal, invalid measurements, and one-byte overruns. CSS/fonts are not part of these JavaScript dimensions.
+
+## 3. Normal browser suite
+
+```bash
+pnpm test:e2e
+```
+
+This launches the normal local isolated preview and runs Chromium + WebKit with zero retries.
+
+Current release-baseline expectation:
+
+- 42 expected/passed;
+- 6 intentional skips;
+- 0 unexpected;
+- 0 flaky.
+
+The six skips are four external-hosting-only contracts plus two fault-enabled cases excluded from a normal build.
+
+## 4. Real static project-subpath suite
+
+Build normally, start the checked-in fixture, then point Playwright to its project base:
+
+```bash
+pnpm build
+node scripts/serve-release-fixture.mjs apps/web/dist 4174
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
+```
+
+Expected current release-baseline result:
+
+- 46 expected/passed;
+- 2 intentional fault-enabled skips;
+- 0 unexpected;
+- 0 flaky.
+
+Required hosting evidence includes:
+
+- actual worker request below the project path;
+- non-isolated fallback operation;
+- lazy Inspection/Code/History/Configuration chunks;
+- paired evaluation after a manual step;
+- canonical V2 shared recipe URL;
+- fresh-context reload with same recipe/architecture and fresh runtime;
+- no collapse from project path to origin root;
+- same-origin local font resources with no Google-font requests.
+
+## 5. Fault recovery
+
+```bash
+pnpm test:e2e:recovery
+```
+
+The fault-enabled build must pass the recovery scenario in Chromium and WebKit. After that test, rebuild without `VITE_E2E_FAULTS` and verify the normal build ignores fault requests:
+
+```bash
+env -u VITE_E2E_FAULTS pnpm build
+pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
+```
+
+Do not suppress console/resource failures or fake successful font responses to make recovery green.
+
+## 6. Performance — local calibration vs release qualification
+
+### Local historical absolute gates
 
 ```bash
 pnpm test:perf
 ```
 
-For checked-in Chromium and WebKit smoke coverage, build first and then run:
+This still executes the historical engine constants plus the worker scientific-trust tests. The engine constants were calibrated from five medians on an isolated development machine and remain unchanged. A different host can fail those frozen engine values even when no regression exists.
+
+Do **not** raise those constants merely because another machine is slower.
+
+### Release performance gate
+
+The release workflow uses the historical policy itself, not a foreign machine's absolute result:
+
+1. exact intake baseline and candidate run on the same `macos-15` Apple Silicon runner;
+2. five complete runs per revision;
+3. execution order alternates baseline/candidate;
+4. engine candidate median must be <= 120% of same-runner baseline median for:
+   - predictGrid;
+   - predictGridInto;
+   - predictGridWithNeurons;
+   - predictGridWithNeuronsInto;
+   - Adam + L2 + clipping;
+   - SGD zero-gradient adapter;
+5. forced paired evaluation must remain <= 250 ms;
+6. save capture must remain <= 500 ms;
+7. exact SHAs, environment, exits, raw logs, and comparison output are retained.
+
+The comparator is `scripts/compare-performance-reference.mjs`. It requires exactly five baseline and five candidate logs and fails closed for incomplete/ambiguous evidence.
+
+## 7. State-integrity checks
+
+Before accepting a release, explicitly verify:
+
+- skip-link keyboard and pointer activation do not change the V2 experiment URL;
+- skip-link activation does not change generation, revision, or training step;
+- Workspace profile changes do not mutate the experiment;
+- Advanced Tools disclosure does not mutate the experiment;
+- saved-run records do not imply trained-parameter persistence;
+- Apply Saved Recipe creates the recipe state rather than pretending to restore a model;
+- paired train/test evaluation remains distinct from batch/EMA evidence;
+- evaluation age/drift language remains present where required.
+
+## 8. Accessibility
+
+For normal release checks:
+
+- keyboard-only navigation works;
+- skip link is usable and preserves the experiment hash;
+- focus remains visible;
+- major controls have appropriate accessible names;
+- evidence tabs/panels expose correct semantics;
+- axe checks remain green;
+- reduced-motion behavior does not remove essential state feedback;
+- 200% zoom remains usable.
+
+Precision Lab acceptance additionally requires 44 px required touch targets and the viewport/layout-stability matrix documented in the roadmap.
+
+## 9. Release-verification workflow
+
+Before merge, the exact candidate SHA must have a green `Release verification` run with all six jobs:
+
+- source-evidence;
+- correctness;
+- browsers (preview);
+- browsers (subpath);
+- browsers (recovery);
+- performance.
+
+Do not treat a previous SHA's green run as proof for a later code/config change.
+
+## 10. After merge
+
+Require normal `main` CI to pass. Record the resulting `main` SHA.
+
+The existing deployment workflow consumes the successful `main` CI SHA; do not manually deploy an untested different revision.
+
+## 11. Live deployment verification
+
+Once GitHub Pages reports an actual `page_url`, run the existing browser suite against it:
 
 ```bash
-pnpm build
-pnpm test:e2e
+PLAYWRIGHT_BASE_URL=<actual-page-url> pnpm test:e2e
 ```
 
-Release browser runs must use zero retries. When diagnosing one engine, retain
-the same assertions and run it explicitly:
+At minimum verify in Chromium and WebKit:
 
-```bash
-pnpm exec playwright test --project=chromium --retries=0
-pnpm exec playwright test --project=webkit --retries=0
-```
+- initial load;
+- no page/console errors;
+- same-origin fonts;
+- training worker / non-isolated fallback;
+- step/evaluation flow;
+- Inspection, Code, History, Configuration;
+- shared V2 recipe URL and fresh-context reload;
+- skip-link state integrity;
+- project subpath preservation.
 
-Useful targeted checks:
-
-```bash
-pnpm --filter @nn-playground/web test
-pnpm --filter @nn-playground/shared test
-pnpm --filter @nn-playground/engine test
-pnpm --filter @nn-playground/web dev --host 127.0.0.1
-```
-
-## Browser QA Modes
-
-- Mode A: checked-in Playwright QA through `pnpm test:e2e` (Chromium and WebKit).
-- Mode B: agent-assisted browser QA with the Codex Browser plugin or equivalent visible browser tooling.
-- Mode C: pending human verification when no browser tooling is available.
-
-Do not claim browser QA passed unless Mode A or Mode B was actually executed.
-
-## Browser Smoke Checklist
-
-- App opens at the local dev URL without a blank page.
-- No framework error overlay is visible.
-- Browser console has no errors.
-- Dataset controls can be opened and changed.
-- A preset can be selected or a lesson can apply a preset.
-- Training can start and pause.
-- Step and reset controls respond.
-- Decision boundary is visible after data exists.
-- Loss panel is reachable.
-- Network visualization is visible.
-- Confusion, inspection, code export, history, and lesson surfaces remain reachable.
-- Changed UI can be reached by mouse.
-- Changed UI can be reached by keyboard.
-- Focus remains visible and predictable after changed interactions.
-- Beginner, Explore, and Lab expose exactly their documented core tools.
-- Advanced Tools reveals the full applicable union without duplicating controls.
-- Opening Advanced Tools alone does not request inspection/confusion artifacts.
-- Profile/disclosure changes preserve the URL/hash, recipe, training/model step,
-  checkpoint timeline, saved-run count, and selected code-export tab.
-- Hidden configured values remain summarized and have a clear Advanced Tools
-  recovery path.
-
-## Responsive / Compact Checklist
-
-- Check at 320px and at a compact viewport such as 390x844.
-- Repeat the primary flow at 200% browser zoom or equivalent text enlargement.
-- Dock layout remains usable.
-- Unsupported layout buttons are disabled rather than silently failing.
-- Tabs and action buttons do not overflow their containers.
-- Training controls remain reachable.
-- Guided lesson drawer can expand/collapse.
-- No text visibly overlaps adjacent controls.
-- No page-level horizontal overflow hides profile or disclosure controls.
-- Pointer targets remain at least 44 by 44 CSS pixels where the design requires
-  compact touch interaction.
-
-## Accessibility Checklist
-
-- Prefer semantic HTML controls before custom ARIA.
-- New buttons use `type="button"` unless submitting a form.
-- Button accessible names are action-oriented and concise.
-- Extra educational copy uses descriptions or nearby text, not oversized labels.
-- Keyboard activation works for mouse-clickable features.
-- Global shortcuts do not fire while a focused control handles Enter, Space, or text input.
-- Canvas-heavy surfaces include text alternatives or adjacent summaries.
-- Status and error changes are announced through existing live regions.
-- Dynamic metric updates should not create noisy live announcements.
-- Reduced-motion users should not receive nonessential animation effects.
-- Add `jest-axe` coverage for new accessible surfaces when practical.
-- Landmark and heading order describes one coherent workspace.
-- Disclosure controls expose correct expanded state and controlled-region IDs.
-- Roving evidence tabs support Arrow keys, Home, and End with one tab stop.
-- Closing drawers, popovers, and Advanced Tools restores focus predictably.
-- Profile changes use a concise polite announcement without noisy metric updates.
-- Text and controls meet contrast requirements, and status is not conveyed only
-  through color.
-- Validation errors identify the affected field through text and programmatic
-  association.
-- Critical instructions and definitions remain available without hover.
-
-## Regression Sweep
-
-After each wave, confirm:
-
-- Prior Wave 1 explanation action cards still render and focus existing panels.
-- Prior Wave 2 lessons can still start from the selector.
-- Training workflow still runs.
-- Presets still apply.
-- Dataset changes still reset/rebuild safely.
-- URL sharing and import/export are not touched unless the slice explicitly changes them.
-- Worker protocol, frame buffer, SharedArrayBuffer, WebGPU, persistence, and serialization remain unchanged unless approved.
-
-## Screenshot / Evidence Expectations
-
-Record browser QA in `docs/qa/browser-qa/`.
-
-Include:
-
-- Date.
-- Commit or pending commit.
-- URL.
-- Browser/QA mode.
-- Exact steps.
-- Expected and actual results.
-- Console error status.
-- Screenshot paths if captured.
-- Accessibility notes.
-- Browser engine/version, viewport, DPR, zoom/text size, input method, and
-  reduced-motion preference.
-- Before/after state invariants for navigation-only changes.
-- Playwright retry count and report/trace path for automated runs.
-- Host-load or tooling contamination notes when timing evidence is suspect.
-- Pass, fail, or pending human verification result.
-
-## Browser Support Policy
-
-The app is a static Vite/React app intended for modern evergreen desktop and mobile browsers. Browser QA should prioritize:
-
-- Chromium and WebKit through the checked-in Playwright suite for release smoke.
-- Chromium-based browser via the Codex Browser plugin for visible/manual checks.
-- Compact mobile-like viewport for dense layout regressions.
-- Static deployment compatibility with GitHub Pages/base path behavior.
-
-Use semantic roles, accessible names, and observable application state in
-Playwright. Do not mask failures with retries, arbitrary sleeps, browser skips,
-timeout inflation, or weakened assertions. A fast `curl` response does not prove
-the browser completed a scenario; retain Playwright reports and traces as the
-authoritative failure evidence.
+A successful static fixture is not a substitute for this live check, and an expected GitHub Pages URL is not a deployment receipt.

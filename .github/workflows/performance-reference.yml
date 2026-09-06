@@ -1,0 +1,82 @@
+name: Performance reference qualification
+
+on:
+  push:
+    branches: [codex/nn-forge-release-roadmap]
+    paths: [.github/workflows/performance-reference.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ae09b9863ae90f8fb2f62545834fcc138755ba9a
+          path: performance-baseline
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
+        working-directory: performance-baseline
+      - name: Record the reference environment and exact revisions
+        shell: bash
+        run: |
+          mkdir -p performance-reference
+          git rev-parse HEAD > performance-reference/candidate-sha.txt
+          git -C performance-baseline rev-parse HEAD > performance-reference/baseline-sha.txt
+          node --version > performance-reference/node-version.txt
+          pnpm --version > performance-reference/pnpm-version.txt
+          uname -a > performance-reference/os.txt
+          sw_vers >> performance-reference/os.txt
+          sysctl -n machdep.cpu.brand_string > performance-reference/cpu.txt
+          sysctl hw.ncpu hw.memsize >> performance-reference/cpu.txt
+          node -p 'process.arch' >> performance-reference/cpu.txt
+          test "$(node -p 'process.arch')" = arm64
+          test "$(cat performance-reference/candidate-sha.txt)" = "${{ github.sha }}"
+          test "$(cat performance-reference/baseline-sha.txt)" = "ae09b9863ae90f8fb2f62545834fcc138755ba9a"
+          printf 'pass,revision,exit_code\n' > performance-reference/exits.csv
+      - name: Collect five paired same-runner samples
+        shell: bash
+        run: |
+          for pass in 1 2 3 4 5; do
+            order='baseline candidate'
+            if [ $((pass % 2)) -eq 0 ]; then order='candidate baseline'; fi
+            for revision in $order; do
+              directory=.
+              if [ "$revision" = baseline ]; then directory=performance-baseline; fi
+              { date -u; uptime; ps -Ao pid,pcpu,comm; } > "performance-reference/host-${pass}-${revision}.txt"
+              set +e
+              (cd "$directory" && pnpm test:perf) 2>&1 | tee "performance-reference/${pass}-${revision}.log"
+              result=${PIPESTATUS[0]}
+              set -e
+              printf '%s,%s,%s\n' "$pass" "$revision" "$result" >> performance-reference/exits.csv
+            done
+          done
+      - name: Enforce the historical same-machine regression contract
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/compare-performance-reference.mjs \
+            performance-reference \
+            ae09b9863ae90f8fb2f62545834fcc138755ba9a \
+            "${{ github.sha }}" | tee performance-reference/comparison.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-reference-${{ github.sha }}
+          path: performance-reference/
+          retention-days: 7

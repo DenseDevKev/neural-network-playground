@@ -1,0 +1,208 @@
+name: Release verification
+
+on:
+  push:
+    branches: [codex/nn-forge-release-roadmap]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture exact tracked source
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-source"
+          git rev-parse HEAD > "$RUNNER_TEMP/release-source/source-sha.txt"
+          git archive --format=tar.gz --output="$RUNNER_TEMP/release-source/source.tar.gz" HEAD
+          sha256sum "$RUNNER_TEMP/release-source/source.tar.gz" > "$RUNNER_TEMP/release-source/source.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-source-${{ github.sha }}
+          path: ${{ runner.temp }}/release-source/
+          retention-days: 7
+
+  correctness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Verify infrastructure helpers
+        run: node --test scripts/*.test.mjs
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Build normal production output
+        run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Check production bundle budgets
+        run: pnpm test:bundle
+      - name: Record exact normal build
+        shell: bash
+        run: |
+          mkdir -p release-evidence
+          git rev-parse HEAD > release-evidence/source-sha.txt
+          node --version > release-evidence/node-version.txt
+          pnpm --version > release-evidence/pnpm-version.txt
+          (cd apps/web/dist && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > release-evidence/dist.sha256
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: release-build-${{ github.sha }}
+          path: |
+            apps/web/dist/
+            release-evidence/
+          retention-days: 7
+
+  browsers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [preview, subpath, recovery]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Build normal production output
+        run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Verify the normal preview
+        if: matrix.mode == 'preview'
+        run: pnpm test:e2e
+      - name: Verify actual project-subpath hosting without isolation headers
+        if: matrix.mode == 'subpath'
+        shell: bash
+        run: |
+          node scripts/serve-release-fixture.mjs apps/web/dist 4174 > "release-fixture.log" 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:4174/neural-network-playground/ > /dev/null; then
+              ready=1
+              break
+            fi
+            kill -0 "$fixture_pid" || { cat "release-fixture.log"; exit 1; }
+            sleep 1
+          done
+          test "$ready" -eq 1 || { cat "release-fixture.log"; exit 1; }
+          PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
+      - name: Verify opt-in fault recovery
+        if: matrix.mode == 'recovery'
+        run: pnpm test:e2e:recovery
+      - name: Preserve fault-enabled report before the normal rebuild
+        if: always() && matrix.mode == 'recovery'
+        shell: bash
+        run: |
+          mkdir -p recovery-evidence
+          if [ -d playwright-report ]; then mv playwright-report recovery-evidence/playwright-report; fi
+          if [ -d test-results ]; then mv test-results recovery-evidence/test-results; fi
+      - name: Rebuild without fault injection
+        if: always() && matrix.mode == 'recovery'
+        run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Verify restored normal output ignores fault requests
+        if: always() && matrix.mode == 'recovery'
+        run: pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-browser-${{ matrix.mode }}-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+            recovery-evidence/
+            release-fixture.log
+          retention-days: 7
+
+  performance:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ae09b9863ae90f8fb2f62545834fcc138755ba9a
+          path: performance-baseline
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
+        working-directory: performance-baseline
+      - name: Record the performance host and exact revisions
+        shell: bash
+        run: |
+          mkdir -p performance-evidence
+          git rev-parse HEAD > performance-evidence/candidate-sha.txt
+          git -C performance-baseline rev-parse HEAD > performance-evidence/baseline-sha.txt
+          node --version > performance-evidence/node-version.txt
+          pnpm --version > performance-evidence/pnpm-version.txt
+          uname -a > performance-evidence/os.txt
+          sw_vers >> performance-evidence/os.txt
+          sysctl -n machdep.cpu.brand_string > performance-evidence/cpu.txt
+          sysctl hw.ncpu hw.memsize >> performance-evidence/cpu.txt
+          node -p 'process.arch' >> performance-evidence/cpu.txt
+          test "$(node -p 'process.arch')" = arm64
+          test "$(cat performance-evidence/candidate-sha.txt)" = "${{ github.sha }}"
+          test "$(cat performance-evidence/baseline-sha.txt)" = "ae09b9863ae90f8fb2f62545834fcc138755ba9a"
+          printf 'pass,revision,exit_code\n' > performance-evidence/exits.csv
+      - name: Collect five paired same-runner performance samples
+        shell: bash
+        run: |
+          for pass in 1 2 3 4 5; do
+            order='baseline candidate'
+            if [ $((pass % 2)) -eq 0 ]; then order='candidate baseline'; fi
+            for revision in $order; do
+              directory=.
+              if [ "$revision" = baseline ]; then directory=performance-baseline; fi
+              { date -u; uptime; ps -Ao pid,pcpu,comm; } > "performance-evidence/host-${pass}-${revision}.txt"
+              set +e
+              (cd "$directory" && pnpm test:perf) 2>&1 | tee "performance-evidence/${pass}-${revision}.log"
+              result=${PIPESTATUS[0]}
+              set -e
+              printf '%s,%s,%s\n' "$pass" "$revision" "$result" >> performance-evidence/exits.csv
+            done
+          done
+      - name: Enforce the historical same-machine regression contract
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/compare-performance-reference.mjs \
+            performance-evidence \
+            ae09b9863ae90f8fb2f62545834fcc138755ba9a \
+            "${{ github.sha }}" | tee performance-evidence/comparison.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-performance-${{ github.sha }}
+          path: performance-evidence/
+          retention-days: 7
