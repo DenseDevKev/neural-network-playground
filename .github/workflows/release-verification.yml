@@ -137,9 +137,17 @@ jobs:
           retention-days: 7
 
   performance:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ae09b9863ae90f8fb2f62545834fcc138755ba9a
+          path: performance-baseline
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -148,35 +156,50 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Record performance host
+      - run: pnpm install --frozen-lockfile
+        working-directory: performance-baseline
+      - name: Record the performance host and exact revisions
         shell: bash
         run: |
           mkdir -p performance-evidence
-          git rev-parse HEAD > performance-evidence/source-sha.txt
+          git rev-parse HEAD > performance-evidence/candidate-sha.txt
+          git -C performance-baseline rev-parse HEAD > performance-evidence/baseline-sha.txt
           node --version > performance-evidence/node-version.txt
-          lscpu > performance-evidence/cpu.txt
+          pnpm --version > performance-evidence/pnpm-version.txt
           uname -a > performance-evidence/os.txt
-      - name: Run unchanged performance gates
-        shell: bash
-        run: pnpm test:perf 2>&1 | tee performance-evidence/performance.log
-      - name: Check out the pinned performance baseline
-        if: always()
-        uses: actions/checkout@v4
-        with:
-          ref: ae09b9863ae90f8fb2f62545834fcc138755ba9a
-          path: performance-baseline
-          persist-credentials: false
-      - name: Install baseline dependencies
-        if: always()
-        working-directory: performance-baseline
-        run: pnpm install --frozen-lockfile
-      - name: Run baseline gates on the same runner without relaxing limits
-        if: always()
-        working-directory: performance-baseline
+          sw_vers >> performance-evidence/os.txt
+          sysctl -n machdep.cpu.brand_string > performance-evidence/cpu.txt
+          sysctl hw.ncpu hw.memsize >> performance-evidence/cpu.txt
+          node -p 'process.arch' >> performance-evidence/cpu.txt
+          test "$(node -p 'process.arch')" = arm64
+          test "$(cat performance-evidence/candidate-sha.txt)" = "${{ github.sha }}"
+          test "$(cat performance-evidence/baseline-sha.txt)" = "ae09b9863ae90f8fb2f62545834fcc138755ba9a"
+          printf 'pass,revision,exit_code\n' > performance-evidence/exits.csv
+      - name: Collect five paired same-runner performance samples
         shell: bash
         run: |
-          git rev-parse HEAD > ../performance-evidence/baseline-sha.txt
-          pnpm test:perf 2>&1 | tee ../performance-evidence/baseline-performance.log
+          for pass in 1 2 3 4 5; do
+            order='baseline candidate'
+            if [ $((pass % 2)) -eq 0 ]; then order='candidate baseline'; fi
+            for revision in $order; do
+              directory=.
+              if [ "$revision" = baseline ]; then directory=performance-baseline; fi
+              { date -u; uptime; ps -Ao pid,pcpu,comm; } > "performance-evidence/host-${pass}-${revision}.txt"
+              set +e
+              (cd "$directory" && pnpm test:perf) 2>&1 | tee "performance-evidence/${pass}-${revision}.log"
+              result=${PIPESTATUS[0]}
+              set -e
+              printf '%s,%s,%s\n' "$pass" "$revision" "$result" >> performance-evidence/exits.csv
+            done
+          done
+      - name: Enforce the historical same-machine regression contract
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/compare-performance-reference.mjs \
+            performance-evidence \
+            ae09b9863ae90f8fb2f62545834fcc138755ba9a \
+            "${{ github.sha }}" | tee performance-evidence/comparison.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
