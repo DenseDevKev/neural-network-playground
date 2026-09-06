@@ -53,6 +53,7 @@ const DEFAULT_LAYOUT_STATE = {
     activeEvidenceView: 'boundary' as EvidenceViewId,
     audienceMode: 'explore' as AudienceMode,
     advancedToolsOpen: false,
+    buildContextOpen: false,
 
     // Deprecated compatibility fields for older helper modules and tests.
     layout: 'dock' as LayoutVariant,
@@ -79,6 +80,7 @@ export interface LayoutStore {
     activeEvidenceView: EvidenceViewId;
     audienceMode: AudienceMode;
     advancedToolsOpen: boolean;
+    buildContextOpen: boolean;
 
     // Deprecated compatibility fields. User-facing UI should prefer view,
     // activeRecipeSection, and activeEvidenceView.
@@ -97,6 +99,8 @@ export interface LayoutStore {
     setActiveEvidenceView: (view: EvidenceViewId) => void;
     setAudienceMode: (mode: AudienceMode) => void;
     setAdvancedToolsOpen: (open: boolean) => void;
+    setBuildContextOpen: (open: boolean) => void;
+    selectBuildContext: (section: RecipeSectionId) => void;
     openAdvancedRecipeSection: (section: BuildModuleId) => void;
 
     setLayout: (layout: LayoutVariant) => void;
@@ -151,6 +155,7 @@ function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STA
         activeEvidenceView,
         audienceMode,
         advancedToolsOpen,
+        buildContextOpen: false,
         layout: DEFAULT_LAYOUT_STATE.layout,
         phase: view,
         activeTabLeft: activeRecipeSection,
@@ -175,10 +180,17 @@ export function createLayoutStore() {
             (set) => ({
                 ...DEFAULT_LAYOUT_STATE,
 
-                setView: (view) => set({ view, phase: view }),
+                setView: (view) => set((state) => ({
+                    view,
+                    phase: view,
+                    buildContextOpen: view === 'run' ? false : state.buildContextOpen,
+                })),
                 setActiveRecipeSection: (activeRecipeSection) => set((state) => ({
+                    view: 'build',
+                    phase: 'build',
                     activeRecipeSection,
                     activeTabLeft: activeRecipeSection,
+                    buildContextOpen: true,
                     advancedToolsOpen: state.advancedToolsOpen
                         || !isRecipeSectionVisible(state.audienceMode, false, activeRecipeSection),
                 })),
@@ -241,19 +253,37 @@ export function createLayoutStore() {
                         activeTabRight: activeEvidenceView,
                     };
                 }),
+                setBuildContextOpen: (buildContextOpen) => set({ buildContextOpen }),
+                selectBuildContext: (activeRecipeSection) => set((state) => ({
+                    view: 'build',
+                    phase: 'build',
+                    activeRecipeSection,
+                    activeTabLeft: activeRecipeSection,
+                    buildContextOpen: true,
+                    advancedToolsOpen: state.advancedToolsOpen
+                        || !isRecipeSectionVisible(state.audienceMode, false, activeRecipeSection),
+                })),
                 openAdvancedRecipeSection: (activeRecipeSection) => set({
                     view: 'build',
                     phase: 'build',
                     activeRecipeSection,
                     activeTabLeft: activeRecipeSection,
+                    buildContextOpen: true,
                     advancedToolsOpen: true,
                 }),
 
                 setLayout: (layout) => set({ layout }),
-                setPhase: (phase) => set({ view: phase, phase }),
+                setPhase: (phase) => set((state) => ({
+                    view: phase,
+                    phase,
+                    buildContextOpen: phase === 'run' ? false : state.buildContextOpen,
+                })),
                 setActiveTabLeft: (activeTabLeft) => set((state) => ({
+                    view: 'build',
+                    phase: 'build',
                     activeRecipeSection: activeTabLeft,
                     activeTabLeft,
+                    buildContextOpen: true,
                     advancedToolsOpen: state.advancedToolsOpen
                         || !isRecipeSectionVisible(state.audienceMode, false, activeTabLeft),
                 })),
