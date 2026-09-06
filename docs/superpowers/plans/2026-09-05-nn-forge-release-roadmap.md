@@ -1,182 +1,202 @@
 # NN.FORGE consolidated release and product roadmap
 
-> Execute reviewed tasks in dependency order with Superpowers executing-plans,
-> test-driven-development, and verification-before-completion. A failed or
-> unperformed gate must remain explicit.
+**Updated:** September 6, 2026  
+**Product authority before this release:** `main` at `ae09b9863ae90f8fb2f62545834fcc138755ba9a`  
+**Execution branch:** `codex/nn-forge-release-roadmap`  
+**Latest fully qualified code SHA before this documentation-only consolidation:** `fbae4b98a71b86bdf704a3d8896ccc8f0b92b4a0`
 
-**Goal:** Finish one reliable release of the existing product, then integrate one
-coherent Precision Lab presentation—not a collection of competing product modes.
+This file is the canonical execution order. A checked implementation on a branch is not a release until it is accepted into `main`, and a `main` commit is not a deployed release until the actual deployment succeeds and its live URL is verified.
 
-**Product authority:** `main`, intake commit
-`ae09b9863ae90f8fb2f62545834fcc138755ba9a`.
-**Execution branch:** `codex/nn-forge-release-roadmap`.
-**Recorded code qualification:** `fba63307cd31a7646af15dfb4fff95825dff02f9`.
-See the [verification record](../verification/2026-09-05-release-roadmap.md) for
-actual run IDs, measurements, and limitations. Later documentation is not a new
-claim that this code has been deployed.
+## Product invariants
 
-## Architecture and authorization
+Preserve the product state model:
 
-Keep the existing prepared V2 experiment, engine, training hook, worker,
-evaluation provenance, and saved-record contracts. BuildRunShell remains the
-production composition until a fully reviewed replacement is accepted. Branch
-code/docs execution was requested; publication, visibility changes, historical
-merges, branch deletion, and unverified advancement of main were not authorized.
+`Current recipe -> Trained snapshot -> Active run -> Evidence -> Saved runs`
 
-Preserve Current recipe -> Trained snapshot -> Active run -> Evidence -> Saved
-runs. Navigation/profile/disclosure must preserve the recipe, model generation
-and revision, step, checkpoint timeline, saved records, export selection, and
-experiment URL. Batch/EMA and full-split train/test evaluation remain separate.
+The following are release constraints, not optional presentation preferences:
 
-No math, schema, worker protocol, persistence format, evaluation cadence, blanket
-code splitting, or relaxed thresholds are part of release qualification.
-**Narrow dependency amendment:** Q2 adds only exactly pinned Inter and Space
-Grotesk Fontsource 5.3.0 packages to remove a reproduced external-font reload
-failure. This replaces the earlier absolute no-new-dependencies rule for that
-bounded correction only. No external UI framework or backend is introduced.
+- Navigation, workspace profile, disclosure, and focus changes must not mutate recipe, model generation/revision, step, checkpoints, saved records, code-export selection, or the experiment URL.
+- The V2 hash is experiment state. Shell navigation must not replace it.
+- Batch/EMA signals remain distinct from full-split paired train/test evaluations.
+- Evaluation age and recipe drift remain visible where applicable.
+- Saved runs contain recipe/evidence, not trained parameters. Applying a saved recipe is not model restoration.
+- Checkpoint restoration does not promise an identical future stochastic trajectory.
+- Scientific evaluation cadence may not be reduced merely to improve presentation performance.
+- `useTraining` remains the worker-command owner; UI layout state remains separate from experiment state.
+- Historical branches/prototypes are evidence only unless a specific missing dependency is established.
+- The end state has one production shell, not competing Build/Run and Precision Lab products.
 
-## Current finite sequence
+## Release baseline sequence
 
-| Stage | Status at the recorded code qualification | Exit condition |
+| Stage | Status | Exit condition |
 |---|---|---|
-| R0 — Source authority | Completed | Private access, exact SHA, one isolated branch, immutable source evidence |
-| R1 — Browser targets | Implemented and verified | Explicit targets fail closed and retain project paths; local defaults remain |
-| R2 — Hosting contracts | Implemented and verified against a static fixture | Real worker, lazy panels, canonical recipe reload, and non-isolated training pass in both browsers |
-| R3 — Release qualification | Executed, not fully qualified | Correctness, browser, recovery, and bundle checks pass; engine timing qualification remains open |
-| R4 — Consolidated handoff | Documentation delivered with this record | One roadmap and verification event, accurate QA/deployment commands, historical reconciliation |
-| R5 — Live publication | Owner-gated; not performed | Approved main SHA, settings, deployment provenance, and live browser verification |
-| P1 — Executable gzip limits | Implemented and verified, pulled forward independently | Reviewed fixed JavaScript caps enforced in CI; no shell activation |
-| P2–P7 — Precision Lab integration | Planned, not implemented | Reviewed presentation integration and all acceptance gates below |
+| R0 — Source authority | Complete | Exact intake SHA, isolated execution branch, no reliance on missing local workspace |
+| R1 — Explicit browser targets | Complete | Local defaults retained; external project-path targets validated and fail closed |
+| R2 — Hosting/state contracts | Complete | Real static subpath worker/lazy loads, shared recipe reload, skip-link integrity, WebKit reload safety |
+| R3 — Repeatable qualification | Complete on `fbae4b9` | Correctness, browser, recovery, bundle, and comparative performance gates all green |
+| R4 — Consolidated handoff | Complete with this documentation wave | Roadmap, QA, deployment, and verification evidence agree |
+| R5 — Accept into `main` | Pending | Documentation SHA requalified, reviewed PR merged, resulting `main` CI green |
+| R6 — Live publication | Pending / owner-authorized | Accepted `main` deployed through existing Pages workflow and live Chromium/WebKit verification passes |
+| P1 — Executable JS bundle limits | Complete | Fixed reviewed JavaScript gzip caps enforced in CI |
+| P2–P7 — Precision Lab integration | Pending | One production presentation shell with all scientific/state/accessibility contracts retained |
 
-R0 -> R1 -> R2 -> R3 -> R4 -> R5 remains the release order. R4 records failed gates
-rather than hiding them. P1 was a safe guardrail pulled forward; it does not make
-Precision Lab the current product or make R3/R5 complete.
+## Release qualification already implemented
 
-## Release task contracts
+### Explicit Playwright destinations
 
-### R0 — Source authority
+`scripts/playwright-target.mjs` preserves the existing local preview and supports an explicit external base URL without silently falling back to localhost. It preserves project subpaths and rejects credentials, malformed targets, public insecure HTTP targets, query/fragment contamination, whitespace/backslash ambiguity, and conflicting explicit port/base settings.
 
-Files: this plan and `.github/workflows/release-verification.yml`.
-Capture only tracked source using `git archive`, record its full SHA and artifact
-digest, and retain the intake CI/deployment as historical evidence. Main is not
-moved. No previous Mac, dependencies, cache, or unuploaded prototype is required.
+### Real static project-subpath fixture
 
-### R1 — Fail-closed Playwright target
+`scripts/serve-release-fixture.mjs` serves actual `apps/web/dist` bytes at `/neural-network-playground/` without COOP/COEP. It serves correct MIME types, preserves canonical trailing-slash behavior, returns real 404s, rejects traversal/symlink escape, and permits GET/HEAD only.
 
-Files: `scripts/playwright-target.mjs`, `scripts/playwright-target.d.mts`,
-`scripts/playwright-target.test.mjs`, `playwright.config.ts`.
-`resolvePlaywrightTarget(env)` preserves local port validation. An explicit
-`PLAYWRIGHT_BASE_URL` accepts HTTPS or HTTP loopback, rejects credentials,
-query/fragment, malformed input, and simultaneous explicit port. Preserve the
-full project path; external mode never starts or falls back to preview. The
-report identifies the normalized base URL and mode. Acceptance is the real Node
-helper suite plus unchanged Chromium/WebKit/timeouts/retries.
+### Hosting and shared-state contracts
 
-### R2 — Production hosting and state integrity
+The browser suite verifies:
 
-Files: the three existing `tests/e2e/` specifications, new
-`deployment-contract.spec.ts` and `navigation-integrity.spec.ts`, and
-`scripts/serve-release-fixture.mjs` with its Node tests.
-Use relative application navigation. Serve the actual normal build under
-`/neural-network-playground/` with no isolation headers. Require secure-context,
-non-isolated worker loading; step 0 -> step 1 paired evidence; successful lazy
-Inspection/Code/History/Configuration resources; canonical V2 sharing into a
-fresh context with identical recipe/architecture. Preserve original assertions.
-The skip-link correction in `apps/web/src/App.tsx` focuses main without changing
-the experiment fragment; both keyboard and pointer tests preserve model identity
-and step. Do not spoof the worker or substitute successful asset responses.
+- real training worker and lazy chunks beneath the project path;
+- naturally non-isolated operation;
+- paired evaluation after a manual step;
+- Inspection, Code, History, and Configuration surfaces;
+- canonical V2 share URL reload into the same recipe/architecture with a fresh runtime;
+- project path/origin preservation.
 
-### Q2 — Native font reload correction (closed by fresh browser evidence)
+### Skip-link state integrity
 
-Files: `apps/web/index.html`, `apps/web/src/main.tsx`,
-`apps/web/src/styles/fonts.css`, `apps/web/package.json`, `pnpm-lock.yaml`,
-`apps/web/public/font-licenses.txt`, `tests/e2e/font-delivery.spec.ts`.
-Retain Inter 400/500/600/700 and Space Grotesk 400/500/600 from exact package
-versions, loaded through Vite from the application origin. Keep isolation headers
-and the original recovery console assertion. Require actual font-face loading,
-zero remote Google font requests, same-origin/project-path font assets, and two
-native reloads in both browsers. The full normal/subpath/recovery suites must
-pass. Font/CSS transfer size is outside the JavaScript-only budget; no cold-start
-speedup or pixel-identical historical font revision is claimed.
+The old `#main-content` anchor navigation replaced the V2 experiment fragment. The regression now exercises keyboard and pointer activation after a real recipe and training step. The fix prevents default fragment navigation and focuses the existing main landmark without changing experiment state.
 
-### R3 / Q1 — Qualification and the remaining performance gate
+### Same-origin font delivery
 
-Files: `.github/workflows/release-verification.yml`,
-`.github/workflows/performance-reference.yml`, and the verification record.
-Run infrastructure helpers, lint, complete typechecks/unit suite, production
-build, bundle caps, preview, non-isolated fixture, and fault-enabled recovery.
-Preserve the recovery report before a clean rebuild and normal-build inertness
-check. Independent jobs retain failures and artifact digests.
+Inter and Space Grotesk are exactly pinned through Fontsource and served from the application origin. Real Chromium/WebKit font tests require requested faces/weights, native reloads, no Google Fonts requests, and no font/page/console errors. The original strict recovery assertion remains intact. Font license notices ship with the build.
 
-The candidate and intake baseline both failed the unchanged engine timing caps
-on the same Linux runner and across five complete paired collections on a fresh
-virtual Apple M1 runner. All worker evaluation/save budgets passed. No engine or
-benchmark source was changed. Do not call this a proven regression, a performance
-improvement, or a passed gate. The virtual runner is not the prior physical Mac.
+### Executable JavaScript size contract
 
-To close Q1, use a documented reference environment and run baseline and candidate
-with the same Node/pnpm/dependencies/hardware, five complete collections with raw
-results retained. Require all existing absolute gates and the agreed relative
-regression criteria. If the reference baseline still fails, retain the failure
-and resolve the reference-host/budget policy explicitly before any policy change.
-Do not retry until one lucky pass, drop outliers, or silently recalibrate caps.
-No source optimization is prescribed without a demonstrated new code regression.
+`pnpm test:bundle` measures the actual application entry, exactly one InspectionPanel chunk, and all JavaScript including the training worker. It fails closed for missing/ambiguous/symlink/traversal inputs and one-byte overruns.
 
-### R4 — Documentation closure
+Reviewed limits and `fbae4b9` measurements:
 
-Modify `README.md`, `docs/deployment.md`, `docs/qa/QA_CHECKLIST.md`, and this plan.
-Create `docs/superpowers/README.md` and
-`docs/superpowers/verification/2026-09-05-release-roadmap.md`.
-Use a central dated reconciliation index rather than rewriting the original five
-historical documents. Link current commands and executed evidence; distinguish
-branch code from main, fixtures from live hosting, and a successful subset from
-a successful release. Check relative links and `git diff --check`. Do not invent
-an immutable-build comparison after a genuine product fix changed the build.
+| Dimension | Actual gzip bytes | Maximum |
+|---|---:|---:|
+| Application entry | 146,940 | 152,245 |
+| InspectionPanel | 5,414 | 7,373 |
+| All JavaScript including worker | 226,417 | 234,161 |
 
-### R5 — Owner-authorized live release
+## Performance contract — resolved semantics
 
-No application change is prescribed for the original Pages 404. The owner must
-approve public delivery and confirm private-repository Pages eligibility without
-changing source visibility. Only then enable Pages with Source = GitHub Actions.
-Accept reviewed branch work into main only when authorized and qualified. Verify
-the actual CI-tested SHA selected by deployment, artifact digest, run/attempt,
-`page_url`, and timestamp. Execute the external browser suite against that URL.
-A fixture pass is not live verification; a manual dispatch is not proof of prior
-CI. Until publication is approved and verified, R5 remains unperformed.
+The July 11 Scientific Trust baseline did **not** define the frozen engine timing numbers as universal hardware-independent CI limits. It required five baseline runs on the same isolated development machine and accepted a post-change median when it remained at or below **120% of that same-machine baseline median**.
 
-## One later product milestone: Precision Lab
+The old absolute engine constants remain unchanged as historical/local calibration. Release qualification now restores the original semantics reproducibly:
 
-Use the [July 16 design](../specs/2026-07-16-precision-lab-production-integration-design.md)
-and [July 17 detailed plan](2026-07-17-precision-lab-production-integration.md) as
-design evidence. Reconcile older labels such as `Audience mode` with the current
-`Workspace profile`. A missing visual reference is a visual-comparison gate, not
-permission to import mock prototype state or a dependency for release testing.
+1. check out the exact intake baseline and candidate on one `macos-15` Apple Silicon runner;
+2. collect five complete runs for each revision, alternating execution order;
+3. retain raw logs, exits, host metadata, exact SHAs, and outliers;
+4. compare each engine candidate median against `baseline median * 1.20`;
+5. independently require forced paired evaluation <= 250 ms and save capture <= 500 ms.
 
-The original detailed file map and test steps remain in the July 17 plan. The
-following table groups them into independently reviewable slices. Basenames below
-are under `apps/web/src` unless a repository-relative path is specified.
+This is implemented by `scripts/compare-performance-reference.mjs` and enforced by both release verification and the dedicated reference workflow. It does **not** relax or rewrite engine benchmark constants, and no engine/shared implementation was changed to obtain a release pass.
 
-| Slice | Files and change boundary | Required tests and acceptance |
-|---|---|---|
-| P1 — Gzip limits (completed) | `scripts/check-web-bundle-gzip.mjs`, its Node tests, root `package.json`, `.github/workflows/ci.yml` and release workflow | Parse actual entry, require one InspectionPanel chunk, recurse through all JS including worker; reject absent/ambiguous inputs and every one-byte cap overrun. Fixed limits: entry 152245, Inspection 7373, aggregate 234161 bytes. |
-| P2 — Display-safe recipe and shell | `components/layout/precisionLab/` recipe models/hooks/views, `PrecisionLabShell.tsx`, `styles/precisionLab.css`, Header and existing layout actions; July tasks 2–4 | Test null/pending/drift/aged/fresh model precedence; adapt only canonical stores; no raw worker envelopes in shell props. One training-hook owner, correct profile visibility, focus return, and unchanged paused recipe/model/checkpoint/hash/export state. |
-| P3 — Real network selection | `networkSelectionModel.ts`, `useNetworkSelectionController.ts`, `NetworkSelectionDeck.tsx`, Canvas/SVG renderers and painter; July tasks 6–8 | Deterministic strongest-path ranking from real typed arrays, functional Canvas/SVG parity, no copied live grids in React state, selection invalidates on incompatible generation/architecture. Selection must not change the recipe or model. |
-| P4 — One pinned boundary | `useDecisionBoundaryController.ts`, `DecisionBoundaryCanvas.tsx`, `PinnedBoundaryRail.tsx`, `BoundaryEvidencePanel.tsx`, `components/layout/deriveVisualizationDemand.ts`, App; July tasks 9–10 | Exactly one live boundary canvas survives Build/Run and evidence changes; detail view does not duplicate it. Test demand transitions and scientific-state invariants; never lower full-evaluation cadence to satisfy visual performance. |
-| P5 — Production previews and compact operation | `datasetPreviewModel.ts`, `DatasetPreviewCanvas.tsx`, DataPanel, LossChart, ConfusionMatrix, TrainingControls, `useSaveCurrentRun.ts`, RunHistoryPanel; July tasks 5, 11–12 | All eleven previews use deterministic production generators. Test bounded evidence layouts, exact save-artifact retry on failure, user-visible errors, full-split terminology, and current lifecycle actions. No fabricated preview or saved-run state. |
-| P6 — Production acceptance | Tests beside each slice, App/shell integration, `tests/e2e/precision-lab-layout.spec.ts`; July task 13 | At 1437x742, 735x860, 320x844: five seconds at 50 steps/frame keep major region bounds within 1 CSS pixel; zero post-start Chromium CLS in the specified scenario; required 44px touch targets. Verify keyboard, reduced motion, 200% zoom, both browsers, zero retries, scientific invariants, and unchanged performance/gzip caps. |
-| P7 — One final shell | App composition, consumer-proven obsolete-shell removal only, qualification record; July task 14 | No competing production shell. Preserve V2/scientific contracts, reviewed visual reference, all applicable gates, and exact release provenance before acceptance into main. |
+On qualified code SHA `fbae4b9`, release run `34001183202` passed the comparative gate. The largest engine movement was `predictGrid` at +12.1843%, below the +20% limit. All other engine metrics were closer or faster, and worker medians remained far inside the fixed scientific-trust budgets.
 
-P2 -> P3 -> P4 -> P5 -> P6 -> P7 follows P1 and the approved release/design gates.
-Pure preview work may be reviewed separately but must not activate an incomplete
-shell. Each slice must pass its focused tests and broad regression checks before
-the next slice is accepted. There is no backend/account/collaboration/new-dataset
-or general optimization program hidden in this roadmap.
+## Final release-baseline steps
 
-## Review, rollback, and stop conditions
+### R5.1 — Requalify this documentation SHA
 
-Use a fresh scoped review where available; do not label self-review independent.
-Revert a specific branch commit to undo a coherent change. Do not force-update
-main, delete historical branches, alter publication settings, relax assertions,
-or replace failed metrics with a narrative pass. Stop at an unresolved dependency
-and keep other completed work accurately recorded. After these two milestones,
-use actual released-product feedback before defining another product direction.
+The documentation commit that contains this roadmap must run the same release-verification workflow. Required jobs:
+
+- source evidence;
+- helper tests, lint, typecheck, all unit tests, build, bundle guard, tracked-source cleanliness;
+- Chromium/WebKit isolated preview;
+- Chromium/WebKit non-isolated project-subpath fixture;
+- fault-enabled recovery, clean rebuild, fault-disabled check;
+- five-pair same-runner performance comparison.
+
+### R5.2 — Review and merge
+
+After all jobs are green:
+
+1. re-read current `main` and branch refs;
+2. compare the exact candidate against `main`;
+3. confirm no unexpected engine/shared/schema/protocol/persistence changes;
+4. open a PR from `codex/nn-forge-release-roadmap` to `main`;
+5. review the PR/checks;
+6. merge only the qualified candidate;
+7. record the resulting `main` SHA;
+8. require normal `main` CI to pass.
+
+### R6 — Deploy the accepted `main`
+
+Use the existing `.github/workflows/deploy.yml`. It waits for successful `main` CI, checks out the exact tested SHA, rebuilds it, uploads a Pages artifact, and deploys that artifact. Do not add a second deployment mechanism.
+
+A successful deployment must record its tested/deployed SHA, workflow run, Pages artifact/digest, and actual `page_url`. Then run the checked-in browser suite against the actual deployment URL. Expected project URL is only a hypothesis until GitHub reports a successful `page_url`.
+
+## Precision Lab — next product milestone
+
+The July 16 design and July 17 implementation plan remain the only later product direction carried forward. Their internal `AudienceMode` state may remain an implementation detail, but current user-facing terminology is **Workspace profile**. Do not regress the accessible name back to the historical label merely to match the old plan.
+
+The referenced prototype is not present in GitHub. Therefore functional/spec acceptance proceeds, but no pixel-parity claim may be made against an unseen visual reference.
+
+### P1 — Bundle limits
+
+Complete, as described above.
+
+### P2 — Display-safe shell
+
+- Keep exactly one `useTraining` owner.
+- Create presentation-focused typed adapters rather than passing raw worker envelopes.
+- Preserve experiment/runtime/checkpoint/saved-run/export/hash invariants.
+- Implement shell/profile/disclosure/focus/compact-layout models with tests first.
+- Compose a Precision Lab presentation from real production state only.
+
+### P3 — Real network selection
+
+- Define stable layer/neuron/edge selection identities.
+- Invalidate selection on architecture/generation changes.
+- Rank strongest paths deterministically.
+- Use real typed-array/model data and preserve Canvas plus accessible fallback behavior.
+- Avoid copying live numerical grids into persistent React state.
+- Support pointer, keyboard, clear, profile/disclosure, and compact interaction.
+
+### P4 — One canonical live boundary
+
+- Maintain exactly one live decision-boundary renderer in Build/Run.
+- Separate current live boundary from pinned evidence.
+- Preserve evaluation step/age/drift provenance.
+- Update visualization-demand derivation without reducing required scientific evaluation cadence.
+
+### P5 — Production-backed previews/evidence
+
+- Generate all dataset previews from deterministic production generators.
+- Adapt Loss/Confusion/training controls to compact presentation without provenance loss or horizontal overflow.
+- Preserve exact pending save artifacts on retry; do not silently recapture a different model state.
+- Keep saved-run parameter limitations and Apply Saved Recipe semantics explicit.
+
+### P6 — Production acceptance
+
+Required acceptance includes:
+
+- full unit/integration/E2E/build/bundle/recovery/performance suites;
+- Chromium and WebKit at zero retries;
+- required viewports `1437x742`, `735x860`, and `320x844`;
+- five seconds of training at 50 steps/frame with stable major-region bounds within 1 CSS px where stability is required;
+- zero Chromium post-start CLS for the acceptance scenario;
+- 44 px required touch targets, keyboard operation, visible focus, reduced motion, 200% zoom, semantic regions, and no accessibility regressions;
+- JavaScript bundle caps, 250/500 ms worker budgets, and the accepted same-runner engine regression policy.
+
+### P7 — One final production shell
+
+Migrate every consumer before removing the existing presentation. Remove obsolete shell/styles/adapters only after consumer proof. The accepted end state contains one production shell and unchanged scientific/V2 state contracts.
+
+## Explicitly out of scope without a new reviewed milestone
+
+- accounts or cloud backend;
+- collaboration/multiplayer;
+- generic AI features;
+- new dataset program or new neural-network math;
+- broad engine/framework rewrite;
+- wholesale historical-branch/prototype import;
+- arbitrary benchmark-limit increases;
+- trained-parameter persistence in saved runs;
+- deterministic-future claims for checkpoint restoration;
+- making the repository public merely to simplify deployment.
+
+After the Precision Lab release, use the product and collect actual friction/usage evidence before defining another large milestone.

@@ -1,154 +1,139 @@
-# Deployment Guide
+# Deployment and release operations
 
-NN.FORGE is a static React/Vite SPA. Training runs in a browser worker; there is
-no backend, runtime API key, or required runtime environment variable.
+NN.FORGE is a static Vite application. The authoritative deploy path is the checked-in `.github/workflows/deploy.yml`; do not create a parallel ad-hoc deployment mechanism.
 
-The [roadmap](superpowers/plans/2026-09-05-nn-forge-release-roadmap.md) and
-[verification record](superpowers/verification/2026-09-05-release-roadmap.md)
-distinguish the authoritative `main` product, branch qualification, and an actual
-published release. A successful build is not proof of a deployed site. The JavaScript gzip check
-measures JavaScript only; it does not claim a total font/CSS transfer or startup-time budget.
+## Release chain
 
-## GitHub Pages: owner decision first
+The intended sequence is:
 
-For a private repository, verify account eligibility for Pages and explicitly
-approve the website's audience. Keeping source private does not automatically
-make the delivered website private. Do not change repository visibility to work
-around a Pages setting or entitlement failure.
+1. qualify the exact release branch SHA with `Release verification`;
+2. review/merge that qualified SHA into `main`;
+3. require normal `main` CI to pass;
+4. let `deploy.yml` consume the exact successful CI SHA;
+5. rebuild that tested SHA;
+6. upload the Pages artifact;
+7. deploy through `actions/deploy-pages`;
+8. record GitHub's actual `page_url` and deployment provenance;
+9. run external Chromium/WebKit checks against that exact URL.
 
-After approval, the owner selects **Settings → Pages → Source → GitHub Actions**.
-The initial September 5 deployment failed with `HttpError: Not Found` and
-`Ensure GitHub Pages has been enabled`; that result was a repository-settings
-blocker, not an application build failure. Do not alter code to conceal it.
+A branch qualification is not deployment, and an expected URL is not evidence of a successful deploy.
 
-### Existing deployment chain
+## GitHub Pages configuration
 
-A successful `CI` push run for the current `main` SHA permits
-`.github/workflows/deploy.yml` to rebuild and deploy that exact tested SHA.
-Failed, cancelled, pull-request, non-main, and stale-main runs are excluded by
-the workflow's existing conditions. The artifact is `apps/web/dist/`.
+The repository's deployment workflow uses GitHub Actions as the Pages source. Repository Pages settings must permit that workflow to create/update the site.
 
-Manual dispatch builds the selected ref and does not itself prove preceding CI.
-Before a manual release, record the selected full SHA and its completed
-qualification results. Do not silently substitute a newer head for a pinned
-release candidate.
+Publishing a GitHub Pages site is an external release decision. A private source repository does not by itself make the Pages website private; confirm the intended audience before enabling publication.
 
-The separate `Release verification` workflow is read-only and does not deploy.
-Its independent jobs retain failures instead of allowing one failed job to hide
-other results. Main's CI success does not imply that its performance or
-fault-enabled recovery checks ran; verify the actual job list.
+Do not make the source repository public merely to work around Pages configuration.
 
-The expected default project address is:
+## Project base path
 
-```text
-https://densedevkev.github.io/neural-network-playground/
-```
+`apps/web/vite.config.ts` defaults to relative assets (`base: './'`) unless `VITE_BASE` is explicitly supplied. The checked-in external fixture validates actual production bytes beneath:
 
-This example is not a deployment receipt. The successful deploy job's `page_url`
-is authoritative. Record the actual deployment SHA, run/attempt, artifact ID and
-digest, URL, timestamp, and subsequent live browser results.
+`/neural-network-playground/`
 
-## Build and self-host
+Do not assume a root-hosted application during release validation.
 
-Use the repository toolchain and frozen lockfile:
+## Pre-merge release qualification
 
-```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm lint
-pnpm test
-pnpm build
-pnpm test:bundle
-```
+The exact candidate SHA must have a green release-verification run with:
 
-Serve the complete `apps/web/dist/` directory. Preserve the generated asset names
-and `font-licenses.txt`; do not publish a partial directory or an injected-fault
-build. Inter and Space Grotesk are packaged dependencies and load from the app's
-origin rather than Google Fonts. No runtime font CDN is required.
+- source-evidence;
+- correctness;
+- preview browsers;
+- project-subpath browsers;
+- recovery;
+- paired performance qualification.
 
-`apps/web/vite.config.ts` defaults to `base: './'`. A project URL must retain its
-trailing slash so relative assets resolve below the project directory. For a
-host needing an absolute base, use the existing build-time override:
+Correctness includes helper tests, lint, typecheck, all package tests, build, JavaScript bundle limits, and tracked-source cleanliness.
 
-```bash
-VITE_BASE=/tools/nn-playground/ pnpm build
-pnpm test:bundle
-```
+### Performance semantics
 
-Hash state describes the experiment; it is not server-side routing. Missing JS,
-CSS, or font assets must produce real HTTP errors, not an HTML fallback with
-status 200. Ensure the server uses JavaScript and font MIME types correctly.
+Local `pnpm test:perf` retains the historical development-machine absolute engine constants. Those constants are not rewritten during deployment/release qualification.
 
-## Verify the real destination
+The release workflow restores the documented same-machine regression contract by running the exact intake baseline and candidate five times each on one Apple Silicon runner. Candidate engine medians must remain within +20% of baseline medians, while forced paired evaluation and save capture remain fixed <=250/500 ms budgets.
 
-Install Playwright's Chromium and WebKit browsers in the verification environment.
-With `PLAYWRIGHT_BASE_URL` unset, `pnpm test:e2e` starts an isolated local preview.
-An explicit base URL disables preview startup; an unavailable target fails rather
-than falling back to a different app. Do not also set `PLAYWRIGHT_PORT`.
+A slow host that causes both individual revisions to miss the frozen development-machine constants is not by itself a release regression. Conversely, the release still fails if the paired comparator exceeds +20% or either worker budget is exceeded.
 
-To exercise a non-isolated host before publication, build normally, start this
-fixture in one terminal, and leave it running for the test command:
+## Build provenance
 
-```bash
-node scripts/serve-release-fixture.mjs apps/web/dist 4174
-```
+The release-verification correctness job records:
 
-In another terminal:
+- exact source SHA;
+- Node and pnpm versions;
+- SHA-256 manifest of every production dist file;
+- a retained build artifact.
+
+The deployment workflow should rebuild the exact `main` SHA whose CI succeeded. Record the deployment run, source SHA, artifact/digest, and returned `page_url`.
+
+## Static hosting expectations
+
+GitHub Pages normally does not provide the local preview's COOP/COEP headers. NN.FORGE must therefore work through its transferable/non-isolated worker path on Pages. The checked-in project-subpath fixture deliberately omits those isolation headers and is the pre-publication approximation of that hosting mode.
+
+Do not add fake isolation headers to tests merely to make the environment easier than the deployment target.
+
+## Font delivery
+
+Inter and Space Grotesk are bundled and served from the application origin. Production must not depend on Google Fonts CSS or `fonts.gstatic.com`.
+
+Live verification should confirm:
+
+- expected local font resources return successfully beneath the project base;
+- no Google font requests occur;
+- no font-related console/page errors occur through reload.
+
+## Deployment workflow behavior
+
+The existing deployment workflow waits for successful CI on `main` (or an explicit dispatch), checks out the tested revision, builds, configures Pages, uploads a Pages artifact, and invokes `actions/deploy-pages`.
+
+If `actions/deploy-pages` reports a repository/settings `Not Found` or asks to enable Pages, treat that as a Pages configuration blocker. Do not claim the application itself failed deployment routing and do not change application code solely to hide a repository-settings failure.
+
+## Live verification
+
+After a successful deployment, use the **actual** `page_url` returned by GitHub:
 
 ```bash
-PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
+PLAYWRIGHT_BASE_URL=<actual-page-url> pnpm test:e2e
 ```
 
-After owner-authorized publication, run against the exact confirmed `page_url`:
+The external target resolver requires an HTTPS public target and preserves its project path.
 
-```bash
-PLAYWRIGHT_BASE_URL=https://densedevkev.github.io/neural-network-playground/ pnpm test:e2e
-```
+Required live checks include:
 
-Use fresh automated contexts, not the owner's stored browser profile. Preserve
-reports, named skips, browser versions, target metadata, and resource evidence.
-The external-only deployment checks must execute on the non-isolated fixture
-and selected Pages contract. An HTTP 200 alone is not browser verification.
+- Chromium initial load;
+- WebKit initial load;
+- no page/console errors;
+- local font resources;
+- training worker resource;
+- naturally non-isolated fallback where applicable;
+- manual step and paired evaluation evidence;
+- Inspection lazy surface;
+- Code / NumPy export surface;
+- History and saved-run semantics;
+- Configuration surface;
+- canonical V2 shared recipe URL;
+- fresh-context reload preserving recipe/architecture but creating a fresh runtime;
+- skip-link keyboard/pointer integrity;
+- project path never collapsing to origin root.
 
-## Isolation and transport
+If the live environment exposes a hosting-specific failure, reproduce it with the real URL and add a bounded regression before changing product code.
 
-Development and preview deliberately set COOP/COEP headers. The worker uses
-shared buffers where supported and naturally falls back to transferable messages
-when the document is not isolated. Non-isolation on Pages is expected and is not
-by itself a broken-worker diagnosis. Do not weaken the isolated preview to make
-resource errors disappear.
+## Expected URL versus deployment receipt
 
-Training data and model computation remain in the browser. The hosting server
-receives ordinary static asset requests. Sharing/exporting is a user action that
-can disclose an experiment recipe; a shared URL does not resume trained weights.
+For this repository, the conventional GitHub Pages project URL is expected to resemble:
 
-## Fault-injection builds are never release artifacts
+`https://densedevkev.github.io/neural-network-playground/`
 
-With external target overrides unset:
+This is only an expectation. The authoritative URL is the `page_url` from a successful deployment job.
 
-```bash
-pnpm test:e2e:recovery
-# Preserve its report before a subsequent run overwrites it.
-env -u VITE_E2E_FAULTS pnpm build
-pnpm test:bundle
-pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
-```
+## Rollback
 
-The clean rebuild and fault-disabled assertions are mandatory after recovery
-testing. The examples use POSIX environment syntax; other shells must remove the
-same variables explicitly. Never upload the recovery bundle to Pages.
+If a deployment is bad:
 
-## Troubleshooting and maintenance boundaries
+1. identify the last known-good deployed `main` SHA;
+2. revert through normal Git history rather than editing generated Pages output;
+3. require CI on the rollback commit;
+4. let the same deployment workflow publish the tested rollback;
+5. repeat live Chromium/WebKit verification.
 
-| Observation | Required response |
-|---|---|
-| Pages deployment says to enable Pages | Confirm owner consent, eligibility, and the repository setting; preserve the failed run |
-| Project assets return 404 | Inspect the actual `page_url`, trailing slash, emitted relative URLs, and uploaded directory |
-| Font reload fails | Run the real font-delivery and recovery cases; do not mock font responses or suppress console errors |
-| SharedArrayBuffer is unavailable | Check actual isolation; the transferable fallback must still train and publish paired evidence |
-| Engine timing limits fail | Retain raw output and compare the pinned baseline on the same measured host; do not raise limits |
-| Vite emits its 200 kB chunk warning | Record it; it is not an executable budget failure or an automatic code-splitting mandate |
-| GitHub annotates Node action-runtime deprecation | Separate the action's own runtime from the Node version selected for project commands |
-
-The existing workflows select Node 20 and pnpm 9 for project commands. Project
-support remains declared by `package.json`; this work does not change it.
+Never repair a deployment by manually mutating generated `dist` files outside source control.
