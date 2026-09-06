@@ -87,7 +87,11 @@ test('parses the historical total-for-iterations grid format without changing un
 
 test('fails closed for missing or duplicate measurements', async () => {
     const { parsePerformanceLog } = await importSubject();
-    assert.throws(() => parsePerformanceLog('predictGrid: 10.0000ms median per iteration'), /missing.*predictGridInto/i);
+    const missing = [
+        'predictGrid: 10.0000ms median per iteration',
+        '[perf] web: PASS',
+    ].join('\n');
+    assert.throws(() => parsePerformanceLog(missing), /missing.*predictGridInto/i);
     assert.throws(() => parsePerformanceLog(`${logFor()}\npredictGrid: 9.0000ms median per iteration`), /duplicate.*predictGrid/i);
 });
 
