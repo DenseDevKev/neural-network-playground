@@ -306,7 +306,7 @@ function formatMeasurement(measurement) {
 
 export async function main({
     argv = process.argv.slice(2),
-    writeLine = (line) => console.log(line),
+    writeLine = (line) => process.stdout.write(`${line}\n`),
 } = {}) {
     const [directory, expectedBaselineSha, expectedCandidateSha] = argv;
     if (!directory || !expectedBaselineSha || !expectedCandidateSha) {
@@ -328,7 +328,7 @@ export async function main({
 const entry = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : null;
 if (entry === import.meta.url) {
     main().catch((error) => {
-        console.error(error instanceof Error ? error.message : String(error));
+        process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         process.exitCode = 1;
     });
 }
