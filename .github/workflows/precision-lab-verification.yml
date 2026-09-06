@@ -1,0 +1,47 @@
+name: Precision Lab focused verification
+
+on:
+  push:
+    branches: [codex/nn-forge-precision-lab]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: precision-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run changed web tests first
+        shell: bash
+        run: |
+          mapfile -t tests < <(git diff --name-only origin/main...HEAD -- apps/web/src | grep -E '\.(test|spec)\.(ts|tsx)$' || true)
+          if [ "${#tests[@]}" -eq 0 ]; then
+            echo 'No changed web tests to run.'
+            exit 0
+          fi
+          args=()
+          for path in "${tests[@]}"; do args+=("${path#apps/web/}"); done
+          NODE_OPTIONS=--experimental-require-module pnpm --filter @nn-playground/web exec vitest run "${args[@]}" --pool=forks --reporter=dot
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Build
+        run: pnpm build
+      - name: Bundle guard
+        run: pnpm test:bundle
