@@ -43,7 +43,7 @@ export function usePrecisionLabRecipeModel() {
             prepared.compiled.network.outputSize,
         ].join(' -> '),
         hiddenActivation: prepared.document.recipe.model.hiddenActivation,
-        output: prepared.compiled.network.outputActivation,
+        output: `${prepared.compiled.network.outputActivation} · ${prepared.document.recipe.objective.dataLoss.kind}`,
         seed: prepared.document.recipe.model.seed,
         hasRecipeDrift: drift.hasDrift,
         pendingConfiguration: pendingConfigSource !== null,

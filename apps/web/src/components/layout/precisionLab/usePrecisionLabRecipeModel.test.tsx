@@ -65,9 +65,10 @@ describe('usePrecisionLabRecipeModel', () => {
             dataset: 'three-class-clusters',
             architecture: '2 -> 6 -> 6 -> 3',
             hiddenActivation: 'tanh',
-            output: 'softmax',
+            output: 'softmax · categorical-cross-entropy-with-logits',
             seed: '42',
-            tone: 'ready',
+            tone: 'unavailable',
+            evaluationLabel: 'No current evaluation',
         });
         expect(usePlaygroundStore.getState().access).toBe(accessBefore);
         expect(useTrainingStore.getState()).toBe(trainingBefore);
@@ -115,4 +116,12 @@ describe('usePrecisionLabRecipeModel', () => {
             evaluationLabel: 'Evaluation 9 steps behind',
         });
     });
+    it('does not call evidence from an older model generation fresh', () => {
+        installAge(0);
+        const live = useTrainingStore.getState().latestLiveSignal!;
+        useTrainingStore.setState({ latestLiveSignal: { ...live, model: { ...live.model, generationId: 2 } } });
+        const { result } = renderHook(() => usePrecisionLabRecipeModel());
+        expect(result.current).toMatchObject({ tone: 'unavailable', evaluationLabel: 'No current evaluation' });
+    });
+
 });

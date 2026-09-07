@@ -64,10 +64,18 @@ describe('derivePrecisionLabRecipeModel', () => {
             .toEqual(fresh);
     });
 
-    it.each([null, 0])('reports a ready recipe when evaluation age is %s', (evaluationAgeSteps) => {
+    it.each([0])('reports fresh evaluation only at measured age %s', (evaluationAgeSteps) => {
         expect(derivePrecisionLabRecipeModel({ ...base, evaluationAgeSteps })).toMatchObject({
             tone: 'ready',
             evaluationLabel: 'Evaluation fresh',
         });
     });
+    it.each([null, -1, Number.NaN, Number.POSITIVE_INFINITY])('never calls absent or invalid evaluation age %s fresh', (evaluationAgeSteps) => {
+        expect(derivePrecisionLabRecipeModel({ ...base, evaluationAgeSteps })).toMatchObject({
+            dataset: base.dataset,
+            tone: 'unavailable',
+            evaluationLabel: 'No current evaluation',
+        });
+    });
+
 });

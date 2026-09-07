@@ -45,9 +45,13 @@ export function derivePrecisionLabRecipeModel(
         ? 'updating'
         : input.hasRecipeDrift
             ? 'drift'
-            : (input.evaluationAgeSteps ?? 0) > 0
-                ? 'stale'
-                : 'ready';
+            : input.evaluationAgeSteps === null
+                || !Number.isFinite(input.evaluationAgeSteps)
+                || input.evaluationAgeSteps < 0
+                ? 'unavailable'
+                : input.evaluationAgeSteps > 0
+                    ? 'stale'
+                    : 'ready';
 
     return Object.freeze({
         dataset: input.dataset,
@@ -59,7 +63,9 @@ export function derivePrecisionLabRecipeModel(
             ? 'Updating'
             : tone === 'drift'
                 ? 'Recipe differs from trained model'
-                : tone === 'stale'
+                : tone === 'unavailable'
+                    ? 'No current evaluation'
+                    : tone === 'stale'
                     ? `Evaluation ${input.evaluationAgeSteps} steps behind`
                     : 'Evaluation fresh',
         tone,
