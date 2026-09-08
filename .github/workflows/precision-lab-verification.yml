@@ -58,6 +58,8 @@ jobs:
           args=()
           for path in "${tests[@]}"; do args+=("${path#apps/web/}"); done
           NODE_OPTIONS=--experimental-require-module pnpm --filter @nn-playground/web exec vitest run "${args[@]}" --pool=forks --reporter=dot
+      - name: Full package regression suite
+        run: pnpm test
       - name: Lint
         run: pnpm lint
       - name: Typecheck

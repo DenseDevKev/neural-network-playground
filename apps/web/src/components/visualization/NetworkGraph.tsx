@@ -1,18 +1,20 @@
-// ── NetworkGraph (renderer switcher, AS-5) ─────────────────────────────────
-// Public entry point used by the rest of the app. Picks between the
-// performance-optimized canvas renderer and the legacy SVG renderer based
-// on the `featuresUI.canvasNetworkGraph` flag in the playground store.
-//
-// Rationale: keeps the SVG implementation around as a documented fallback
-// for one release, so a long-tail bug in the canvas path (e.g. a hover-
-// region miscompute on a niche browser) can be flipped off in the UI
-// without redeploying.
-
+import { memo } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { NetworkGraphCanvas } from './NetworkGraphCanvas.tsx';
 import { NetworkGraphSVG } from './NetworkGraphSVG.tsx';
+import { useNetworkSelectionController, type NetworkSelectionController } from './useNetworkSelectionController.ts';
 
-export function NetworkGraph() {
+export interface NetworkGraphProps { readonly selectionController?: NetworkSelectionController }
+export interface NetworkGraphRendererProps { readonly controller: NetworkSelectionController }
+
+function NetworkGraphRenderer({ controller }: NetworkGraphRendererProps) {
     const useCanvas = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
-    return useCanvas ? <NetworkGraphCanvas /> : <NetworkGraphSVG />;
+    return useCanvas ? <NetworkGraphCanvas controller={controller} /> : <NetworkGraphSVG controller={controller} />;
 }
+function NetworkGraphWithLocalController() {
+    const controller = useNetworkSelectionController();
+    return <NetworkGraphRenderer controller={controller} />;
+}
+export const NetworkGraph = memo(function NetworkGraph({ selectionController }: NetworkGraphProps) {
+    return selectionController ? <NetworkGraphRenderer controller={selectionController} /> : <NetworkGraphWithLocalController />;
+});
