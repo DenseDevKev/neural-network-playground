@@ -22,29 +22,27 @@ jobs:
           echo "43deb500e23b0a234d5357b7ffe87b96217c59b6563ee6f60925db59b96c7a3a  $RUNNER_TEMP/continuation.patch.xz" | sha256sum -c -
           xz -dc "$RUNNER_TEMP/continuation.patch.xz" > "$RUNNER_TEMP/continuation.patch"
           echo "4b0b09562a7957a0a480dbc713eb8560fbab6e9a44f0aa9c09acb794dfe8be83  $RUNNER_TEMP/continuation.patch" | sha256sum -c -
-      - name: Apply exact patch to guarded active branch and fast-forward it
+      - name: Apply non-workflow portion to guarded active branch
         shell: bash
         run: |
           set -euo pipefail
           target='codex/nn-forge-precision-lab'
           expected='3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732'
+          workflow='.github/workflows/precision-lab-verification.yml'
           git fetch origin "$target"
           actual=$(git rev-parse "origin/$target")
           test "$actual" = "$expected" || { echo "Target moved: expected $expected, found $actual" >&2; exit 1; }
           git checkout -B "$target" "origin/$target"
-          git apply --check "$RUNNER_TEMP/continuation.patch"
-          git apply "$RUNNER_TEMP/continuation.patch"
+          git apply --exclude="$workflow" --check "$RUNNER_TEMP/continuation.patch"
+          git apply --exclude="$workflow" "$RUNNER_TEMP/continuation.patch"
           git diff --check
           changed=$(git status --porcelain=v1 | wc -l | tr -d ' ')
-          test "$changed" = '33' || { echo "Expected 33 changed paths, found $changed" >&2; git status --short; exit 1; }
+          test "$changed" = '32' || { echo "Expected 32 non-workflow changed paths, found $changed" >&2; git status --short; exit 1; }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          git commit -m 'feat(web): complete Precision Lab qualification integration'
+          git commit -m 'feat(web): integrate Precision Lab continuation'
           final=$(git rev-parse HEAD)
           git push origin "HEAD:$target"
-          echo "Applied continuation at $final"
-      - name: Remove transport branch after successful application
-        shell: bash
-        run: git push origin --delete codex/nn-forge-precision-apply || true
+          echo "Applied non-workflow continuation at $final"
