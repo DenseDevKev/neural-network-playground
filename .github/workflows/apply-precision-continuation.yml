@@ -1,4 +1,4 @@
-name: Apply Precision Lab continuation
+name: Apply Precision Lab browser fixes
 
 on:
   push:
@@ -15,34 +15,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Reconstruct and verify exact continuation patch
+      - name: Reconstruct exact browser-fix patch
         shell: bash
         run: |
-          cat .precision-apply/xz-* | base64 -d > "$RUNNER_TEMP/continuation.patch.xz"
-          echo "43deb500e23b0a234d5357b7ffe87b96217c59b6563ee6f60925db59b96c7a3a  $RUNNER_TEMP/continuation.patch.xz" | sha256sum -c -
-          xz -dc "$RUNNER_TEMP/continuation.patch.xz" > "$RUNNER_TEMP/continuation.patch"
-          echo "4b0b09562a7957a0a480dbc713eb8560fbab6e9a44f0aa9c09acb794dfe8be83  $RUNNER_TEMP/continuation.patch" | sha256sum -c -
-      - name: Apply non-workflow portion to guarded active branch
+          printf '%s' 'LS0tIGEvYXBwcy93ZWIvc3JjL2NvbXBvbmVudHMvbGF5b3V0L3ByZWNpc2lvbkxhYi9QcmVjaXNpb25MYWJTaGVsbC50c3gKKysrIGIvYXBwcy93ZWIvc3JjL2NvbXBvbmVudHMvbGF5b3V0L3ByZWNpc2lvbkxhYi9QcmVjaXNpb25MYWJTaGVsbC50c3gKQEAgLTI3Nyw2ICsyNzcsNyBAQAogICAgICAgICAgICAgPG5hdiBkYXRhLXByZWNpc2lvbi1yZWdpb249InJhaWwiIGNsYXNzTmFtZT0icHJlY2lzaW9uLXJhaWwiIGFyaWEtbGFiZWw9e3ZpZXcgPT09ICdidWlsZCcgPyAnQnVpbGQgdG9vbHMnIDogJ1J1biB0b29scyd9PgogICAgICAgICAgICAgICAgIHtyYWlsQ29udGVudH0KICAgICAgICAgICAgIDwvbmF2PgorICAgICAgICAgICAge2J1aWxkQ29udGV4dH0KICAgICAgICAgICAgIHtyZWNpcGVTdHJpcENvbnRlbnR9CiAgICAgICAgICAgICA8c2VjdGlvbgogICAgICAgICAgICAgICAgIGNsYXNzTmFtZT0icHJlY2lzaW9uLXRvcG9sb2d5IgpAQCAtMzMxLDcgKzMzMiw2IEBACiAgICAgICAgICAgICAgICAge3RyYW5zcG9ydENvbnRlbnR9CiAgICAgICAgICAgICA8L2Zvb3Rlcj4KICAgICAgICAgICAgIDwvZGl2PgotICAgICAgICAgICAge2J1aWxkQ29udGV4dH0KICAgICAgICAgICAgIHtkcmF3ZXJ9CiAgICAgICAgIDwvc2VjdGlvbj4KICAgICApOwotLS0gYS9hcHBzL3dlYi9zcmMvc3R5bGVzL3ByZWNpc2lvbkxhYi5jc3MKKysrIGIvYXBwcy93ZWIvc3JjL3N0eWxlcy9wcmVjaXNpb25MYWIuY3NzCkBAIC0xNDAsOCArMTQwLDggQEAKICAgICAgICAgaGVpZ2h0OiBhdXRvOwogICAgICAgICBtaW4taGVpZ2h0OiAxMDAlOwogICAgICAgICBncmlkLXRlbXBsYXRlLWNvbHVtbnM6IG1pbm1heCgwLCAxZnIpOwotICAgICAgICBncmlkLXRlbXBsYXRlLWFyZWFzOiAicmVjaXBlIiAicmFpbCIgInRvcG9sb2d5IiAiYm91bmRhcnkiICJzZWxlY3Rpb24iICJldmlkZW5jZSIgInRyYW5zcG9ydCI7Ci0gICAgICAgIGdyaWQtdGVtcGxhdGUtcm93czogYXV0byBhdXRvIDM2MHB4IGF1dG8gMjYwcHggMzQwcHggYXV0bzsKKyAgICAgICAgZ3JpZC10ZW1wbGF0ZS1hcmVhczogInJlY2lwZSIgInJhaWwiICJjb250ZXh0IiAidG9wb2xvZ3kiICJib3VuZGFyeSIgInNlbGVjdGlvbiIgImV2aWRlbmNlIiAidHJhbnNwb3J0IjsKKyAgICAgICAgZ3JpZC10ZW1wbGF0ZS1yb3dzOiBhdXRvIGF1dG8gYXV0byAzNjBweCBhdXRvIDI2MHB4IDM0MHB4IGF1dG87CiAgICAgICAgIG92ZXJmbG93LXg6IGhpZGRlbjsKICAgICAgICAgY29udGFpbjogbGF5b3V0IHBhaW50OwogICAgIH0KQEAgLTE1MSw3ICsxNTEsOCBAQAogICAgIC5wcmVjaXNpb24tcmFpbCB7IGZsZXgtZGlyZWN0aW9uOiByb3c7IGZsZXgtd3JhcDogd3JhcDsgfQogICAgIC5wcmVjaXNpb24tcmFpbCBidXR0b24geyBmbGV4OiAxIDEgNzBweDsgfQogICAgIC5wcmVjaXNpb24tYm91bmRhcnktcmFpbCB7IG1heC13aWR0aDogMzQwcHg7IG1hcmdpbi1pbmxpbmU6IGF1dG87IH0KLSAgICAucHJlY2lzaW9uLWNvbnRleHQsIC5wcmVjaXNpb24tZHJhd2VyIHsgcG9zaXRpb246IGZpeGVkOyB0b3A6IDE1NnB4OyBib3R0b206IDMwcHg7IGxlZnQ6IDhweDsgcmlnaHQ6IDhweDsgd2lkdGg6IGF1dG87IH0KKyAgICAucHJlY2lzaW9uLWNvbnRleHQgeyBwb3NpdGlvbjogc3RhdGljOyBncmlkLWFyZWE6IGNvbnRleHQ7IHdpZHRoOiBhdXRvOyBtYXgtaGVpZ2h0OiBtaW4oNDIwcHgsIGNhbGMoMTAwZHZoIC0gMjAwcHgpKTsgbWFyZ2luOiAwIDhweDsgfQorICAgIC5wcmVjaXNpb24tZHJhd2VyIHsgcG9zaXRpb246IGZpeGVkOyB0b3A6IDE1NnB4OyBib3R0b206IDMwcHg7IGxlZnQ6IDhweDsgcmlnaHQ6IDhweDsgd2lkdGg6IGF1dG87IH0KICAgICAucHJlY2lzaW9uLXRyYW5zcG9ydCB7IHBvc2l0aW9uOiBzdGlja3k7IGJvdHRvbTogMDsgfQogICAgIC5wcmVjaXNpb24tdHJhbnNwb3J0IDppcyhidXR0b24sIC50cmFpbmluZy1iYXJfX2NoZWNrcG9pbnQpIHsgbWluLWhlaWdodDogNDRweDsgfQogICAgIC5wcmVjaXNpb24tc2VsZWN0aW9uIHsgcGFkZGluZzogMTJweDsgfQpAQCAtMTg3LDcgKzE4OCw3IEBACiAucHJlY2lzaW9uLXRyYW5zcG9ydCAudHJhaW5pbmctYmFyX19zYXZlIHsgZGlzcGxheTogZmxleDsgZmxleC13cmFwOiB3cmFwOyBhbGlnbi1pdGVtczogY2VudGVyOyBnYXA6IDZweDsgbWluLXdpZHRoOiAwOyB9CiAucHJlY2lzaW9uLXRyYW5zcG9ydCAudHJhaW5pbmctYmFyX19zYXZlLWVycm9yIHsgZmxleC1iYXNpczogMTAwJTsgb3ZlcmZsb3ctd3JhcDogYW55d2hlcmU7IGZvbnQtc2l6ZTogMTFweDsgfQogLnByZWNpc2lvbi10cmFuc3BvcnQgOmlzKC5idG4tLWNvbnRyb2wsIC5zcGVlZC1idG4sIC50cmFpbmluZy1zaG9ydGN1dHMgPiBzdW1tYXJ5KSB7IG1pbi1oZWlnaHQ6IDQ0cHg7IH0KLS5wcmVjaXNpb24tdHJhbnNwb3J0IC50cmFpbmluZy1iYXJfX2luZm8geyBtaW4taGVpZ2h0OiA0NHB4OyBmb250LXZhcmlhbnQtbnVtZXJpYzogdGFidWxhci1udW1zOyB9CisucHJlY2lzaW9uLXRyYW5zcG9ydCAudHJhaW5pbmctYmFyX19pbmZvIHsgbWluLWhlaWdodDogNDRweDsgZmxleC1iYXNpczogMTAwJTsganVzdGlmeS1jb250ZW50OiBmbGV4LWVuZDsgZm9udC12YXJpYW50LW51bWVyaWM6IHRhYnVsYXItbnVtczsgfQogLnByZWNpc2lvbi10cmFuc3BvcnQgLnRyYWluaW5nLWJhcl9fY29udHJvbHMgeyBtaW4td2lkdGg6IDA7IGZsZXgtd3JhcDogd3JhcDsgfQogQG1lZGlhIChtYXgtd2lkdGg6IDY3OXB4KSB7CiAgICAgLnByZWNpc2lvbi10cmFuc3BvcnQgLnRyYWluaW5nLWJhcl9fY29udHJvbHMgeyBkaXNwbGF5OiBncmlkOyBncmlkLXRlbXBsYXRlLWNvbHVtbnM6IHJlcGVhdCgzLCBtaW5tYXgoMCwgMWZyKSk7IHdpZHRoOiAxMDAlOyBwYWRkaW4taW5saW5lOiAwOyB9Ci0tLSBhL2FwcHMvd2ViL3NyYy9zdHlsZXMvZm9yZ2UuY3NzCisrKyBiL2FwcHMvd2ViL3NyYy9zdHlsZXMvZm9yZ2UuY3NzCkBAIC0xNDc4LDcgKzE0NzgsNyBAQAogCiAuZm9yZ2UtdHJhbnNwb3J0LWNsdXN0ZXIgLmJ0bi0tcGxheSAuYnRuX19zaG9ydGN1dCB7CiAgICAgZm9udC1zaXplOiA5cHg7Ci0gICAgb3BhY2l0eTogMC41OworICAgIG9wYWNpdHk6IDAuNzI7CiB9CiAKIC5mb3JnZS10cmFuc3BvcnQtY2x1c3RlciAuYnRuLS1naG9zdCAuYnRuX19zaG9ydGN1dCB7Cg==' | base64 -d > "$RUNNER_TEMP/browser-fixes.patch"
+          echo "f58df81f445adde42fbd8a7c811335c73adcee5c7d235df4c724e391f43da9b3  $RUNNER_TEMP/browser-fixes.patch" | sha256sum -c -
+      - name: Apply guarded browser fixes to active branch
         shell: bash
         run: |
           set -euo pipefail
           target='codex/nn-forge-precision-lab'
-          expected='3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732'
-          workflow='.github/workflows/precision-lab-verification.yml'
+          expected='3b567950d3c725e5dc2856b4331813db26edba39'
           git fetch origin "$target"
           actual=$(git rev-parse "origin/$target")
           test "$actual" = "$expected" || { echo "Target moved: expected $expected, found $actual" >&2; exit 1; }
           git checkout -B "$target" "origin/$target"
-          git apply --exclude="$workflow" --check "$RUNNER_TEMP/continuation.patch"
-          git apply --exclude="$workflow" "$RUNNER_TEMP/continuation.patch"
+          git apply --check "$RUNNER_TEMP/browser-fixes.patch"
+          git apply "$RUNNER_TEMP/browser-fixes.patch"
           git diff --check
           changed=$(git status --porcelain=v1 | wc -l | tr -d ' ')
-          test "$changed" = '32' || { echo "Expected 32 non-workflow changed paths, found $changed" >&2; git status --short; exit 1; }
+          test "$changed" = '3' || { echo "Expected 3 changed paths, found $changed" >&2; git status --short; exit 1; }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          git commit -m 'feat(web): integrate Precision Lab continuation'
+          git commit -m 'fix(web): stabilize Precision Lab responsive controls'
           final=$(git rev-parse HEAD)
           git push origin "HEAD:$target"
-          echo "Applied non-workflow continuation at $final"
+          echo "Applied browser fixes at $final"
