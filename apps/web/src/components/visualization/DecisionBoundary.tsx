@@ -14,7 +14,7 @@ export interface DecisionBoundaryProps {
     discretize: boolean;
     overlayMode?: DecisionOverlayMode;
 }
-export const DecisionBoundary = memo(function DecisionBoundary(props: DecisionBoundaryProps) {
+export const DecisionBoundary = /* @__PURE__ */ memo(function DecisionBoundary(props: DecisionBoundaryProps) {
     const model = useDecisionBoundaryModel(props);
     return <DecisionBoundaryCanvas model={model} />;
 });

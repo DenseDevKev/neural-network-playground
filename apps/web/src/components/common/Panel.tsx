@@ -18,7 +18,7 @@ interface PanelProps {
     flush?: boolean;
 }
 
-export const Panel = memo(function Panel({
+export const Panel = /* @__PURE__ */ memo(function Panel({
     title, phase = 'both', fill, children, className = '',
     bodyClassName = '', panelTargets, tight, flush,
 }: PanelProps) {

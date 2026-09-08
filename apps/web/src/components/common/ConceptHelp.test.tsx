@@ -136,6 +136,32 @@ describe('ConceptHelp', () => {
         expect(screen.queryByRole('button', { name: /^Open / })).not.toBeInTheDocument();
     });
 
+    it('escapes the paint-contained workspace without losing disclosure focus or Escape ordering', async () => {
+        const user = userEvent.setup();
+        const outerEscape = vi.fn();
+        const { container } = render(
+            <div className="forge-shell" onKeyDown={(event) => { if (event.key === 'Escape') outerEscape(); }}>
+                <div data-precision-workspace style={{ contain: 'layout paint', overflow: 'hidden' }}>
+                    <ConceptHelp conceptId="data-loss" guidanceLevel="high" onNavigateToTarget={vi.fn()} />
+                </div>
+            </div>,
+        );
+        const trigger = screen.getByRole('button', { name: 'Learn about Data loss' });
+        await user.click(trigger);
+        const panel = screen.getByRole('region', { name: 'Data loss' });
+        expect(container.querySelector('[data-precision-workspace]')).not.toContainElement(panel);
+        expect(container.querySelector('.forge-shell')).toContainElement(panel);
+        expect(panel).toHaveClass('concept-help__content--viewport');
+        expect(panel).toHaveFocus();
+        await user.tab();
+        expect(screen.getByRole('button', { name: 'Open Loss' })).toHaveFocus();
+        screen.getByRole('button', { name: 'Open Loss' }).focus();
+        await user.keyboard('{Escape}');
+        expect(panel).not.toBeInTheDocument();
+        expect(trigger).toHaveFocus();
+        expect(outerEscape).not.toHaveBeenCalled();
+    });
+
     it('renders nothing for a missing concept instead of exposing an empty help control', () => {
         const { container } = render(
             <ConceptHelp

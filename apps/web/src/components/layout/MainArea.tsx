@@ -1,16 +1,17 @@
 // ── MainArea ── canvas + right-panel content
 // Named exports (CanvasContent, BoundaryContent, etc.) are the primary
-// integration points composed by App.tsx through BuildRunShell.
+// integration points composed by App.tsx through PrecisionLabShell.
 // The legacy MainArea default export is preserved for tests and fallback contexts.
 
 import { lazy, memo, Suspense, useState } from 'react';
+import { useSaveCurrentRun, type SaveCurrentRunController } from '../../hooks/useSaveCurrentRun.ts';
 import { TrainingControls } from '../controls/TrainingControls.tsx';
 import type { NetworkSelectionController } from '../visualization/useNetworkSelectionController.ts';
 import { NetworkGraph } from '../visualization/NetworkGraph.tsx';
 import { DecisionBoundary, getDecisionOverlayCopy } from '../visualization/DecisionBoundary.tsx';
 import type { DecisionOverlayMode } from '../visualization/DecisionBoundary.tsx';
 import { LossChart } from '../visualization/LossChart.tsx';
-import { TrainingExplanationPanel } from '../visualization/TrainingExplanationPanel.tsx';
+const TrainingExplanationPanel = lazy(() => import('../EducationContent.ts').then((module) => ({ default: module.TrainingExplanationPanel })));
 import { ConfusionMatrix } from '../visualization/ConfusionMatrix.tsx';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -160,7 +161,7 @@ export const LossContent = memo(function LossContent() {
         <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
             <EvidenceFrame view="Loss">
                 <LossChart />
-                <TrainingExplanationPanel />
+                <Suspense fallback={<Fallback msg="Loading explanations…" />}><TrainingExplanationPanel /></Suspense>
             </EvidenceFrame>
         </ErrorBoundary>
     );
@@ -196,11 +197,11 @@ export const CodeContent = memo(function CodeContent() {
     );
 });
 
-export const HistoryContent = memo(function HistoryContent() {
+export const HistoryContent = memo(function HistoryContent({ saveController }: { saveController?: SaveCurrentRunController }) {
     return (
         <EvidenceFrame view="History">
             <Suspense fallback={<Fallback msg="Loading run history…" />}>
-                <RunHistoryPanel />
+                <RunHistoryPanel saveController={saveController} />
             </Suspense>
         </EvidenceFrame>
     );
@@ -220,6 +221,7 @@ export const ConfigurationContent = memo(function ConfigurationContent({
 
 // ── Legacy MainArea (for direct-render tests and fallback contexts) ────────
 export const MainArea = /* @__PURE__ */ memo(function MainArea({ training }: MainAreaProps) {
+    const saveController = useSaveCurrentRun();
     const showTestData = usePlaygroundStore((s) => (
         s.access.status === 'ready' && s.access.prepared.document.view.showTestData
     ));
@@ -234,7 +236,7 @@ export const MainArea = /* @__PURE__ */ memo(function MainArea({ training }: Mai
     return (
         <>
             <main id="main-content" className="center-area" role="main" tabIndex={-1}>
-                <TrainingControls training={training} />
+                <TrainingControls training={training} saveController={saveController} />
                 <TopologyStage />
             </main>
             <aside className="right-panel" aria-label="Output">
@@ -267,7 +269,7 @@ export const MainArea = /* @__PURE__ */ memo(function MainArea({ training }: Mai
                 <ErrorBoundary title="Loss chart unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
                     <EvidenceFrame view="Loss">
                         <LossChart />
-                        <TrainingExplanationPanel />
+                        <Suspense fallback={<Fallback msg="Loading explanations…" />}><TrainingExplanationPanel /></Suspense>
                     </EvidenceFrame>
                 </ErrorBoundary>
                 <ErrorBoundary title="Confusion matrix unavailable" description="Rendering error." actionLabel="Retry" className="panel panel--error">
@@ -292,7 +294,7 @@ export const MainArea = /* @__PURE__ */ memo(function MainArea({ training }: Mai
                 <Panel title="Run History" phase="both">
                     <EvidenceFrame view="History">
                         <Suspense fallback={<Fallback msg="Loading run history…" />}>
-                            <RunHistoryPanel />
+                            <RunHistoryPanel saveController={saveController} />
                         </Suspense>
                     </EvidenceFrame>
                 </Panel>

@@ -4,10 +4,9 @@ import type {
     RejectedExperimentRunRecordV2,
 } from '@nn-playground/shared';
 import { EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS } from '@nn-playground/shared';
-import { getWorkerApi } from '../../worker/workerBridge.ts';
 import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
-import { createDefaultRunTitle } from './runTitle.ts';
+import { useSaveCurrentRun, type SaveCurrentRunController } from '../../hooks/useSaveCurrentRun.ts';
 import { reconcileComparisonSelection } from './runComparisonSelection.ts';
 import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
@@ -28,18 +27,6 @@ function comparisonRecordLabel(
 
 function formatMetric(value: number): string {
     return Number.isFinite(value) ? value.toFixed(4) : 'n/a';
-}
-
-function createUuid(): string {
-    if (typeof globalThis.crypto?.randomUUID === 'function') {
-        return globalThis.crypto.randomUUID();
-    }
-    const bytes = new Uint8Array(16);
-    globalThis.crypto.getRandomValues(bytes);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
-    return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
 }
 
 function downloadText(filename: string, text: string, type = 'application/json'): void {
@@ -131,7 +118,18 @@ function SavedRunComparison({
     );
 }
 
-export const RunHistoryPanel = memo(function RunHistoryPanel() {
+interface Props { saveController?: SaveCurrentRunController }
+
+// The standalone adapter is for direct-render/legacy consumers. Production
+// receives the single controller owned above the drawer in App.
+export const RunHistoryPanel = memo(function RunHistoryPanel({ saveController }: Props) {
+    return saveController ? <RunHistoryContent saveController={saveController} /> : <StandaloneRunHistory />;
+});
+function StandaloneRunHistory() {
+    const saveController = useSaveCurrentRun();
+    return <RunHistoryContent saveController={saveController} />;
+}
+function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunController }) {
     const hydrationStatus = useExperimentMemoryStore((state) => state.hydrationStatus);
     const records = useExperimentMemoryStore((state) => state.records);
     const rejectedRecords = useExperimentMemoryStore((state) => state.rejectedRecords);
@@ -140,10 +138,6 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const legacyNoticeDismissed = useExperimentMemoryStore((state) => state.legacyNoticeDismissed);
     const persistenceError = useExperimentMemoryStore((state) => state.persistenceError);
     const pendingSave = useExperimentMemoryStore((state) => state.pendingSave);
-    const saveRecord = useExperimentMemoryStore((state) => state.saveRecord);
-    const retryPersistence = useExperimentMemoryStore((state) => state.retryPersistence);
-    const dismissPersistenceError = useExperimentMemoryStore((state) => state.dismissPersistenceError);
-    const discardPendingSave = useExperimentMemoryStore((state) => state.discardPendingSave);
     const removeRecord = useExperimentMemoryStore((state) => state.removeRecord);
     const deleteIncompatibleEnvelope = useExperimentMemoryStore((state) => state.deleteIncompatibleEnvelope);
     const dismissLegacyNotice = useExperimentMemoryStore((state) => state.dismissLegacyNotice);
@@ -152,7 +146,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
         ? state.access.prepared
         : null);
     const replaceDocument = usePlaygroundStore((state) => state.replaceDocument);
-    const [saving, setSaving] = useState(false);
+    const saving = saveController.busy;
     const [actionError, setActionError] = useState<string | null>(null);
     const [runTitle, setRunTitle] = useState('');
     const [comparisonSelection, setComparisonSelection] = useState<readonly string[] | null>(null);
@@ -160,7 +154,6 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
     const comparisonGuidanceId = `${panelId}-comparison-guidance`;
     const runNameGuidanceId = `${panelId}-run-name-guidance`;
     const savedRecipeEffectsId = `${panelId}-saved-recipe-effects`;
-    const savingRef = useRef(false);
     const mountedRef = useRef(true);
     const trimmedRunTitle = runTitle.trim();
     const runTitleTooLong = Array.from(trimmedRunTitle).length
@@ -189,37 +182,6 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
         if (hydrationStatus !== 'ready') return;
         setComparisonSelection((current) => current ?? records.slice(0, 2).map((record) => record.id));
     }, [hydrationStatus, records]);
-
-    const saveCurrentRun = useCallback(async () => {
-        if (savingRef.current || pendingSave !== null || runTitleTooLong) return;
-        savingRef.current = true;
-        setSaving(true);
-        setActionError(null);
-        try {
-            const timestamp = new Date().toISOString();
-            const api = await getWorkerApi();
-            const capturedRecord = await api.captureRunArtifact({
-                id: createUuid(),
-                createdAt: timestamp,
-                updatedAt: timestamp,
-                ...(trimmedRunTitle.length > 0 ? { title: trimmedRunTitle } : {}),
-            });
-            const record = capturedRecord.title === undefined
-                ? {
-                    ...capturedRecord,
-                    title: createDefaultRunTitle(capturedRecord.recipe, capturedRecord.snapshot),
-                }
-                : capturedRecord;
-            await saveRecord(record);
-        } catch (error) {
-            if (mountedRef.current) {
-                setActionError(error instanceof Error ? error.message : 'Saving the current run failed.');
-            }
-        } finally {
-            savingRef.current = false;
-            if (mountedRef.current) setSaving(false);
-        }
-    }, [pendingSave, runTitleTooLong, saveRecord, trimmedRunTitle]);
 
     const applySavedRecipe = useCallback(async (record: ExperimentRunRecordV2) => {
         setActionError(null);
@@ -282,8 +244,8 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                 type="button"
                 className="btn btn--ghost btn--sm"
                 style={{ width: '100%' }}
-                onClick={() => { void saveCurrentRun(); }}
-                disabled={saving
+                onClick={() => { void saveController.commands.save(trimmedRunTitle); }}
+                disabled={saveController.disabledReason !== null
                     || pendingSave !== null
                     || runTitleTooLong
                     || hydrationStatus !== 'ready'
@@ -292,7 +254,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                 {saving ? 'Saving…' : 'Save current run'}
             </button>
 
-            {actionError && <div className="inspection__empty" role="alert" style={{ marginTop: 8 }}>{actionError}</div>}
+            {(actionError || (saveController.error && !persistenceError)) && <div className="inspection__empty" role="alert" style={{ marginTop: 8 }}>{actionError || saveController.error}</div>}
             {(persistenceError || pendingSave) && (
                 <div
                     className="inspection__layer"
@@ -307,7 +269,8 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                             <button
                                 type="button"
                                 className="btn btn--ghost btn--sm"
-                                onClick={() => { void retryPersistence(); }}
+                                disabled={saving}
+                                onClick={() => { void saveController.commands.retry(); }}
                             >
                                 Retry saving
                             </button>
@@ -316,7 +279,8 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                             <button
                                 type="button"
                                 className="btn btn--ghost btn--sm"
-                                onClick={() => { void discardPendingSave(); }}
+                                disabled={saving}
+                                onClick={() => { void saveController.commands.discard(); }}
                             >
                                 Discard pending save
                             </button>
@@ -325,7 +289,7 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
                             <button
                                 type="button"
                                 className="btn btn--ghost btn--sm"
-                                onClick={dismissPersistenceError}
+                                onClick={saveController.commands.dismiss}
                             >
                                 Dismiss error
                             </button>
@@ -526,4 +490,4 @@ export const RunHistoryPanel = memo(function RunHistoryPanel() {
             )}
         </div>
     );
-});
+}

@@ -380,8 +380,8 @@ async function expectRecipe(page: Page, recipe: RecipeExpectation): Promise<void
     await expect(hyperparameters.getByLabel('Batch size', { exact: true })).toHaveValue('10');
     await tools.getByRole('button', { name: 'Features', exact: true }).click();
     const features = page.getByRole('region', { name: 'Features context', exact: true });
-    await expect(features.getByRole('button', { name: 'x', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(features.getByRole('button', { name: 'y', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(features.getByRole('button', { name: 'X₁', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(features.getByRole('button', { name: 'X₂', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(features.locator('button[aria-pressed="true"]')).toHaveCount(2);
     if (openedAdvanced) await advancedTools(page).click();
     await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
@@ -580,7 +580,11 @@ test('concept help remains fully visible in the desktop Run workspace', async ({
     await page.getByRole('group', { name: 'Workspace view' })
         .getByRole('button', { name: 'build', exact: true })
         .click();
+    const tools = page.getByRole('navigation', { name: 'Build tools' });
+    await tools.getByRole('button', { name: 'Data', exact: true }).click();
     await expectConceptHelpInViewport(page, 'Train/test split');
+    await setAdvancedTools(page, true);
+    await tools.getByRole('button', { name: 'Hyperparameters', exact: true }).click();
     await expectConceptHelpInViewport(page, 'Learning rate');
 });
 

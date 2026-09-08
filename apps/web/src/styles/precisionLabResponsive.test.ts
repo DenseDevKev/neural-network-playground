@@ -18,6 +18,13 @@ describe('Precision Lab layout contracts', () => {
         expect(css).toContain('.precision-context');
         expect(css).toContain('.precision-drawer');
     });
+    it('does not reserve the removed legacy transport column', () => {
+        expect(css).toMatch(/\.precision-transport \.forge-transport-cluster\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    });
+    it('allows short viewports to scroll the workspace instead of overlapping the status bar', () => {
+        expect(css).toMatch(/\.forge-workspace:has\(\.precision-shell\)\s*\{[^}]*overflow-y:\s*auto/);
+        expect(css).toMatch(/\.precision-layout\s*\{[^}]*min-height:\s*max\(100%,\s*640px\)/);
+    });
     it('is imported after legacy chrome without changing the engine or base theme', () => {
         const entry = readFileSync(resolve(__dirname, '../main.tsx'), 'utf8');
         expect(entry.indexOf('precisionLab.css')).toBeGreaterThan(entry.indexOf('forge.css'));

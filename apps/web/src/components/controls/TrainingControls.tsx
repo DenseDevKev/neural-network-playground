@@ -2,6 +2,7 @@
 import { Fragment, memo, useEffect, useId, useMemo, useState } from 'react';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
+import type { SaveCurrentRunController } from '../../hooks/useSaveCurrentRun.ts';
 import type { TrainingHook } from '../../hooks/useTraining.ts';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { getTrainingLifecycleUi } from './trainingLifecycle.ts';
@@ -12,6 +13,7 @@ import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 interface Props {
     training: TrainingHook;
+    saveController?: SaveCurrentRunController;
 }
 
 const SPEED_OPTIONS: { value: number; label: string }[] = [
@@ -26,7 +28,8 @@ const trainingShortcutLabel = (action: TrainingShortcutAction) => (
     TRAINING_SHORTCUTS.find((shortcut) => shortcut.action === action)?.label
 );
 
-export const TrainingControls = memo(function TrainingControls({ training }: Props) {
+export const TrainingControls = memo(function TrainingControls({ training, saveController }: Props) {
+    const saveReasonId = useId();
     const guidanceLevel = useAudienceGuidanceLevel();
     const status = useTrainingStore((s) => s.status);
     const currentModel = useTrainingStore((s) => (
@@ -119,6 +122,26 @@ export const TrainingControls = memo(function TrainingControls({ training }: Pro
                     {STATE_EFFECTS['training-reset']}
                 </span>
             </div>
+
+            {saveController && (
+                <div className="training-bar__save">
+                    <button type="button" className="btn btn--ghost btn--control"
+                        aria-label="Save run"
+                        aria-describedby={saveController.disabledReason ? saveReasonId : undefined}
+                        disabled={saveController.disabledReason !== null}
+                        onClick={() => { void saveController.commands.save(); }}>
+                        {saveController.busy ? 'Saving…' : 'Save run'}
+                    </button>
+                    {saveController.disabledReason && <span className="sr-only" id={saveReasonId}>{saveController.disabledReason}</span>}
+                    {saveController.pending && <>
+                        <button type="button" className="btn btn--ghost btn--control" disabled={saveController.busy}
+                            onClick={() => { void saveController.commands.retry(); }}>Retry pending artifact</button>
+                        <button type="button" className="btn btn--ghost btn--control" disabled={saveController.busy}
+                            onClick={() => { void saveController.commands.discard(); }}>Discard pending artifact</button>
+                    </>}
+                    {saveController.error && <span role="alert" className="training-bar__save-error">{saveController.error}</span>}
+                </div>
+            )}
 
             <details className="training-shortcuts" aria-label="Keyboard shortcuts">
                 <summary>Keyboard shortcuts</summary>

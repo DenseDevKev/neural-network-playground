@@ -1,4 +1,5 @@
 import { StrictMode } from 'react';
+import { useSaveCurrentRun } from '../../hooks/useSaveCurrentRun.ts';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -110,6 +111,43 @@ describe('RunHistoryPanel V2 evidence memory', () => {
             if (!result.ok) throw new Error('Could not reset the playground document for the test.');
         });
         await hydrateSingleton();
+    });
+
+    it('delegates capture to the injected App controller', async () => {
+        const commands = { save: vi.fn(async () => true), retry: vi.fn(async () => true),
+            discard: vi.fn(async () => {}), dismiss: vi.fn() };
+        render(<RunHistoryPanel saveController={{ busy: false, error: null, pending: false,
+            disabledReason: null, commands }} />);
+        await userEvent.type(screen.getByRole('textbox', { name: 'Run name' }), ' Shared title ');
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        expect(commands.save).toHaveBeenCalledWith('Shared title');
+        expect(workerApi.captureRunArtifact).not.toHaveBeenCalled();
+    });
+
+    it('retains the shared capture guard when the History drawer unmounts and reopens', async () => {
+        let finish!: (record: ExperimentRunRecordV2) => void;
+        workerApi.captureRunArtifact.mockImplementation(() => new Promise<ExperimentRunRecordV2>((resolve) => { finish = resolve; }));
+        function Owner({ historyOpen }: { historyOpen: boolean }) {
+            const save = useSaveCurrentRun();
+            return <>
+                <button onClick={() => { void save.commands.save(); }}>Transport save</button>
+                <span data-testid="capture-busy">{String(save.busy)}</span>
+                {historyOpen && <RunHistoryPanel saveController={save} />}
+            </>;
+        }
+        const view = render(<Owner historyOpen />);
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        await waitFor(() => expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1));
+        view.rerender(<Owner historyOpen={false} />);
+        await userEvent.click(screen.getByRole('button', { name: 'Transport save' }));
+        expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('capture-busy')).toHaveTextContent('true');
+        const metadata = workerApi.captureRunArtifact.mock.calls[0][0];
+        await act(async () => finish(makeRecord(currentPreparedForTest()!, metadata.id, 'Closed drawer capture')));
+        await waitFor(() => expect(screen.getByTestId('capture-busy')).toHaveTextContent('false'));
+        view.rerender(<Owner historyOpen />);
+        expect(screen.getByRole('article', { name: 'Closed drawer capture' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save current run' })).toBeEnabled();
     });
 
     it('asks the worker to author the record from metadata only and persists its artifact', async () => {

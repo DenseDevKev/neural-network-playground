@@ -274,7 +274,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
             className="precision-layout"
         >
             <div className={`precision-shell precision-shell--${view}`} data-precision-workspace>
-            <nav className="precision-rail" aria-label={view === 'build' ? 'Build tools' : 'Run tools'}>
+            <nav data-precision-region="rail" className="precision-rail" aria-label={view === 'build' ? 'Build tools' : 'Run tools'}>
                 {railContent}
             </nav>
             {recipeStripContent}
@@ -295,7 +295,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
             >
                 {boundaryRailContent}
             </aside>
-            <section className="precision-selection" aria-label="Neuron selection">
+            <section data-precision-region="selection" className="precision-selection" aria-label="Neuron selection">
             {view === 'run' && (
                 <div className="precision-run-summary" data-forge-panel-targets="run" tabIndex={-1}>
                     {runSummaryContent}

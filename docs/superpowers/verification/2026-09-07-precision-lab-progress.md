@@ -18,11 +18,11 @@ lesson contract. It does not change the recipe, model, worker, URL, persistence
 format, or scientific evaluation cadence. The full web test run that identified
 the problem had 1,142 passes and these two failures; that was not a passing run.
 
-## Integration still pending
+## Integration status — reconciled September 8
 
-- [ ] Connect selection to both production graph renderers and the visible selection deck.
-- [ ] Integrate the always-visible live boundary and evidence-only detail controls.
-- [ ] Activate and style the sole Precision Lab shell.
+- [x] Connect selection to both production graph renderers and the visible selection deck — committed `6e06b678...` / `3e7da9a...`; focused/full package CI passed.
+- [x] Integrate one live boundary and evidence-only detail controls — committed `3e7da9a...`; component tests/full package CI passed; browser geometry still pending.
+- [x] Activate PrecisionLabShell in App — committed `3e7da9a...`; legacy compatibility source retained pending browser acceptance.
 - [ ] Complete responsive, accessibility, browser, and performance acceptance.
 - [ ] Merge only a qualified replacement into main.
 - [ ] Publish and verify a live deployment after the repository Pages blocker is resolved.
@@ -55,7 +55,24 @@ these are not a claim of real-browser pointer/geometry acceptance.
 
 The local build measured entry 151,777 / 152,245 gzip bytes, InspectionPanel
 5,414 / 7,373, and total JavaScript 231,253 / 234,161. Caps are unchanged. Main's
-engine and shared implementation are unchanged. The production App still uses
-BuildRunShell; the shared visible deck, one boundary rail, and final shell
-composition remain the next integration task. The branch workflow now also runs
+engine and shared implementation are unchanged. At that earlier checkpoint the App still used BuildRunShell. This was superseded
+by `3e7da9a...`: App now uses PrecisionLabShell, a shared selection deck and one
+live boundary rail. Do not repeat or overwrite that integrated work. The branch workflow now also runs
 the full package suite so a passing changed-file subset cannot hide old failures.
+
+## September 8 local continuation — not pushed
+
+The exact GitHub source tree at `3e7da9a...` was recovered and checksum/tree-verified.
+The canonical root `NN-FORGE-LIVING-EXECUTION-PLAN.md` is restored from its original
+Library copy. See `2026-09-08-precision-lab-local-continuation.md` for source and test evidence.
+
+Local changes add one App-owned save controller shared by transport/History, exact
+pending-artifact retries, responsive evidence/transport fixes, portal help/focus
+regressions and targeted education lazy loading. Local final tests: engine 497,
+shared 334, web 1,170; helpers 91; lint/types/build/bundle pass. Gzip bytes:
+entry 151,131, InspectionPanel 5,431, total 234,068; caps unchanged.
+
+These changes are NOT an upstream commit or browser-qualified release. The available
+GitHub tools are read-only; Chromium/WebKit executables are absent and both launch attempts failed before the app ran.
+The new recovery and paired-reference workflow jobs have not executed. The accepted
+baseline policy is resolved and merged; Pages still has a settings blocker.

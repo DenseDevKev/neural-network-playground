@@ -188,6 +188,10 @@ vi.mock('../worker/workerBridge.ts', () => ({
 }));
 
 // Stub visual sub-components so tests stay focused on training logic.
+// Precision Lab mounts its canonical canvas outside the old MainArea adapter.
+vi.mock('../components/visualization/DecisionBoundaryCanvas.tsx', () => ({
+    DecisionBoundaryCanvas: () => <canvas aria-label="Mock boundary canvas" />,
+}));
 vi.mock('../components/layout/Header.tsx', () => ({
     Header: ({ training }: { training: { play: () => void; pause: () => void } }) => (
         <header>

@@ -9,7 +9,10 @@ import { ConceptHelp } from '../common/ConceptHelp.tsx';
 import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 type ChartTab = 'loss' | 'accuracy';
-const CHART_HEIGHT = 220;
+export function deriveLossChartViewport(width: number) {
+    const roundedWidth = Number.isFinite(width) ? Math.max(1, Math.round(width)) : 1;
+    return { width: roundedWidth, height: Math.max(96, Math.min(140, Math.round(roundedWidth * 0.35))) };
+}
 const PADDING = { top: 18, right: 16, bottom: 24, left: 42 } as const;
 
 interface ScalarPoint {
@@ -29,11 +32,12 @@ function drawSeries(
     stepMax: number,
     valueMax: number,
     width: number,
+    height: number,
 ): void {
     const values = finitePoints(points);
     if (values.length === 0) return;
-    const plotWidth = width - PADDING.left - PADDING.right;
-    const plotHeight = CHART_HEIGHT - PADDING.top - PADDING.bottom;
+    const plotWidth = Math.max(1, width - PADDING.left - PADDING.right);
+    const plotHeight = height - PADDING.top - PADDING.bottom;
     const stepRange = Math.max(1, stepMax - stepMin);
     const scaleX = (step: number) => PADDING.left + ((step - stepMin) / stepRange) * plotWidth;
     const scaleY = (value: number) => PADDING.top + plotHeight - (value / valueMax) * plotHeight;
@@ -53,6 +57,7 @@ function drawSeries(
 function drawChart(
     ctx: CanvasRenderingContext2D,
     width: number,
+    height: number,
     tab: ChartTab,
     trends: readonly TrainingTrendPoint[],
     evaluations: readonly EvaluationPoint[],
@@ -89,18 +94,18 @@ function drawChart(
         : Math.max(0.000001, ...values) * 1.05;
 
     ctx.fillStyle = 'rgba(12, 16, 28, 0.9)';
-    ctx.fillRect(0, 0, width, CHART_HEIGHT);
-    drawSeries(ctx, trend, '#f6c85f', stepMin, stepMax, valueMax, width);
-    drawSeries(ctx, train, '#00e5c3', stepMin, stepMax, valueMax, width);
-    drawSeries(ctx, test, '#7c5cfc', stepMin, stepMax, valueMax, width);
-    drawSeries(ctx, objective, '#ff8f70', stepMin, stepMax, valueMax, width);
+    ctx.fillRect(0, 0, width, height);
+    drawSeries(ctx, trend, '#f6c85f', stepMin, stepMax, valueMax, width, height);
+    drawSeries(ctx, train, '#00e5c3', stepMin, stepMax, valueMax, width, height);
+    drawSeries(ctx, test, '#7c5cfc', stepMin, stepMax, valueMax, width, height);
+    drawSeries(ctx, objective, '#ff8f70', stepMin, stepMax, valueMax, width, height);
 
     ctx.fillStyle = 'rgba(255,255,255,0.58)';
     ctx.font = '10px Inter, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText(stepMin.toLocaleString(), PADDING.left, CHART_HEIGHT - 7);
+    ctx.fillText(stepMin.toLocaleString(), PADDING.left, height - 7);
     ctx.textAlign = 'right';
-    ctx.fillText(stepMax.toLocaleString(), width - PADDING.right, CHART_HEIGHT - 7);
+    ctx.fillText(stepMax.toLocaleString(), width - PADDING.right, height - 7);
 }
 
 function formatSigned(value: number): string {
@@ -123,7 +128,7 @@ export const LossChart = memo(function LossChart() {
         ? state.access.prepared.document.recipe.task.kind
         : null);
     const [tab, setTab] = useState<ChartTab>('loss');
-    const [chartWidth, setChartWidth] = useState(320);
+    const [viewport, setViewport] = useState(() => deriveLossChartViewport(320));
 
     const history = useMemo(() => {
         void trainingTrendVersion;
@@ -139,14 +144,31 @@ export const LossChart = memo(function LossChart() {
         const container = containerRef.current;
         const Observer = typeof window === 'undefined' ? undefined : window.ResizeObserver;
         if (!container || !Observer) return;
+        let frame: number | null = null;
+        let pendingWidth = container.clientWidth;
+        let stopped = false;
+        const schedule = (width: number) => {
+            if (stopped || !Number.isFinite(width) || width <= 0) return;
+            pendingWidth = width;
+            if (frame !== null) return;
+            frame = window.requestAnimationFrame(() => {
+                frame = null;
+                if (stopped) return;
+                const next = deriveLossChartViewport(pendingWidth);
+                setViewport((current) => current.width === next.width && current.height === next.height
+                    ? current : next);
+            });
+        };
         const observer = new Observer((entries) => {
-            for (const entry of entries) {
-                if (entry.contentRect.width > 0) setChartWidth(Math.round(entry.contentRect.width));
-            }
+            for (const entry of entries) schedule(entry.contentRect.width);
         });
         observer.observe(container);
-        if (container.clientWidth > 0) setChartWidth(container.clientWidth);
-        return () => observer.disconnect();
+        schedule(container.clientWidth);
+        return () => {
+            stopped = true;
+            observer.disconnect();
+            if (frame !== null) window.cancelAnimationFrame(frame);
+        };
     }, []);
 
     useEffect(() => {
@@ -155,17 +177,18 @@ export const LossChart = memo(function LossChart() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
         const dpr = window.devicePixelRatio || 1;
-        canvas.width = chartWidth * dpr;
-        canvas.height = CHART_HEIGHT * dpr;
+        canvas.width = Math.max(1, Math.round(viewport.width * dpr));
+        canvas.height = Math.max(1, Math.round(viewport.height * dpr));
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         drawChart(
             ctx,
-            chartWidth,
+            viewport.width,
+            viewport.height,
             tab,
             history.trendHistory,
             history.evaluationHistory,
         );
-    }, [chartWidth, history, tab]);
+    }, [viewport, history, tab]);
 
     if (history.trendHistory.length === 0 && history.evaluationHistory.length === 0) {
         return (
@@ -252,7 +275,7 @@ export const LossChart = memo(function LossChart() {
             </div>
             <canvas
                 ref={canvasRef}
-                style={{ width: '100%', height: CHART_HEIGHT, display: 'block' }}
+                style={{ width: '100%', height: viewport.height, display: 'block' }}
                 aria-label={tab === 'loss'
                     ? 'Scientific loss evidence by actual model step'
                     : 'Full-split accuracy by evaluation model step'}

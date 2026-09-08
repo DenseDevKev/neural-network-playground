@@ -92,6 +92,25 @@ describe('TrainingControls', () => {
     useLayoutStore.setState({ audienceMode: 'beginner' });
   });
 
+  it('uses the shared save and exact retry commands without owning capture', async () => {
+    const commands = { save: vi.fn(async () => true), retry: vi.fn(async () => true),
+      discard: vi.fn(async () => {}), dismiss: vi.fn() };
+    const controller = { busy: false, error: null, pending: false, disabledReason: null, commands };
+    const training = createTrainingMock();
+    const view = render(<TrainingControls training={training} saveController={controller} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Save run' }));
+    expect(commands.save).toHaveBeenCalledWith();
+    view.rerender(<TrainingControls training={training} saveController={{ ...controller,
+      pending: true, error: 'quota', disabledReason: 'Retry or discard the pending artifact.' }} />);
+    expect(screen.getByRole('button', { name: 'Save run' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save run' })).toHaveAccessibleDescription('Retry or discard the pending artifact.');
+    await userEvent.click(screen.getByRole('button', { name: 'Retry pending artifact' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Discard pending artifact' }));
+    expect(commands.retry).toHaveBeenCalledTimes(1);
+    expect(commands.discard).toHaveBeenCalledTimes(1);
+    expect(commands.save).toHaveBeenCalledTimes(1);
+  });
+
   it('should display visible keyboard shortcut hints on control buttons', () => {
     const training = createTrainingMock();
 

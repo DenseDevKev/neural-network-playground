@@ -45,6 +45,9 @@ async function loadReadyPlayground(page: Page): Promise<void> {
 }
 
 const SCAN_CASES = [
+    { name: '1437px Precision Lab accessibility', width: 1437, height: 742 },
+    { name: '735px Precision Lab accessibility', width: 735, height: 860 },
+    { name: '320px Precision Lab accessibility', width: 320, height: 844 },
     { name: 'desktop accessibility', width: 1280, height: 720 },
     { name: '390px compact accessibility', width: 390, height: 844 },
 ] as const;

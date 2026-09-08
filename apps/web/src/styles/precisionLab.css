@@ -8,7 +8,20 @@
 
 .network-node-target:focus-visible { outline: 2px solid var(--accent, #4f8cff); outline-offset: 2px; }
 
-.precision-layout { position: relative; height: 100%; min-width: 0; min-height: 0; }
+.forge-workspace:has(.precision-shell) { overflow-y: auto; }
+.precision-layout { position: relative; height: 100%; min-width: 0; min-height: max(100%, 640px); }
+
+/* Help must escape the workspace paint-containment block, not merely gain z-index. */
+.forge-shell .concept-help__content--viewport {
+    position: fixed;
+    inset: auto 12px 36px auto;
+    width: min(320px, calc(100vw - 24px));
+    max-height: min(420px, calc(100dvh - 60px));
+    font: 400 11px/1.4 var(--font-sans);
+    letter-spacing: normal;
+    text-align: left;
+    text-transform: none;
+}
 
 /* Precision Lab owns layout only; experiment state and the existing header are unchanged. */
 .precision-shell {
@@ -21,7 +34,7 @@
         "rail evidence selection"
         "transport transport transport";
     grid-template-columns: 76px minmax(0, 1fr) clamp(250px, 20vw, 280px);
-    grid-template-rows: 82px minmax(230px, 1fr) clamp(180px, 25vh, 220px) auto;
+    grid-template-rows: 82px minmax(180px, 1fr) clamp(180px, 25vh, 220px) auto;
     height: 100%;
     min-width: 0;
     min-height: 0;
@@ -87,6 +100,7 @@
 .precision-evidence .decision-overlay-controls { display: flex; flex-wrap: wrap; }
 .precision-evidence .decision-overlay-controls button { min-width: 44px; min-height: 44px; }
 .precision-transport { grid-area: transport; z-index: 5; overflow-x: clip; background: var(--forge-instrument-panel-strong); }
+.precision-transport .forge-transport-cluster { grid-template-columns: minmax(0, 1fr); }
 .precision-transport .training-bar { min-width: 0; }
 .precision-context, .precision-drawer {
     position: absolute;
@@ -114,7 +128,8 @@
     .precision-shell { grid-template-columns: 76px minmax(0, 1fr) clamp(250px, 20vw, 280px); }
 }
 @media (min-width: 680px) and (max-width: 1179px) {
-    .precision-shell { grid-template-columns: 68px minmax(0, 1fr) clamp(190px, 27vw, 230px); grid-template-rows: 104px minmax(260px, 1fr) 210px auto; }
+    .precision-layout { min-height: max(100%, 760px); }
+    .precision-shell { grid-template-columns: 68px minmax(0, 1fr) clamp(190px, 27vw, 230px); grid-template-rows: 104px minmax(180px, 1fr) 210px auto; }
     .precision-recipe__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .precision-context { top: 104px; left: 72px; }
 }
@@ -149,4 +164,35 @@
         transition: none !important;
         scroll-behavior: auto !important;
     }
+}
+
+/* Compact evidence retains captions and metrics; only its presentation changes. */
+.precision-evidence .confusion-matrix { container-type: inline-size; min-width: 0; }
+.precision-evidence .cm-evidence-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
+.precision-evidence .cm-grid-container { min-width: 0; padding: 6px; margin-top: 0; }
+.precision-evidence .cm-layout { grid-template-columns: 12px minmax(0, 1fr); gap: 4px; }
+.precision-evidence .cm-grid { grid-template-columns: 26px repeat(2, minmax(0, 1fr)) 32px; gap: 3px; }
+.precision-evidence .cm-grid--multiclass { grid-template-columns: 26px repeat(3, minmax(0, 1fr)) 32px; }
+.precision-evidence :is(.cm-header--empty, .cm-total, .cm-cell) { min-width: 0; }
+.precision-evidence .cm-cell { min-height: 46px; padding: 4px 2px; }
+.precision-evidence .cm-percentage { font-size: 10px; }
+.precision-evidence .cm-metrics { margin: 0; min-width: 0; }
+.precision-evidence .cm-metric { min-width: 0; padding: 6px; overflow-wrap: anywhere; }
+.cm-metric dd { margin-inline: 0; }
+.precision-evidence .cm-note { margin-bottom: 0; }
+@container (min-width: 480px) {
+    .precision-evidence .cm-evidence-layout { grid-template-columns: minmax(0, 1fr) minmax(120px, 0.4fr); }
+    .precision-evidence .cm-metrics { grid-template-columns: minmax(0, 1fr); align-content: start; }
+}
+.precision-transport .training-bar__save { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.precision-transport .training-bar__save-error { flex-basis: 100%; overflow-wrap: anywhere; font-size: 11px; }
+.precision-transport :is(.btn--control, .speed-btn, .training-shortcuts > summary) { min-height: 44px; }
+.precision-transport .training-bar__info { min-height: 44px; font-variant-numeric: tabular-nums; }
+.precision-transport .training-bar__controls { min-width: 0; flex-wrap: wrap; }
+@media (max-width: 679px) {
+    .precision-transport .training-bar__controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; padding-inline: 0; }
+    .precision-transport .training-bar__controls .tooltip { min-width: 0; }
+    .precision-transport .training-bar__controls .btn--control { width: 100%; min-width: 0; white-space: normal; padding-inline: 4px; }
+    .precision-transport .training-bar__controls .btn__shortcut { display: none; }
+    .precision-transport .training-bar__speed { flex-wrap: wrap; min-width: 0; padding-inline: 0; }
 }

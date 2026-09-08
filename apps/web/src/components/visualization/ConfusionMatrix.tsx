@@ -80,6 +80,7 @@ function BinaryMatrix({
     return (
         <div className="panel confusion-matrix">
             <div className="panel__title">Binary Confusion Matrix (Full Test Split)</div>
+            <div className="cm-evidence-layout">
             <div className="cm-grid-container">
                 <div className="cm-axis-label">Predicted</div>
                 <div className="cm-layout">
@@ -103,22 +104,23 @@ function BinaryMatrix({
                         <div className="cm-total cm-total--grand">{total}</div>
                     </div>
                 </div>
-                <div className="cm-metrics">
-                    <div className="cm-metric">
-                        <span className="cm-metric__label">Accuracy</span>
-                        <span className="cm-metric__value">{formatRatio(matrix.tp + matrix.tn, total)}</span>
-                    </div>
-                    <div className="cm-metric">
-                        <span className="cm-metric__label">Precision</span>
-                        <span className="cm-metric__value">{formatRatio(matrix.tp, matrix.tp + matrix.fp)}</span>
-                    </div>
-                    <div className="cm-metric">
-                        <span className="cm-metric__label">Recall</span>
-                        <span className="cm-metric__value">{formatRatio(matrix.tp, matrix.tp + matrix.fn)}</span>
-                    </div>
-                </div>
-                <ProvenanceCaption evaluationId={evaluationId} step={step} sampleCount={sampleCount} />
             </div>
+                <dl className="cm-metrics" aria-label="Full test split metrics">
+                    <div className="cm-metric">
+                        <dt className="cm-metric__label">Accuracy</dt>
+                        <dd className="cm-metric__value">{formatRatio(matrix.tp + matrix.tn, total)}</dd>
+                    </div>
+                    <div className="cm-metric">
+                        <dt className="cm-metric__label">Precision</dt>
+                        <dd className="cm-metric__value">{formatRatio(matrix.tp, matrix.tp + matrix.fp)}</dd>
+                    </div>
+                    <div className="cm-metric">
+                        <dt className="cm-metric__label">Recall</dt>
+                        <dd className="cm-metric__value">{formatRatio(matrix.tp, matrix.tp + matrix.fn)}</dd>
+                    </div>
+                </dl>
+            </div>
+            <ProvenanceCaption evaluationId={evaluationId} step={step} sampleCount={sampleCount} />
         </div>
     );
 }
@@ -153,6 +155,7 @@ function MulticlassMatrix({
     return (
         <div className="panel confusion-matrix">
             <div className="panel__title">Multiclass Confusion Matrix (Full Test Split)</div>
+            <div className="cm-evidence-layout">
             <div className="cm-grid-container">
                 <div className="cm-axis-label">Predicted</div>
                 <div className="cm-layout">
@@ -193,18 +196,19 @@ function MulticlassMatrix({
                         <div className="cm-total cm-total--grand">{total}</div>
                     </div>
                 </div>
-                <div className="cm-metrics">
-                    <div className="cm-metric">
-                        <span className="cm-metric__label">Accuracy</span>
-                        <span className="cm-metric__value">{formatRatio(correct, total)}</span>
-                    </div>
-                    <div className="cm-metric">
-                        <span className="cm-metric__label">Classes</span>
-                        <span className="cm-metric__value">{matrix.classCount}</span>
-                    </div>
-                </div>
-                <ProvenanceCaption evaluationId={evaluationId} step={step} sampleCount={sampleCount} />
             </div>
+                <dl className="cm-metrics" aria-label="Full test split metrics">
+                    <div className="cm-metric">
+                        <dt className="cm-metric__label">Accuracy</dt>
+                        <dd className="cm-metric__value">{formatRatio(correct, total)}</dd>
+                    </div>
+                    <div className="cm-metric">
+                        <dt className="cm-metric__label">Classes</dt>
+                        <dd className="cm-metric__value">{matrix.classCount}</dd>
+                    </div>
+                </dl>
+            </div>
+            <ProvenanceCaption evaluationId={evaluationId} step={step} sampleCount={sampleCount} />
         </div>
     );
 }
