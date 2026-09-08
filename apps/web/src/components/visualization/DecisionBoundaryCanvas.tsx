@@ -396,6 +396,7 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
         return (
             <div className="decision-boundary" ref={containerRef}>
                 <canvas
+                data-decision-boundary-canvas
                     ref={canvasRef}
                     style={{ width: '100%', height: '100%' }}
                     role="img"
@@ -427,6 +428,7 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
     return (
         <div className="decision-boundary" ref={containerRef}>
             <canvas
+                data-decision-boundary-canvas
                 ref={canvasRef}
                 style={{ width: '100%', height: '100%' }}
                 role="img"

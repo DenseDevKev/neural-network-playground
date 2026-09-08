@@ -1,5 +1,7 @@
 import {
     memo,
+    useEffect,
+    useRef,
     useCallback,
     type KeyboardEvent,
     type ReactNode,
@@ -15,7 +17,7 @@ import type {
     BuildModuleId,
     ShellEvidenceViewId,
 } from '../../../productShell/audienceProfiles.ts';
-import type { DrawerSurfaceId } from '../../../productShell/shellTypes.ts';
+import { ADVANCED_TOOLS_REGION_ID, ADVANCED_TOOLS_TRIGGER_ID, type DrawerSurfaceId } from '../../../productShell/shellTypes.ts';
 import {
     getVisibleBuildModules,
     getVisibleEvidenceViews,
@@ -57,6 +59,7 @@ export interface PrecisionLabShellProps {
     readonly onCloseRecipeSection: () => void;
     readonly onSelectEvidence: (view: EvidenceViewId) => void;
     readonly onCloseSurface: () => void;
+    readonly firstVisitLessonCue?: ReactNode;
     readonly recipeStripContent: ReactNode;
     readonly runSummaryContent: ReactNode;
     readonly buildContent: Readonly<Record<BuildModuleId, ReactNode>>;
@@ -87,6 +90,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
     onCloseRecipeSection,
     onSelectEvidence,
     onCloseSurface,
+    firstVisitLessonCue,
     recipeStripContent,
     runSummaryContent,
     buildContent,
@@ -99,6 +103,19 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
     lessonContent,
     historyContent,
 }: PrecisionLabShellProps) {
+    const contextRef = useRef<HTMLElement>(null);
+    const drawerCloseRef = useRef<HTMLButtonElement>(null);
+    useEffect(() => { if (openSurface) drawerCloseRef.current?.focus(); }, [openSurface]);
+    const contextKey = view === 'build' && buildContextOpen ? activeRecipeSection : null;
+    const previousContextKey = useRef<RecipeSectionId | null>(null);
+    useEffect(() => {
+        const contextChanged = previousContextKey.current !== contextKey;
+        previousContextKey.current = contextKey;
+        if (!contextChanged || contextKey === null || openSurface) return;
+        // Closing Advanced Tools may resolve a hidden target; keep focus on its trigger.
+        if (document.activeElement?.id === ADVANCED_TOOLS_TRIGGER_ID) return;
+        contextRef.current?.focus();
+    }, [contextKey, openSurface]);
     const visibleBuildModules = getVisibleBuildModules(audienceMode, advancedToolsOpen);
     const visibleEvidenceViews = getVisibleEvidenceViews(audienceMode, advancedToolsOpen);
     const visibleEvidenceView = resolveVisibleEvidenceView(
@@ -192,11 +209,13 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
     const buildContext = view === 'build' && buildContextOpen ? (
         <aside
             className="precision-context"
+            ref={contextRef}
+            data-forge-panel-targets={selectedBuildSection}
             role="region"
             aria-label={`${BUILD_LABELS[selectedBuildSection]} context`}
             tabIndex={-1}
             onKeyDown={(event) => {
-                if (event.key !== 'Escape') return;
+                if (event.key !== 'Escape' || event.defaultPrevented) return;
                 event.preventDefault();
                 event.stopPropagation();
                 closeBuildContext();
@@ -238,6 +257,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
                 <button
                     type="button"
                     aria-label={`Close ${SURFACE_LABELS[openSurface]}`}
+                    ref={drawerCloseRef}
                     onClick={onCloseSurface}
                 >
                     ×
@@ -248,35 +268,42 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
     );
 
     return (
-        <div
-            className={`precision-shell precision-shell--${view}`}
-            data-precision-workspace
+        <section
+            id={ADVANCED_TOOLS_REGION_ID}
+            aria-label="Workspace tools"
+            className="precision-layout"
         >
+            <div className={`precision-shell precision-shell--${view}`} data-precision-workspace>
             <nav className="precision-rail" aria-label={view === 'build' ? 'Build tools' : 'Run tools'}>
                 {railContent}
             </nav>
             {recipeStripContent}
-            {view === 'run' && (
-                <aside className="precision-run-summary" aria-label="Current run">
-                    {runSummaryContent}
-                </aside>
-            )}
             <section
                 className="precision-topology"
                 aria-label="Neural network"
                 data-precision-region="topology"
+                data-forge-panel-targets="topology"
+                tabIndex={-1}
             >
                 {topologyContent}
             </section>
             <aside
                 className="precision-boundary"
+                role="region"
                 aria-label="Pinned decision boundary"
                 data-precision-region="boundary"
             >
                 {boundaryRailContent}
             </aside>
             <section className="precision-selection" aria-label="Neuron selection">
+            {view === 'run' && (
+                <div className="precision-run-summary" data-forge-panel-targets="run" tabIndex={-1}>
+                    {runSummaryContent}
+                </div>
+            )}
                 {selectionContent}
+                <div className="precision-lesson-cue">{firstVisitLessonCue}</div>
+                {advancedToolsOpen && <p className="precision-advanced-note">Advanced Tools are visible. Configuration and diagnostic views are available without changing the experiment.</p>}
             </section>
             <section
                 className="precision-evidence"
@@ -286,6 +313,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
                 {evidenceTablist}
                 <div
                     id="precision-evidence-panel"
+                    data-forge-panel-targets={visibleEvidenceView}
                     role="tabpanel"
                     aria-labelledby={`precision-evidence-tab-${visibleEvidenceView}`}
                     tabIndex={-1}
@@ -297,11 +325,14 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
                 className="precision-transport"
                 data-status={status}
                 data-precision-region="transport"
+                data-forge-panel-targets="transport"
+                tabIndex={-1}
             >
                 {transportContent}
             </footer>
+            </div>
             {buildContext}
             {drawer}
-        </div>
+        </section>
     );
 });

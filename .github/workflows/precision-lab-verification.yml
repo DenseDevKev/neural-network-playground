@@ -68,3 +68,52 @@ jobs:
         run: pnpm build
       - name: Bundle guard
         run: pnpm test:bundle
+
+  browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [preview, subpath]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Full normal preview contracts
+        if: matrix.mode == 'preview'
+        run: pnpm exec playwright test --max-failures=5
+      - name: Full non-isolated project hosting contracts
+        if: matrix.mode == 'subpath'
+        shell: bash
+        run: |
+          node scripts/serve-release-fixture.mjs apps/web/dist 4174 > release-fixture.log 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://127.0.0.1:4174/neural-network-playground/ > /dev/null; then ready=1; break; fi
+            kill -0 "$fixture_pid" || { cat release-fixture.log; exit 1; }
+            sleep 1
+          done
+          test "$ready" -eq 1 || { cat release-fixture.log; exit 1; }
+          PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm exec playwright test --max-failures=5
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-browser-${{ matrix.mode }}-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+            release-fixture.log
+          retention-days: 7

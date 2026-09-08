@@ -85,9 +85,8 @@ vi.mock('../components/controls/CodeExportPanel.tsx', () => ({
 vi.mock('../components/visualization/NetworkGraph.tsx', () => ({
     NetworkGraph: () => <div>Mock Topology Graph</div>,
 }));
-vi.mock('../components/visualization/DecisionBoundary.tsx', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../components/visualization/DecisionBoundary.tsx')>()),
-    DecisionBoundary: () => <div>Mock Boundary</div>,
+vi.mock('../components/visualization/DecisionBoundaryCanvas.tsx', () => ({
+    DecisionBoundaryCanvas: () => <div data-decision-boundary-canvas>Mock Boundary</div>,
 }));
 vi.mock('../components/visualization/LossChart.tsx', () => ({
     LossChart: () => <div>Mock Loss Chart</div>,
@@ -223,6 +222,7 @@ describe('App shell integration', () => {
 
         useLayoutStore.setState({
             view: 'build',
+            buildContextOpen: false,
             activeRecipeSection: 'data',
             activeEvidenceView: 'boundary',
             audienceMode: 'explore',
@@ -276,12 +276,11 @@ describe('App shell integration', () => {
             });
 
             const { container } = render(<App />);
-            if (view === 'run') {
-                expect(screen.getByRole('tabpanel', { name: 'Boundary' })).toBeInTheDocument();
-            } else if (advancedToolsOpen) {
+            expect(screen.getByRole('tabpanel', { name: 'Boundary' })).toBeInTheDocument();
+            expect(screen.getByRole('region', { name: 'Workspace tools' })).toBeInTheDocument();
+            if (view === 'build' && advancedToolsOpen) {
+                act(() => useLayoutStore.getState().selectBuildContext('config'));
                 await screen.findByText('Mock Config Panel');
-            } else {
-                expect(screen.getByRole('region', { name: 'Workspace tools' })).toBeInTheDocument();
             }
 
             const results = await axe(container);
@@ -338,18 +337,18 @@ describe('App shell integration', () => {
         expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument();
     });
 
-    it('renders Build as recipe, topology, features, and hyperparameters without permanent drawers', () => {
+    it('renders Build with persistent recipe, topology, and boundary plus one disclosed control panel', async () => {
+        const user = userEvent.setup();
         render(<App />);
-
         expect(screen.getByRole('region', { name: 'Recipe summary' })).toBeInTheDocument();
-        expect(screen.getByText('Mock Data')).toBeInTheDocument();
         expect(screen.getByText('Mock Topology Graph')).toBeInTheDocument();
-        expect(screen.getByText('Mock Network Config')).toBeInTheDocument();
-        expect(screen.getByText('Mock Features')).toBeInTheDocument();
-        expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
-        expect(screen.queryByText('Mock Config Panel')).not.toBeInTheDocument();
-        expect(screen.queryByText('Mock Presets')).not.toBeInTheDocument();
-        expect(screen.queryByText('Mock Run History')).not.toBeInTheDocument();
+        expect(screen.getByText('Mock Boundary')).toBeInTheDocument();
+        for (const [name, content] of [['Data', 'Mock Data'], ['Network', 'Mock Network Config'], ['Features', 'Mock Features'], ['Hyperparameters', 'Mock Hyperparameters']]) {
+            await user.click(within(screen.getByRole('navigation', { name: 'Build tools' })).getByRole('button', { name }));
+            expect(await screen.findByText(content)).toBeInTheDocument();
+            expect(screen.getByText('Mock Topology Graph')).toBeInTheDocument();
+        }
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
     it('opens Presets, Lessons, and History as drawer surfaces', async () => {
@@ -362,7 +361,7 @@ describe('App shell integration', () => {
 
         await user.click(screen.getByRole('button', { name: 'Lessons' }));
         expect(screen.getByRole('dialog', { name: 'Lessons' })).toBeInTheDocument();
-        expect(screen.getByRole('combobox', { name: 'Guided lesson' })).toBeInTheDocument();
+        expect(await screen.findByRole('combobox', { name: 'Guided lesson' })).toBeInTheDocument();
 
         await user.click(screen.getByRole('button', { name: 'History' }));
         expect(screen.getByRole('dialog', { name: 'History' })).toBeInTheDocument();
@@ -476,6 +475,7 @@ describe('App shell integration', () => {
         await user.click(trigger);
 
         expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+        await user.click(within(screen.getByRole('navigation', { name: 'Build tools' })).getByRole('button', { name: 'Configuration' }));
         expect(await screen.findByText('Mock Config Panel')).toBeInTheDocument();
         expect(screen.getByText(/advanced tools are visible/i)).toBeInTheDocument();
         expect(usePlaygroundStore.getState().demand).toMatchObject({
@@ -528,6 +528,7 @@ describe('App shell integration', () => {
 
         const advancedTrigger = screen.getByRole('button', { name: 'Advanced Tools' });
         await user.click(advancedTrigger);
+        await user.click(within(screen.getByRole('navigation', { name: 'Build tools' })).getByRole('button', { name: 'Data' }));
         const nestedTrigger = screen.getByRole('button', { name: 'Nested tooltip trigger' });
         await user.click(nestedTrigger);
         const tooltip = screen.getByRole('tooltip', { name: 'Nested data help' });
@@ -540,6 +541,10 @@ describe('App shell integration', () => {
         expect(tooltip).toHaveStyle({ visibility: 'hidden' });
         expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
 
+        await user.keyboard('{Escape}');
+        expect(useLayoutStore.getState().buildContextOpen).toBe(false);
+        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+        await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'Build tools' })).getByRole('button', { name: 'Data' })).toHaveFocus());
         await user.keyboard('{Escape}');
 
         expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
@@ -621,7 +626,7 @@ describe('App shell integration', () => {
 
         expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
         expect(screen.getByText('Mock Loss Chart')).toBeInTheDocument();
-        expect(screen.queryByText('Mock Boundary')).not.toBeInTheDocument();
+        expect(screen.getByText('Mock Boundary')).toBeInTheDocument();
     });
 
     it('renders the same visible evidence view that drives demand for a hidden target', async () => {
@@ -654,7 +659,7 @@ describe('App shell integration', () => {
 
         await user.click(screen.getByRole('button', { name: 'Lessons' }));
         await user.selectOptions(
-            screen.getByRole('combobox', { name: 'Guided lesson' }),
+            await screen.findByRole('combobox', { name: 'Guided lesson' }),
             'lesson-feature-engineering-circle',
         );
         await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
@@ -796,6 +801,7 @@ describe('App shell integration', () => {
 
         const disclosure = screen.getByRole('button', { name: 'Advanced Tools' });
         await user.click(disclosure);
+        await user.click(within(screen.getByRole('navigation', { name: 'Build tools' })).getByRole('button', { name: 'Hyperparameters' }));
         expect(screen.getByText('Mock Hyperparameters')).toBeInTheDocument();
         expect(screen.queryByRole('note', { name: 'Advanced settings active' }))
             .not.toBeInTheDocument();

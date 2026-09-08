@@ -222,7 +222,7 @@ export const EvidenceFrame = memo(function EvidenceFrame({
     const meta = getEvidenceMeta(view);
     return (
         <section className="forge-evidence-frame" aria-label={`${meta.title} evidence view`}>
-            <header className="forge-evidence-frame__head">
+            <header className="forge-evidence-frame__head" role="group" aria-label={`${view} evidence summary`}>
                 <div>
                     <span className="forge-evidence-frame__eyebrow">Evidence</span>
                     <strong>{meta.title}</strong>

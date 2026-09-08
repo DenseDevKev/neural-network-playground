@@ -7,3 +7,146 @@
 @media (max-width: 679px) { .precision-dataset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .network-node-target:focus-visible { outline: 2px solid var(--accent, #4f8cff); outline-offset: 2px; }
+
+.precision-layout { position: relative; height: 100%; min-width: 0; min-height: 0; }
+
+/* Precision Lab owns layout only; experiment state and the existing header are unchanged. */
+.precision-shell {
+    position: relative;
+    isolation: isolate;
+    display: grid;
+    grid-template-areas:
+        "recipe recipe recipe"
+        "rail topology boundary"
+        "rail evidence selection"
+        "transport transport transport";
+    grid-template-columns: 76px minmax(0, 1fr) clamp(250px, 20vw, 280px);
+    grid-template-rows: 82px minmax(230px, 1fr) clamp(180px, 25vh, 220px) auto;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    gap: 1px;
+    overflow-x: clip;
+    contain: layout paint;
+    background: var(--forge-instrument-line);
+}
+.precision-shell > * { min-width: 0; min-height: 0; background: var(--forge-instrument-bg); }
+.precision-recipe-slot { grid-area: recipe; padding: 8px 12px; overflow: auto; }
+.precision-recipe { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.precision-recipe__facts { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px 12px; margin: 0; min-width: 0; }
+.precision-recipe__facts > div { min-width: 0; }
+.precision-shell dt { color: var(--text-secondary); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.precision-shell dd { margin: 3px 0 0; font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.precision-rail { grid-area: rail; display: flex; flex-direction: column; align-items: stretch; gap: 5px; padding: 8px 4px; overflow-y: auto; }
+.precision-shell button { font: inherit; cursor: pointer; }
+.precision-rail button, .precision-evidence__tabs button, .precision-recipe > button,
+.precision-boundary-rail__heading > button, .precision-selection-details > header > button,
+.precision-context__head > button, .precision-drawer__head > button {
+    min-height: 44px;
+    min-width: 44px;
+    border: 1px solid var(--forge-instrument-line);
+    border-radius: 4px;
+    background: var(--forge-instrument-panel);
+    color: var(--text-primary);
+    padding: 6px 8px;
+    font-size: 11px;
+}
+.precision-rail button { overflow-wrap: anywhere; font-size: 10px; }
+.precision-rail button[aria-pressed="true"], .precision-evidence__tabs button[aria-selected="true"] { background: var(--forge-instrument-active); border-color: var(--color-primary); }
+.precision-shell :is(button, [tabindex], summary):focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.precision-topology { grid-area: topology; position: relative; overflow: hidden; }
+.precision-topology > .forge-buildrun__topology-stage { height: 100%; min-height: 0; padding: 0; }
+.precision-topology .forge-topology-stage { height: 100%; min-height: 0; gap: 0; }
+.precision-topology .network-graph-wrapper { min-height: 0; }
+.precision-topology .forge-diagnostic-strip { flex-shrink: 0; }
+.precision-boundary { grid-area: boundary; padding: 10px; overflow-y: auto; overflow-x: clip; }
+.precision-boundary-rail { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.precision-boundary-rail__heading, .precision-selection-details > header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.precision-boundary-rail h2, .precision-selection h2 { margin: 0; font-size: 12px; }
+.precision-boundary-rail__basis, .precision-selection-basis, .precision-selection-empty,
+.precision-advanced-note { margin: 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.precision-boundary .decision-boundary { max-width: 100%; }
+.precision-selection { grid-area: selection; padding: 10px; overflow-y: auto; overflow-x: clip; }
+.precision-selection-details { display: grid; gap: 10px; }
+.precision-selection-details dl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.precision-influences h3 { margin: 0 0 4px; font-size: 11px; }
+.precision-influences ul { list-style: none; padding: 0; margin: 0; }
+.precision-influences li { display: flex; justify-content: space-between; gap: 8px; font: 11px/1.7 var(--font-mono); }
+.precision-influences p { color: var(--text-secondary); font-size: 11px; }
+.precision-run-summary { margin-bottom: 10px; }
+.precision-run-summary .forge-context-card { margin: 0; padding: 8px; }
+.precision-lesson-cue:empty { display: none; }
+.precision-lesson-cue { margin-top: 10px; }
+.precision-advanced-note { margin-top: 10px; }
+.precision-evidence { grid-area: evidence; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow-x: clip; }
+.precision-evidence__tabs { display: flex; gap: 4px; padding: 5px 8px; min-width: 0; flex-wrap: wrap; border-bottom: 1px solid var(--forge-instrument-line); }
+.precision-evidence__tabs button { padding: 5px 10px; }
+#precision-evidence-panel { min-height: 0; padding: 10px; overflow-y: auto; overflow-x: hidden; }
+.precision-evidence .forge-evidence-frame { min-width: 0; }
+.precision-evidence :is(svg, canvas) { max-width: 100%; }
+.precision-evidence .decision-overlay-controls { display: flex; flex-wrap: wrap; }
+.precision-evidence .decision-overlay-controls button { min-width: 44px; min-height: 44px; }
+.precision-transport { grid-area: transport; z-index: 5; overflow-x: clip; background: var(--forge-instrument-panel-strong); }
+.precision-transport .training-bar { min-width: 0; }
+.precision-context, .precision-drawer {
+    position: absolute;
+    top: 82px;
+    bottom: 8px;
+    z-index: 20;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: min(360px, calc(100% - 92px));
+    max-width: 100%;
+    min-width: 0;
+    border: 1px solid var(--forge-instrument-line-strong);
+    border-radius: 6px;
+    background: var(--bg-panel, #10121a);
+    box-shadow: 0 10px 30px #0008;
+    overflow: hidden;
+}
+.precision-context { left: 80px; }
+.precision-drawer { right: 8px; top: 8px; width: min(480px, calc(100% - 16px)); z-index: 30; }
+.precision-context__head, .precision-drawer__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--forge-instrument-line); font-size: 12px; font-weight: 600; }
+.precision-context__body, .precision-drawer__body { min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 8px; }
+.precision-context :is(.forge-panel, .panel) { max-width: 100%; min-width: 0; }
+
+@media (min-width: 1180px) {
+    .precision-shell { grid-template-columns: 76px minmax(0, 1fr) clamp(250px, 20vw, 280px); }
+}
+@media (min-width: 680px) and (max-width: 1179px) {
+    .precision-shell { grid-template-columns: 68px minmax(0, 1fr) clamp(190px, 27vw, 230px); grid-template-rows: 104px minmax(260px, 1fr) 210px auto; }
+    .precision-recipe__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .precision-context { top: 104px; left: 72px; }
+}
+@media (max-width: 679px) {
+    .forge-workspace:has(.precision-shell) { overflow-y: auto; }
+    .precision-layout { height: auto; min-height: 100%; }
+    .precision-shell {
+        height: auto;
+        min-height: 100%;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "recipe" "rail" "topology" "boundary" "selection" "evidence" "transport";
+        grid-template-rows: auto auto 360px auto 260px 340px auto;
+        overflow-x: hidden;
+        contain: layout paint;
+    }
+    .precision-recipe-slot { overflow: visible; }
+    .precision-recipe { align-items: stretch; flex-direction: column; }
+    .precision-recipe__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .precision-rail { flex-direction: row; flex-wrap: wrap; }
+    .precision-rail button { flex: 1 1 70px; }
+    .precision-boundary-rail { max-width: 340px; margin-inline: auto; }
+    .precision-context, .precision-drawer { position: fixed; top: 156px; bottom: 30px; left: 8px; right: 8px; width: auto; }
+    .precision-transport { position: sticky; bottom: 0; }
+    .precision-transport :is(button, .training-bar__checkpoint) { min-height: 44px; }
+    .precision-selection { padding: 12px; }
+    .precision-evidence__tabs { gap: 2px; padding-inline: 4px; }
+    .precision-evidence__tabs button { flex: 1; padding-inline: 5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .precision-shell *, .precision-shell *::before, .precision-shell *::after {
+        animation: none !important;
+        transition: none !important;
+        scroll-behavior: auto !important;
+    }
+}

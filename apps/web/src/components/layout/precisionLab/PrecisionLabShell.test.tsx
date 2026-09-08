@@ -157,6 +157,20 @@ describe('PrecisionLabShell', () => {
         expect(onCloseSurface).toHaveBeenCalledTimes(1);
     });
 
+    it('does not steal focus from the drawer trigger when a disclosed Build context remains open', () => {
+        const trigger = document.createElement('button');
+        trigger.textContent = 'History trigger';
+        document.body.append(trigger);
+        try {
+            const { rerender } = render(<PrecisionLabShell {...props({ buildContextOpen: true, openSurface: 'history' })} />);
+            trigger.focus();
+            rerender(<PrecisionLabShell {...props({ buildContextOpen: true, openSurface: null })} />);
+            expect(trigger).toHaveFocus();
+        } finally {
+            trigger.remove();
+        }
+    });
+
     it('keeps detailed Boundary evidence free of a second live decision-boundary canvas', () => {
         render(<PrecisionLabShell {...props()} />);
         const panel = screen.getByRole('tabpanel');

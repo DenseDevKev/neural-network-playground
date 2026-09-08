@@ -114,8 +114,9 @@ test('project hosting resolves lazy evidence and reopens an unchanged shared rec
         await expect(history).toContainText(/do not\s+contain trained parameters/);
         await history.getByRole('button', { name: 'Close History' }).click();
         await page.getByRole('button', { name: 'build', exact: true }).click();
-        await expect(page.getByRole('region', { name: 'Configuration', exact: true })).toBeVisible();
-        await expect(page.getByRole('region', { name: 'Configuration', exact: true })
+        await page.getByRole('navigation', { name: 'Build tools' }).getByRole('button', { name: 'Configuration', exact: true }).click();
+        await expect(page.getByRole('region', { name: 'Configuration context', exact: true })).toBeVisible();
+        await expect(page.getByRole('region', { name: 'Configuration context', exact: true })
             .getByRole('button', { name: /Export JSON/ })).toBeVisible();
         for (const prefix of ['InspectionPanel', 'CodeExportPanel', 'RunHistoryPanel', 'ConfigPanel']) {
             expectChunk(observed.resources, target, prefix);

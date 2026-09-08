@@ -5,6 +5,7 @@
 
 import { lazy, memo, Suspense, useState } from 'react';
 import { TrainingControls } from '../controls/TrainingControls.tsx';
+import type { NetworkSelectionController } from '../visualization/useNetworkSelectionController.ts';
 import { NetworkGraph } from '../visualization/NetworkGraph.tsx';
 import { DecisionBoundary, getDecisionOverlayCopy } from '../visualization/DecisionBoundary.tsx';
 import type { DecisionOverlayMode } from '../visualization/DecisionBoundary.tsx';
@@ -61,12 +62,12 @@ function Fallback({ msg }: { msg: string }) {
     return <LoadingState isLoading inline message={msg} />;
 }
 
-export const TopologyStage = memo(function TopologyStage() {
+export const TopologyStage = memo(function TopologyStage({ selectionController }: { selectionController?: NetworkSelectionController }) {
     return (
         <div className="forge-topology-stage">
             <div className="network-graph-wrapper">
                 <TopologyStateBadge />
-                <NetworkGraph />
+                <NetworkGraph selectionController={selectionController} />
             </div>
             <DiagnosticCockpitStrip />
         </div>
@@ -74,12 +75,12 @@ export const TopologyStage = memo(function TopologyStage() {
 });
 
 // ── Canvas content (network topology) ────────────────────────────────────
-export const CanvasContent = memo(function CanvasContent() {
-    return <TopologyStage />;
+export const CanvasContent = memo(function CanvasContent({ selectionController }: { selectionController?: NetworkSelectionController }) {
+    return <TopologyStage selectionController={selectionController} />;
 });
 
 // ── Right-panel tab contents ──────────────────────────────────────────────
-export const BoundaryContent = memo(function BoundaryContent() {
+export const BoundaryContent = /* @__PURE__ */ memo(function BoundaryContent() {
     const guidanceLevel = useAudienceGuidanceLevel();
     const showTestData = usePlaygroundStore((s) => (
         s.access.status === 'ready' && s.access.prepared.document.view.showTestData
@@ -218,7 +219,7 @@ export const ConfigurationContent = memo(function ConfigurationContent({
 });
 
 // ── Legacy MainArea (for direct-render tests and fallback contexts) ────────
-export const MainArea = memo(function MainArea({ training }: MainAreaProps) {
+export const MainArea = /* @__PURE__ */ memo(function MainArea({ training }: MainAreaProps) {
     const showTestData = usePlaygroundStore((s) => (
         s.access.status === 'ready' && s.access.prepared.document.view.showTestData
     ));

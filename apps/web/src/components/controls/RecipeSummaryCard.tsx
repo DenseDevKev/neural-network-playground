@@ -1,12 +1,9 @@
 import { memo, useMemo } from 'react';
+import { AdvancedRecipeNotice } from './AdvancedRecipeNotice.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getRecipeDrift, summarizeRecipe } from '../../store/recipeIdentity.ts';
 import { selectScientificEvidence } from '../../store/evidenceSelectors.ts';
-import { useLayoutStore } from '../../store/useLayoutStore.ts';
-import { isRecipeSectionVisible } from '../../productShell/visibleShell.ts';
-import { deriveAdvancedRecipeSettings } from '../../productShell/advancedRecipeSettings.ts';
-import { scheduleExplanationPanelFocus } from '../../explanations/explanationActionFocus.ts';
 
 export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
     const currentRecipe = usePlaygroundStore((s) => (
@@ -22,9 +19,6 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
     const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
     const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
-    const audienceMode = useLayoutStore((s) => s.audienceMode);
-    const advancedToolsOpen = useLayoutStore((s) => s.advancedToolsOpen);
-    const openAdvancedRecipeSection = useLayoutStore((s) => s.openAdvancedRecipeSection);
     const evidence = useMemo(() => selectScientificEvidence({
         latestLiveSignal,
         latestEvaluation,
@@ -33,12 +27,6 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
         () => currentRecipe === null ? null : summarizeRecipe(currentRecipe),
         [currentRecipe],
     );
-    const advancedSettings = useMemo(
-        () => currentRecipe === null ? [] : deriveAdvancedRecipeSettings(currentRecipe),
-        [currentRecipe],
-    );
-    const showAdvancedSettings = advancedSettings.length > 0
-        && !isRecipeSectionVisible(audienceMode, advancedToolsOpen, 'hyperparams');
     const drift = useMemo(
         () => getRecipeDrift(
             trainedRecipe,
@@ -114,33 +102,7 @@ export const RecipeSummaryCard = memo(function RecipeSummaryCard() {
                 </div>
             </dl>
 
-            {showAdvancedSettings ? (
-                <aside
-                    className="forge-advanced-settings-note"
-                    role="note"
-                    aria-label="Advanced settings active"
-                >
-                    <strong>Advanced settings active</strong>
-                    <ul>
-                        {advancedSettings.map((setting) => (
-                            <li key={setting.id}>
-                                <span>{setting.label}</span>
-                                <strong>{setting.value}</strong>
-                            </li>
-                        ))}
-                    </ul>
-                    <button
-                        type="button"
-                        className="btn btn--ghost"
-                        onClick={() => {
-                            openAdvancedRecipeSection('hyperparams');
-                            scheduleExplanationPanelFocus('hyperparams');
-                        }}
-                    >
-                        Open Advanced Tools
-                    </button>
-                </aside>
-            ) : null}
+            <AdvancedRecipeNotice />
 
             <div className={noteClassName}>
                 <p>{noteHeadline}</p>

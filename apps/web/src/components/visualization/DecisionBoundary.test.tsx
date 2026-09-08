@@ -216,6 +216,7 @@ describe('DecisionBoundary', () => {
         const canvas = screen.getByRole('img', {
             name: /decision boundary visualization/i,
         });
+        expect(canvas).toHaveAttribute('data-decision-boundary-canvas');
         const descriptionId = canvas.getAttribute('aria-describedby');
 
         expect(descriptionId).toBeTruthy();
@@ -326,6 +327,7 @@ describe('DecisionBoundary', () => {
         const canvas = screen.getByRole('img', {
             name: /multiclass decision boundary/i,
         });
+        expect(canvas).toHaveAttribute('data-decision-boundary-canvas');
         const descriptionId = canvas.getAttribute('aria-describedby');
 
         expect(screen.queryByText('Binary decision boundary unavailable')).not.toBeInTheDocument();

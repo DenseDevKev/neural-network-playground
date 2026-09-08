@@ -2,7 +2,7 @@
 // Wires the Build / Run instrument shell. The app keeps training, worker,
 // URL, persistence, and saved-run contracts separate from UI placement.
 
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useCallback, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLayoutStore } from './store/useLayoutStore.ts';
 import { useExperimentMemoryStore } from './store/experimentMemoryStore.ts';
@@ -13,10 +13,17 @@ import { useTraining } from './hooks/useTraining.ts';
 import { useModalFocusContainment } from './hooks/useModalFocusContainment.ts';
 import { useExperimentMemoryStorageSync } from './hooks/useExperimentMemoryStorageSync.ts';
 import { Header } from './components/layout/Header.tsx';
-import { BuildRunShell } from './components/layout/BuildRunShell.tsx';
+import { PrecisionLabShell } from './components/layout/precisionLab/PrecisionLabShell.tsx';
+import { PrecisionLabRecipeStrip } from './components/layout/precisionLab/PrecisionLabRecipeStrip.tsx';
+import { usePrecisionLabRecipeModel } from './components/layout/precisionLab/usePrecisionLabRecipeModel.ts';
+import { useNetworkSelectionController } from './components/visualization/useNetworkSelectionController.ts';
+import { NetworkSelectionDeck } from './components/visualization/NetworkSelectionDeck.tsx';
+import { useDecisionBoundaryController } from './components/visualization/useDecisionBoundaryController.ts';
+import { PinnedBoundaryRail } from './components/visualization/PinnedBoundaryRail.tsx';
+import { BoundaryEvidencePanel } from './components/visualization/BoundaryEvidencePanel.tsx';
+import { AdvancedRecipeNotice } from './components/controls/AdvancedRecipeNotice.tsx';
 import {
     CanvasContent,
-    BoundaryContent,
     LossContent,
     ConfusionContent,
     InspectContent,
@@ -26,9 +33,8 @@ import {
 } from './components/layout/MainArea.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
-import { GuidedLessonPanel } from './components/controls/GuidedLessonPanel.tsx';
+const GuidedLessonPanel = lazy(() => import('./components/controls/GuidedLessonPanel.tsx').then((module) => ({ default: module.GuidedLessonPanel })));
 import { FirstVisitLessonCue } from './components/controls/FirstVisitLessonCue.tsx';
-import { RecipeSummaryCard } from './components/controls/RecipeSummaryCard.tsx';
 import { CurrentRunCard } from './components/controls/CurrentRunCard.tsx';
 import type { LessonTarget } from './lessons/lessonRegistry.ts';
 import { DataPanel } from './components/controls/DataPanel.tsx';
@@ -74,6 +80,13 @@ export default function App() {
 
 function CompatiblePlayground() {
     const training = useTraining();
+    const recipeModel = usePrecisionLabRecipeModel();
+    const boundary = useDecisionBoundaryController();
+    const selection = useNetworkSelectionController();
+    const activeRecipeSection = useLayoutStore((s) => s.activeRecipeSection);
+    const buildContextOpen = useLayoutStore((s) => s.buildContextOpen);
+    const selectBuildContext = useLayoutStore((s) => s.selectBuildContext);
+    const setBuildContextOpen = useLayoutStore((s) => s.setBuildContextOpen);
     const view = useLayoutStore((s) => s.view);
     const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);
     const audienceMode = useLayoutStore((s) => s.audienceMode);
@@ -160,6 +173,7 @@ function CompatiblePlayground() {
             audienceMode,
             advancedToolsOpen,
             graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
+            boundaryRailMounted: true,
         });
         if (
             demand.needDecisionBoundary === nextDemand.needDecisionBoundary &&
@@ -236,7 +250,7 @@ function CompatiblePlayground() {
     };
 
     const rightTabContent = {
-        boundary: <BoundaryContent />,
+        boundary: <BoundaryEvidencePanel controller={boundary} />,
         loss: <LossContent />,
         confusion: <ConfusionContent />,
         inspection: <InspectContent />,
@@ -254,7 +268,7 @@ function CompatiblePlayground() {
 
     const topologyContent = (
         <div className="forge-buildrun__topology-stage">
-            <CanvasContent />
+            <CanvasContent selectionController={selection} />
         </div>
     );
 
@@ -334,7 +348,7 @@ function CompatiblePlayground() {
                 aria-label="Neural network playground workspace"
             >
                 <ErrorBoundary title="Workspace unavailable" description="Layout shell failed." actionLabel="Reload" onRetry={stableReset}>
-                    <BuildRunShell
+                    <PrecisionLabShell
                         view={view}
                         status={status}
                         activeEvidenceView={activeEvidenceView}
@@ -354,18 +368,26 @@ function CompatiblePlayground() {
                                 onDismiss={dismissLessonCue}
                             />
                         )}
-                        recipeContent={<RecipeSummaryCard />}
-                        runContent={<CurrentRunCard />}
-                        dataContent={leftTabContent.data}
-                        networkContent={leftTabContent.network}
-                        featuresContent={leftTabContent.features}
-                        hyperparamContent={leftTabContent.hyperparams}
-                        configurationContent={leftTabContent.config}
+                        recipeStripContent={<div className="precision-recipe-slot">
+                            <PrecisionLabRecipeStrip model={recipeModel} onEditRecipe={() => selectBuildContext('data')} />
+                            <AdvancedRecipeNotice />
+                        </div>}
+                        runSummaryContent={<CurrentRunCard />}
+                        activeRecipeSection={activeRecipeSection}
+                        buildContextOpen={buildContextOpen}
+                        onSelectRecipeSection={selectBuildContext}
+                        onCloseRecipeSection={() => setBuildContextOpen(false)}
+                        buildContent={leftTabContent}
+                        selectionContent={<NetworkSelectionDeck model={selection.model} onClear={selection.commands.clearSelection} />}
+                        boundaryRailContent={<PinnedBoundaryRail controller={boundary} onExpand={() => {
+                            setActiveEvidenceView('boundary');
+                            requestAnimationFrame(() => document.getElementById('precision-evidence-tab-boundary')?.focus());
+                        }} />}
                         topologyContent={topologyContent}
                         transportContent={transport}
                         evidenceContent={rightTabContent}
                         presetContent={<PresetPanel onReset={stableReset} onApplied={closeSurface} />}
-                        lessonContent={<GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} />}
+                        lessonContent={<Suspense fallback={<p role="status">Loading guided lessons…</p>}><GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} /></Suspense>}
                         historyContent={historyContent}
                     />
                 </ErrorBoundary>
