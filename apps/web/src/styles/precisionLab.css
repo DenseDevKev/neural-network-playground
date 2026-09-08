@@ -140,8 +140,8 @@
         height: auto;
         min-height: 100%;
         grid-template-columns: minmax(0, 1fr);
-        grid-template-areas: "recipe" "rail" "topology" "boundary" "selection" "evidence" "transport";
-        grid-template-rows: auto auto 360px auto 260px 340px auto;
+        grid-template-areas: "recipe" "rail" "context" "topology" "boundary" "selection" "evidence" "transport";
+        grid-template-rows: auto auto auto 360px auto 260px 340px auto;
         overflow-x: hidden;
         contain: layout paint;
     }
@@ -151,7 +151,8 @@
     .precision-rail { flex-direction: row; flex-wrap: wrap; }
     .precision-rail button { flex: 1 1 70px; }
     .precision-boundary-rail { max-width: 340px; margin-inline: auto; }
-    .precision-context, .precision-drawer { position: fixed; top: 156px; bottom: 30px; left: 8px; right: 8px; width: auto; }
+    .precision-context { position: static; grid-area: context; width: auto; max-height: min(420px, calc(100dvh - 200px)); margin: 0 8px; }
+    .precision-drawer { position: fixed; top: 156px; bottom: 30px; left: 8px; right: 8px; width: auto; }
     .precision-transport { position: sticky; bottom: 0; }
     .precision-transport :is(button, .training-bar__checkpoint) { min-height: 44px; }
     .precision-selection { padding: 12px; }
@@ -187,7 +188,7 @@
 .precision-transport .training-bar__save { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .precision-transport .training-bar__save-error { flex-basis: 100%; overflow-wrap: anywhere; font-size: 11px; }
 .precision-transport :is(.btn--control, .speed-btn, .training-shortcuts > summary) { min-height: 44px; }
-.precision-transport .training-bar__info { min-height: 44px; font-variant-numeric: tabular-nums; }
+.precision-transport .training-bar__info { min-height: 44px; flex-basis: 100%; justify-content: flex-end; font-variant-numeric: tabular-nums; }
 .precision-transport .training-bar__controls { min-width: 0; flex-wrap: wrap; }
 @media (max-width: 679px) {
     .precision-transport .training-bar__controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; padding-inline: 0; }

@@ -277,6 +277,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
             <nav data-precision-region="rail" className="precision-rail" aria-label={view === 'build' ? 'Build tools' : 'Run tools'}>
                 {railContent}
             </nav>
+            {buildContext}
             {recipeStripContent}
             <section
                 className="precision-topology"
@@ -331,7 +332,6 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
                 {transportContent}
             </footer>
             </div>
-            {buildContext}
             {drawer}
         </section>
     );
