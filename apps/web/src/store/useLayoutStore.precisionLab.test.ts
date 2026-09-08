@@ -66,14 +66,14 @@ describe('Precision Lab Build context disclosure', () => {
         expect(store.getState().buildContextOpen).toBe(false);
     });
 
-    it('routes canonical and legacy recipe selection through the same Build-context transition', () => {
+    it('opens canonical and legacy recipe context without completing a lesson view action', () => {
         const store = createLayoutStore();
         store.setState({ view: 'run', phase: 'run' });
 
         store.getState().setActiveRecipeSection('network');
         expect(store.getState()).toMatchObject({
-            view: 'build',
-            phase: 'build',
+            view: 'run',
+            phase: 'run',
             activeRecipeSection: 'network',
             activeTabLeft: 'network',
             buildContextOpen: true,
@@ -82,8 +82,8 @@ describe('Precision Lab Build context disclosure', () => {
         store.getState().setView('run');
         store.getState().setActiveTabLeft('features');
         expect(store.getState()).toMatchObject({
-            view: 'build',
-            phase: 'build',
+            view: 'run',
+            phase: 'run',
             activeRecipeSection: 'features',
             activeTabLeft: 'features',
             buildContextOpen: true,

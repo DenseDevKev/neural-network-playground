@@ -186,8 +186,6 @@ export function createLayoutStore() {
                     buildContextOpen: view === 'run' ? false : state.buildContextOpen,
                 })),
                 setActiveRecipeSection: (activeRecipeSection) => set((state) => ({
-                    view: 'build',
-                    phase: 'build',
                     activeRecipeSection,
                     activeTabLeft: activeRecipeSection,
                     buildContextOpen: true,
@@ -279,8 +277,6 @@ export function createLayoutStore() {
                     buildContextOpen: phase === 'run' ? false : state.buildContextOpen,
                 })),
                 setActiveTabLeft: (activeTabLeft) => set((state) => ({
-                    view: 'build',
-                    phase: 'build',
                     activeRecipeSection: activeTabLeft,
                     activeTabLeft,
                     buildContextOpen: true,
