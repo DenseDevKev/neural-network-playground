@@ -17,7 +17,9 @@ jobs:
           fetch-depth: 0
       - name: Verify exact browser-fix patch
         shell: bash
-        run: echo "f58df81f445adde42fbd8a7c811335c73adcee5c7d235df4c724e391f43da9b3  .precision-apply/browser-fixes.patch" | sha256sum -c -
+        run: |
+          echo "f58df81f445adde42fbd8a7c811335c73adcee5c7d235df4c724e391f43da9b3  .precision-apply/browser-fixes.patch" | sha256sum -c -
+          cp .precision-apply/browser-fixes.patch "$RUNNER_TEMP/browser-fixes.patch"
       - name: Apply guarded browser fixes to active branch
         shell: bash
         run: |
@@ -28,8 +30,8 @@ jobs:
           actual=$(git rev-parse "origin/$target")
           test "$actual" = "$expected" || { echo "Target moved: expected $expected, found $actual" >&2; exit 1; }
           git checkout -B "$target" "origin/$target"
-          git apply --check .precision-apply/browser-fixes.patch
-          git apply .precision-apply/browser-fixes.patch
+          git apply --check "$RUNNER_TEMP/browser-fixes.patch"
+          git apply "$RUNNER_TEMP/browser-fixes.patch"
           git diff --check
           changed=$(git status --porcelain=v1 | wc -l | tr -d ' ')
           test "$changed" = '3' || { echo "Expected 3 changed paths, found $changed" >&2; git status --short; exit 1; }
