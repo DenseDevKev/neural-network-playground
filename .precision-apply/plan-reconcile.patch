@@ -1,0 +1,103 @@
+diff --git a/NN-FORGE-LIVING-EXECUTION-PLAN.md b/NN-FORGE-LIVING-EXECUTION-PLAN.md
+index a01fdfc..5446232 100644
+--- a/NN-FORGE-LIVING-EXECUTION-PLAN.md
++++ b/NN-FORGE-LIVING-EXECUTION-PLAN.md
+@@ -20,15 +20,16 @@
+ - Product authority: `main` at `98f29b86e469a2a545be75928ae6f32309fd1582`.
+ - Release baseline: **merged and accepted**; merge parents are `ae09b986...` and `2cd5b896...`. Main CI `34002500733` succeeded.
+ - Active branch: `codex/nn-forge-precision-lab`.
+-- Latest freshly read upstream head: `3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732`, not the supplied older `6e06b678...`.
+-- Exact upstream tree: `80d2b9b4bf1a6a5a55a32752b844f7a239967477`.
++- Original continuation base: `3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732`, not the supplied older `6e06b678...`.
++- Current code candidate before this plan reconciliation: `5874f777c53b03e190e9cb0b5d92f41b68c92b34`; its product tree is `bf7115da4a2bb2b06128096aaa183cc03d3b00d3`. Product-changing browser-fix commit: `950142880d11e78d58eaa271904c6c8a4d2facb9`; `5874f777...` is a zero-diff provenance commit on the same tree.
+ - Main composition: accepted Build/Run presentation. Active-branch composition: **PrecisionLabShell already integrated**, not a future shell.
+ - Precision Lab merged to main: **no**. Successful Pages deployment: **no**.
+-- This continuation: **local patch on the exact upstream tree; NOT committed or pushed through GitHub**. The available GitHub actions are read-only and cannot dispatch qualification.
++- Continuation implementation is **committed on the active GitHub branch**: 32 non-workflow files at `20831874d436aac55c3c100ffe84949e967e8a37`, qualification workflow at `3b567950d3c725e5dc2856b4331813db26edba39`, and targeted browser corrections at `950142880d11e78d58eaa271904c6c8a4d2facb9`.
++- Qualification run `34271728441` on `3b567950...`: focused correctness/build/bundle **green**, recovery **green**, accepted five-pair performance comparison **green**; preview/subpath browser jobs exposed five failures with three shared layout/accessibility roots. Those roots are addressed by `9501428...`; exact-tree browser requalification remains pending.
+ - Source recovery: verified GitHub Actions source archive and matching-lockfile dependency workspace; no previous Mac was assumed.
+ - Canonical checklist: this same file recovered from the user's Library. It was absent from the recovered branch tree; this patch restores it at repository root, preserving its numbered milestones/history.
+ 
+-**Evidence boundary:** `[x]` below requires identified committed implementation and test evidence, or a directly verified historical/ref event. New local implementation is described with test results but remains `[ ]` until committed and the item's required gates pass. Passing component tests do not qualify browser geometry, accessibility, recovery, performance, or release.
++**Evidence boundary:** `[x]` below requires identified committed implementation and test evidence, or a directly verified historical/ref event. The continuation is now committed; acceptance boxes remain open until the exact candidate satisfies their required gates. Passing component/unit tests do not substitute for browser geometry, accessibility, recovery, performance, or release gates.
+ 
+ ## Non-negotiable product invariants
+ 
+@@ -492,7 +493,7 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
+ 
+ # 16. P5 — Production-backed previews / evidence
+ 
+-**Local implementation, not yet committed/accepted.** Shared App-owned `useSaveCurrentRun` serializes transport and History saves, keeps capture in the worker, preserves pending artifact identity across recipe changes and drawer unmount, and retries only the persistence store. Focused save regressions and all 1,170 web tests pass. LossChart uses coalesced responsive canvas sizing; confusion metrics use semantic definition lists. Browser geometry/a11y/recovery remains unqualified. Evidence: September 8 verification document and raw final test JSON files.
++**Committed implementation; final browser acceptance pending.** Shared App-owned `useSaveCurrentRun` serializes transport and History saves, keeps capture in the worker, preserves pending artifact identity across recipe changes and drawer unmount, and retries only the persistence store. Run `34271728441` passed the changed tests, infrastructure tests, full package regression, lint, typecheck, build and bundle guard on `3b567950...`. LossChart uses coalesced responsive canvas sizing; confusion metrics use semantic definition lists. Targeted browser fixes in `9501428...` do not change save/evidence ownership; exact candidate browser qualification remains open.
+ 
+ 
+ ## Dataset previews
+@@ -503,29 +504,29 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
+ - [ ] correct labels/classes/axes.
+ 
+ ## Loss/confusion
+-- [ ] compact LossChart.
+-- [ ] compact ConfusionMatrix.
+-- [ ] provenance labels preserved.
+-- [ ] train/test distinction preserved.
++- [x] compact LossChart — committed responsive/coalesced implementation + component/full-suite evidence in run `34271728441`.
++- [x] compact ConfusionMatrix — committed semantic compact implementation + component/full-suite evidence in run `34271728441`.
++- [x] provenance labels preserved — full regression suite green in run `34271728441`.
++- [x] train/test distinction preserved — full regression suite green in run `34271728441`.
+ - [ ] no horizontal overflow.
+ - [ ] mobile operation.
+ 
+ ## Training controls
+-- [ ] Run/Pause.
+-- [ ] Step.
+-- [ ] reset.
+-- [ ] speed / steps-per-frame.
+-- [ ] disabled reasons.
+-- [ ] keyboard.
++- [x] Run/Pause — committed control tests + full regression suite green in run `34271728441`.
++- [x] Step — committed control tests + full regression suite green in run `34271728441`.
++- [x] reset — committed control tests + full regression suite green in run `34271728441`.
++- [x] speed / steps-per-frame — committed control tests + full regression suite green in run `34271728441`.
++- [x] disabled reasons — committed control tests + full regression suite green in run `34271728441`.
++- [x] keyboard — committed control tests + full regression suite green in run `34271728441`.
+ - [ ] touch targets.
+ 
+ ## Save/history
+-- [ ] save exact intended artifact.
+-- [ ] preserve worker-owned capture.
+-- [ ] failed save retries exact pending artifact.
+-- [ ] no silent recapture on retry.
+-- [ ] saved-run explanation remains explicit.
+-- [ ] Apply Saved Recipe semantics remain explicit.
++- [x] save exact intended artifact — App-owned save controller + committed retry/capture tests green in run `34271728441`.
++- [x] preserve worker-owned capture — capture remains worker-owned; committed integration tests green in run `34271728441`.
++- [x] failed save retries exact pending artifact — retry persistence reuses the captured pending artifact; dedicated tests green in run `34271728441`.
++- [x] no silent recapture on retry — dedicated recipe-change/reopen/retry tests green in run `34271728441`.
++- [x] saved-run explanation remains explicit — full regression suite green in run `34271728441`.
++- [x] Apply Saved Recipe semantics remain explicit — full regression suite green in run `34271728441`.
+ 
+ **Exit:** compact evidence UI uses real production data and preserves artifact identity.
+ 
+@@ -533,7 +534,7 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
+ 
+ # 17. P6 — Production acceptance
+ 
+-**Current result: NOT RELEASE-QUALIFIED.** Local package suites: engine **497**, shared **334**, web **1,170** = **2,001** passing tests; helpers **91**. Lint, complete typechecks, production build and unchanged gzip caps pass locally. Chromium and WebKit launch attempts both fail before application startup because their executables are absent; Playwright discovery lists 66 tests but is not execution. Required browser/recovery/a11y/layout/zoom and accepted macOS five-pair performance gates remain open. No local implementation box below is checked merely because code was written or a mock test passed.
++**Current result: NOT YET RELEASE-QUALIFIED.** GitHub run `34271728441` on `3b567950...` passed focused correctness, infrastructure contracts, the full package suite, lint, typecheck, production build, unchanged bundle caps, exact build provenance, recovery/fault-disabled validation, and the accepted five-pair macOS/ARM64 performance comparison. Preview and project-subpath browser jobs failed the same five tests, traced to three presentation roots: mobile Data context intercepting the tool rail, state-dependent transport wrapping (+50px), and play-shortcut contrast (3.07:1). Commit `9501428...` applies narrow fixes for those roots; its product tree is unchanged by zero-diff commit `5874f777...`. Exact-tree preview/subpath/accessibility/layout requalification remains open, so the acceptance boxes below stay unchecked until that run proves them.
+ 
+ 
+ ## Functional
+@@ -602,11 +603,11 @@ At 50 steps/frame for at least 5 seconds:
+ 
+ # 18. P7 — One final production shell
+ 
+-**Migration state:** App already composes PrecisionLabShell at committed `3e7da9a...`. Legacy BuildRunShell/MainArea remain as compatibility code/test consumers until real-browser acceptance proves removal safe. This continuation marks removable memo factories pure for tree-shaking but does not delete the legacy shell or claim P7 complete. Browser/performance gates cannot be waived to force removal.
++**Migration state:** App already composes PrecisionLabShell; the continuation and browser fixes are committed through product change `9501428...` (tree `bf7115da...`). Legacy BuildRunShell/MainArea remain as compatibility code/test consumers until exact-candidate browser acceptance proves removal safe. Removable memo factories are marked pure for tree-shaking, but the legacy shell is not deleted and P7 is not claimed complete. Browser/performance gates cannot be waived to force removal.
+ 
+ 
+ ## Migration
+-- [x] identify current production App composition and retained legacy/test consumers — current tree `3e7da9a...`.
++- [x] identify current production App composition and retained legacy/test consumers — committed through product tree `bf7115da...`.
+ - [ ] migrate each consumer.
+ - [ ] verify each migration.
+ - [ ] keep old shell until all consumers are proven migrated.
