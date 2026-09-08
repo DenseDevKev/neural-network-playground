@@ -1,4 +1,4 @@
-name: Precision Lab focused verification
+name: Precision Lab qualification
 
 on:
   push:
@@ -58,6 +58,8 @@ jobs:
           args=()
           for path in "${tests[@]}"; do args+=("${path#apps/web/}"); done
           NODE_OPTIONS=--experimental-require-module pnpm --filter @nn-playground/web exec vitest run "${args[@]}" --pool=forks --reporter=dot
+      - name: Infrastructure contract tests
+        run: node --test scripts/*.test.mjs
       - name: Full package regression suite
         run: pnpm test
       - name: Lint
@@ -68,6 +70,21 @@ jobs:
         run: pnpm build
       - name: Bundle guard
         run: pnpm test:bundle
+      - name: Record exact build and verify tracked source
+        shell: bash
+        run: |
+          mkdir -p precision-build-evidence
+          git rev-parse HEAD > precision-build-evidence/source-sha.txt
+          node --version > precision-build-evidence/node-version.txt
+          pnpm --version > precision-build-evidence/pnpm-version.txt
+          (cd apps/web/dist && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > precision-build-evidence/dist.sha256
+          git diff --exit-code
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: precision-build-evidence-${{ github.sha }}
+          path: precision-build-evidence/
+          retention-days: 7
 
   browsers:
     runs-on: ubuntu-latest
@@ -75,7 +92,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [preview, subpath]
+        mode: [preview, subpath, recovery]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -108,6 +125,22 @@ jobs:
           done
           test "$ready" -eq 1 || { cat release-fixture.log; exit 1; }
           PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm exec playwright test --max-failures=5
+      - name: Verify opt-in fault recovery
+        if: matrix.mode == 'recovery'
+        run: pnpm test:e2e:recovery
+      - name: Preserve fault-enabled report before the normal rebuild
+        if: always() && matrix.mode == 'recovery'
+        shell: bash
+        run: |
+          mkdir -p recovery-evidence
+          if [ -d playwright-report ]; then mv playwright-report recovery-evidence/playwright-report; fi
+          if [ -d test-results ]; then mv test-results recovery-evidence/test-results; fi
+      - name: Rebuild without fault injection
+        if: always() && matrix.mode == 'recovery'
+        run: env -u VITE_E2E_FAULTS pnpm build
+      - name: Verify restored normal output ignores fault requests
+        if: always() && matrix.mode == 'recovery'
+        run: pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -115,5 +148,77 @@ jobs:
           path: |
             playwright-report/
             test-results/
+            recovery-evidence/
             release-fixture.log
+          retention-days: 7
+
+  performance:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ae09b9863ae90f8fb2f62545834fcc138755ba9a
+          path: performance-baseline
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
+        working-directory: performance-baseline
+      - name: Record the performance host and exact revisions
+        shell: bash
+        run: |
+          mkdir -p performance-evidence
+          git rev-parse HEAD > performance-evidence/candidate-sha.txt
+          git -C performance-baseline rev-parse HEAD > performance-evidence/baseline-sha.txt
+          node --version > performance-evidence/node-version.txt
+          pnpm --version > performance-evidence/pnpm-version.txt
+          uname -a > performance-evidence/os.txt
+          sw_vers >> performance-evidence/os.txt
+          sysctl -n machdep.cpu.brand_string > performance-evidence/cpu.txt
+          sysctl hw.ncpu hw.memsize >> performance-evidence/cpu.txt
+          node -p 'process.arch' >> performance-evidence/cpu.txt
+          test "$(node -p 'process.arch')" = arm64
+          test "$(cat performance-evidence/candidate-sha.txt)" = "${{ github.sha }}"
+          test "$(cat performance-evidence/baseline-sha.txt)" = "ae09b9863ae90f8fb2f62545834fcc138755ba9a"
+          printf 'pass,revision,exit_code\n' > performance-evidence/exits.csv
+      - name: Collect five paired same-runner performance samples
+        shell: bash
+        run: |
+          for pass in 1 2 3 4 5; do
+            order='baseline candidate'
+            if [ $((pass % 2)) -eq 0 ]; then order='candidate baseline'; fi
+            for revision in $order; do
+              directory=.
+              if [ "$revision" = baseline ]; then directory=performance-baseline; fi
+              { date -u; uptime; ps -Ao pid,pcpu,comm; } > "performance-evidence/host-${pass}-${revision}.txt"
+              set +e
+              (cd "$directory" && pnpm test:perf) 2>&1 | tee "performance-evidence/${pass}-${revision}.log"
+              result=${PIPESTATUS[0]}
+              set -e
+              printf '%s,%s,%s\n' "$pass" "$revision" "$result" >> performance-evidence/exits.csv
+            done
+          done
+      - name: Enforce the historical same-machine regression contract
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/compare-performance-reference.mjs \
+            performance-evidence \
+            ae09b9863ae90f8fb2f62545834fcc138755ba9a \
+            "${{ github.sha }}" | tee performance-evidence/comparison.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-performance-${{ github.sha }}
+          path: performance-evidence/
           retention-days: 7
