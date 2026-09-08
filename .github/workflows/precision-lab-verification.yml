@@ -12,6 +12,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  source-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Capture exact tracked source
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/precision-source"
+          git rev-parse HEAD > "$RUNNER_TEMP/precision-source/source-sha.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/precision-source/source-tree.txt"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/precision-source/source.tar.gz"
+          cd "$RUNNER_TEMP/precision-source"
+          sha256sum source.tar.gz > source.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: precision-source-${{ github.sha }}
+          path: ${{ runner.temp }}/precision-source/
+          retention-days: 7
+          if-no-files-found: error
   focused:
     runs-on: ubuntu-latest
     steps:
