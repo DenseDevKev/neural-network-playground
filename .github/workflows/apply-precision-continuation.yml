@@ -1,4 +1,4 @@
-name: Apply Precision Lab browser fixes
+name: Reconcile NN.FORGE living plan
 
 on:
   push:
@@ -15,31 +15,31 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Verify exact browser-fix patch
+      - name: Verify exact plan patch
         shell: bash
         run: |
-          echo "f58df81f445adde42fbd8a7c811335c73adcee5c7d235df4c724e391f43da9b3  .precision-apply/browser-fixes.patch" | sha256sum -c -
-          cp .precision-apply/browser-fixes.patch "$RUNNER_TEMP/browser-fixes.patch"
-      - name: Apply guarded browser fixes to active branch
+          echo "603ebe047d515b09f99248c44a7b6a94f9e572a961133a9382c82a10b8a92719  .precision-apply/plan-reconcile.patch" | sha256sum -c -
+          cp .precision-apply/plan-reconcile.patch "$RUNNER_TEMP/plan-reconcile.patch"
+      - name: Apply guarded plan reconciliation to active branch
         shell: bash
         run: |
           set -euo pipefail
           target='codex/nn-forge-precision-lab'
-          expected='3b567950d3c725e5dc2856b4331813db26edba39'
+          expected='5874f777c53b03e190e9cb0b5d92f41b68c92b34'
           git fetch origin "$target"
           actual=$(git rev-parse "origin/$target")
           test "$actual" = "$expected" || { echo "Target moved: expected $expected, found $actual" >&2; exit 1; }
           git checkout -B "$target" "origin/$target"
-          git apply --check "$RUNNER_TEMP/browser-fixes.patch"
-          git apply "$RUNNER_TEMP/browser-fixes.patch"
+          git apply --check "$RUNNER_TEMP/plan-reconcile.patch"
+          git apply "$RUNNER_TEMP/plan-reconcile.patch"
           git diff --check
           changed=$(git status --porcelain=v1 | wc -l | tr -d ' ')
-          test "$changed" = '3' || { echo "Expected 3 changed paths, found $changed" >&2; git status --short; exit 1; }
+          test "$changed" = '1' || { echo "Expected one changed path, found $changed" >&2; git status --short; exit 1; }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add NN-FORGE-LIVING-EXECUTION-PLAN.md
           git diff --cached --check
-          git commit -m 'fix(web): stabilize Precision Lab responsive controls'
+          git commit -m 'docs: reconcile Precision Lab execution evidence'
           final=$(git rev-parse HEAD)
           git push origin "HEAD:$target"
-          echo "Applied browser fixes at $final"
+          echo "Applied plan reconciliation at $final"
