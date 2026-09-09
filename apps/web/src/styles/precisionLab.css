@@ -67,7 +67,8 @@
 .precision-rail button { overflow-wrap: anywhere; font-size: 10px; }
 .precision-rail button[aria-pressed="true"], .precision-evidence__tabs button[aria-selected="true"] { background: var(--forge-instrument-active); border-color: var(--color-primary); }
 .precision-shell :is(button, [tabindex], summary):focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
-.precision-topology { grid-area: topology; position: relative; overflow: hidden; }
+/* Keep graph toolbar/summary z-indices below the overlapping Build context. */
+.precision-topology { grid-area: topology; position: relative; isolation: isolate; overflow: hidden; }
 .precision-topology > .forge-buildrun__topology-stage { height: 100%; min-height: 0; padding: 0; }
 .precision-topology .forge-topology-stage { height: 100%; min-height: 0; gap: 0; }
 .precision-topology .network-graph-wrapper { min-height: 0; }

@@ -18,6 +18,9 @@ describe('Precision Lab layout contracts', () => {
         expect(css).toContain('.precision-context');
         expect(css).toContain('.precision-drawer');
     });
+    it('keeps topology overlays in their own stacking context below Build controls', () => {
+        expect(css).toMatch(/\.precision-topology\s*\{[^}]*isolation:\s*isolate/);
+    });
     it('does not reserve the removed legacy transport column', () => {
         expect(css).toMatch(/\.precision-transport \.forge-transport-cluster\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
     });
