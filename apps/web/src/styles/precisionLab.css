@@ -223,9 +223,17 @@
     justify-content: end;
 }
 .precision-transport .training-bar__info > span { min-width: 0; overflow-wrap: anywhere; }
-.precision-transport .training-bar__info > span:last-child { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.precision-transport .training-bar__info > span:last-child { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
 .forge-shell:has(.precision-layout) .forge-statusbar__spacer { flex: 0; }
 .forge-shell:has(.precision-layout) .forge-statusbar > span:last-child { margin-inline-start: auto; }
 .precision-evidence .forge-evidence-context { display: grid; grid-template-columns: minmax(0, 1fr); font-variant-numeric: tabular-nums; }
 .precision-run-summary :is(.forge-run-card__meta, .forge-run-card__metrics) { display: grid; grid-template-columns: minmax(0, 1fr); font-variant-numeric: tabular-nums; }
 .precision-run-summary .forge-context-card__concept-label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+
+/* A two-line metric row determines the intermediate header's actual height. */
+@media (min-width: 901px) and (max-width: 1400px) {
+    .forge-shell:has(.precision-layout) { grid-template-rows: auto minmax(0, 1fr) 24px; }
+}
+@media (min-width: 680px) and (max-width: 1179px) {
+    .precision-run-summary .forge-run-card__meta > span:nth-child(-n+2) { min-height: 2lh; }
+}
