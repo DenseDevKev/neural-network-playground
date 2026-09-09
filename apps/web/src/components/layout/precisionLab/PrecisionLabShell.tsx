@@ -2,10 +2,12 @@ import {
     memo,
     useEffect,
     useRef,
+    useState,
     useCallback,
     type KeyboardEvent,
     type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import type { TrainingStatus } from '@nn-playground/shared';
 import type {
     EvidenceViewId,
@@ -103,9 +105,15 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
     lessonContent,
     historyContent,
 }: PrecisionLabShellProps) {
+    const [drawerHost, setDrawerHost] = useState<Element | null>(null);
+    const layoutRef = useCallback((element: HTMLElement | null) => {
+        setDrawerHost(element?.closest('.forge-shell') ?? null);
+    }, []);
     const contextRef = useRef<HTMLElement>(null);
     const drawerCloseRef = useRef<HTMLButtonElement>(null);
-    useEffect(() => { if (openSurface) drawerCloseRef.current?.focus(); }, [openSurface]);
+    useEffect(() => {
+        if (openSurface) drawerCloseRef.current?.focus({ preventScroll: true });
+    }, [openSurface, drawerHost]);
     const contextKey = view === 'build' && buildContextOpen ? activeRecipeSection : null;
     const previousContextKey = useRef<RecipeSectionId | null>(null);
     useEffect(() => {
@@ -271,6 +279,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
         <section
             id={ADVANCED_TOOLS_REGION_ID}
             aria-label="Workspace tools"
+            ref={layoutRef}
             className="precision-layout"
         >
             <div className={`precision-shell precision-shell--${view}`} data-precision-workspace>
@@ -332,7 +341,7 @@ export const PrecisionLabShell = memo(function PrecisionLabShell({
                 {transportContent}
             </footer>
             </div>
-            {drawer}
+            {drawer && drawerHost ? createPortal(drawer, drawerHost) : drawer}
         </section>
     );
 });

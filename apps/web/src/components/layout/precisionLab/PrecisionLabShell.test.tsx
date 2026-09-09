@@ -155,6 +155,23 @@ describe('PrecisionLabShell', () => {
         expect(onCloseSurface).toHaveBeenCalledTimes(1);
     });
 
+    it.each(['presets', 'lessons', 'history'] as const)('places the %s drawer in the viewport grid, outside the scrolling workspace', (surface) => {
+        const renderShell = (openSurface: PrecisionLabShellProps['openSurface']) => (
+            <div className="forge-shell">
+                <main className="forge-workspace">
+                    <PrecisionLabShell {...props({ openSurface })} />
+                </main>
+            </div>
+        );
+        const { container, rerender } = render(renderShell(surface));
+        const dialog = screen.getByRole('dialog');
+        expect(dialog.parentElement).toBe(container.querySelector('.forge-shell'));
+        expect(container.querySelector('.forge-workspace [role="dialog"]')).toBeNull();
+        expect(screen.getByRole('button', { name: /^Close / })).toHaveFocus();
+        rerender(renderShell(null));
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
     it('does not steal focus from the drawer trigger when a disclosed Build context remains open', () => {
         const trigger = document.createElement('button');
         trigger.textContent = 'History trigger';
