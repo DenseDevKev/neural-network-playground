@@ -201,3 +201,31 @@
     .precision-transport .training-bar__controls .btn__shortcut { display: none; }
     .precision-transport .training-bar__speed { flex-wrap: wrap; min-width: 0; padding-inline: 0; }
 }
+
+/* Live values must not resize the tracks occupied by neighboring controls. */
+@media (min-width: 901px) {
+    .forge-shell:has(.precision-layout) .forge-topbar__metrics {
+        display: grid;
+        grid-template-columns: 64px minmax(0, 1fr) repeat(2, minmax(0, 1.25fr)) 76px;
+        min-width: 0;
+    }
+    .forge-shell:has(.precision-layout) .forge-metric { min-width: 0; }
+    .forge-shell:has(.precision-layout) .forge-metric__label { min-height: 2.6em; line-height: 1.3; }
+}
+@media (min-width: 1401px) {
+    .forge-shell:has(.precision-layout) .forge-topbar__metrics { flex: 1; }
+    .forge-shell:has(.precision-layout) .forge-topbar__spacer { flex: 0; }
+    .forge-shell:has(.precision-layout) .forge-topbar__kit { flex-shrink: 0; }
+}
+.precision-transport .training-bar__info {
+    display: grid;
+    grid-template-columns: minmax(0, 90px) minmax(0, 100px) minmax(0, 130px);
+    justify-content: end;
+}
+.precision-transport .training-bar__info > span { min-width: 0; overflow-wrap: anywhere; }
+.precision-transport .training-bar__info > span:last-child { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.forge-shell:has(.precision-layout) .forge-statusbar__spacer { flex: 0; }
+.forge-shell:has(.precision-layout) .forge-statusbar > span:last-child { margin-inline-start: auto; }
+.precision-evidence .forge-evidence-context { display: grid; grid-template-columns: minmax(0, 1fr); font-variant-numeric: tabular-nums; }
+.precision-run-summary :is(.forge-run-card__meta, .forge-run-card__metrics) { display: grid; grid-template-columns: minmax(0, 1fr); font-variant-numeric: tabular-nums; }
+.precision-run-summary .forge-context-card__concept-label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
