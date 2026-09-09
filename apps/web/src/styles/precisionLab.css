@@ -237,3 +237,20 @@
 @media (min-width: 680px) and (max-width: 1179px) {
     .precision-run-summary .forge-run-card__meta > span:nth-child(-n+2) { min-height: 2lh; }
 }
+
+/* Keep compact counter baselines stable and the complete status copy reachable. */
+@media (max-width: 679px) {
+    .precision-transport .training-bar__info > span:last-child > span:first-child { white-space: pre-line; }
+    .forge-shell:has(.precision-layout) { grid-template-rows: auto minmax(0, 1fr) auto; }
+    .forge-shell:has(.precision-layout) .forge-statusbar {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px 8px;
+        padding-block: 4px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .forge-shell:has(.precision-layout) .forge-statusbar__spacer { display: none; }
+    .forge-shell:has(.precision-layout) .forge-statusbar__accent { min-width: 0; }
+    .forge-shell:has(.precision-layout) .forge-statusbar > span:last-child { grid-column: 1 / -1; margin-inline-start: 0; }
+}
