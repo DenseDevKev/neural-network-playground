@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PrecisionLabShell, type PrecisionLabShellProps } from './PrecisionLabShell.tsx';
@@ -120,27 +120,25 @@ describe('PrecisionLabShell', () => {
         expect(screen.getByRole('region', { name: 'Network context' })).toHaveTextContent('network context');
     });
 
-    it('closes Build context with the close command or Escape and restores rail focus', async () => {
+    it.each(['close button', 'Escape'] as const)('closes Build context with %s and restores rail focus', async (command) => {
         const user = userEvent.setup();
         const onCloseRecipeSection = vi.fn();
-        const { rerender } = render(<PrecisionLabShell {...props({
+        render(<PrecisionLabShell {...props({
             activeRecipeSection: 'network',
             buildContextOpen: true,
             onCloseRecipeSection,
         })} />);
-        await user.click(screen.getByRole('button', { name: 'Close Network context' }));
-        expect(onCloseRecipeSection).toHaveBeenCalledTimes(1);
 
-        rerender(<PrecisionLabShell {...props({
-            activeRecipeSection: 'network',
-            buildContextOpen: true,
-            onCloseRecipeSection,
-        })} />);
-        screen.getByRole('region', { name: 'Network context' }).focus();
-        await user.keyboard('{Escape}');
-        expect(onCloseRecipeSection).toHaveBeenCalledTimes(2);
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        expect(screen.getByRole('button', { name: 'Network' })).toHaveFocus();
+        if (command === 'close button') {
+            await user.click(screen.getByRole('button', { name: 'Close Network context' }));
+        } else {
+            screen.getByRole('region', { name: 'Network context' }).focus();
+            await user.keyboard('{Escape}');
+        }
+        expect(onCloseRecipeSection).toHaveBeenCalledTimes(1);
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: 'Network' })).toHaveFocus();
+        });
     });
 
     it.each([
