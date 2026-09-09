@@ -63,13 +63,25 @@ for (const viewport of [{ width: 1437, height: 742 }, { width: 735, height: 860 
         const before = await bounds(page);
         const overflowBefore = await horizontalOverflow(page);
         await page.evaluate(() => {
-            const target = window as typeof window & { __precisionLayoutShifts?: number[] };
+            const target = window as typeof window & { __precisionLayoutShifts?: { value: number; sources: unknown[] }[] };
             target.__precisionLayoutShifts = [];
             if (PerformanceObserver.supportedEntryTypes.includes('layout-shift')) {
                 const observer = new PerformanceObserver((list) => {
                     for (const entry of list.getEntries()) {
-                        const shift = entry as PerformanceEntry & { value: number; hadRecentInput: boolean };
-                        if (!shift.hadRecentInput) target.__precisionLayoutShifts!.push(shift.value);
+                        const shift = entry as PerformanceEntry & {
+                            value: number;
+                            hadRecentInput: boolean;
+                            sources: { node?: Node; previousRect: DOMRectReadOnly; currentRect: DOMRectReadOnly }[];
+                        };
+                        if (!shift.hadRecentInput) target.__precisionLayoutShifts!.push({
+                            value: shift.value,
+                            sources: shift.sources.map((source) => ({
+                                element: source.node instanceof Element ? source.node.outerHTML : source.node?.textContent,
+                                parent: source.node?.parentElement?.className,
+                                previousRect: source.previousRect,
+                                currentRect: source.currentRect,
+                            })),
+                        });
                     }
                 });
                 observer.observe({ type: 'layout-shift' });
@@ -80,7 +92,7 @@ for (const viewport of [{ width: 1437, height: 742 }, { width: 735, height: 860 
         await page.waitForTimeout(5500);
         const after = await bounds(page);
         const overflowDuring = await horizontalOverflow(page);
-        const shifts = await page.evaluate(() => (window as typeof window & { __precisionLayoutShifts?: number[] }).__precisionLayoutShifts ?? []);
+        const shifts = await page.evaluate(() => (window as typeof window & { __precisionLayoutShifts?: { value: number; sources: unknown[] }[] }).__precisionLayoutShifts ?? []);
         await info.attach('region-stability', { body: Buffer.from(JSON.stringify({ viewport, view, before, after, shifts, overflowBefore, overflowDuring }, null, 2)), contentType: 'application/json' });
         for (const name of REGIONS) {
             expect(before[name], `${name} exists before training`).toBeDefined();
@@ -91,7 +103,7 @@ for (const viewport of [{ width: 1437, height: 742 }, { width: 735, height: 860 
                 expect(Math.abs(after[name][dimension] - before[name][dimension]), `${name}.${dimension}`).toBeLessThanOrEqual(1);
             }
         }
-        if (browserName === 'chromium') expect(shifts.reduce((sum, value) => sum + value, 0)).toBe(0);
+        if (browserName === 'chromium') expect(shifts.reduce((sum, shift) => sum + shift.value, 0)).toBe(0);
         await timeline.getByRole('button', { name: 'Pause training', exact: true }).click();
         await expect(page.getByRole('group', { name: 'Status bar' })).toHaveAttribute('data-status', 'paused');
         const overflowAfter = await horizontalOverflow(page);
