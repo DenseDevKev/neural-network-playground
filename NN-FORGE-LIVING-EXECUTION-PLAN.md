@@ -607,7 +607,7 @@ At 50 steps/frame for at least 5 seconds:
 
 
 ## Migration
-- [x] identify current production App composition and retained legacy/test consumers — committed through product tree `bf7115da...`.
+- [x] identify current production App composition and retained legacy/test consumers/styles — committed through product tree `bf7115da...`.
 - [ ] migrate each consumer.
 - [ ] verify each migration.
 - [ ] keep old shell until all consumers are proven migrated.
@@ -836,3 +836,21 @@ Requires committed repository file and claims that match actual evidence.
 # Current one-line status
 
 > **Accepted baseline is merged; Precision Lab shell/controller/boundary are committed upstream at 3e7da9a. The local continuation passes 2,001 package tests, 91 helpers, lint, typechecks, build and unchanged bundle limits, but it is not pushed or release-qualified: browser executables and write/dispatch access are unavailable, reference performance is unrun, and Pages settings remain blocked.**
+
+
+## September 9, 2026 — scoped optimization and bug-hunt pass
+
+This dated entry supersedes the historical one-line status above for this audit only. Baseline: `cad28a4e6e076245cba7191cea2e78c711335003` on `codex/nn-forge-precision-lab`; `main` was read at `98f29b86e469a2a545be75928ae6f32309fd1582`. No merge, deployment, scientific-state, schema, protocol, dependency or budget changes are part of this pass.
+
+- [x] Check Linear before edits: no visible non-archived issues or matching project. Attempt Sentry discovery and lookup: no exposed Sentry tools; frequency and transaction rankings remain unknown.
+- [x] Recover exact source, verify its Git tree, and reuse CI dependencies only after all manifests and the lockfile match. Report the repository map, commands and prioritized plan before source edits.
+- [x] Reproduce Build-help interception with actual CSS and an isolated Chromium hit-test. Add a failing stacking regression, then contain topology descendants with `isolation: isolate`; the hit target changes from the toolbar to the intended help control. This is an intentional bug fix.
+- [x] Separate close-button and Escape focus tests into independent mounts and await each focus return. Focus behavior is unchanged; the focused suite passes 20 tests.
+- [x] Characterize code-export invalidation, then reuse the parameter snapshot across scalar-only evidence updates. Both parameter-unpack operations drop from six calls to one across five updates; displayed code stays unchanged. Parameter/provenance and generation changes remain covered. This is behavior-preserving work reduction, not a measured latency or Sentry improvement.
+- [x] Inspect input/error boundaries, dependency uses and targeted credential patterns. No speculative dependency or legacy-component removal. Registry vulnerability scanning is blocked by DNS, not reported clean.
+- [x] Write root `BUGS-TO-REVIEW.md`: reproduce independent-store lost updates without changing persistence, and defer unconfirmed mobile drawer and layout-shift roots. Include risk, locations, evidence, reproduction/fix approach and telemetry/scanner limitations.
+- [x] Run local regression gates: engine 497, shared 334 and web 1,176 tests pass (2,007 total); 91 infrastructure tests pass; lint, source/test typechecks and build pass. The unchanged JavaScript gzip guard passes: entry 151,125/152,245 bytes, inspection 5,430/7,373, total JS 234,063/234,161. Recovered dependencies omit font binaries, so local build/font fidelity is limited and no complete-asset/browser claim follows.
+- [x] Keep each concern in a small local commit for publication through the GitHub connector; preserve the verified baseline tree and active branch ancestry.
+- [ ] Close the hard-bug checklist only after a safe fix and its relevant tests prove each root cause. No racing persistence or guessed responsive-layout fix was attempted.
+- [ ] Obtain a passing exact-head browser qualification and post-change reference-performance result. Baseline run `34273895548` passed focused/performance/recovery but failed preview/subpath browsers. Local application navigation is administrator-blocked; isolated hit-tests are narrower evidence. Inspect the newly published run separately rather than treating the baseline as a post-change result.
+- [ ] Merge or deploy: still outside this audit. Verify remote source/ref identity after publication and report the exact commits and CI status to the user.
