@@ -85,11 +85,13 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         [latestEvaluation, latestLiveSignal],
     );
 
+    // Parameter versions, not scalar-evidence revisions, own exported weights.
+    const currentGenerationId = evidence.currentModel?.generationId;
     const exportSnapshot = useMemo(() => {
         // This version selector intentionally drives the mutable frame-buffer read.
         void paramsVersion;
         if (!prepared
-            || !evidence.currentModel
+            || currentGenerationId === undefined
             || trainedRecipeFingerprint === null
             || trainedRecipeFingerprint !== prepared.identities.recipeFingerprint) {
             return null;
@@ -105,7 +107,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
                 === prepared.identities.recipeFingerprint
             && parameterProvenance.recipeFingerprint === trainedRecipeFingerprint
             && parameterProvenance.model.generationId
-                === evidence.currentModel.generationId) {
+                === currentGenerationId) {
             const expectedLayerSizes = [
                 prepared.compiled.network.inputSize,
                 ...prepared.compiled.network.hiddenLayers,
@@ -125,7 +127,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
         }
 
         return null;
-    }, [evidence.currentModel, paramsVersion, prepared, trainedRecipeFingerprint]);
+    }, [currentGenerationId, paramsVersion, prepared, trainedRecipeFingerprint]);
 
     const code = useMemo(() => {
         if (!prepared) return '# No compatible version-2 experiment is active.';
