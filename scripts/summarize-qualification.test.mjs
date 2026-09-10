@@ -166,3 +166,9 @@ test('CLI refuses passing receipts when tracked source changes after the command
     assert.equal(JSON.parse(dirty.stdout).status, 'incomplete');
     assert.equal(JSON.parse(dirty.stdout).trackedChanges, true);
 });
+
+
+test('a syntactically valid receipt tree must match the qualified source tree', () => {
+    assert.equal(summarizeStep(receipt(), 'a'.repeat(40), 'build', 'c'.repeat(40)).status, 'invalid');
+    assert.equal(summarizeStep(receipt(), 'a'.repeat(40), 'build', 'b'.repeat(40)).status, 'passed');
+});

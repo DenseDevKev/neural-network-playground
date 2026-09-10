@@ -57,12 +57,12 @@ export function readPlaywrightReport(path) {
     catch (error) { return error.code === 'ENOENT' ? { status: 'missing', counts: null, error: 'Report not produced' } : invalid(error.message); }
 }
 
-export function summarizeStep(receipt, sourceSha, expectedName = receipt?.name) {
+export function summarizeStep(receipt, sourceSha, expectedName = receipt?.name, sourceTree = receipt?.source?.tree) {
     if (!receipt) return { status: 'missing' };
     if (receipt.schemaVersion !== 1 || receipt.name !== expectedName || !/^[a-z][a-z0-9-]{0,63}$/.test(receipt.name)
         || !Array.isArray(receipt.command) || !receipt.command.length || !receipt.command.every((arg) => typeof arg === 'string')
         || !/^[a-f0-9]{40}$/.test(sourceSha) || !/^[a-f0-9]{40}$/.test(receipt.source?.tree)
-        || !sourceSha || receipt.source?.sha !== sourceSha || receipt.source?.trackedChanges !== false) return invalid('Invalid or mismatched source receipt');
+        || !sourceSha || receipt.source?.sha !== sourceSha || receipt.source?.tree !== sourceTree || receipt.source?.trackedChanges !== false) return invalid('Invalid or mismatched source receipt');
     if (receipt.status === 'running' && receipt.exitCode === null && receipt.completedAt === null) return { status: 'incomplete' };
     if (!Number.isInteger(receipt.exitCode) || receipt.exitCode < 0 || receipt.exitCode > 255
         || !Number.isFinite(Date.parse(receipt.startedAt)) || !Number.isFinite(Date.parse(receipt.completedAt)) || Date.parse(receipt.completedAt) < Date.parse(receipt.startedAt)
@@ -94,7 +94,7 @@ export async function summarizeQualification(mode, directory = 'qualification-ev
     } catch { /* missing provenance cannot pass */ }
     const summary = { schemaVersion: 1, mode, sourceSha, sourceTree, trackedChanges, runId: process.env.GITHUB_RUN_ID ?? null, attempt: process.env.GITHUB_RUN_ATTEMPT ?? null, steps: {}, reports: {} };
     for (const name of modes[mode].steps) {
-        try { summary.steps[name] = summarizeStep(readJson(join(directory, `${name}.json`)), sourceSha, name); }
+        try { summary.steps[name] = summarizeStep(readJson(join(directory, `${name}.json`)), sourceSha, name, sourceTree); }
         catch (error) { summary.steps[name] = error.code === 'ENOENT' ? { status: 'missing' } : invalid(error.message); }
     }
     for (const path of modes[mode].reports) summary.reports[path] = readPlaywrightReport(path);
