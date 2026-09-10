@@ -60,3 +60,20 @@ for (const view of ['build', 'run'] as const) {
         expect(errors).toEqual([]);
     });
 }
+
+
+test('short phone transport reflows while tall phone transport remains persistent', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('./');
+    const transport = page.locator('.precision-transport');
+    await expect(transport).toHaveCSS('position', 'sticky');
+    await page.setViewportSize({ width: 390, height: 599 });
+    await expect(transport).toHaveCSS('position', 'static');
+    await page.setViewportSize({ width: 390, height: 601 });
+    await expect(transport).toHaveCSS('position', 'sticky');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+    await expect(transport).toHaveCSS('position', 'static');
+    await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
+    await expect(transport).toHaveCSS('position', 'sticky');
+});

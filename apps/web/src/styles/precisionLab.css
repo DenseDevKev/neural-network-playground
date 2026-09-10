@@ -306,7 +306,9 @@
 .forge-shell .network-graph-frame .network-graph-legend__scale { flex-wrap: wrap; }
 .forge-shell .network-graph-frame :is(.network-graph-toolbar button, .network-graph-legend__filter) { min-width: 44px; min-height: 44px; }
 
-/* A magnified/short phone viewport must scroll past transport, not under it. */
-@container forge-viewport (max-width: calc(679em / 14)) and (max-height: calc(600em / 14)) {
+/* A magnified/short phone viewport must scroll past transport, not under it.
+   Keep 600 / 14 as a literal em length: WebKit resolves calc() query lengths
+   differently under zoom. The rounding is less than one billionth of a px. */
+@container forge-viewport (max-width: calc(679em / 14)) and (max-height: 42.8571428571em) {
     .precision-transport { position: static; }
 }

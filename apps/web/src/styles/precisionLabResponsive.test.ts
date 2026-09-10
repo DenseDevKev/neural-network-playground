@@ -13,6 +13,10 @@ describe('Precision Lab layout contracts', () => {
         expect(css).toMatch(/#root:has\(\.precision-layout\)\s*\{[^}]*container:\s*forge-viewport\s*\/\s*size/);
         expect(css).toMatch(/\.forge-shell:has\(\.precision-layout\)\s*\{[^}]*height:\s*100%/);
     });
+    it('uses a literal font-relative short-height bound for cross-engine zoom', () => {
+        expect(css).toContain('(max-height: 42.8571428571em)');
+        expect(css).not.toContain('(max-height: calc(600em / 14))');
+    });
     it('contains paint and layout, constrains horizontal overflow, and reserves real touch targets', () => {
         expect(css).toContain('contain: layout paint');
         expect(css).toMatch(/overflow-x:\s*(clip|hidden)/);
