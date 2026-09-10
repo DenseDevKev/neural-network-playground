@@ -19,6 +19,7 @@ export default defineConfig({
     workers: isCI ? 1 : undefined,
     reporter: [
         ['list'],
+        ['json', { outputFile: 'playwright-results.json' }],
         ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ],
     use: {

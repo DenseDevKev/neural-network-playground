@@ -52,25 +52,27 @@ jobs:
         run: |
           mapfile -t tests < <(git diff --name-only origin/main...HEAD -- apps/web/src | grep -E '\.(test|spec)\.(ts|tsx)$' || true)
           if [ "${#tests[@]}" -eq 0 ]; then
-            echo 'No changed web tests to run.'
+            node scripts/run-with-evidence.mjs changed-tests -- node -e "console.log('No changed web tests to run.')"
             exit 0
           fi
           args=()
           for path in "${tests[@]}"; do args+=("${path#apps/web/}"); done
-          NODE_OPTIONS=--experimental-require-module pnpm --filter @nn-playground/web exec vitest run "${args[@]}" --pool=forks --reporter=dot
+          NODE_OPTIONS=--experimental-require-module node scripts/run-with-evidence.mjs changed-tests -- pnpm --filter @nn-playground/web exec vitest run "${args[@]}" --pool=forks --reporter=dot
       - name: Infrastructure contract tests
-        run: node --test scripts/*.test.mjs
+        run: node scripts/run-with-evidence.mjs helpers -- node --test scripts/*.test.mjs
       - name: Full package regression suite
-        run: pnpm test
+        run: node scripts/run-with-evidence.mjs tests -- pnpm test
       - name: Lint
-        run: pnpm lint
+        run: node scripts/run-with-evidence.mjs lint -- pnpm lint
       - name: Typecheck
-        run: pnpm typecheck
+        run: node scripts/run-with-evidence.mjs types -- pnpm typecheck
       - name: Build
-        run: pnpm build
+        id: build
+        run: node scripts/run-with-evidence.mjs build -- pnpm build
       - name: Bundle guard
-        run: pnpm test:bundle
+        run: node scripts/run-with-evidence.mjs bundle -- pnpm test:bundle
       - name: Record exact build and verify tracked source
+        if: always() && steps.build.outcome == 'success'
         shell: bash
         run: |
           mkdir -p precision-build-evidence
@@ -80,10 +82,27 @@ jobs:
           (cd apps/web/dist && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) > precision-build-evidence/dist.sha256
           git diff --exit-code
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: always() && steps.build.outcome == 'success'
         with:
           name: precision-build-evidence-${{ github.sha }}
           path: precision-build-evidence/
+          retention-days: 7
+
+      - name: Summarize focused qualification
+        if: always()
+        run: node scripts/summarize-qualification.mjs focused
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-summary-focused-${{ github.sha }}
+          path: qualification-evidence/summary.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-command-evidence-focused-${{ github.sha }}
+          path: qualification-evidence/
           retention-days: 7
 
   browsers:
@@ -106,10 +125,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium webkit
-      - run: env -u VITE_E2E_FAULTS pnpm build
+      - run: env -u VITE_E2E_FAULTS node scripts/run-with-evidence.mjs build -- pnpm build
       - name: Full normal preview contracts
         if: matrix.mode == 'preview'
-        run: pnpm exec playwright test --max-failures=5
+        run: node scripts/run-with-evidence.mjs preview -- pnpm exec playwright test --max-failures=5
       - name: Full non-isolated project hosting contracts
         if: matrix.mode == 'subpath'
         shell: bash
@@ -124,32 +143,51 @@ jobs:
             sleep 1
           done
           test "$ready" -eq 1 || { cat release-fixture.log; exit 1; }
-          PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm exec playwright test --max-failures=5
+          PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ node scripts/run-with-evidence.mjs subpath -- pnpm exec playwright test --max-failures=5
       - name: Verify opt-in fault recovery
         if: matrix.mode == 'recovery'
-        run: pnpm test:e2e:recovery
+        run: node scripts/run-with-evidence.mjs recovery -- pnpm test:e2e:recovery
       - name: Preserve fault-enabled report before the normal rebuild
         if: always() && matrix.mode == 'recovery'
         shell: bash
         run: |
           mkdir -p recovery-evidence
+          if [ -f playwright-results.json ]; then mv playwright-results.json recovery-evidence/playwright-results.json; fi
           if [ -d playwright-report ]; then mv playwright-report recovery-evidence/playwright-report; fi
           if [ -d test-results ]; then mv test-results recovery-evidence/test-results; fi
       - name: Rebuild without fault injection
         if: always() && matrix.mode == 'recovery'
-        run: env -u VITE_E2E_FAULTS pnpm build
+        run: env -u VITE_E2E_FAULTS node scripts/run-with-evidence.mjs recovery-rebuild -- pnpm build
       - name: Verify restored normal output ignores fault requests
         if: always() && matrix.mode == 'recovery'
-        run: pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
+        run: node scripts/run-with-evidence.mjs fault-disabled -- pnpm exec playwright test tests/e2e/worker-recovery.spec.ts --grep '@fault-disabled'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: precision-browser-${{ matrix.mode }}-${{ github.sha }}
           path: |
+            playwright-results.json
             playwright-report/
             test-results/
             recovery-evidence/
             release-fixture.log
+          retention-days: 7
+
+      - name: Summarize browser qualification
+        if: always()
+        run: node scripts/summarize-qualification.mjs ${{ matrix.mode }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-summary-${{ matrix.mode }}-${{ github.sha }}
+          path: qualification-evidence/summary.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-command-evidence-${{ matrix.mode }}-${{ github.sha }}
+          path: qualification-evidence/
           retention-days: 7
 
   performance:
@@ -225,7 +263,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          node scripts/compare-performance-reference.mjs \
+          node scripts/run-with-evidence.mjs performance -- node scripts/compare-performance-reference.mjs \
             performance-evidence \
             ae09b9863ae90f8fb2f62545834fcc138755ba9a \
             "${{ github.sha }}" | tee performance-evidence/comparison.txt
@@ -234,4 +272,20 @@ jobs:
         with:
           name: precision-performance-${{ github.sha }}
           path: performance-evidence/
+          retention-days: 7
+      - name: Summarize performance qualification
+        if: always()
+        run: node scripts/summarize-qualification.mjs performance
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-summary-performance-${{ github.sha }}
+          path: qualification-evidence/summary.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: precision-command-evidence-performance-${{ github.sha }}
+          path: qualification-evidence/
           retention-days: 7

@@ -45,3 +45,8 @@ test-results/
 
 # Local agent worktree state
 .claude/worktrees/
+
+# Qualification receipts and separate recovery reports
+/qualification-evidence/
+/playwright-results.json
+/recovery-evidence/
