@@ -14,20 +14,23 @@
 
 # 0. Control state
 
-**Reconciled September 8, 2026 against fresh GitHub refs, not a prior Mac.**
+**Reconciled September 10, 2026 against GitHub refs and exact-source CI. Sections explicitly marked historical are receipts, not current acceptance.**
 
 - Repository: `DenseDevKev/neural-network-playground` (private).
 - Product authority: `main` at `98f29b86e469a2a545be75928ae6f32309fd1582`.
 - Release baseline: **merged and accepted**; merge parents are `ae09b986...` and `2cd5b896...`. Main CI `34002500733` succeeded.
 - Active branch: `codex/nn-forge-precision-lab`.
 - Original continuation base: `3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732`, not the supplied older `6e06b678...`.
-- Current code candidate before this plan reconciliation: `5874f777c53b03e190e9cb0b5d92f41b68c92b34`; its product tree is `bf7115da4a2bb2b06128096aaa183cc03d3b00d3`. Product-changing browser-fix commit: `950142880d11e78d58eaa271904c6c8a4d2facb9`; `5874f777...` is a zero-diff provenance commit on the same tree.
+- Maintenance intake: `6de861dd4e00f3223ec8985a0b6c00bdbfa7abe9`, tree `12a57ef8e463e7386c687b602f2501de088d798c`.
+- Latest maintenance implementation: `7ec856a39079141a040624e9fe2927218e0db8f8`, tree `4447aed98747a411e9fef2211cb2785de1c2bde6`. This file's documentation closure is a descendant, not a new application feature.
+- Exact-source maintenance CI receipt: `5092ee69abc8714ff906d5d63bbd5b5263f62368`, run `34529946854`; correctness, types, lint, build, recovery and accepted reference performance pass. The total-JavaScript guard still fails. `7ec856a3` only tightens reporting source-tree validation; its documentation-head CI is inspected separately.
 - Main composition: accepted Build/Run presentation. Active-branch composition: **PrecisionLabShell already integrated**, not a future shell.
 - Precision Lab merged to main: **no**. Successful Pages deployment: **no**.
 - Continuation implementation is **committed on the active GitHub branch**: 32 non-workflow files at `20831874d436aac55c3c100ffe84949e967e8a37`, qualification workflow at `3b567950d3c725e5dc2856b4331813db26edba39`, and targeted browser corrections at `950142880d11e78d58eaa271904c6c8a4d2facb9`.
-- Qualification run `34271728441` on `3b567950...`: focused correctness/build/bundle **green**, recovery **green**, accepted five-pair performance comparison **green**; preview/subpath browser jobs exposed five failures with three shared layout/accessibility roots. Those roots are addressed by `9501428...`; exact-tree browser requalification remains pending.
+- Historical browser-fix qualification: code `88e107a9` passed run `34410864082`. Later selection/zoom additions and graph-control correction reached intake `6de861dd`; run `34522259192` failed preview/subpath and bundle while correctness, recovery and the accepted performance comparison passed. Do not carry the older green browser receipt onto this newer candidate.
+- Maintenance scope is closed by section 27 and `docs/maintenance/2026-09-10-review.md`; Precision Lab release acceptance remains open. No inherited acceptance failure is waived.
 - Source recovery: verified GitHub Actions source archive and matching-lockfile dependency workspace; no previous Mac was assumed.
-- Canonical checklist: this same file recovered from the user's Library. It was absent from the recovered branch tree; this patch restores it at repository root, preserving its numbered milestones/history.
+- Canonical checklist: this same file was recovered from the user's Library and restored at repository root in the September 8 continuation. It is now maintained in GitHub; numbered milestones and historical receipts remain intact.
 
 **Evidence boundary:** `[x]` below requires identified committed implementation and test evidence, or a directly verified historical/ref event. The continuation is now committed; acceptance boxes remain open until the exact candidate satisfies their required gates. Passing component/unit tests do not substitute for browser geometry, accessibility, recovery, performance, or release gates.
 
@@ -219,13 +222,13 @@
 - [x] production build passes.
 - [x] source remains clean after build.
 
-**Accepted baseline helper count:** 88 passed (run `34001183202`). Local continuation helper count: 91 passed; not yet an upstream run. Second normal rebuild: all 87 dist files byte-identical and fixed bundle guard green; this does not stand in for browser recovery.
+**Historical helper/build receipts:** accepted baseline had 88 helpers (run `34001183202`). The September 8 local continuation had 91 helpers and 87 byte-identical rebuilt files with a passing bundle guard; that was not browser recovery. Current maintenance counts and the failing current bundle gate are recorded in section 27.
 
 ---
 
 # 5. P1 pulled forward — JavaScript bundle contract
 
-**Caps unchanged in this continuation.** Current local final build measures entry **151,131 / 152,245**, InspectionPanel **5,431 / 7,373**, total JavaScript **234,068 / 234,161** bytes. Total headroom is only **93 bytes**, so exact CI rebuild verification is mandatory. The earlier baseline numbers below are historical, not the current bundle size. Evidence: `bundle-final.log` in the continuation evidence package.
+**Caps unchanged. Current maintenance CI `5092ee69` measures entry 151,342 / 152,245, InspectionPanel 5,431 / 7,373 and total JavaScript 234,282 / 234,161 bytes: total is 121 bytes over the cap, so this gate FAILS.** Local intake and maintenance both measure 234,285 total (124 bytes over); their 13 emitted files are byte-identical. Local recovered dependencies omit font binaries, so complete asset fidelity comes from CI. September 8 values of 234,068 total and 93 bytes of headroom are historical and superseded. Evidence: run `34529946854`, compact focused summary and preserved build manifest.
 
 
 ## P1.1 Implement executable checker
@@ -278,12 +281,12 @@
 
 ## Current candidate performance — separate from resolved policy
 
-- [ ] Run the accepted five-pair macOS/ARM64 reference gate for the new committed Precision Lab candidate.
-- [ ] Record exact candidate SHA, host metadata, all raw samples, comparator result and independent worker budgets.
+- [x] Run the unchanged accepted five-pair macOS/ARM64 reference gate on the maintenance implementation `5092ee69`: Actions `34529946854`.
+- [x] Preserve exact candidate/host identity, raw samples, comparator result and independent worker budgets in `precision-performance-5092ee69...` and its compact summary.
 
-The local Linux / Node 22.16.0 diagnostic `pnpm test:perf` exited **1**: two historical absolute engine benchmark tests failed and one passed; the two worker scientific-trust tests passed. Forced-pair median **8.0115 ms**, save-capture median **9.6054 ms**. This is neither an accepted reference qualification nor proof of a candidate-specific regression. Engine/shared implementation and all timing constants are unchanged. Do not weaken thresholds or restart the policy investigation because of this diagnostic.
+The accepted comparison passed all six engine comparisons plus independent forced-pair and save-capture budgets. Candidate worker medians in that run were 9.7946 ms and 11.6225 ms; no engine speed gain is claimed. Reporting-only changes and the documentation closure are requalified at their exact head separately.
 
-The local workflow patch reuses the accepted paired comparator on `macos-15` with an ARM64 assertion. It has not been pushed or executed.
+The September 8 Linux diagnostic (historical absolute engine tests failed; worker medians 8.0115/9.6054 ms passed) was not a reference qualification. The workflow is now committed and has run repeatedly; the old claim that it was an unpushed local patch is obsolete. The policy investigation remains resolved and the release baseline remains merged.
 
 ---
 
@@ -381,7 +384,7 @@ Ref recovery September 8 found newer committed integration at `3e7da9a...`; do n
 
 ---
 
-# 12. Precision Lab — reconciled intake
+# 12. Precision Lab — historical September 8 intake
 
 - [x] Re-read committed consolidated release roadmap.
 - [x] Read July 16 design and July 17 implementation plan against current source.
@@ -399,7 +402,7 @@ No separate pending shell files were found beyond available committed/source art
 
 # 13. P2 — Display-safe Precision Lab shell
 
-**Committed integration exists:** `3e7da9a...`, Actions `34254380062` focused correctness/build/bundle job passed; browser jobs failed, so the milestone is not accepted. App uses PrecisionLabShell, one `useTraining`, one selection controller and one live boundary controller. Local continuation preserves this ownership and adds the shared save controller. Browser/keyboard/viewport equivalence remains pending.
+**Committed integration exists:** `3e7da9a...`, Actions `34254380062` focused correctness/build/bundle job passed; browser jobs failed, so the milestone is not accepted. App uses PrecisionLabShell, one `useTraining`, one selection controller and one live boundary controller. The committed continuation preserves this ownership and adds the shared save controller. Whole-product browser/keyboard/viewport acceptance remains pending for the current candidate.
 
 
 ## Architecture
@@ -485,7 +488,7 @@ Evidence: committed App, DecisionBoundaryController, PrecisionLabShell and their
 - [ ] Prove layout remains readable and without unintended overflow at all three required viewports.
 - [ ] Verify visibility/demand transitions do not lower required scientific evaluation cadence.
 
-Local browser specifications retain connected-canvas identity and URL assertions, add both Build/Run and all major region bounds, and preserve 5.5 seconds at 50 steps/frame with <=1 CSS px movement and Chromium CLS = 0. They have been discovered, **not executed successfully**.
+Browser specifications retain connected-canvas identity and URL assertions, both Build/Run and all major region bounds, and 5.5 seconds at 50 steps/frame with <=1 CSS px movement and Chromium CLS = 0. These ran successfully on historical code `88e107a9` in `34410864082`; the later whole-product candidate still fails separate acceptance gates. Do not describe the current tests as merely discovered or carry an older full acceptance result forward.
 
 Do not implement pin/replace/clear or persistent pinned snapshots: that was a stale misreading of the design, not a missing feature.
 
@@ -534,8 +537,7 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
 
 # 17. P6 — Production acceptance
 
-**Current result: NOT YET RELEASE-QUALIFIED.** GitHub run `34271728441` on `3b567950...` passed focused correctness, infrastructure contracts, the full package suite, lint, typecheck, production build, unchanged bundle caps, exact build provenance, recovery/fault-disabled validation, and the accepted five-pair macOS/ARM64 performance comparison. Preview and project-subpath browser jobs failed the same five tests, traced to three presentation roots: mobile Data context intercepting the tool rail, state-dependent transport wrapping (+50px), and play-shortcut contrast (3.07:1). Commit `9501428...` applies narrow fixes for those roots; its product tree is unchanged by zero-diff commit `5874f777...`. Exact-tree preview/subpath/accessibility/layout requalification remains open, so the acceptance boxes below stay unchecked until that run proves them.
-
+**Current result: NOT YET RELEASE-QUALIFIED.** The September 9 browser-fix source `88e107a9` passed run `34410864082`, but later tests/corrections reached `6de861dd` and exposed new acceptance failures. Intake run `34522259192` failed preview/subpath and total JavaScript size; it passed correctness, recovery and accepted reference performance. Maintenance run `34529946854` separately verifies its changes while retaining the failing bundle gate and existing browser assertions. Maintenance completion does not check off this end-state release matrix. See section 27 and the maintenance review for current scoped evidence.
 
 ## Functional
 - [ ] full unit suite.
@@ -603,7 +605,7 @@ At 50 steps/frame for at least 5 seconds:
 
 # 18. P7 — One final production shell
 
-**Migration state:** App already composes PrecisionLabShell; the continuation and browser fixes are committed through product change `9501428...` (tree `bf7115da...`). Legacy BuildRunShell/MainArea remain as compatibility code/test consumers until exact-candidate browser acceptance proves removal safe. Removable memo factories are marked pure for tree-shaking, but the legacy shell is not deleted and P7 is not claimed complete. Browser/performance gates cannot be waived to force removal.
+**Migration state:** App already composes PrecisionLabShell, with later graph-control corrections through `6de861dd`. Maintenance removes only proven unused private primitives, not the legacy shell or styles. BuildRunShell/MainArea compatibility/test consumers remain until a dedicated migration and exact-candidate acceptance prove removal safe. P7 is not claimed complete; no browser, bundle or performance gate is waived.
 
 
 ## Migration
@@ -720,7 +722,7 @@ Status: satisfied for the accepted baseline; do not re-open.
 
 ### D006 — Single save owner and artifact identity
 App owns one save controller shared by transport and History. Retry uses the store's exact pending artifact and never contacts the worker to recapture.
-Status: locally implemented and unit-verified; awaiting commit and browser acceptance.
+Status: committed in the September 8 continuation (`20831874` and `3b567950`); additional priority, invalidation and late-completion tests in `acf04179` pass in maintenance CI. Final whole-product browser acceptance remains separate.
 
 ### D007 — Honest evidence boundaries
 GitHub connector reads and downloaded source artifacts are authority. Local patch/test results are not a remote commit, CI run or live deployment. Missing browser binaries and unreadable tool responses are tooling limits.
@@ -728,20 +730,19 @@ Status: active.
 
 ### D008 — No bundle-limit expansion
 Educational content is grouped into one on-demand chunk; safe unused memo factories are tree-shaken; Terser uses two normal compression passes. No cap, scientific cadence, schema or engine algorithm was changed.
-Status: local final build passes fixed caps; total headroom only 93 bytes, so CI rebuild remains mandatory.
+Status: caps preserved; current CI total is 234,282 / 234,161 bytes and fails. The 93-byte headroom was a September 8 historical receipt, not the current state. Maintenance leaves runtime output unchanged.
 
 ---
 
-# 23. Immediate execution queue (reconciled September 8)
+# 23. Immediate execution queue (reconciled September 10)
 
-## NEXT-01 — Preserve and commit this exact patch
-- [x] Re-read main and active branch; recover the newer committed shell/boundary instead of replacing it.
-- [x] Preserve source archive/tree and CI failure evidence separately from the prior tooling failure.
-- [ ] Review/apply the local patch on exact `3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732` with a write-capable session.
-- [ ] Commit shared save ownership/retries, responsive/evidence fixes, targeted lazy loading and regressions.
-- [ ] Commit this restored canonical living plan and verification record.
+## NEXT-01 — Preserve and commit recovered integration (complete)
+- [x] Recover newer shell/boundary instead of overwriting it from the older checkpoint: `3e7da9a`.
+- [x] Preserve exact source/tree and distinguish prior tool failures from application evidence.
+- [x] Commit shared save ownership/retries, responsive/evidence changes and lazy loading: `20831874`, with workflow `3b567950`.
+- [x] Restore/reconcile this canonical plan: `3c8e48a7`; qualification record `cad28a4e`.
 
-The local evidence package contains the exact patch, source/diff/build digests and raw logs. No remote commit exists for these changes. Do not push the synthetic local source-import history.
+No local-patch handoff remains for these committed changes. The September 10 maintenance pass is separately tracked in section 27. Do not push synthetic local source-import history or reapply the old patch to a newer branch.
 
 ## NEXT-02 — Exact committed-candidate qualification
 - [ ] Freeze and record the new upstream SHA.
@@ -812,6 +813,11 @@ Requires committed repository file and claims that match actual evidence.
 | 2026-09-08 | Local performance diagnostic | local patch | raw `performance-local.log` | historical absolute engine FAIL; worker PASS; accepted reference not run |
 | 2026-09-08 | Browser launch attempt | local patch | `browser-attempt.log`, `browser-webkit-attempt.log`; 66 discovered scenarios | missing Chromium/WebKit executables before app launch; not an app defect |
 
+| 2026-09-09 | Medium-risk browser fixes | `88e107a9` | Actions `34410864082` | historical exact-code qualification green; no deployment |
+| 2026-09-10 | Expanded selection/zoom candidate | `6de861dd` | Actions `34522259192` | correctness/recovery/reference green; browser and bundle red |
+| 2026-09-10 | Behavior-preserving maintenance | `5092ee69` | Actions `34529946854`; compact receipts | 2,019 package tests, 153 helpers, lint/types/build/recovery/reference pass; total JS cap fails |
+| 2026-09-10 | Reporting source-tree review | `7ec856a3` | 154 local helper tests, source-tree RED/GREEN and lint | rejects wrong-tree completion receipts; no application change |
+
 ---
 
 # 26. Living-plan changelog
@@ -825,7 +831,7 @@ Requires committed repository file and claims that match actual evidence.
 
 ---
 
-## v2 — 2026-09-08 (local continuation, awaiting commit)
+## v2 — 2026-09-08 (historical local continuation checkpoint; subsequently committed)
 - Recovered this canonical file instead of inventing a replacement checklist.
 - Reconciled resolved performance policy, merged main, accepted baseline CI and blocked Pages status.
 - Recovered newer committed shell/boundary integration and preserved App ownership.
@@ -833,7 +839,7 @@ Requires committed repository file and claims that match actual evidence.
 - Recorded local shared save/retry, responsive evidence/help/transport and bundle changes with raw test evidence.
 - Kept real-browser, accessibility, zoom, recovery, layout, accepted reference performance, legacy removal, merge and deployment unchecked.
 
-# Current one-line status
+# Historical September 8 one-line status (superseded)
 
 > **Accepted baseline is merged; Precision Lab shell/controller/boundary are committed upstream at 3e7da9a. The local continuation passes 2,001 package tests, 91 helpers, lint, typechecks, build and unchanged bundle limits, but it is not pushed or release-qualified: browser executables and write/dispatch access are unavailable, reference performance is unrun, and Pages settings remain blocked.**
 
@@ -854,3 +860,35 @@ This dated entry supersedes the historical one-line status above for this audit 
 - [ ] Close the hard-bug checklist only after a safe fix and its relevant tests prove each root cause. No racing persistence or guessed responsive-layout fix was attempted.
 - [ ] Obtain a passing exact-head browser qualification and post-change reference-performance result. Baseline run `34273895548` passed focused/performance/recovery but failed preview/subpath browsers. Local application navigation is administrator-blocked; isolated hit-tests are narrower evidence. Inspect the newly published run separately rather than treating the baseline as a post-change result.
 - [ ] Merge or deploy: still outside this audit. Verify remote source/ref identity after publication and report the exact commits and CI status to the user.
+
+
+---
+
+# 27. Behavior-preserving maintenance — September 10 closure
+
+**Approved scope:** improve the codebase without new product features or continuing the separate browser-fix project. Plan: `docs/maintenance/2026-09-10-plan.md` (`38179180`). Detailed decisions and evidence: `docs/maintenance/2026-09-10-review.md`. Contributor commands: `docs/maintenance/README.md`. These completed maintenance tasks do not waive section 17–19 acceptance.
+
+- [x] **M1 — Production lint scoping.** Production explicit-any errors, narrow test/benchmark exemptions and equivalent structural WebGPU typing (`ee615300`); nine policy tests, lint/typechecks and full CI regression pass.
+- [x] **M2 — Architecture guards.** Resolved static/literal import, re-export and type-boundary checks with exact legacy exceptions (`a2a68762`); 24 positive/negative ESLint tests and repository lint pass. Not a runtime controller-count proof.
+- [x] **M3 — Small, honest CI evidence.** Streaming command receipts, bounded Playwright/focused/performance summaries, independent recovery JSON and failure-preserving build manifests (`d212779a`, `7ec856a3`). Nine subprocess tests, 17 summary tests and workflow contracts pass locally; real CI receipts preserve the bundle failure and report successful recovery/performance separately.
+- [x] **M4 — Typed test fixtures.** Consolidate duplicate saved-artifact builders with deterministic metadata and isolated nested values (`acf04179`); three fixture tests, affected suites and complete 2,019-test CI run pass. Clone-removal mutation is detected.
+- [x] **M5 — Proven unused-code cleanup.** Remove private Row/Segmented/Stepper and four unnecessary test-interface exports (`5092ee69`), with whole-tree reference/entry-point review. Retain CSS, legacy shells, package exports and the live SVG fallback. Local emitted output remains identical.
+- [x] **M6 — Pure decision review.** Add save-disabled priority and access/hydration transition characterization (`acf04179`); retain the existing helper and App ownership instead of adding abstraction. Removing a required subscription makes its regression fail.
+- [x] **M7 — Resource ownership review.** Audit specified listeners, observers, RAF/timers, worker subscription and accepted-save lifetime; repeated StrictMode cycles and late completion tests pass (`acf04179`). Unsubscribe-removal mutation fails. No claim of exhaustive heap/leak qualification.
+- [x] **M8 — Reproducibility and documentation.** Document declared versus observed runtime versions, unchanged frozen lockfile, ownership, compact artifact retrieval, audit limits and this reconciled ledger. No runtime/dependency upgrade or false release-acceptance claim.
+
+## Scoped verification
+
+- Committed code `5092ee69`, Actions `34529946854`: changed tests, 153 helpers at that revision, 497 engine + 334 shared + 1,188 web tests, lint, source/test types, build, recovery, normal fault-disabled rebuild and accepted five-pair performance pass.
+- Reporting-only review `7ec856a3`: source-tree mismatch regression observed failing before correction; final local helpers 154 and lint pass. Exact documentation-head CI is inspected after publication, not predicted here.
+- CI bundle: entry 151342 / 152245; inspection 5431 / 7373; total JS 234282 / 234161 bytes. **The existing total cap remains failed, by 121 bytes.** Local intake/candidate both have a 124-byte overrun; no cap changed.
+- All 13 locally emitted outputs are byte-identical before/after maintenance. Recovered dependencies omit font binaries, so complete asset delivery must use fresh CI, not this local equality claim.
+- Three deliberate local mutations (fixture clone, storage unsubscribe, save access subscription) were detected and fully restored. Raw logs and source/build checksums accompany the handoff evidence.
+
+## Remaining work is not maintenance completion
+
+Precision Lab browser/zoom qualification, the inherited bundle overrun, consumer-proven legacy-shell retirement, and the independent-tab saved-run overwrite remain open. Main stays `98f29b86...`; no merge, deployment, Pages/settings or visibility change. The performance-policy investigation remains resolved.
+
+## v3 — September 10 reconciliation
+
+Replaced stale current-SHA, unpushed-patch, unrun-performance and 93-byte-headroom claims with dated source/CI receipts. Preserved historical milestone boxes and the September 8/9 records. Added maintenance-only completion evidence without marking blocked Precision Lab release tasks accepted.
