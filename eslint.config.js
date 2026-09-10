@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import { architecturePlugin } from './scripts/eslint-architecture.mjs';
 
 export default [
     // ── Global ignores ──
@@ -82,10 +83,18 @@ export default [
             ],
         },
     },
+    // Statically resolvable imports enforce the existing package/controller graph.
+    {
+        files: ['apps/web/src/**/*.{ts,tsx}', 'packages/*/src/**/*.{ts,tsx}'],
+        ignores: ['**/*.{test,spec,bench}.{ts,tsx}', '**/__tests__/**', '**/__benchmarks__/**', 'apps/web/src/test/**'],
+        plugins: { 'nn-forge': architecturePlugin },
+        rules: { 'nn-forge/dependency-boundaries': 'error' },
+    },
     // Malformed inputs are intentional in tests, not in runtime fault adapters.
     {
         files: [
-            '**/*.{test,spec}.{ts,tsx}',
+            '**/*.{test,spec,bench}.{ts,tsx}',
+            '**/__benchmarks__/**/*.{ts,tsx}',
             '**/__tests__/**/*.{ts,tsx}',
             'apps/web/src/test/**/*.{ts,tsx}',
             'tests/**/*.{ts,tsx}',
