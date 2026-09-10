@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 const css = readFileSync(resolve(__dirname, 'precisionLab.css'), 'utf8');
 describe('Precision Lab layout contracts', () => {
     it('owns its desktop, intermediate, phone and reduced-motion breakpoints', () => {
-        for (const header of ['@container forge-viewport (min-width: 1180px)', '@container forge-viewport (min-width: 680px) and (max-width: 1179px)', '@container forge-viewport (max-width: 679px)', '@media (prefers-reduced-motion: reduce)']) {
+        for (const header of ['@container forge-viewport (min-width: calc(1180em / 14))', '@container forge-viewport (min-width: calc(680em / 14)) and (max-width: calc(1179em / 14))', '@container forge-viewport (max-width: calc(679em / 14))', '@media (prefers-reduced-motion: reduce)']) {
             expect(css).toContain(header);
         }
     });

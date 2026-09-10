@@ -8,13 +8,13 @@ test('record container-query coordinate spaces before and after document zoom', 
     await page.setContent(`<!doctype html><style>
         html, body, #root { height: 100%; margin: 0; font-size: 14px; }
         #root { container: probe / size; }
-        #root > div { width: 10px; height: 10px; --compact: no; }
+        .sample { width: 10px; height: 10px; --compact: no; }
         @container probe (max-width: 679px) { #px { --compact: yes; } }
         @container probe (max-width: 48.5em) { #em { --compact: yes; } }
         @container probe (max-width: 48.5rem) { #rem { --compact: yes; } }
         @container probe (max-inline-size: 679px) { #inline { --compact: yes; } }
         @container probe (max-height: 600px) { #height { --compact: yes; } }
-    </style><div id="root"><div id="px"></div><div id="em"></div><div id="rem"></div><div id="inline"></div><div id="height"></div></div>`);
+    </style><div id="root"><div class="sample" id="px"></div><div class="sample" id="em"></div><div class="sample" id="rem"></div><div class="sample" id="inline"></div><div class="sample" id="height"></div></div>`);
     const read = () => page.evaluate(() => {
         const root = document.getElementById('root')!;
         const style = getComputedStyle(root);
@@ -25,7 +25,13 @@ test('record container-query coordinate spaces before and after document zoom', 
                 [id, getComputedStyle(document.getElementById(id)!).getPropertyValue('--compact').trim()])),
         };
     });
+    // Validate the diagnostic cascade before interpreting any unknown zoom result.
+    await page.setViewportSize({ width: 500, height: 500 });
+    const positive = await read();
+    expect(Object.values(positive.matches)).toEqual(['yes', 'yes', 'yes', 'yes', 'yes']);
+    await page.setViewportSize({ width: 735, height: 860 });
     const before = await read();
+    expect(Object.values(before.matches)).toEqual(['no', 'no', 'no', 'no', 'no']);
     await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
     const zoomed = await read();
     // Detect stale query caches independently of the application's layout.
@@ -34,7 +40,7 @@ test('record container-query coordinate spaces before and after document zoom', 
     await page.evaluate(() => { document.getElementById('root')!.style.containerName = 'probe'; });
     const reselected = await read();
     await info.attach('container-query-coordinates', {
-        body: Buffer.from(JSON.stringify({ before, zoomed, reselected }, null, 2)), contentType: 'application/json',
+        body: Buffer.from(JSON.stringify({ positive, before, zoomed, reselected }, null, 2)), contentType: 'application/json',
     });
     expect(before.rect.width).toBe(735);
     expect(zoomed.rect.width).toBeGreaterThan(0);
