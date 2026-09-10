@@ -254,3 +254,48 @@
     .forge-shell:has(.precision-layout) .forge-statusbar__accent { min-width: 0; }
     .forge-shell:has(.precision-layout) .forge-statusbar > span:last-child { grid-column: 1 / -1; margin-inline-start: 0; }
 }
+
+/* Chrome occupies its own tracks; Canvas/SVG measure only the unobstructed plot.
+   Small topology regions scroll rather than putting tool buttons over neurons. */
+.precision-topology .network-graph-wrapper {
+    display: block;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
+}
+.precision-topology .network-graph-wrapper > .forge-state-badge {
+    position: static;
+    display: flex;
+    min-height: 24px;
+    margin: 4px;
+}
+.network-graph-frame {
+    display: grid;
+    grid-template-rows: 52px 54px minmax(220px, 1fr) 70px;
+    gap: 6px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 414px;
+}
+.forge-shell .network-graph-frame > :is(.network-graph-toolbar, .network-graph-summary, .network-graph-legend) {
+    position: static;
+    inset: auto;
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    box-sizing: border-box;
+    overflow: auto;
+    scrollbar-gutter: stable;
+    margin: 0;
+}
+.forge-shell .network-graph-frame > .network-graph-toolbar { display: flex; align-items: center; gap: 4px; padding: 2px 4px; }
+.forge-shell .network-graph-frame .network-graph-controls,
+.forge-shell .network-graph-frame .network-graph-mode-toggle { flex-shrink: 0; }
+.forge-shell .network-graph-frame .network-graph-summary { align-content: start; }
+.forge-shell .network-graph-frame .network-graph-summary__hint { display: block; }
+.forge-shell .network-graph-frame .network-graph-legend { display: grid; align-content: start; gap: 2px; padding: 2px 4px; }
+.forge-shell .network-graph-frame .network-graph-legend__scale { flex-wrap: wrap; }
+.forge-shell .network-graph-frame :is(.network-graph-toolbar button, .network-graph-legend__filter) { min-width: 44px; min-height: 44px; }

@@ -191,6 +191,19 @@ jobs:
           test "$(cat performance-evidence/candidate-sha.txt)" = "${{ github.sha }}"
           test "$(cat performance-evidence/baseline-sha.txt)" = "ae09b9863ae90f8fb2f62545834fcc138755ba9a"
           printf 'pass,revision,exit_code\n' > performance-evidence/exits.csv
+      - name: Isolate ephemeral benchmark runner from Spotlight indexing
+        shell: bash
+        run: |
+          # Run 34518573740 recorded 93-120% aggregate metadata-worker CPU
+          # while unchanged engine source was measured. Apply symmetrically
+          # before BOTH revisions; preserve five pairs and all original limits.
+          test "${GITHUB_ACTIONS}" = true
+          test "$(uname -s)" = Darwin
+          { date -u; uptime; ps -Ao pid,pcpu,comm; } > performance-evidence/host-before-isolation.txt
+          sudo mdutil -i off / > performance-evidence/indexing-isolation.txt 2>&1
+          mdutil -s / >> performance-evidence/indexing-isolation.txt
+          sleep 10
+          { date -u; uptime; ps -Ao pid,pcpu,comm; } > performance-evidence/host-after-isolation.txt
       - name: Collect five paired same-runner performance samples
         shell: bash
         run: |

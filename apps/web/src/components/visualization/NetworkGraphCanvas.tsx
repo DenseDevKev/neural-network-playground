@@ -20,6 +20,7 @@
 // already-fast HeatmapCanvas component.
 
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { NetworkGraphFrame } from './NetworkGraphFrame.tsx';
 import { useNetworkSelectionController, type NetworkSelectionController } from './useNetworkSelectionController.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
@@ -42,7 +43,6 @@ import {
     deriveNodeGeometry,
     describeGraphNode,
     edgeRefKey,
-    edgeFilterOptions,
     hitTestEdge,
     hitTestNode,
     nodeRefKey,
@@ -164,10 +164,6 @@ interface Viewport {
 
 function clampZoom(zoom: number): number {
     return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
-}
-
-function zoomLabel(zoom: number): string {
-    return `${Math.round(zoom * 100)}%`;
 }
 
 function toFixedLabel(value: number | null | undefined, digits = 4): string {
@@ -834,6 +830,13 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
     }, [activeFeatures.length, hiddenLayers, activation, outputActivation, outputLayerSize]);
 
     return (
+        <NetworkGraphFrame
+            story={architectureStory} capacity={capacityLabel}
+            datasetHint={datasetTopologyHint} healthHint={layerStatsHint}
+            lesson={networkLessonStep?.body}
+            zoom={viewport.zoom} onZoomOut={() => zoomGraph(-1)} onZoomIn={() => zoomGraph(1)} onFit={fitGraphToView}
+            viewMode={viewMode} onViewMode={setViewMode} edgeFilter={edgeFilter} onEdgeFilter={setEdgeFilter}
+        >
         <div
             ref={containerRef}
             className="network-graph-container"
@@ -862,26 +865,6 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
                 onPointerLeave={handlePointerLeave}
             />
 
-            <div className="network-graph-summary" aria-label="Architecture summary">
-                <div className="network-graph-summary__row">
-                    <span className="network-graph-summary__story">{architectureStory}</span>
-                    <span className="network-graph-summary__badge">{capacityLabel}</span>
-                </div>
-                {datasetTopologyHint && (
-                    <div className="network-graph-summary__hint">{datasetTopologyHint}</div>
-                )}
-                {layerStatsHint && (
-                    <div className="network-graph-summary__hint network-graph-summary__hint--stats">{layerStatsHint}</div>
-                )}
-            </div>
-
-            {networkLessonStep && (
-                <div className="network-graph-lesson-callout" role="note">
-                    <span className="network-graph-lesson-callout__label">Lesson</span>
-                    <span>{networkLessonStep.body}</span>
-                </div>
-            )}
-
             {showLessonGhostLayer && ghostLayerX != null && (
                 <div
                     className="network-graph-ghost-layer network-graph-ghost-layer--lesson"
@@ -895,72 +878,6 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
                     <span>Add hidden layer here</span>
                 </div>
             )}
-
-            <div className="network-graph-toolbar" role="toolbar" aria-label="Network graph toolbar">
-                <div className="network-graph-controls" aria-label="Graph view controls">
-                    <button
-                        type="button"
-                        aria-label="Zoom out graph"
-                        title="Zoom out"
-                        onClick={() => zoomGraph(-1)}
-                    >
-                        -
-                    </button>
-                    <span className="network-graph-controls__zoom">{zoomLabel(viewport.zoom)}</span>
-                    <button
-                        type="button"
-                        aria-label="Zoom in graph"
-                        title="Zoom in"
-                        onClick={() => zoomGraph(1)}
-                    >
-                        +
-                    </button>
-                    <button
-                        type="button"
-                        aria-label="Fit graph to view"
-                        title="Fit graph"
-                        onClick={fitGraphToView}
-                    >
-                        Fit
-                    </button>
-                </div>
-
-                <div className="network-graph-mode-toggle" role="group" aria-label="Topology view mode">
-                    {(['weights', 'activations'] as const).map((mode) => (
-                        <button
-                            key={mode}
-                            type="button"
-                            className={viewMode === mode ? 'network-graph-mode-toggle__button network-graph-mode-toggle__button--active' : 'network-graph-mode-toggle__button'}
-                            aria-pressed={viewMode === mode}
-                            onClick={() => setViewMode(mode)}
-                        >
-                            {mode === 'weights' ? 'Weights' : 'Activations'}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
-            <div className="network-graph-legend" aria-label="Edge weight legend">
-                <div className="network-graph-legend__scale">
-                    <span><i className="network-graph-legend__swatch network-graph-legend__swatch--positive" /> Positive</span>
-                    <span><i className="network-graph-legend__swatch network-graph-legend__swatch--negative" /> Negative</span>
-                    <span className="network-graph-legend__hint">width = |weight|; selected negative paths are dashed</span>
-                </div>
-                <div className="network-graph-legend__filters">
-                    {edgeFilterOptions.map((option) => (
-                        <button
-                            key={option.id}
-                            type="button"
-                            aria-label={option.id === 'strong' ? 'Show only strong edges' : `Show ${option.label.toLowerCase()} edges`}
-                            aria-pressed={edgeFilter === option.id}
-                            className={edgeFilter === option.id ? 'network-graph-legend__filter network-graph-legend__filter--active' : 'network-graph-legend__filter'}
-                            onClick={() => setEdgeFilter(option.id)}
-                        >
-                            {option.label}
-                        </button>
-                    ))}
-                </div>
-            </div>
 
             {/* Heatmap overlays — one per non-input neuron, positioned over
                 the corresponding canvas-painted node disc. */}
@@ -1051,5 +968,6 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
                 {accessibilitySummary}
             </p>
         </div>
+        </NetworkGraphFrame>
     );
 }

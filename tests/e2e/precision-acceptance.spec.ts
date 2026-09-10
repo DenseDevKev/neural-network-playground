@@ -18,6 +18,7 @@ async function applyPreset(page: Page, name: string) {
 async function scientificIdentity(page: Page) {
     return {
         url: page.url(),
+        status: await page.getByRole('group', { name: 'Status bar', exact: true }).getAttribute('data-status'),
         generation: await currentRun(page).getAttribute('data-model-generation'),
         revision: await currentRun(page).getAttribute('data-model-revision'),
         step: await currentRun(page).getAttribute('data-model-step'),
@@ -57,7 +58,7 @@ for (const viewport of [{ width: 1437, height: 742 }, { width: 735, height: 860 
         await expect(second).toHaveAttribute('aria-pressed', 'true');
         await expect(first).toHaveAttribute('aria-pressed', 'false');
         await expect(details).toContainText('Hidden 1 · neuron 2');
-        await expect(page.getByRole('group', { name: 'Status bar', exact: true })).toHaveAttribute('data-status', 'paused');
+        await expect(page.getByRole('group', { name: 'Status bar', exact: true })).toHaveAttribute('data-status', before.status!);
         for (const profile of ['beginner', 'explore', 'lab']) {
             await page.getByRole('combobox', { name: 'Workspace profile' }).selectOption(profile);
             await expect(second).toHaveAttribute('aria-pressed', 'true');

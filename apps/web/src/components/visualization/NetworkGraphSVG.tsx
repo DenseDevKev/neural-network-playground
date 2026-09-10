@@ -8,8 +8,9 @@
 //   NetworkNodes   — neuron circles with optional heatmaps; re-renders on bias/heatmap change
 
 import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react';
+import { NetworkGraphFrame } from './NetworkGraphFrame.tsx';
 import { useNetworkSelectionController, type NetworkSelectionController } from './useNetworkSelectionController.ts';
-import { describeGraphNode, edgeRefKey, shouldRenderEdge, edgeFilterOptions, nodeRefKey, type EdgeFilter, type GraphViewMode } from './networkGraphPainter.ts';
+import { describeGraphNode, edgeRefKey, shouldRenderEdge, nodeRefKey, type EdgeFilter, type GraphViewMode } from './networkGraphPainter.ts';
 import { classifyNeuronActivity, formatArchitectureStory, getCapacityLabel } from './NetworkGraphCanvas.tsx';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { getLessonDefinition } from '../../lessons/lessonRegistry.ts';
@@ -783,25 +784,19 @@ function NetworkGraphSVGView({ controller }: { readonly controller: NetworkSelec
     }, []);
 
     return (
+        <NetworkGraphFrame
+            story={formatArchitectureStory(activeFeatures.map((f) => f.label === 'x' ? 'X₁' : f.label === 'y' ? 'X₂' : f.label), hiddenLayers, outputSize, compiled?.task.outputActivation ?? 'sigmoid')}
+            capacity={getCapacityLabel(hiddenLayers)} datasetHint={compiled ? getDatasetTopologyHint(compiled.data.dataset, hiddenLayers) : null}
+            lesson={lessonStep?.target === 'network' ? lessonStep.body : undefined}
+            zoom={viewport.zoom} onZoomOut={() => zoomBy(0.8)} onZoomIn={() => zoomBy(1.25)} onFit={resetViewport}
+            viewMode={viewMode} onViewMode={setViewMode} edgeFilter={filter} onEdgeFilter={setFilter}
+        >
         <div ref={containerRef} className="network-graph-container" style={{ position: 'relative', width: '100%', height: '100%', minWidth: 0, overflow: 'hidden' }}
             onKeyDown={(event) => {
                 if (event.key === 'Escape' && controller.selectedNode) {
                     event.preventDefault(); event.stopPropagation(); controller.commands.clearSelection();
                 }
             }}>
-            <div className="network-graph-summary" aria-label="Architecture summary">
-                <div className="network-graph-summary__row"><span className="network-graph-summary__story">{formatArchitectureStory(activeFeatures.map((f) => f.label === 'x' ? 'X₁' : f.label === 'y' ? 'X₂' : f.label), hiddenLayers, outputSize, compiled?.task.outputActivation ?? 'sigmoid')}</span><span className="network-graph-summary__badge">{getCapacityLabel(hiddenLayers)}</span></div>
-                <div className="network-graph-summary__hint">{compiled && getDatasetTopologyHint(compiled.data.dataset, hiddenLayers)}</div>
-            </div>
-            {lessonStep?.target === 'network' && <div className="network-graph-lesson-callout" role="note"><span className="network-graph-lesson-callout__label">Lesson</span><span>{lessonStep.body}</span></div>}
-            <div className="network-graph-toolbar" role="toolbar" aria-label="Network graph toolbar">
-                <div className="network-graph-controls" aria-label="Graph view controls">
-                    <button type="button" aria-label="Zoom out graph" onClick={() => zoomBy(0.8)}>-</button><span className="network-graph-controls__zoom">{Math.round(viewport.zoom * 100)}%</span>
-                    <button type="button" aria-label="Zoom in graph" onClick={() => zoomBy(1.25)}>+</button><button type="button" aria-label="Fit graph to view" onClick={resetViewport}>Fit</button>
-                </div>
-                <div className="network-graph-mode-toggle" role="group" aria-label="Topology view mode">{(['weights', 'activations'] as const).map((mode) => <button key={mode} type="button" aria-pressed={viewMode === mode} className="network-graph-mode-toggle__button" onClick={() => setViewMode(mode)}>{mode === 'weights' ? 'Weights' : 'Activations'}</button>)}</div>
-            </div>
-            <div className="network-graph-legend" aria-label="Edge weight legend"><div className="network-graph-legend__scale"><span>Positive</span><span>Negative</span><span>width = |weight|; selected negative paths are dashed</span></div><div className="network-graph-legend__filters">{edgeFilterOptions.map((option) => <button key={option.id} type="button" className="network-graph-legend__filter" aria-label={option.id === 'strong' ? 'Show only strong edges' : `Show ${option.label.toLowerCase()} edges`} aria-pressed={filter === option.id} onClick={() => setFilter(option.id)}>{option.label}</button>)}</div></div>
             <svg
                 ref={svgRef}
                 aria-label="Neural network graph"
@@ -881,5 +876,6 @@ function NetworkGraphSVGView({ controller }: { readonly controller: NetworkSelec
                 </div>
             )}
         </div>
+        </NetworkGraphFrame>
     );
 }
