@@ -42,7 +42,7 @@ export async function detectWebGPU(): Promise<GPUDevice | null> {
         // The grid-predictor shader uses 9 storage buffers which exceeds
         // the default per-stage limit of 8. Request a higher limit from
         // the adapter when available.
-        const adapterLimit = (adapter as any).limits?.maxStorageBuffersPerShaderStage ?? 8;
+        const adapterLimit = adapter.limits?.maxStorageBuffersPerShaderStage ?? 8;
         const requiredStorageBuffers = Math.min(adapterLimit, 10);
         const device = await adapter.requestDevice({
             requiredLimits: {

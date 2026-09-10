@@ -68,8 +68,8 @@ export default [
     {
         files: ['**/*.{ts,tsx}'],
         rules: {
-            // Intentional `as any` casts exist in tests — keep off globally.
-            '@typescript-eslint/no-explicit-any': 'off',
+            // Production boundaries must use structural types or narrow unknown.
+            '@typescript-eslint/no-explicit-any': 'error',
             // Allow underscore-prefixed identifiers to indicate intentionally
             // unused parameters (common in stubs and callbacks).
             '@typescript-eslint/no-unused-vars': [
@@ -81,5 +81,15 @@ export default [
                 },
             ],
         },
+    },
+    // Malformed inputs are intentional in tests, not in runtime fault adapters.
+    {
+        files: [
+            '**/*.{test,spec}.{ts,tsx}',
+            '**/__tests__/**/*.{ts,tsx}',
+            'apps/web/src/test/**/*.{ts,tsx}',
+            'tests/**/*.{ts,tsx}',
+        ],
+        rules: { '@typescript-eslint/no-explicit-any': 'off' },
     },
 ];
