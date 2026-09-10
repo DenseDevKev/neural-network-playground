@@ -4,12 +4,17 @@
 .precision-dataset-choice.is-active { border-color: var(--accent, #4f8cff); box-shadow: inset 0 0 0 1px var(--accent, #4f8cff); }
 .precision-dataset-choice:disabled { opacity: .55; cursor: wait; }
 .precision-dataset-preview { display: block; min-width: 0; min-height: 0; border-radius: 4px; }
-@media (max-width: 679px) { .precision-dataset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container forge-viewport (max-width: 679px) { .precision-dataset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .network-node-target:focus-visible { outline: 2px solid var(--accent, #4f8cff); outline-offset: 2px; }
 
+/* Root percentages track CSS zoom; viewport units/media queries do not.
+   The root already has definite height/width, so size containment does not
+   collapse it. Named queries also cover portaled drawers and the status row. */
+#root:has(.precision-layout) { container: forge-viewport / size; }
+
 /* Drawers use the real workspace grid row, not a guessed mobile header height. */
-.forge-shell:has(.precision-layout) { position: relative; }
+.forge-shell:has(.precision-layout) { position: relative; height: 100%; }
 .forge-shell > .precision-drawer { grid-area: 2 / 1 / 3 / 2; }
 .forge-workspace:has(.precision-shell) { overflow-y: auto; }
 .precision-layout { position: relative; height: 100%; min-width: 0; min-height: max(100%, 640px); }
@@ -128,16 +133,16 @@
 .precision-context__body, .precision-drawer__body { min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 8px; }
 .precision-context :is(.forge-panel, .panel) { max-width: 100%; min-width: 0; }
 
-@media (min-width: 1180px) {
+@container forge-viewport (min-width: 1180px) {
     .precision-shell { grid-template-columns: 76px minmax(0, 1fr) clamp(250px, 20vw, 280px); }
 }
-@media (min-width: 680px) and (max-width: 1179px) {
+@container forge-viewport (min-width: 680px) and (max-width: 1179px) {
     .precision-layout { min-height: max(100%, 760px); }
     .precision-shell { grid-template-columns: 68px minmax(0, 1fr) clamp(190px, 27vw, 230px); grid-template-rows: 104px minmax(180px, 1fr) 210px auto; }
     .precision-recipe__facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .precision-context { top: 104px; left: 72px; }
 }
-@media (max-width: 679px) {
+@container forge-viewport (max-width: 679px) {
     .forge-workspace:has(.precision-shell) { overflow-y: auto; }
     .precision-layout { height: auto; min-height: 100%; }
     .precision-shell {
@@ -194,7 +199,7 @@
 .precision-transport :is(.btn--control, .speed-btn, .training-shortcuts > summary) { min-height: 44px; }
 .precision-transport .training-bar__info { min-height: 44px; flex-basis: 100%; justify-content: flex-end; font-variant-numeric: tabular-nums; }
 .precision-transport .training-bar__controls { min-width: 0; flex-wrap: wrap; }
-@media (max-width: 679px) {
+@container forge-viewport (max-width: 679px) {
     .precision-transport .training-bar__controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; padding-inline: 0; }
     .precision-transport .training-bar__controls .tooltip { min-width: 0; }
     .precision-transport .training-bar__controls .btn--control { width: 100%; min-width: 0; white-space: normal; padding-inline: 4px; }
@@ -203,7 +208,7 @@
 }
 
 /* Live values must not resize the tracks occupied by neighboring controls. */
-@media (min-width: 901px) {
+@container forge-viewport (min-width: 901px) {
     .forge-shell:has(.precision-layout) .forge-topbar__metrics {
         display: grid;
         grid-template-columns: 64px minmax(0, 1fr) repeat(2, minmax(0, 1.25fr)) 76px;
@@ -212,7 +217,7 @@
     .forge-shell:has(.precision-layout) .forge-metric { min-width: 0; }
     .forge-shell:has(.precision-layout) .forge-metric__label { min-height: 2.6em; line-height: 1.3; }
 }
-@media (min-width: 1401px) {
+@container forge-viewport (min-width: 1401px) {
     .forge-shell:has(.precision-layout) .forge-topbar__metrics { flex: 1; }
     .forge-shell:has(.precision-layout) .forge-topbar__spacer { flex: 0; }
     .forge-shell:has(.precision-layout) .forge-topbar__kit { flex-shrink: 0; }
@@ -231,15 +236,15 @@
 .precision-run-summary .forge-context-card__concept-label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 
 /* A two-line metric row determines the intermediate header's actual height. */
-@media (min-width: 901px) and (max-width: 1400px) {
+@container forge-viewport (min-width: 901px) and (max-width: 1400px) {
     .forge-shell:has(.precision-layout) { grid-template-rows: auto minmax(0, 1fr) 24px; }
 }
-@media (min-width: 680px) and (max-width: 1179px) {
+@container forge-viewport (min-width: 680px) and (max-width: 1179px) {
     .precision-run-summary .forge-run-card__meta > span:nth-child(-n+2) { min-height: 2lh; }
 }
 
 /* Keep compact counter baselines stable and the complete status copy reachable. */
-@media (max-width: 679px) {
+@container forge-viewport (max-width: 679px) {
     .precision-transport .training-bar__info > span:last-child > span:first-child { white-space: pre-line; }
     .forge-shell:has(.precision-layout) { grid-template-rows: auto minmax(0, 1fr) auto; }
     .forge-shell:has(.precision-layout) .forge-statusbar {
@@ -299,3 +304,8 @@
 .forge-shell .network-graph-frame .network-graph-legend { display: grid; align-content: start; gap: 2px; padding: 2px 4px; }
 .forge-shell .network-graph-frame .network-graph-legend__scale { flex-wrap: wrap; }
 .forge-shell .network-graph-frame :is(.network-graph-toolbar button, .network-graph-legend__filter) { min-width: 44px; min-height: 44px; }
+
+/* A magnified/short phone viewport must scroll past transport, not under it. */
+@container forge-viewport (max-width: 679px) and (max-height: 600px) {
+    .precision-transport { position: static; }
+}

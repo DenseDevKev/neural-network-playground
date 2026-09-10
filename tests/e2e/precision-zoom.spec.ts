@@ -18,6 +18,11 @@ for (const view of ['build', 'run'] as const) {
         const url = page.url();
         await page.evaluate(async () => { document.documentElement.style.zoom = '2'; await document.fonts.ready; });
         await expect(page.locator('html')).toHaveCSS('zoom', '2');
+        // Do not let 100vh become a double-height, clipped application at CSS zoom.
+        const shell = await page.locator('.forge-shell').boundingBox();
+        expect(shell).not.toBeNull();
+        expect(shell!.height).toBeLessThanOrEqual(861);
+        await expect(page.locator('.precision-transport')).toHaveCSS('position', 'static');
         const topology = page.locator('[data-precision-region="topology"]');
         const boundary = page.locator('[data-precision-region="boundary"]');
         await topology.scrollIntoViewIfNeeded();

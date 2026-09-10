@@ -37,7 +37,7 @@ export const NetworkGraphFrame = memo(function NetworkGraphFrame({
                     aria-pressed={viewMode === mode} onClick={() => onViewMode(mode)}>{mode === 'weights' ? 'Weights' : 'Activations'}</button>)}
             </div>
         </div>
-        <div className="network-graph-summary" aria-label="Architecture summary">
+        <div className="network-graph-summary" role="region" aria-label="Architecture summary" tabIndex={0}>
             <div className="network-graph-summary__row"><span className="network-graph-summary__story">{story}</span><span className="network-graph-summary__badge">{capacity}</span></div>
             {datasetHint && <div className="network-graph-summary__hint">{datasetHint}</div>}
             {healthHint && <div className="network-graph-summary__hint network-graph-summary__hint--stats">{healthHint}</div>}

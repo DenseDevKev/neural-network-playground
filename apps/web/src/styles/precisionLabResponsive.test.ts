@@ -5,9 +5,13 @@ import { describe, expect, it } from 'vitest';
 const css = readFileSync(resolve(__dirname, 'precisionLab.css'), 'utf8');
 describe('Precision Lab layout contracts', () => {
     it('owns its desktop, intermediate, phone and reduced-motion breakpoints', () => {
-        for (const header of ['@media (min-width: 1180px)', '@media (min-width: 680px) and (max-width: 1179px)', '@media (max-width: 679px)', '@media (prefers-reduced-motion: reduce)']) {
+        for (const header of ['@container forge-viewport (min-width: 1180px)', '@container forge-viewport (min-width: 680px) and (max-width: 1179px)', '@container forge-viewport (max-width: 679px)', '@media (prefers-reduced-motion: reduce)']) {
             expect(css).toContain(header);
         }
+    });
+    it('uses the actual root dimensions for document-zoom reflow', () => {
+        expect(css).toMatch(/#root:has\(\.precision-layout\)\s*\{[^}]*container:\s*forge-viewport\s*\/\s*size/);
+        expect(css).toMatch(/\.forge-shell:has\(\.precision-layout\)\s*\{[^}]*height:\s*100%/);
     });
     it('contains paint and layout, constrains horizontal overflow, and reserves real touch targets', () => {
         expect(css).toContain('contain: layout paint');

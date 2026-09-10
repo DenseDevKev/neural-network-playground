@@ -65,3 +65,17 @@ for (const scanCase of SCAN_CASES) {
         });
     });
 }
+
+test('320px architecture summary accepts Tab and native keyboard scrolling', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await loadReadyPlayground(page);
+    const summary = page.getByRole('region', { name: 'Architecture summary', exact: true });
+    const mode = page.getByRole('group', { name: 'Topology view mode' });
+    await mode.getByRole('button', { name: 'Activations', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await expect(summary).toBeFocused();
+    expect(await summary.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    await page.keyboard.press('End');
+    await expect.poll(() => summary.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect(page.getByRole('group', { name: 'Status bar' })).toHaveAttribute('data-status', 'idle');
+});

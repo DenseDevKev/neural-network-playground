@@ -32,10 +32,10 @@ const CodeExportPanel = lazy(() =>
     import('../controls/CodeExportPanel.tsx').then((m) => ({ default: m.CodeExportPanel })),
 );
 const RunHistoryPanel = lazy(() =>
-    import('../controls/RunHistoryPanel.tsx').then((m) => ({ default: m.RunHistoryPanel })),
+    import('../WorkspaceUtilities.ts').then((m) => ({ default: m.RunHistoryPanel })),
 );
 const ConfigPanel = lazy(() =>
-    import('../controls/ConfigPanel.tsx').then((m) => ({ default: m.ConfigPanel })),
+    import('../WorkspaceUtilities.ts').then((m) => ({ default: m.ConfigPanel })),
 );
 
 const DECISION_OVERLAY_MODES: readonly DecisionOverlayMode[] = [
