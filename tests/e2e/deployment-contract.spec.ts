@@ -109,6 +109,8 @@ test('project hosting resolves lazy evidence and reopens an unchanged shared rec
         await expect(page.getByRole('tab', { name: 'Code', exact: true })).toHaveAttribute('aria-selected', 'true');
         await page.getByRole('tab', { name: 'NumPy', exact: true }).click();
         await expect(page.getByRole('tabpanel', { name: 'NumPy', exact: true })).toContainText('import numpy as np');
+        // Utilities must stay off the initial/Inspect/Code path; opening History loads the shared chunk.
+        expect(observed.resources.some(({ url }) => /\/WorkspaceUtilities-[^/]+\.js$/.test(new URL(url).pathname))).toBe(false);
         await page.getByRole('button', { name: 'History', exact: true }).click();
         const history = page.getByRole('dialog', { name: 'History' });
         await expect(history).toContainText(/do not\s+contain trained parameters/);
@@ -118,7 +120,7 @@ test('project hosting resolves lazy evidence and reopens an unchanged shared rec
         await expect(page.getByRole('region', { name: 'Configuration context', exact: true })).toBeVisible();
         await expect(page.getByRole('region', { name: 'Configuration context', exact: true })
             .getByRole('button', { name: /Export JSON/ })).toBeVisible();
-        for (const prefix of ['InspectionPanel', 'CodeExportPanel', 'RunHistoryPanel', 'ConfigPanel']) {
+        for (const prefix of ['InspectionPanel', 'CodeExportPanel', 'WorkspaceUtilities']) {
             expectChunk(observed.resources, target, prefix);
         }
         const recipe = await page.getByRole('region', { name: 'Recipe summary', exact: true }).innerText();

@@ -45,3 +45,10 @@ test('Playwright adds machine evidence without changing retry and failure artifa
     assert.ok(config.includes('retries: 0'));
     assert.ok(config.includes("trace: 'retain-on-failure'"));
 });
+test('benchmark host isolation covers every mounted store before either revision', () => {
+    const isolation = workflow.slice(workflow.indexOf('- name: Isolate ephemeral benchmark runner'), workflow.indexOf('- name: Collect five paired'));
+    assert.match(isolation, /mdutil -a -s > performance-evidence\/indexing-before-isolation\.txt/);
+    assert.match(isolation, /sudo mdutil -a -i off > performance-evidence\/indexing-isolation\.txt/);
+    assert.match(isolation, /mdutil -a -s >> performance-evidence\/indexing-isolation\.txt/);
+    assert.doesNotMatch(isolation, /mdutil -i off \/(?:\s|$)/);
+});
