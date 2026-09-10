@@ -14,6 +14,8 @@
 
 # 0. Control state
 
+**Current qualification state — September 10, 2026:** product candidate `6f478eae8a390e5a0c5d0ea80263198b10c66ddd` is committed. Its run `34542233759` failed before runner allocation: six jobs, zero executed steps, and no job logs. A single source-job retry request produced the same pre-run failure on attempt 2. This is a runner-start blocker, not a test result or a recurrence of unreadable connector output. No all-green claim is made. See section 28; the earlier receipts below remain historical.
+
 **Reconciled September 10, 2026 against GitHub refs and exact-source CI. Sections explicitly marked historical are receipts, not current acceptance.**
 
 - Repository: `DenseDevKev/neural-network-playground` (private).
@@ -22,8 +24,8 @@
 - Active branch: `codex/nn-forge-precision-lab`.
 - Original continuation base: `3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732`, not the supplied older `6e06b678...`.
 - Maintenance intake: `6de861dd4e00f3223ec8985a0b6c00bdbfa7abe9`, tree `12a57ef8e463e7386c687b602f2501de088d798c`.
-- Latest maintenance implementation: `7ec856a39079141a040624e9fe2927218e0db8f8`, tree `4447aed98747a411e9fef2211cb2785de1c2bde6`. This file's documentation closure is a descendant, not a new application feature.
-- Exact-source maintenance CI receipt: `5092ee69abc8714ff906d5d63bbd5b5263f62368`, run `34529946854`; correctness, types, lint, build, recovery and accepted reference performance pass. The total-JavaScript guard still fails. `7ec856a3` only tightens reporting source-tree validation; its documentation-head CI is inspected separately.
+- Historical maintenance implementation: `7ec856a39079141a040624e9fe2927218e0db8f8`, tree `4447aed98747a411e9fef2211cb2785de1c2bde6`. Maintenance documentation closure was `679789d5`; later qualification candidates are recorded in section 28.
+- Exact-source maintenance CI receipt: `5092ee69abc8714ff906d5d63bbd5b5263f62368`, run `34529946854`; correctness, types, lint, build, recovery and accepted reference performance pass. The total-JavaScript guard failed in that historical maintenance run; it passes on the later `6bd20da6` intake run recorded in section 28. `7ec856a3` only tightens reporting source-tree validation; its documentation-head CI is inspected separately.
 - Main composition: accepted Build/Run presentation. Active-branch composition: **PrecisionLabShell already integrated**, not a future shell.
 - Precision Lab merged to main: **no**. Successful Pages deployment: **no**.
 - Continuation implementation is **committed on the active GitHub branch**: 32 non-workflow files at `20831874d436aac55c3c100ffe84949e967e8a37`, qualification workflow at `3b567950d3c725e5dc2856b4331813db26edba39`, and targeted browser corrections at `950142880d11e78d58eaa271904c6c8a4d2facb9`.
@@ -222,13 +224,13 @@
 - [x] production build passes.
 - [x] source remains clean after build.
 
-**Historical helper/build receipts:** accepted baseline had 88 helpers (run `34001183202`). The September 8 local continuation had 91 helpers and 87 byte-identical rebuilt files with a passing bundle guard; that was not browser recovery. Current maintenance counts and the failing current bundle gate are recorded in section 27.
+**Historical helper/build receipts:** accepted baseline had 88 helpers (run `34001183202`). The September 8 local continuation had 91 helpers and 87 byte-identical rebuilt files with a passing bundle guard; that was not browser recovery. Historical maintenance counts and its then-failing bundle gate are recorded in section 27; the later continuation is in section 28.
 
 ---
 
 # 5. P1 pulled forward — JavaScript bundle contract
 
-**Caps unchanged. Current maintenance CI `5092ee69` measures entry 151,342 / 152,245, InspectionPanel 5,431 / 7,373 and total JavaScript 234,282 / 234,161 bytes: total is 121 bytes over the cap, so this gate FAILS.** Local intake and maintenance both measure 234,285 total (124 bytes over); their 13 emitted files are byte-identical. Local recovered dependencies omit font binaries, so complete asset fidelity comes from CI. September 8 values of 234,068 total and 93 bytes of headroom are historical and superseded. Evidence: run `34529946854`, compact focused summary and preserved build manifest.
+**Caps unchanged. Historical maintenance CI `5092ee69` measured entry 151,342 / 152,245, InspectionPanel 5,431 / 7,373 and total JavaScript 234,282 / 234,161 bytes: total was 121 bytes over the cap.** The later `6bd20da6` intake passes its exact CI bundle guard in run `34538909554`. Current product `6f478eae` passes locally at entry 151,332, inspection 5,430 and total 233,770 bytes, but its new CI jobs do not start; see section 28. Local recovered dependencies omit font binaries, so complete asset fidelity still requires CI. No cap was changed.
 
 
 ## P1.1 Implement executable checker
@@ -279,12 +281,12 @@
 
 **Provenance:** comparator RED `f6aa6937...`; implementation `27e0b244...`; corrected fixture `5d637eb1...` (88 helper tests); release workflow `11facd97...`; dedicated reference workflow `78465112...`; final code `fbae4b98...`. Dedicated reference run `34001077012` and release run `34001183202` passed. The committed release verification document preserves the raw historical investigation and all ten-run medians. No engine optimization was needed for policy resolution.
 
-## Current candidate performance — separate from resolved policy
+## Historical maintenance-candidate performance — separate from resolved policy
 
 - [x] Run the unchanged accepted five-pair macOS/ARM64 reference gate on the maintenance implementation `5092ee69`: Actions `34529946854`.
 - [x] Preserve exact candidate/host identity, raw samples, comparator result and independent worker budgets in `precision-performance-5092ee69...` and its compact summary.
 
-The accepted comparison passed all six engine comparisons plus independent forced-pair and save-capture budgets. Candidate worker medians in that run were 9.7946 ms and 11.6225 ms; no engine speed gain is claimed. Reporting-only changes and the documentation closure are requalified at their exact head separately.
+The accepted comparison passed all six engine comparisons plus independent forced-pair and save-capture budgets. Candidate worker medians in that run were 9.7946 ms and 11.6225 ms; no engine speed gain is claimed. The later `6bd20da6` intake also passes the accepted reference gate in `34538909554`. The new `6f478eae` candidate has no executed CI performance result because its runners do not start; see section 28. No policy or engine change is inferred from that infrastructure failure.
 
 The September 8 Linux diagnostic (historical absolute engine tests failed; worker medians 8.0115/9.6054 ms passed) was not a reference qualification. The workflow is now committed and has run repeatedly; the old claim that it was an unpushed local patch is obsolete. The policy investigation remains resolved and the release baseline remains merged.
 
@@ -537,7 +539,7 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
 
 # 17. P6 — Production acceptance
 
-**Current result: NOT YET RELEASE-QUALIFIED.** The September 9 browser-fix source `88e107a9` passed run `34410864082`, but later tests/corrections reached `6de861dd` and exposed new acceptance failures. Intake run `34522259192` failed preview/subpath and total JavaScript size; it passed correctness, recovery and accepted reference performance. Maintenance run `34529946854` separately verifies its changes while retaining the failing bundle gate and existing browser assertions. Maintenance completion does not check off this end-state release matrix. See section 27 and the maintenance review for current scoped evidence.
+**Current result: NOT YET RELEASE-QUALIFIED.** Intake `6bd20da6` passes correctness, bundle, recovery and accepted reference performance in run `34538909554`; its only browser failures are the two WebKit 200% zoom journeys. The narrowly corrected product `6f478eae` passes local regression/build/bundle checks, but run `34542233759` fails before runner allocation rather than executing tests. Keep this end-state matrix unchecked until the exact candidate completes its full qualification. Section 28 supersedes the older maintenance/current-state receipts.
 
 ## Functional
 - [ ] full unit suite.
@@ -730,7 +732,7 @@ Status: active.
 
 ### D008 — No bundle-limit expansion
 Educational content is grouped into one on-demand chunk; safe unused memo factories are tree-shaken; Terser uses two normal compression passes. No cap, scientific cadence, schema or engine algorithm was changed.
-Status: caps preserved; current CI total is 234,282 / 234,161 bytes and fails. The 93-byte headroom was a September 8 historical receipt, not the current state. Maintenance leaves runtime output unchanged.
+Status: caps preserved. Maintenance CI total 234,282 / 234,161 bytes was a historical failure; later `6bd20da6` passes its exact CI guard, and `6f478eae` measures 233,770 / 234,161 locally with new CI startup blocked. Section 28 is current; no older headroom or failure is carried forward.
 
 ---
 
@@ -892,3 +894,43 @@ Precision Lab browser/zoom qualification, the inherited bundle overrun, consumer
 ## v3 — September 10 reconciliation
 
 Replaced stale current-SHA, unpushed-patch, unrun-performance and 93-byte-headroom claims with dated source/CI receipts. Preserved historical milestone boxes and the September 8/9 records. Added maintenance-only completion evidence without marking blocked Precision Lab release tasks accepted.
+
+
+---
+
+# 28. All-jobs-green continuation — runner-start blocker
+
+**Goal remains open.** Resume from the published product candidate; do not repeat or discard already committed fixes. This section supersedes older current-state assertions without changing historical receipts or accepted performance policy.
+
+## Source and completed investigation
+
+- [x] Refresh both remote refs before editing: main `98f29b86e469a2a545be75928ae6f32309fd1582`; intake branch `6bd20da6de276337ae62f6eba92c6c9847d4379e`, tree `b3c10470d417182bce294a5b29428cb567c666fa`.
+- [x] Recover the exact Actions source archive and verify the reconstructed Git tree; reuse dependencies only after lockfile equality. Work in an isolated linked worktree; never publish synthetic local recovery history.
+- [x] Inspect completed intake run `34538909554`: focused, source-evidence, recovery and accepted five-pair performance jobs succeed. Preview and subpath fail only the two WebKit 200% document-zoom journeys. Preview JSON records 78 passed, 6 intentional skips, 2 failures and zero flaky tests.
+- [x] Trace the remaining zoom failure to the expected static transport still being sticky. The served width condition is a literal `48.5em`, while the short-height condition remains `calc(600em / 14)`. Preserve the complete application assertions; do not force clicks, skip WebKit or raise thresholds.
+- [x] Add a failing static regression, then replace only the short-height condition with literal `42.8571428571em`. Add isolated literal-versus-calc evidence and a tall/short/zoom/reset browser regression. These are implemented in `6f478eae`, tree `b6c5927de660746587ac7d92ab8a26204e684dca`; cross-engine browser acceptance is still pending.
+- [x] Run local verification for the published product contents: 497 engine, 334 shared and 1,191 web tests (2,022 total), 155 infrastructure tests, responsive RED/GREEN, lint, complete source/test typechecks, production build, bundle guard and whitespace check pass.
+- [x] Compare staged tree with the tree published through Git data writes, re-read the active ref, and update it non-forced. No main, visibility, Pages, ownership, scientific, schema, protocol or persistence change.
+
+## Bundle and browser evidence boundaries
+
+Local gzip bytes on `6f478eae`: entry 151332 / 152245, InspectionPanel 5430 / 7373, total JavaScript 233770 / 234161. All limits are unchanged. The earlier 121-byte maintenance overrun is historical, not the current local result; intake `6bd20da6` also passes its exact CI bundle guard.
+
+Local reconstructed dependencies omit font binaries and the WebKit executable cannot be installed because the browser download host does not resolve in this runtime. These limitations are not product defects and local unit/build results do not qualify Chromium/WebKit, font delivery, geometry or accessibility. No local full-browser pass is claimed.
+
+## Current external blocker
+
+- [!] Run `34542233759` for exact code `6f478eae` ends before any checkout, install or test step. All six jobs report failure, no steps, and no assigned runner. A source-evidence job metadata read reports `runner_id: 0` and an empty runner name; its log download has no blob.
+- [x] Make one bounded infrastructure retry request for the source-evidence job, not an application-test retry. Attempt 2 again ends without executing steps. Preserve both failures; do not repeatedly rerun or alter the workflow to hide them.
+- [!] The connector's available check-run outputs contain no explanatory title, summary or annotations. The exact account/platform reason is not established. A quota/billing restriction is a possibility, not a confirmed diagnosis; no billing or account-setting change has been made.
+- [ ] Restore GitHub Actions runner startup and inspect the exact candidate's complete six-job qualification, including the new isolated and full-application zoom regressions. A failure before runner allocation cannot be counted as a product pass or fail.
+- [ ] Fix any remaining reproduced application failure, then require all six jobs to succeed on one exact candidate. Preserve zero retries, existing failure caps, performance policy, scientific cadence and bundle/layout budgets.
+- [ ] Reconcile final acceptance boxes only after those results, and inspect the documentation-head run separately. No future CI status or self-referential commit SHA is invented in this record.
+
+## Unchanged separate boundaries
+
+Legacy-shell retirement and cross-tab saved-run overwrite remain separate work. Accepted baseline/performance-policy investigation remains resolved. Main stays `98f29b86...`; Pages remains a repository-settings blocker. Nothing was merged, deployed or made public.
+
+## v4 — September 10 qualification resume
+
+Replaced the historical maintenance guard failure as current authority with the later measured evidence, recorded the precise WebKit correction and local regression results, and distinguished a new runner-start failure from the prior tool-output failures. All-jobs-green and release acceptance remain unchecked.
