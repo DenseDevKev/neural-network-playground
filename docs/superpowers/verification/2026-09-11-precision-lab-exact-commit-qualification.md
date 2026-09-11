@@ -2,7 +2,7 @@
 
 Date: 2026-09-11
 
-## Qualified product/documentation candidate
+## Qualified product candidate and documentation boundary
 
 - Repository: `DenseDevKev/neural-network-playground` (public before the successful rerun; visibility was changed by the owner).
 - Branch: `codex/nn-forge-precision-lab`.

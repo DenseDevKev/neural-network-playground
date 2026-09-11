@@ -14,7 +14,7 @@
 
 # 0. Control state
 
-**Current qualification state — September 11, 2026:** documentation/product head `fcc382658396defa1a19c3a5543478ebe6b0986f`, tree `e74b3561f2287d3f921851bb877686dbd0cca83a`, passed all six required jobs on attempt 2 of exact-head run `34543410273`: source evidence, focused correctness/build/bundle, preview browsers, project-subpath browsers, recovery and accepted five-pair performance. The owner changed the repository from private to public before the bounded rerun; standard GitHub-hosted runners then started normally, removing the earlier account billing/spend-limit startup block. Preview passed 82 tests with 6 intentional mode skips; subpath passed 86 with 2 intentional mode skips; both reported zero unexpected and zero flaky tests. Recovery passed both fault-enabled tests and both clean-build fault-disabled tests. No additional product correction was needed after `6f478eae8a390e5a0c5d0ea80263198b10c66ddd`. Sections 28–29 preserve the historical failures and current evidence. A documentation-only closure commit created from this record must receive its own exact-head run before it becomes the final qualified branch head.
+**Current qualification state — September 11, 2026:** exact tested product head `fcc382658396defa1a19c3a5543478ebe6b0986f`, tree `e74b3561f2287d3f921851bb877686dbd0cca83a`, passed all six required jobs on attempt 2 of exact-head run `34543410273`: source evidence, focused correctness/build/bundle, preview browsers, project-subpath browsers, recovery and accepted five-pair performance. The owner changed the repository from private to public before the bounded rerun; standard GitHub-hosted runners then started normally, removing the earlier account billing/spend-limit startup block. Preview passed 82 tests with 6 intentional mode skips; subpath passed 86 with 2 intentional mode skips; both reported zero unexpected and zero flaky tests. Recovery passed both fault-enabled tests and both clean-build fault-disabled tests. No additional product correction was needed after `6f478eae8a390e5a0c5d0ea80263198b10c66ddd`. Sections 28–29 preserve the historical failures and current evidence. A documentation-only closure commit created from this record must receive its own exact-head run before it becomes the final qualified branch head.
 
 **Reconciled September 10, 2026 against GitHub refs and exact-source CI. Sections explicitly marked historical are receipts, not current acceptance.**
 
@@ -539,67 +539,67 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
 
 # 17. P6 — Production acceptance
 
-**Current result: NOT YET RELEASE-QUALIFIED.** Intake `6bd20da6` passes correctness, bundle, recovery and accepted reference performance in run `34538909554`; its only browser failures are the two WebKit 200% zoom journeys. The narrowly corrected product `6f478eae` passes local regression/build/bundle checks, but run `34542233759` fails before runner allocation rather than executing tests. Keep this end-state matrix unchecked until the exact candidate completes its full qualification. Section 28 supersedes the older maintenance/current-state receipts.
+**Current result: PRODUCT CANDIDATE RELEASE-QUALIFIED; FINAL DOCUMENTATION HEAD PENDING.** Exact tested product head `fcc382658396defa1a19c3a5543478ebe6b0986f` passed every item in this P6 matrix in attempt 2 of run `34543410273`. The product contents remain unchanged in the later documentation-only closure commits. Section 29 records the exact evidence and keeps branch closure open until the final documentation head completes the same six-job workflow.
 
 ## Functional
-- [ ] full unit suite.
-- [ ] full E2E.
-- [ ] build.
-- [ ] bundle guard.
-- [ ] recovery.
-- [ ] shared URL.
-- [ ] saved-run semantics.
-- [ ] checkpoints.
-- [ ] code export.
-- [ ] evaluation provenance.
+- [x] full unit suite.
+- [x] full E2E.
+- [x] build.
+- [x] bundle guard.
+- [x] recovery.
+- [x] shared URL.
+- [x] saved-run semantics.
+- [x] checkpoints.
+- [x] code export.
+- [x] evaluation provenance.
 
 ## Browsers
-- [ ] Chromium.
-- [ ] WebKit.
-- [ ] zero retries.
-- [ ] no accepted flaky cases.
+- [x] Chromium.
+- [x] WebKit.
+- [x] zero retries.
+- [x] no accepted flaky cases.
 
 ## Required viewports
-- [ ] `1437x742`.
-- [ ] `735x860`.
-- [ ] `320x844`.
+- [x] `1437x742`.
+- [x] `735x860`.
+- [x] `320x844`.
 
 At each:
-- [ ] Build usable.
-- [ ] Run usable.
-- [ ] Advanced Tools usable.
-- [ ] no unintended horizontal overflow.
-- [ ] no inaccessible hidden controls.
-- [ ] evidence readable.
+- [x] Build usable.
+- [x] Run usable.
+- [x] Advanced Tools usable.
+- [x] no unintended horizontal overflow.
+- [x] no inaccessible hidden controls.
+- [x] evidence readable.
 
 ## Layout stability
 At 50 steps/frame for at least 5 seconds:
-- [ ] record major bounds at start.
-- [ ] record major bounds after interval.
-- [ ] stable regions move ≤ 1 CSS px unexpectedly.
-- [ ] diagnose intentional motion separately.
-- [ ] Chromium post-start CLS = 0 for acceptance scenario.
+- [x] record major bounds at start.
+- [x] record major bounds after interval.
+- [x] stable regions move ≤ 1 CSS px unexpectedly.
+- [x] diagnose intentional motion separately.
+- [x] Chromium post-start CLS = 0 for acceptance scenario.
 
 ## Accessibility
-- [ ] skip link.
-- [ ] keyboard only.
-- [ ] visible focus.
-- [ ] 44px required touch targets.
-- [ ] reduced motion.
-- [ ] 200% zoom.
-- [ ] semantic regions.
-- [ ] accessible network selection.
-- [ ] accessible evidence tabs.
-- [ ] no axe regressions.
-- [ ] understandable status updates.
+- [x] skip link.
+- [x] keyboard only.
+- [x] visible focus.
+- [x] 44px required touch targets.
+- [x] reduced motion.
+- [x] 200% zoom.
+- [x] semantic regions.
+- [x] accessible network selection.
+- [x] accessible evidence tabs.
+- [x] no axe regressions.
+- [x] understandable status updates.
 
 ## Performance
-- [ ] JS bundle caps green.
-- [ ] forced paired evaluation ≤ 250 ms contract.
-- [ ] save capture ≤ 500 ms contract.
-- [ ] accepted engine reference gate green.
-- [ ] no duplicate boundary work.
-- [ ] no major live numerical-grid copy in React state.
+- [x] JS bundle caps green.
+- [x] forced paired evaluation ≤ 250 ms contract.
+- [x] save capture ≤ 500 ms contract.
+- [x] accepted engine reference gate green.
+- [x] no duplicate boundary work.
+- [x] no major live numerical-grid copy in React state.
 
 **Exit:** Precision Lab is scientifically and operationally equivalent or better, not merely prettier.
 
@@ -640,7 +640,7 @@ At 50 steps/frame for at least 5 seconds:
 
 # 19. Precision Lab release
 
-**Blocked by candidate qualification first, then the separate owner-controlled Pages settings issue. No merge, deployment or visibility change was made in this continuation.**
+**Product qualification is satisfied. Release remains separate: P7 legacy-shell retirement is incomplete, merge to `main` is not authorized here, and Pages still has an owner-controlled repository-settings blocker. The owner changed repository visibility to public on September 11; the qualification agent made no merge, deployment, Pages or billing change.**
 
 
 - [ ] Freeze qualified candidate.
@@ -988,9 +988,9 @@ Replaced the historical maintenance guard failure as current authority with the 
 
 ## 29.5 Publication, exact candidate and closure
 
-- [x] Obtain independent review of the closure diff for scope, test strength, provenance and scientific/ownership invariants. Final review identified stale attempt-1/current-state wording and an ambiguous retry statement; those documentation defects were corrected before publication. No reviewer files changed.
+- [x] Obtain independent review of the closure diff for scope, test strength, provenance and scientific/ownership invariants. The first review identified stale attempt-1/current-state wording and an ambiguous retry statement; a follow-up review identified four remaining product-versus-documentation and historical-visibility scope ambiguities. All were corrected before final closure publication. No reviewer files changed.
 - [ ] If a repository-local correction is demonstrated, publish one coherent non-forced Git-data commit based on the freshly re-read remote parent/tree. Never publish the synthetic recovery commit.
-- [x] Require one exact product/documentation head to pass `source-evidence`, `focused`, `browsers (preview)`, `browsers (subpath)`, `browsers (recovery)` and `performance` with preserved raw and compact evidence. Attempt 2 of run `34543410273` passed all six on `fcc38265`, tree `e74b3561...`.
+- [x] Require one exact product candidate to pass `source-evidence`, `focused`, `browsers (preview)`, `browsers (subpath)`, `browsers (recovery)` and `performance` with preserved raw and compact evidence. Attempt 2 of run `34543410273` passed all six on exact product head `fcc38265`, tree `e74b3561...`.
 - [x] Inspect current required checks, exact source/build provenance, browser counts/skips/flakes, recovery fault-on/fault-off reports, gzip measurements and five-pair performance medians. All summaries report the exact SHA/tree, no tracked changes, status passed and attempt 2; source archive SHA-256 is `0f2482b2a538c5b7160e40a09ad197c5cad346b68a53d28b604495b137697536`. Raw `pnpm test:perf` collection exits remain `1` for both baseline and candidate because this hosted runner exceeds the preserved historical absolute engine constants; the accepted symmetric same-runner comparator and independent forced-pair/save-capture limits pass.
 - [ ] If documentation creates the final commit, qualify that final documentation head; do not start a commit loop merely to write its own run ID.
 
