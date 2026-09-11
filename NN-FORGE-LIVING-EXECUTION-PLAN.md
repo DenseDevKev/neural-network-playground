@@ -14,11 +14,11 @@
 
 # 0. Control state
 
-**Current qualification state — September 10, 2026:** product candidate `6f478eae8a390e5a0c5d0ea80263198b10c66ddd` is committed. Its run `34542233759` failed before runner allocation: six jobs, zero executed steps, and no job logs. A single source-job retry request produced the same pre-run failure on attempt 2. This is a runner-start blocker, not a test result or a recurrence of unreadable connector output. No all-green claim is made. See section 28; the earlier receipts below remain historical.
+**Current qualification state — September 11, 2026:** documentation/product head `fcc382658396defa1a19c3a5543478ebe6b0986f`, tree `e74b3561f2287d3f921851bb877686dbd0cca83a`, passed all six required jobs on attempt 2 of exact-head run `34543410273`: source evidence, focused correctness/build/bundle, preview browsers, project-subpath browsers, recovery and accepted five-pair performance. The owner changed the repository from private to public before the bounded rerun; standard GitHub-hosted runners then started normally, removing the earlier account billing/spend-limit startup block. Preview passed 82 tests with 6 intentional mode skips; subpath passed 86 with 2 intentional mode skips; both reported zero unexpected and zero flaky tests. Recovery passed both fault-enabled tests and both clean-build fault-disabled tests. No additional product correction was needed after `6f478eae8a390e5a0c5d0ea80263198b10c66ddd`. Sections 28–29 preserve the historical failures and current evidence. A documentation-only closure commit created from this record must receive its own exact-head run before it becomes the final qualified branch head.
 
 **Reconciled September 10, 2026 against GitHub refs and exact-source CI. Sections explicitly marked historical are receipts, not current acceptance.**
 
-- Repository: `DenseDevKev/neural-network-playground` (private).
+- Repository: `DenseDevKev/neural-network-playground` (public as of the September 11 bounded rerun; visibility was changed by the owner, not by the qualification agent).
 - Product authority: `main` at `98f29b86e469a2a545be75928ae6f32309fd1582`.
 - Release baseline: **merged and accepted**; merge parents are `ae09b986...` and `2cd5b896...`. Main CI `34002500733` succeeded.
 - Active branch: `codex/nn-forge-precision-lab`.
@@ -934,3 +934,80 @@ Legacy-shell retirement and cross-tab saved-run overwrite remain separate work. 
 ## v4 — September 10 qualification resume
 
 Replaced the historical maintenance guard failure as current authority with the later measured evidence, recorded the precise WebKit correction and local regression results, and distinguished a new runner-start failure from the prior tool-output failures. All-jobs-green and release acceptance remain unchecked.
+
+
+---
+
+# 29. Exact-head qualification resume — September 11, 2026
+
+**Execution order:** source identity → runner-start diagnosis → current browser correction → local non-browser gates → reviewed publication if justified → exact-head six-job CI → documentation closure. A step stays open until its stated exit condition and evidence are both present.
+
+## 29.1 Source authority and inherited failures
+
+- [x] Refresh `main` and the working branch before editing. Main remains `98f29b86e469a2a545be75928ae6f32309fd1582`; the working branch remains `fcc382658396defa1a19c3a5543478ebe6b0986f`, tree `e74b3561f2287d3f921851bb877686dbd0cca83a`.
+- [x] Inspect the latest exact-head push run. Run `34543410273`, workflow `351256324`, is the only workflow run ID for `fcc38265`; attempt 1 materialized all six jobs but did not start them, and the bounded attempt 2 executed all six.
+- [x] Recover exact source without treating synthetic ancestry as publishable. The verified `6bd20da6` source artifact and the five authoritative later file versions reconstruct Git tree `e74b3561...` exactly. Local `HEAD` is a synthetic recovery commit and must never be pushed.
+- [x] Read the living plan, governing design/implementation/release/verification/maintenance/ownership records, workflow, manifests, lockfile importers, browser configuration, bundle/performance/evidence scripts, and implicated product/browser tests before considering a source correction.
+- [x] Keep inherited failures distinct. Run `34538909554` at `6bd20da6` executed and failed only two WebKit document-zoom journeys. Run `34542233759` and attempt 1 of `34543410273` did not execute application code; attempt 2 of `34543410273` executed and passed the full qualification.
+
+**Exit:** the current remote SHA/tree, source contents, and inherited execution boundary are unambiguous. **Evidence:** refreshed GitHub refs/commit/run/job metadata; verified source archive checksum/tree; local `git write-tree` equals `e74b3561...`.
+
+## 29.2 Runner-start diagnosis
+
+- [x] Inspect full exact-head jobs, check runs, attempts, timing, steps and log downloads. In attempt 1, five `ubuntu-latest` jobs and one `macos-15` job had `steps: []`, `runner_id: 0`, empty runner names and 0 billable milliseconds; log downloads returned `BlobNotFound`. Attempt 2 allocated normal GitHub-hosted runners and completed every step.
+- [x] Verify this is not invalid workflow syntax. GitHub expanded all six current jobs, including the browser matrix, from the exact committed workflow.
+- [x] Check broad service evidence without converting it into an account diagnosis. GitHub's public status reports Actions operational and no September 10–11 incident; this does not exclude a brief or account-scoped restriction.
+- [x] Read the exact attempt-1 check annotation in the authenticated GitHub run UI. All six jobs said: “The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings.” This resolves the earlier connector visibility gap; attempt 2 supersedes those failed check runs with successful ones.
+- [x] Apply only a directly supported remedy. The owner changed the repository from private to public; no billing setting, workflow, product code, test or limit was changed by the qualification agent.
+- [x] Perform one bounded current-head infrastructure check after the supported remedy. Attempt 2 of run `34543410273` allocated standard hosted runners and reached checkout on all six jobs, proving the startup blocker was removed.
+
+**Exit:** satisfied. **Evidence:** attempt 1's identical six-job billing/spend-limit annotations and zero-step metadata; attempt 2 of the same run/head allocated runners and completed all six jobs successfully after the repository became public.
+
+## 29.3 Published WebKit correction
+
+- [x] Re-read the current literal-height CSS, responsive source contract, isolated query diagnostic, full application zoom journeys, layout/accessibility suites, shell, transport and App ownership. The tests use CSS `documentElement.style.zoom`, not browser UI zoom or pinch scaling.
+- [x] Run the current responsive source contract: 8/8 tests pass. The built CSS contains `42.8571428571em`; the full application WebKit journeys and the tall/short/zoom/reset journey remain present.
+- [x] Record the local browser limitation separately. The frozen dependency install and build succeeded locally, but the workspace could not download either Playwright browser; no local page assertion was claimed as acceptance.
+- [x] Run all current zoom journeys in Chromium and WebKit against normal preview and project-subpath hosting. Attempt 2 passed both full `precision-zoom.spec.ts` build/run journeys plus the short/tall/zoom/reset regression in both jobs, with intact application coverage and no unexpected or flaky result.
+- [x] Inspect downstream results now that the zoom journeys pass. Preview passed 82 with 6 intentional mode skips; subpath passed 86 with 2 intentional mode skips. The committed `--max-failures=5` policy remained unchanged, and no remaining product assertion required another correction.
+
+**Exit:** satisfied. **Evidence:** `precision-summary-preview-fcc38265...` and `precision-summary-subpath-fcc38265...`, with raw browser artifacts retained by run `34543410273`; zero unexpected, zero flaky and no omitted failures/errors.
+
+## 29.4 Local exact-tree gates
+
+- [x] Install the frozen lockfile with pnpm 9.15.9. The dependency tree includes the committed font packages; no manifest or lockfile changed.
+- [x] Run all infrastructure tests: 155 passed, 0 failed.
+- [x] Run all packages: engine 497, shared 334, web 1,191 — 2,022 passed, 0 failed.
+- [x] Run lint after moving browser-generated reports outside the repository scan: pass. The first lint invocation only found generated Playwright report assets; it did not identify a tracked-source defect.
+- [x] Run complete source/test typechecks: pass.
+- [x] Run a normal production build with fault injection unset: pass, including emitted same-origin font assets.
+- [x] Run the unchanged gzip guard: entry 151,321 / 152,245; InspectionPanel 5,432 / 7,373; total JavaScript 233,766 / 234,161 bytes — all pass.
+- [x] Run `git diff --check` before this documentation edit: pass.
+
+**Evidence boundary:** these commands ran against exact tree contents `e74b3561...`, but locally under Node 24 rather than the workflow's Node 20, and the recovered local commit ID is synthetic. They are strong diagnostic evidence, not GitHub exact-SHA acceptance and not browser/performance qualification.
+
+## 29.5 Publication, exact candidate and closure
+
+- [x] Obtain independent review of the closure diff for scope, test strength, provenance and scientific/ownership invariants. Final review identified stale attempt-1/current-state wording and an ambiguous retry statement; those documentation defects were corrected before publication. No reviewer files changed.
+- [ ] If a repository-local correction is demonstrated, publish one coherent non-forced Git-data commit based on the freshly re-read remote parent/tree. Never publish the synthetic recovery commit.
+- [x] Require one exact product/documentation head to pass `source-evidence`, `focused`, `browsers (preview)`, `browsers (subpath)`, `browsers (recovery)` and `performance` with preserved raw and compact evidence. Attempt 2 of run `34543410273` passed all six on `fcc38265`, tree `e74b3561...`.
+- [x] Inspect current required checks, exact source/build provenance, browser counts/skips/flakes, recovery fault-on/fault-off reports, gzip measurements and five-pair performance medians. All summaries report the exact SHA/tree, no tracked changes, status passed and attempt 2; source archive SHA-256 is `0f2482b2a538c5b7160e40a09ad197c5cad346b68a53d28b604495b137697536`. Raw `pnpm test:perf` collection exits remain `1` for both baseline and candidate because this hosted runner exceeds the preserved historical absolute engine constants; the accepted symmetric same-runner comparator and independent forced-pair/save-capture limits pass.
+- [ ] If documentation creates the final commit, qualify that final documentation head; do not start a commit loop merely to write its own run ID.
+
+**Exit:** all six jobs are green on one exact published head and the record accurately identifies that head/run, or the final report names the exact external error and smallest user action while leaving acceptance open.
+
+## 29.6 Unchanged separate work
+
+[-] Legacy-shell retirement, cross-tab saved-run overwrite/concurrency, Pages repository settings and future roadmap work remain separate. Main, Pages and billing settings are unchanged. Repository visibility is now public following the owner's action that enabled standard hosted runner use. The accepted release baseline/performance-policy investigation remains resolved.
+
+## v5 — September 11 exact-head recovery
+
+Refreshed the actual documentation head, corrected the earlier statement that no annotations existed, recorded the zero-billable-millisecond startup signature, captured current exact-tree local gates, and kept browser/CI acceptance open. No scientific contract, test retry/timeout/skip, bundle/performance/layout limit, workflow, product source, account setting, deployment or release state was changed.
+
+## v6 — September 11 authenticated runner-start diagnosis
+
+Authenticated GitHub UI inspection recovered the annotation hidden from the connected API and confirmed that every exact-head job was blocked by failed recent account payments or an insufficient spending limit. No workflow rerun, repository-local correction, billing change or publication was attempted; the remote head remains `fcc38265`, and exact-head CI acceptance remains open pending account-owner action.
+
+## v7 — September 11 exact-head all-jobs-green receipt
+
+After the owner made the repository public, one bounded rerun of `34543410273` started normally and passed all six required jobs on `fcc38265`. Focused qualification passed 155 infrastructure tests and 2,022 package tests, lint, types, build and the unchanged gzip guard (151,321 entry; 5,432 InspectionPanel; 233,766 total JavaScript). Preview passed 82 with 6 intentional hosting/fault-mode skips; subpath passed 86 with 2 intentional fault-mode skips; recovery passed 2 fault-enabled plus 2 fault-disabled tests; every browser summary reports zero unexpected and zero flaky tests. The accepted five-pair macOS/ARM64 comparator passed all engine medians plus forced-pair 9.8853 ms and save-capture 11.8374 ms. The preserved raw baseline and candidate performance collections both exited `1` on the historical absolute engine constants, symmetrically confirming why those constants are not universal-host release thresholds. Product acceptance for `fcc38265` is complete; only the documentation-only closure head remains to receive its own exact-head qualification.
