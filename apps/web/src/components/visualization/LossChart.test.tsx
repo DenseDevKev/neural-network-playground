@@ -88,13 +88,13 @@ describe('LossChart scientific evidence series', () => {
         useLayoutStore.setState({ audienceMode: 'explore' });
     });
 
-    it('derives finite compact bounds at phone, tablet, and desktop widths', () => {
+    it('derives finite readable bounds at phone, tablet, and desktop widths', () => {
         for (const width of [0, -10, Number.NaN, Infinity]) {
-            expect(deriveLossChartViewport(width)).toEqual({ width: 1, height: 96 });
+            expect(deriveLossChartViewport(width)).toEqual({ width: 1, height: 220 });
         }
-        expect(deriveLossChartViewport(320.2)).toEqual({ width: 320, height: 112 });
-        expect(deriveLossChartViewport(735)).toEqual({ width: 735, height: 140 });
-        expect(deriveLossChartViewport(1437)).toEqual({ width: 1437, height: 140 });
+        expect(deriveLossChartViewport(320.2)).toEqual({ width: 320, height: 220 });
+        expect(deriveLossChartViewport(735)).toEqual({ width: 735, height: 331 });
+        expect(deriveLossChartViewport(1437)).toEqual({ width: 1437, height: 360 });
     });
 
     it('coalesces resize paints, ignores subpixel churn, and cancels pending work on unmount', () => {
@@ -110,13 +110,13 @@ describe('LossChart scientific evidence series', () => {
         const emitWidth = (width: number) => notify([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
         const view = render(<LossChart />);
         const canvas = screen.getByLabelText('Scientific loss evidence by actual model step');
-        expect(canvas).toHaveStyle({ height: '112px' });
+        expect(canvas).toHaveStyle({ height: '220px' });
         const initialPaints = fillRect.mock.calls.length;
         act(() => { emitWidth(400.1); emitWidth(400.4); });
         expect(schedule).toHaveBeenCalledTimes(1);
         expect(fillRect).toHaveBeenCalledTimes(initialPaints);
         act(() => flush(0));
-        expect(canvas).toHaveStyle({ height: '140px' });
+        expect(canvas).toHaveStyle({ height: '220px' });
         expect(fillRect).toHaveBeenCalledTimes(initialPaints + 1);
         act(() => { emitWidth(400.2); flush(0); });
         expect(fillRect).toHaveBeenCalledTimes(initialPaints + 1);

@@ -13,11 +13,11 @@ it('retains one draft across tabs and cancels every pending section', () => {
     fireEvent.change(screen.getByLabelText('Samples'),{target:{value:'100'}});
     fireEvent.click(screen.getByRole('button',{name:'Training'}));
     fireEvent.change(screen.getByLabelText('Batch size'),{target:{value:'200'}});
-    expect(screen.getByRole('button',{name:'Apply setup'})).toBeDisabled();
+    expect(screen.getByRole('button',{name:'Apply changes'})).toBeDisabled();
     fireEvent.click(screen.getByRole('button',{name:'Data'}));
     expect(screen.getByLabelText('Samples')).toHaveValue('100');
     fireEvent.change(screen.getByLabelText('Samples'),{target:{value:'1000'}});
-    expect(screen.getByRole('button',{name:'Apply setup'})).toBeEnabled();
+    expect(screen.getByRole('button',{name:'Apply changes'})).toBeEnabled();
     fireEvent.click(screen.getByRole('button',{name:'Cancel'}));
     expect(screen.getByLabelText('Samples')).toHaveValue(String(DEFAULT_EXPERIMENT_DOCUMENT.recipe.data.sampleCount));
     fireEvent.click(screen.getByRole('button',{name:'Training'}));

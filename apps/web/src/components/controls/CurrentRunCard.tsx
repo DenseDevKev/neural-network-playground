@@ -32,6 +32,8 @@ function sourceLabel(source: Exclude<ConfigChangeSource, null>): string {
             return 'training';
         case 'preset':
             return 'preset';
+        case 'setup':
+            return 'setup';
     }
 }
 

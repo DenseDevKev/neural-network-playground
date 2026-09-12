@@ -6,6 +6,7 @@ import './styles/fonts.css';
 import './styles/index.css';
 import './styles/forge.css';
 import './styles/precisionLab.css';
+import './styles/atelier.css';
 
 // E2E specs probe this marker to skip fault-injection scenarios when the
 // served bundle was built without VITE_E2E_FAULTS=1.

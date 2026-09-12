@@ -1,108 +1,80 @@
-// ── Root App Component ──
-// Wires the Build / Run instrument shell. The app keeps training, worker,
-// URL, persistence, and saved-run contracts separate from UI placement.
-
+// App owns model lifetime, recipe drafts and visualization demand across navigation.
 import { lazy, Suspense, useEffect, useRef, useCallback, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { DEFAULT_DEMAND } from '@nn-playground/shared';
 import { useLayoutStore } from './store/useLayoutStore.ts';
 import { useExperimentMemoryStore } from './store/experimentMemoryStore.ts';
 import { useTrainingStore } from './store/useTrainingStore.ts';
-import { selectScientificEvidence } from './store/evidenceSelectors.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
+import { useThemeEffect } from './store/theme.ts';
 import { useSaveCurrentRun } from './hooks/useSaveCurrentRun.ts';
 import { useTraining } from './hooks/useTraining.ts';
-import { useModalFocusContainment } from './hooks/useModalFocusContainment.ts';
+import { useRecipeDraft } from './hooks/useRecipeDraft.ts';
 import { useExperimentMemoryStorageSync } from './hooks/useExperimentMemoryStorageSync.ts';
-import { Header } from './components/layout/Header.tsx';
-import { PrecisionLabShell } from './components/layout/precisionLab/PrecisionLabShell.tsx';
-import { PrecisionLabRecipeStrip } from './components/layout/precisionLab/PrecisionLabRecipeStrip.tsx';
-import { usePrecisionLabRecipeModel } from './components/layout/precisionLab/usePrecisionLabRecipeModel.ts';
 import { useNetworkSelectionController } from './components/visualization/useNetworkSelectionController.ts';
-import { NetworkSelectionDeck } from './components/visualization/NetworkSelectionDeck.tsx';
 import { useDecisionBoundaryController } from './components/visualization/useDecisionBoundaryController.ts';
-import { PinnedBoundaryRail } from './components/visualization/PinnedBoundaryRail.tsx';
+import { DecisionBoundaryCanvas } from './components/visualization/DecisionBoundaryCanvas.tsx';
 import { BoundaryEvidencePanel } from './components/visualization/BoundaryEvidencePanel.tsx';
-import { AdvancedRecipeNotice } from './components/controls/AdvancedRecipeNotice.tsx';
-import {
-    TopologyContent,
-    LossContent,
-    ConfusionContent,
-    InspectContent,
-    CodeContent,
-    HistoryContent,
-    ConfigurationContent,
-} from './components/layout/PrecisionLabContent.tsx';
-import { TrainingControls } from './components/controls/TrainingControls.tsx';
-import { PresetPanel } from './components/controls/PresetPanel.tsx';
-const GuidedLessonPanel = lazy(() => import('./components/EducationContent.ts').then((module) => ({ default: module.GuidedLessonPanel })));
-import { FirstVisitLessonCue } from './components/controls/FirstVisitLessonCue.tsx';
+import { AtelierHeader } from './components/atelier/AtelierHeader.tsx';
+import { AtelierNetwork } from './components/atelier/AtelierNetwork.tsx';
+import { AtelierTransport, EvidenceMetrics } from './components/atelier/AtelierTransport.tsx';
+import { SetupEditor } from './components/atelier/setup/SetupEditor.tsx';
+import { CheckpointPanel } from './components/atelier/CheckpointPanel.tsx';
+import { Dialog, Tabs } from './components/atelier/ui.tsx';
+import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
+import { CompatibilityState } from './components/common/CompatibilityState.tsx';
+import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
 import { CurrentRunCard } from './components/controls/CurrentRunCard.tsx';
 import type { LessonTarget } from './lessons/lessonRegistry.ts';
-import { DataPanel } from './components/controls/DataPanel.tsx';
-import { FeaturesPanel } from './components/controls/FeaturesPanel.tsx';
-import { NetworkConfigPanel } from './components/controls/NetworkConfigPanel.tsx';
-import { HyperparamPanel } from './components/controls/HyperparamPanel.tsx';
-import { AccessibilityAnnouncer } from './components/layout/AccessibilityAnnouncer.tsx';
-import { ErrorBoundary } from './components/common/ErrorBoundary.tsx';
-import { EmptyState } from './components/common/EmptyState.tsx';
-import { CompatibilityState } from './components/common/CompatibilityState.tsx';
-import { deriveVisualizationDemand } from './components/layout/deriveVisualizationDemand.ts';
-import { shouldReportSlowInteraction } from './performance/interactionMeasures.ts';
-import {
-    ADVANCED_TOOLS_TRIGGER_ID,
-    type DrawerSurfaceId,
-} from './productShell/shellTypes.ts';
-import { resolveTrainingShortcut } from './shortcuts/trainingShortcuts.ts';
+import type { Destination, WorkspaceTab, SetupTab, ResultsTab, UtilitySurface } from './productShell/atelierTypes.ts';
+import { resolveTrainingShortcut, TRAINING_SHORTCUTS } from './shortcuts/trainingShortcuts.ts';
+
+const GuidedLessonPanel = lazy(() => import('./components/EducationContent.ts').then((module) => ({ default: module.GuidedLessonPanel })));
+const TrainingExplanationPanel = lazy(() => import('./components/EducationContent.ts').then((module) => ({ default: module.TrainingExplanationPanel })));
+const RunHistoryPanel = lazy(() => import('./components/WorkspaceUtilities.ts').then((module) => ({ default: module.RunHistoryPanel })));
+const ConfigPanel = lazy(() => import('./components/WorkspaceUtilities.ts').then((module) => ({ default: module.ConfigPanel })));
+const CodeExportPanel = lazy(() => import('./components/controls/CodeExportPanel.tsx').then((module) => ({ default: module.CodeExportPanel })));
+const InspectionPanel = lazy(() => import('./components/controls/InspectionPanel.tsx').then((module) => ({ default: module.InspectionPanel })));
+const LossChart = lazy(() => import('./components/visualization/LossChart.tsx').then((module) => ({ default: module.LossChart })));
+const ConfusionMatrix = lazy(() => import('./components/visualization/ConfusionMatrix.tsx').then((module) => ({ default: module.ConfusionMatrix })));
+const WORKSPACE_TABS: { id: WorkspaceTab; label: string }[] = [{ id:'setup',label:'Setup' },{ id:'network',label:'Network' },{ id:'results',label:'Results' },{ id:'inspect',label:'Inspect' }];
+const RESULTS_TABS: { id: ResultsTab; label: string }[] = [{ id:'boundary',label:'Prediction' },{ id:'learning',label:'Learning progress' },{ id:'errors',label:'Errors & confusion' }];
+const loading = <p role="status">Loading workspace…</p>;
 
 export default function App() {
+    useThemeEffect();
     useExperimentMemoryStorageSync();
     const access = usePlaygroundStore((state) => state.access);
     const startFresh = usePlaygroundStore((state) => state.startFresh);
     useEffect(() => {
-        const loadLocation = () => {
-            void usePlaygroundStore.getState().loadFromUrl();
-        };
+        const loadLocation = () => { void usePlaygroundStore.getState().loadFromUrl(); };
         window.addEventListener('hashchange', loadLocation);
         return () => window.removeEventListener('hashchange', loadLocation);
     }, []);
     const recoverWithDefault = useCallback(async () => {
         const result = await startFresh();
-        if (!result.ok) {
-            throw new Error(result.issues.map((issue) => issue.message).join(' '));
-        }
+        if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join(' '));
     }, [startFresh]);
-
-    if (access.status === 'incompatible') {
-        return <CompatibilityState access={access} onStartFresh={recoverWithDefault} />;
-    }
-
+    if (access.status === 'incompatible') return <CompatibilityState access={access} onStartFresh={recoverWithDefault} />;
     return <CompatiblePlayground />;
 }
 
 function CompatiblePlayground() {
     const training = useTraining();
     const saveController = useSaveCurrentRun();
-    const recipeModel = usePrecisionLabRecipeModel();
+    const draft = useRecipeDraft();
     const boundary = useDecisionBoundaryController();
     const selection = useNetworkSelectionController();
-    const activeRecipeSection = useLayoutStore((s) => s.activeRecipeSection);
-    const buildContextOpen = useLayoutStore((s) => s.buildContextOpen);
-    const selectBuildContext = useLayoutStore((s) => s.selectBuildContext);
-    const setBuildContextOpen = useLayoutStore((s) => s.setBuildContextOpen);
-    const view = useLayoutStore((s) => s.view);
-    const activeEvidenceView = useLayoutStore((s) => s.activeEvidenceView);
+    const destination = useLayoutStore((s) => s.destination);
+    const workspaceTab = useLayoutStore((s) => s.workspaceTab);
+    const setupTab = useLayoutStore((s) => s.setupTab);
+    const resultsTab = useLayoutStore((s) => s.resultsTab);
+    const inspectTab = useLayoutStore((s) => s.inspectTab);
     const audienceMode = useLayoutStore((s) => s.audienceMode);
-    const advancedToolsOpen = useLayoutStore((s) => s.advancedToolsOpen);
-    const setActiveEvidenceView = useLayoutStore((s) => s.setActiveEvidenceView);
-    const setAdvancedToolsOpen = useLayoutStore((s) => s.setAdvancedToolsOpen);
-    const lessonCueDismissed = useLayoutStore((s) => s.lessonCueDismissed);
+    const activeLessonId = useLayoutStore((s) => s.activeLessonId);
+    const cueDismissed = useLayoutStore((s) => s.lessonCueDismissed);
     const hasStartedLesson = useLayoutStore((s) => s.hasStartedLesson);
-    const hasActiveLesson = useLayoutStore((s) => s.activeLessonId !== null);
-    const dismissLessonCue = useLayoutStore((s) => s.dismissLessonCue);
-    const historyReady = useExperimentMemoryStore((s) => s.hydrationStatus === 'ready');
-    const hasSavedRuns = useExperimentMemoryStore((s) => (
-        s.hydrationStatus === 'ready' && s.records.length > 0
-    ));
+    const recordsReady = useExperimentMemoryStore((s) => s.hydrationStatus === 'ready');
+    const hasRecords = useExperimentMemoryStore((s) => s.records.length > 0);
     const status = useTrainingStore((s) => s.status);
     const pauseReason = useTrainingStore((s) => s.pauseReason);
     const pendingConfigSource = useTrainingStore((s) => s.pendingConfigSource);
@@ -112,331 +84,120 @@ function CompatiblePlayground() {
     const evidenceGenerationId = useTrainingStore((s) => s.evidenceGenerationId);
     const trainedRecipe = useTrainingStore((s) => s.trainedRecipe);
     const trainedRecipeSource = useTrainingStore((s) => s.trainedRecipeSource);
-    const demand = usePlaygroundStore((s) => s.demand);
-    const canvasNetworkGraph = usePlaygroundStore((s) => s.featuresUI.canvasNetworkGraph);
-    const setDemand = usePlaygroundStore((s) => s.setDemand);
+    const prepared = usePlaygroundStore((s) => s.access.status === 'ready' ? s.access.prepared : null);
+    const [utility, setUtility] = useState<UtilitySurface>(null);
+    const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
+    const [savedVisited, setSavedVisited] = useState(destination === 'saved-runs');
+    const [lessonsVisited, setLessonsVisited] = useState(destination === 'lessons' || activeLessonId !== null);
     const [lessonHighlight, setLessonHighlight] = useState<LessonTarget | null>(null);
-    const [openSurface, setOpenSurface] = useState<DrawerSurfaceId | null>(null);
-
-    // Stable refs so keyboard handler never goes stale
-    const trainingRef = useRef(training);
-    const statusRef = useRef(status);
-    const workerErrorDialogRef = useRef<HTMLDivElement>(null);
+    const [exportTab, setExportTab] = useState<'setup' | 'code'>('setup');
     const backgroundRef = useRef<HTMLDivElement>(null);
+    const trainingRef = useRef(training);
     useEffect(() => { trainingRef.current = training; }, [training]);
-    useEffect(() => { statusRef.current = status; }, [status]);
-    useModalFocusContainment(Boolean(workerError), workerErrorDialogRef, backgroundRef);
-
     const stableReset = useCallback(() => trainingRef.current.reset(), []);
-    const handleLessonHighlightChange = useCallback((target: LessonTarget | null) => {
-        setLessonHighlight(target);
-    }, []);
-    const toggleSurface = useCallback((surface: DrawerSurfaceId) => {
-        setOpenSurface((current) => current === surface ? null : surface);
-    }, []);
-    const openLessons = useCallback(() => {
-        setOpenSurface('lessons');
-    }, []);
-    const closeSurface = useCallback(() => {
-        if (openSurface) {
-            document.getElementById(`forge-surface-trigger-${openSurface}`)?.focus();
-        }
-        setOpenSurface(null);
-    }, [openSurface]);
-    const toggleAdvancedTools = useCallback(() => {
-        if (advancedToolsOpen) {
-            document.getElementById(ADVANCED_TOOLS_TRIGGER_ID)?.focus();
-        }
-        setAdvancedToolsOpen(!advancedToolsOpen);
-    }, [advancedToolsOpen, setAdvancedToolsOpen]);
-    const lessonTargetClass = useCallback(
-        (target: LessonTarget) => `lesson-target ${lessonHighlight === target ? 'lesson-target--active' : ''}`,
-        [lessonHighlight],
-    );
+    const guard = (action: () => void) => {
+        if (draft.dirty) { setUtility(null); setPendingNavigation(() => action); }
+        else action();
+    };
+    const guardRef = useRef(guard);
+    guardRef.current = guard;
+    const requestGuardedNavigation = useCallback((action: () => void) => guardRef.current(action), []);
+    const navigate = (next: Destination, tab?: WorkspaceTab) => {
+        if (next === destination && (!tab || tab === workspaceTab)) return;
+        const action = () => { setUtility(null); useLayoutStore.getState().navigate(next,tab); };
+        if (destination === 'playground' && workspaceTab === 'setup') requestGuardedNavigation(action); else action();
+    };
+    const openSetup = (tab: SetupTab) => { setUtility(null); useLayoutStore.getState().openSetup(tab); };
+    const openUtility = (surface: UtilitySurface) => {
+        const action = () => setUtility(surface);
+        if (surface === 'exports') guard(action); else action();
+    };
+    useEffect(() => { if (destination === 'saved-runs') setSavedVisited(true); if (destination === 'lessons') setLessonsVisited(true); }, [destination]);
 
-    // Performance observer (dev only)
+    // Only mounted evidence demands expensive worker projections. This is the sole writer.
     useEffect(() => {
-        if (!import.meta.env.DEV || typeof PerformanceObserver === 'undefined') return;
-        const obs = new PerformanceObserver((list) => {
-            for (const e of list.getEntriesByType('measure')) {
-                if (shouldReportSlowInteraction(e)) {
-                    console.warn(`[perf] Slow interaction: ${e.name} (${e.duration.toFixed(2)}ms)`);
-                }
-            }
-        });
-        obs.observe({ entryTypes: ['measure'] });
-        return () => obs.disconnect();
-    }, []);
-
-    useEffect(() => {
-        const nextDemand = deriveVisualizationDemand({
-            view,
-            activeEvidenceView,
-            audienceMode,
-            advancedToolsOpen,
-            graphRenderer: canvasNetworkGraph ? 'canvas' : 'svg',
-            boundaryRailMounted: true,
-        });
-        if (
-            demand.needDecisionBoundary === nextDemand.needDecisionBoundary &&
-            demand.needNeuronGrids === nextDemand.needNeuronGrids &&
-            demand.needLayerStats === nextDemand.needLayerStats &&
-            demand.needActivationHistograms === nextDemand.needActivationHistograms &&
-            demand.needConfusionMatrix === nextDemand.needConfusionMatrix
-        ) {
-            return;
-        }
-        setDemand(nextDemand);
-    }, [
-        view,
-        activeEvidenceView,
-        audienceMode,
-        advancedToolsOpen,
-        canvasNetworkGraph,
-        demand,
-        setDemand,
-    ]);
+        const playground = destination === 'playground';
+        const network = playground && workspaceTab === 'network';
+        const inspect = playground && workspaceTab === 'inspect';
+        const results = playground && workspaceTab === 'results';
+        const next = { ...DEFAULT_DEMAND,
+            needDecisionBoundary: network || (results && resultsTab === 'boundary'),
+            needNeuronGrids: network,
+            needLayerStats: inspect,
+            needActivationHistograms: inspect && inspectTab === 'activations',
+            needConfusionMatrix: results && resultsTab === 'errors',
+        };
+        const store = usePlaygroundStore.getState();
+        if (Object.entries(next).some(([key,value]) => store.demand[key as keyof typeof next] !== value)) store.setDemand(next);
+    }, [destination,workspaceTab,resultsTab,inspectTab]);
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
-            if (workerError) return;
-            if (event.key !== 'Escape') return;
-            if (openSurface) {
-                event.preventDefault();
-                document.getElementById(`forge-surface-trigger-${openSurface}`)?.focus();
-                setOpenSurface(null);
-                return;
-            }
-            if (advancedToolsOpen) {
-                event.preventDefault();
-                document.getElementById(ADVANCED_TOOLS_TRIGGER_ID)?.focus();
-                setAdvancedToolsOpen(false);
-            }
-        };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [advancedToolsOpen, openSurface, setAdvancedToolsOpen, workerError]);
-
-    // Global keyboard shortcuts: Space=play/pause, →=step, R=reset
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if (workerError) return;
-            const action = resolveTrainingShortcut(e);
+            if (workerError || event.isComposing || document.querySelector('dialog[open], [role="menu"]')) return;
+            const action = resolveTrainingShortcut(event);
             if (!action) return;
-
-            e.preventDefault();
-            if (action === 'play-pause') {
-                if (statusRef.current === 'running') {
-                    trainingRef.current.pause();
-                } else {
-                    trainingRef.current.play();
-                }
-            } else if (action === 'step') {
-                trainingRef.current.step();
-            } else {
-                trainingRef.current.reset();
-            }
+            event.preventDefault();
+            const current = useTrainingStore.getState();
+            if (action === 'play-pause') { if (current.status === 'running') trainingRef.current.pause(); else trainingRef.current.play(); }
+            else if (action === 'step') { if (current.status !== 'running') trainingRef.current.step(); }
+            else trainingRef.current.reset();
         };
-
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
+        window.addEventListener('keydown',handler);
+        return () => window.removeEventListener('keydown',handler);
     }, [workerError]);
 
-    const leftTabContent = {
-        data: <div className={lessonTargetClass('data')} data-lesson-target="data"><DataPanel onReset={stableReset} /></div>,
-        features: <div className={lessonTargetClass('features')} data-lesson-target="features"><FeaturesPanel /></div>,
-        network: <div className={lessonTargetClass('network')} data-lesson-target="network"><NetworkConfigPanel /></div>,
-        hyperparams: <div className={lessonTargetClass('hyperparams')} data-lesson-target="hyperparams"><HyperparamPanel /></div>,
-        config: <ConfigurationContent onReset={stableReset} />,
-    };
+    useEffect(() => {
+        if (pendingNavigation && !draft.dirty && !draft.submitted && !draft.error) {
+            const action = pendingNavigation; setPendingNavigation(null); action();
+        }
+    }, [pendingNavigation, draft.dirty, draft.submitted, draft.error]);
 
-    const rightTabContent = {
-        boundary: <BoundaryEvidencePanel controller={boundary} />,
-        loss: <LossContent />,
-        confusion: <ConfusionContent />,
-        inspection: <InspectContent />,
-        code: <CodeContent />,
-    };
-
-    const transport = (
-        <div className="forge-transport-cluster">
-            <div className={lessonTargetClass('transport')} data-lesson-target="transport">
-                <TrainingControls training={training} saveController={saveController} />
-            </div>
-        </div>
-    );
-
-    const topologyContent = (
-        <div className="forge-buildrun__topology-stage">
-            <TopologyContent selectionController={selection} />
-        </div>
-    );
-
-    const historyContent = <HistoryContent saveController={saveController} />;
-
-    const workerErrorDescription = workerError
-        ? `${workerError} Refresh the page to restart the playground.`
-        : '';
-
-    const workerErrorModal = workerError && typeof document !== 'undefined'
-        ? createPortal(
-            <div
-                className="error-overlay"
-                role="alertdialog"
-                aria-modal="true"
-                aria-labelledby="worker-error-title"
-                aria-describedby="worker-error-description"
-                tabIndex={-1}
-                ref={workerErrorDialogRef}
-            >
-                <div className="error-overlay__content">
-                    <EmptyState
-                        icon="⚠"
-                        title="Worker connection lost"
-                        titleId="worker-error-title"
-                        description={workerErrorDescription}
-                        descriptionId="worker-error-description"
-                        action={{ label: 'Refresh page', onClick: () => window.location.reload() }}
-                    />
+    const regression = prepared?.document.recipe.task.kind === 'regression';
+    const dataset = prepared?.document.recipe.task.dataset ?? 'Experiment';
+    const heading = destination === 'saved-runs' ? 'Saved runs' : destination === 'lessons' ? 'Learn by experimenting' : `${dataset.charAt(0).toUpperCase()}${dataset.slice(1)} experiment`;
+    const description = destination === 'saved-runs' ? 'Keep the evidence. Compare what changed.' : destination === 'lessons' ? 'Small experiments. Ideas that become visible.' : 'Shape a network. Watch it learn. Understand what changes.';
+    return <div className="atelier" ref={backgroundRef} data-lesson-highlight={lessonHighlight ?? undefined}>
+        <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to main content</a>
+        <AccessibilityAnnouncer status={status} pauseReason={pauseReason} workerError={workerError} pendingConfigSource={pendingConfigSource} configError={configError} configErrorSource={configErrorSource} evidenceGenerationId={evidenceGenerationId} trainedRecipe={trainedRecipe} trainedRecipeSource={trainedRecipeSource} />
+        <AtelierHeader destination={destination} onNavigate={(next) => navigate(next)} onUtility={openUtility} />
+        <main id="main-content" tabIndex={-1} className="atelier-main" aria-label="Neural network playground workspace">
+            <div className="atelier-heading"><div><h1>{heading}</h1><p>{description}</p></div>{destination === 'playground' && <div className="atelier-heading-actions"><button type="button" onClick={() => openUtility('exports')}>Share setup</button><button type="button" onClick={() => navigate('saved-runs')}>Save run</button></div>}</div>
+            {configError && <div className="atelier-notice" role="alert"><p>{configError}</p><button type="button" onClick={() => useTrainingStore.getState().retryConfigSync()}>Retry configuration</button></div>}
+            {destination === 'playground' && <>
+                <Tabs panelPrefix="workspace" label="Experiment workspace" items={WORKSPACE_TABS} value={workspaceTab} onChange={(tab) => navigate('playground',tab)} />
+                {recordsReady && !hasRecords && !cueDismissed && !hasStartedLesson && !activeLessonId && <aside className="atelier-notice" aria-label="Getting started"><p>New to neural networks? Start with one neuron and build your intuition.</p><button type="button" onClick={() => navigate('lessons')}>Explore lessons</button><button type="button" aria-label="Dismiss lesson suggestion" onClick={() => useLayoutStore.getState().dismissLessonCue()}>Not now</button></aside>}
+                <div className="atelier-tab-content" role="tabpanel" id={`workspace-${workspaceTab}`} aria-labelledby={`workspace-tab-${workspaceTab}`}>
+                    <ErrorBoundary title="Workspace unavailable" description="This view could not render. Your experiment remains available in the other views.">
+                    {workspaceTab === 'setup' && <SetupEditor controller={draft} tab={setupTab} onTabChange={(tab) => useLayoutStore.getState().setSetupTab(tab)} />}
+                    {workspaceTab === 'network' && <><AtelierNetwork boundary={boundary} selection={selection} onSetup={openSetup} onResults={() => { useLayoutStore.getState().setResultsTab('boundary'); navigate('playground','results'); }} /><EvidenceMetrics /></>}
+                    {workspaceTab === 'results' && <section className="atelier-evidence">
+                        <Tabs label="Results views" items={regression ? RESULTS_TABS.filter((tab) => tab.id !== 'errors') : RESULTS_TABS} value={regression && resultsTab === 'errors' ? 'boundary' : resultsTab} onChange={(tab) => useLayoutStore.getState().setResultsTab(tab)} />
+                        <Suspense fallback={loading}>
+                            {(resultsTab === 'boundary' || (regression && resultsTab === 'errors')) && <div className="atelier-results-boundary"><DecisionBoundaryCanvas model={boundary.model} /><BoundaryEvidencePanel controller={boundary} /></div>}
+                            {resultsTab === 'learning' && <><LossChart /><EvidenceMetrics /><TrainingExplanationPanel /><CurrentRunCard /></>}
+                            {resultsTab === 'errors' && !regression && <ConfusionMatrix />}
+                        </Suspense>
+                    </section>}
+                    {workspaceTab === 'inspect' && <section className="atelier-evidence"><Suspense fallback={loading}><InspectionPanel onPause={training.pause} /></Suspense></section>}
+                    </ErrorBoundary>
                 </div>
-            </div>,
-            document.body,
-        )
-        : null;
-
-    return (
-        <>
-        <div className="forge-shell" ref={backgroundRef}>
-            <a
-                className="skip-link"
-                href="#main-content"
-                onClick={(event) => {
-                    // The URL fragment is the experiment document, not shell navigation.
-                    event.preventDefault();
-                    document.getElementById('main-content')?.focus();
-                }}
-            >
-                Skip to main content
-            </a>
-
-            <AccessibilityAnnouncer
-                status={status}
-                pauseReason={pauseReason}
-                workerError={workerError}
-                pendingConfigSource={pendingConfigSource}
-                configError={configError}
-                configErrorSource={configErrorSource}
-                evidenceGenerationId={evidenceGenerationId}
-                trainedRecipe={trainedRecipe}
-                trainedRecipeSource={trainedRecipeSource}
-            />
-
-            <ErrorBoundary title="Header unavailable" description="Header render failed." actionLabel="Reload" onRetry={stableReset}>
-                <Header
-                    training={training}
-                    openSurface={openSurface}
-                    onToggleSurface={toggleSurface}
-                    advancedToolsOpen={advancedToolsOpen}
-                    onToggleAdvancedTools={toggleAdvancedTools}
-                />
-            </ErrorBoundary>
-
-            <main
-                className="forge-workspace"
-                id="main-content"
-                tabIndex={-1}
-                aria-label="Neural network playground workspace"
-            >
-                <ErrorBoundary title="Workspace unavailable" description="Layout shell failed." actionLabel="Reload" onRetry={stableReset}>
-                    <PrecisionLabShell
-                        view={view}
-                        status={status}
-                        activeEvidenceView={activeEvidenceView}
-                        audienceMode={audienceMode}
-                        advancedToolsOpen={advancedToolsOpen}
-                        onSelectEvidence={setActiveEvidenceView}
-                        openSurface={openSurface}
-                        onCloseSurface={closeSurface}
-                        firstVisitLessonCue={(
-                            <FirstVisitLessonCue
-                                historyReady={historyReady}
-                                lessonCueDismissed={lessonCueDismissed}
-                                hasSavedRuns={hasSavedRuns}
-                                hasStartedLesson={hasStartedLesson}
-                                hasActiveLesson={hasActiveLesson}
-                                onOpenLessons={openLessons}
-                                onDismiss={dismissLessonCue}
-                            />
-                        )}
-                        recipeStripContent={<div className="precision-recipe-slot">
-                            <PrecisionLabRecipeStrip model={recipeModel} onEditRecipe={() => selectBuildContext('data')} />
-                            <AdvancedRecipeNotice />
-                        </div>}
-                        runSummaryContent={<CurrentRunCard />}
-                        activeRecipeSection={activeRecipeSection}
-                        buildContextOpen={buildContextOpen}
-                        onSelectRecipeSection={selectBuildContext}
-                        onCloseRecipeSection={() => setBuildContextOpen(false)}
-                        buildContent={leftTabContent}
-                        selectionContent={<NetworkSelectionDeck model={selection.model} onClear={selection.commands.clearSelection} />}
-                        boundaryRailContent={<PinnedBoundaryRail controller={boundary} onExpand={() => {
-                            setActiveEvidenceView('boundary');
-                            requestAnimationFrame(() => document.getElementById('precision-evidence-tab-boundary')?.focus());
-                        }} />}
-                        topologyContent={topologyContent}
-                        transportContent={transport}
-                        evidenceContent={rightTabContent}
-                        presetContent={<PresetPanel onReset={stableReset} onApplied={closeSurface} />}
-                        lessonContent={<Suspense fallback={<p role="status">Loading guided lessons…</p>}><GuidedLessonPanel onReset={stableReset} onHighlightChange={handleLessonHighlightChange} /></Suspense>}
-                        historyContent={historyContent}
-                    />
-                </ErrorBoundary>
-            </main>
-
-            <StatusBar />
-        </div>
-        {workerErrorModal}
-        </>
-    );
-}
-
-function StatusBar() {
-    const status = useTrainingStore((s) => s.status);
-    const view = useLayoutStore((s) => s.view);
-    const dataset = usePlaygroundStore((s) => (
-        s.access.status === 'ready' ? s.access.prepared.compiled.data.dataset : 'unavailable'
-    ));
-    const latestLiveSignal = useTrainingStore((s) => s.latestLiveSignal);
-    const latestEvaluation = useTrainingStore((s) => s.latestEvaluation);
-    const step = selectScientificEvidence({ latestLiveSignal, latestEvaluation })
-        .currentModel?.step ?? 0;
-
-    return (
-        <div
-            className="forge-statusbar"
-            role="group"
-            aria-label="Status bar"
-            data-status={status}
-        >
-            <span>
-                <span className="forge-statusbar__dot" aria-hidden />
-                {status.toUpperCase()}
-            </span>
-            <span>VIEW: <span className="forge-statusbar__accent">{view}</span></span>
-            <span>DATA: <span className="forge-statusbar__accent">{dataset}</span></span>
-            <span className="forge-statusbar__spacer" />
-            <span>STEP <span className="forge-statusbar__accent">{step.toLocaleString()}</span></span>
-            <span>
-                Inspired by{' '}
-                <a
-                    href="https://playground.tensorflow.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: 'var(--color-primary)', textDecoration: 'none' }}
-                >
-                    TensorFlow Playground
-                </a>
-            </span>
-        </div>
-    );
+            </>}
+            {savedVisited && <div hidden={destination !== 'saved-runs'}><Suspense fallback={loading}><RunHistoryPanel saveController={saveController} /></Suspense></div>}
+            {lessonsVisited && <div className="atelier-lesson-host" hidden={destination !== 'lessons' && !activeLessonId}><Suspense fallback={loading}><GuidedLessonPanel onReset={stableReset} onHighlightChange={setLessonHighlight} /></Suspense></div>}
+            <AtelierTransport training={training} onCheckpoints={() => openUtility('checkpoints')} />
+        </main>
+        <footer className="atelier-footer"><span>NN·FORGE · Experiments stay in your browser</span><span>Data → network → prediction</span></footer>
+        {!workerError && !pendingNavigation && utility && <Dialog title={utility === 'exports' ? 'Export / import' : utility === 'checkpoints' ? 'Session checkpoints' : utility === 'preferences' ? 'Guidance' : 'Shortcuts & help'} onClose={() => setUtility(null)}>
+            {utility === 'checkpoints' && <CheckpointPanel training={training} />}
+            {utility === 'exports' && <><Tabs<'setup' | 'code'> label="Export type" items={[{id:'setup',label:'Setup & sharing'},{id:'code',label:'Code'}]} value={exportTab} onChange={setExportTab} /><Suspense fallback={loading}>{exportTab === 'setup' ? <ConfigPanel onReset={stableReset} /> : <CodeExportPanel />}</Suspense></>}
+            {utility === 'preferences' && <><p>Choose how much explanation appears alongside the controls. Every feature remains available.</p><label htmlFor="atelier-guidance">Explanation density</label><select id="atelier-guidance" value={audienceMode} onChange={(event) => useLayoutStore.getState().setAudienceMode(event.target.value as 'beginner'|'explore'|'lab')}><option value="beginner">More</option><option value="explore">Standard</option><option value="lab">Compact</option></select></>}
+            {utility === 'help' && <div className="atelier-help"><p>Build a dataset and network in Setup, apply the recipe, then train and inspect the results. Training continues when you change views.</p><dl>{TRAINING_SHORTCUTS.map((shortcut) => <div key={shortcut.code}><dt><kbd>{shortcut.label}</kbd></dt><dd>{shortcut.description}</dd></div>)}</dl><p>Shortcuts are inactive while editing fields or using a menu or dialog. Step is available while paused.</p><p>Saved runs hold evaluated evidence. Applying a saved recipe starts a fresh model; session checkpoints restore parameters and optimizer state.</p></div>}
+        </Dialog>}
+        {!workerError && pendingNavigation && <Dialog title="Apply your setup changes?" onClose={() => { if (!draft.busy) setPendingNavigation(null); }} alert>
+            <p>You have one shared draft across Dataset, Network, and Training. Apply it before leaving, discard it, or stay to keep editing.</p>
+            {draft.error && <div role="alert" className="atelier-error"><p>{draft.error}</p>{draft.submitted && <button type="button" onClick={draft.commands.retry}>Retry configuration</button>}</div>}
+            <div className="atelier-dialog-actions"><button type="button" disabled={draft.busy || draft.submitted} onClick={() => setPendingNavigation(null)}>Stay</button><button type="button" disabled={draft.busy || draft.submitted} onClick={() => { draft.commands.cancel(); const action = pendingNavigation; setPendingNavigation(null); action(); }}>Discard changes</button><button type="button" className="atelier-primary" disabled={!draft.valid || draft.busy || draft.submitted} onClick={() => { void draft.commands.apply(); }}>Apply changes</button></div>
+        </Dialog>}
+        {workerError && <Dialog title="Worker connection lost" persistent backgroundRef={backgroundRef} description={`${workerError} Refresh the page to restart the playground.`} onClose={() => { /* Persistent recovery requires reload. */ }} alert><p>{workerError}</p><p>Refresh the page to restart the playground.</p><button type="button" className="atelier-primary" onClick={() => window.location.reload()}>Refresh page</button></Dialog>}
+    </div>;
 }

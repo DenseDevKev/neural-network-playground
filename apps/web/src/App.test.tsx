@@ -144,6 +144,7 @@ vi.mock('./components/controls/TrainingControls.tsx', () => ({ TrainingControls:
 vi.mock('./components/visualization/DecisionBoundaryCanvas.tsx', () => ({ DecisionBoundaryCanvas: () => <canvas data-decision-boundary-canvas aria-label="Boundary paint" /> }));
 vi.mock('./components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
 vi.mock('./components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
+vi.mock('./components/controls/DatasetPreviewCanvas.tsx', () => ({ DatasetPreviewCanvas: () => <canvas aria-hidden="true" /> }));
 vi.mock('./components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
 vi.mock('./components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: () => <div>Features</div> }));
 vi.mock('./components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
@@ -187,6 +188,7 @@ describe('App accessibility shell', () => {
         });
 
         useLayoutStore.setState({
+            destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace',
             view: 'build',
             buildContextOpen: false,
             activeRecipeSection: 'data',
@@ -305,13 +307,8 @@ describe('App accessibility shell', () => {
         const user = userEvent.setup();
         const { container } = render(<App />);
         const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
-        const historyTrigger = screen.getByRole('button', { name: 'History' });
-        const advancedTrigger = screen.getByRole('button', { name: 'Advanced Tools' });
-        const shell = container.querySelector('.forge-shell');
+        const shell = container.querySelector('.atelier');
         expect(shell).not.toBeNull();
-
-        await user.click(advancedTrigger);
-        await user.click(historyTrigger);
         skipLink.focus();
         act(() => useTrainingStore.setState({
             workerError: 'Worker channel closed unexpectedly.',
@@ -345,10 +342,6 @@ describe('App accessibility shell', () => {
 
         await user.keyboard('{Escape}');
         expect(useTrainingStore.getState().workerError).toBe('Worker channel closed unexpectedly.');
-        expect(historyTrigger).toHaveAttribute('aria-pressed', 'true');
-        expect(advancedTrigger).toHaveAttribute('aria-expanded', 'true');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
-
         for (const code of ['Space', 'ArrowRight', 'KeyR']) {
             dispatchGlobalKeyDown(code);
         }
@@ -474,15 +467,15 @@ describe('App accessibility shell', () => {
         expect(trainingMock.reset).not.toHaveBeenCalled();
     });
 
-    it('renders forge-shell with status bar', () => {
+    it('renders Atelier with a quiet model position', () => {
         const { container } = render(<App />);
-        expect(container.querySelector('.forge-shell')).toBeTruthy();
-        const statusBar = screen.getByRole('group', { name: 'Status bar' });
+        expect(container.querySelector('.atelier')).toBeTruthy();
+        const statusBar = screen.getByRole('region', { name: 'Training controls' });
         expect(statusBar).toBeInTheDocument();
         expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 
-    it('shows the newest scientific model in the status bar after a forced pause evaluation', () => {
+    it('shows the newest scientific model in transport after a forced pause evaluation', () => {
         useTrainingStore.setState({
             status: 'paused',
             evidenceGenerationId: 1,
@@ -492,15 +485,15 @@ describe('App accessibility shell', () => {
 
         render(<App />);
 
-        const statusBar = screen.getByRole('group', { name: 'Status bar' });
-        expect(statusBar).toHaveTextContent('STEP 2,500');
-        expect(statusBar).not.toHaveTextContent('STEP 2,450');
+        const statusBar = screen.getByRole('region', { name: 'Training controls' });
+        expect(statusBar).toHaveTextContent('Step 2,500');
+        expect(statusBar).not.toHaveTextContent('Step 2,450');
         expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
 
         act(() => useTrainingStore.setState({
             latestEvaluation: fullEvaluation(2_600, 2_600, 173),
         }));
-        expect(statusBar).toHaveTextContent('STEP 2,600');
+        expect(statusBar).toHaveTextContent('Step 2,600');
         expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 
@@ -537,14 +530,15 @@ describe('App accessibility shell', () => {
         expect(useLayoutStore.getState().view).toBe('build');
     });
 
-    it('passes target hooks to the active Build context and permanent topology/transport', () => {
-        const { container } = render(<App />);
-        for (const section of ['data', 'network', 'features', 'hyperparams'] as const) {
+    it('adapts old lesson targets to the shared Setup editor without resetting training', () => {
+        render(<App />);
+        for (const [section,tab] of [['data','dataset'],['network','network'],['features','network'],['hyperparams','training']] as const) {
             act(() => useLayoutStore.getState().selectBuildContext(section));
-            expect(container.querySelector(`[data-forge-panel-targets="${section}"]`)).not.toBeNull();
+            expect(useLayoutStore.getState().workspaceTab).toBe('setup');
+            expect(useLayoutStore.getState().setupTab).toBe(tab);
+            expect(screen.getByRole('region',{name:'Experiment setup'})).toBeInTheDocument();
         }
-        for (const target of ['topology', 'transport']) {
-            expect(container.querySelector(`[data-forge-panel-targets="${target}"]`)).not.toBeNull();
-        }
+        expect(screen.getByRole('region',{name:'Training controls'})).toBeInTheDocument();
+        expect(trainingMock.reset).not.toHaveBeenCalled();
     });
 });

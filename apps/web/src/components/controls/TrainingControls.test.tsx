@@ -94,7 +94,7 @@ describe('TrainingControls', () => {
 
   it('uses the shared save and exact retry commands without owning capture', async () => {
     const commands = { save: vi.fn(async () => true), retry: vi.fn(async () => true),
-      discard: vi.fn(async () => {}), dismiss: vi.fn() };
+      downloadPending: vi.fn(async () => true), discard: vi.fn(async () => {}), dismiss: vi.fn() };
     const controller = { busy: false, error: null, pending: false, disabledReason: null, commands };
     const training = createTrainingMock();
     const view = render(<TrainingControls training={training} saveController={controller} />);

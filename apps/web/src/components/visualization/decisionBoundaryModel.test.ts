@@ -87,6 +87,20 @@ describe('deriveDecisionBoundaryModel', () => {
         expect(derive({ task }).kind).toBe('scalar');
     });
 
+    it('uses a continuous regression scale without classification overlays or discrete output', () => {
+        const grid = new Float32Array([-4, -1, 2, 5]);
+        const model = derive({ task: REGRESSION_TASK, discretize: true, overlayMode: 'uncertainty', frame: { ...EMPTY_FRAME, outputGrid: grid, gridSize: 2 } });
+        expect(model.kind).toBe('scalar');
+        if (model.kind !== 'scalar') return;
+        expect(model.taskKind).toBe('regression');
+        expect(model.discretize).toBe(false);
+        expect(model.overlayMode).toBe('none');
+        expect(model.valueDomain![0]).toBeLessThanOrEqual(-4);
+        expect(model.valueDomain![1]).toBeGreaterThanOrEqual(5);
+        expect(model.accessibleDescription).toMatch(/continuous/i);
+        expect(model.grid).toBe(grid);
+    });
+
     it('selects multiclass display data and keeps both grids by identity', () => {
         const classGrid = new Uint8Array([0, 1, 2, 2]);
         const confidenceGrid = new Float32Array([0.9, 0.62, 0.74, 0.58]);

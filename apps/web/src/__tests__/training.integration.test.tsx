@@ -311,7 +311,7 @@ describe('Training integration', () => {
         await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Start training' }));
         });
 
         expect(fakePostStreamCommand).toHaveBeenCalledWith({
@@ -330,14 +330,14 @@ describe('Training integration', () => {
 
         // Start training first
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Start training' }));
         });
 
         fakePostStreamCommand.mockClear();
         fakeStopRenderLoop.mockClear();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Pause training' }));
         });
 
         expect(fakePostStreamCommand).toHaveBeenCalledWith({
@@ -448,7 +448,7 @@ describe('Training integration', () => {
             'Training diverged. Refresh the page to restart the playground.',
         );
         expect(dialog).toHaveFocus();
-        const shell = container.querySelector('.forge-shell');
+        const shell = container.querySelector('.atelier');
         expect(shell).toHaveAttribute('inert');
         expect(shell).toHaveAttribute('aria-hidden', 'true');
         expect(shell).not.toContainElement(dialog);

@@ -30,21 +30,28 @@ export function useDecisionBoundaryModel({
         state.access.status === 'ready' ? state.access.prepared.compiled.task : null
     ));
 
+    const generation = useTrainingStore((state) => state.evidenceGenerationId);
+    const datasetKey = usePlaygroundStore((state) => state.access.status === 'ready' ? state.access.prepared.identities.datasetKey : null);
+    const noise = usePlaygroundStore((state) => state.access.status === 'ready' ? state.access.prepared.document.recipe.data.noise : 0);
+
     return useMemo(() => {
         void outputGridVersion;
         void multiclassBoundaryVersion;
         const frame = getFrameBuffer();
         return deriveDecisionBoundaryModel({
-            frame,
+            frame: frame.decisionBoundaryProvenance && (frame.decisionBoundaryProvenance.model.generationId !== generation || frame.decisionBoundaryProvenance.dataset.datasetKey !== datasetKey)
+                ? { ...frame, outputGrid:null, multiclassClassGrid:null, multiclassConfidenceGrid:null, decisionBoundaryProvenance:null } : frame,
             task,
             trainPoints,
             testPoints,
             showTestData,
             discretize,
-            overlayMode,
+            overlayMode, noise,
         });
     }, [
         outputGridVersion,
+        generation, datasetKey,
+        noise,
         multiclassBoundaryVersion,
         task,
         trainPoints,
