@@ -1170,6 +1170,93 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(workerApi.getMetricHistoryV2().trendHistory).toEqual([]);
     });
 
+    it('refreshes newly visible paused grids without advancing model or evidence history', async () => {
+        vi.stubGlobal('crossOriginIsolated', false);
+        const fixtures = await createScientificTrustFixtures();
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, needDecisionBoundary: false, needNeuronGrids: false });
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        const stepped = await workerApi.stepExperimentV2(2);
+        const history = workerApi.getMetricHistoryV2();
+        capture.messages.length = 0;
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, needDecisionBoundary: true, needNeuronGrids: true });
+        await flushMicrotasks();
+        const frames = snapshotMessages(capture.messages);
+        expect(frames).toHaveLength(1);
+        expect(frames[0].model).toEqual(stepped.evidence.latestEvaluation!.model);
+        expect(frames[0].outputGrid?.length).toBeGreaterThan(0);
+        expect(frames[0].neuronGrids?.length).toBeGreaterThan(0);
+        expect(frames[0].artifacts?.neuronGrids?.model).toEqual(frames[0].model);
+        expect(frames[0].checkpointTimeline).toEqual(stepped.checkpointTimeline);
+        expect(workerApi.getMetricHistoryV2()).toEqual(history);
+        expect(evidenceMessages(capture.messages)).toHaveLength(0);
+    });
+
+    it('drops superseded paused demand and keeps multiclass neuron-only provenance precise', async () => {
+        vi.stubGlobal('crossOriginIsolated', true);
+        const fixtures = await createScientificTrustFixtures();
+        const none = { ...DEFAULT_DEMAND, needDecisionBoundary: false, needNeuronGrids: false, needLayerStats: false };
+        workerApi.updateDemand(none);
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
+        capture.messages.length = 0;
+        workerApi.updateDemand({ ...none, needDecisionBoundary: true });
+        workerApi.updateDemand(none);
+        await flushMicrotasks();
+        expect(snapshotMessages(capture.messages)).toHaveLength(0);
+        workerApi.updateDemand({ ...none, needNeuronGrids: true });
+        await flushMicrotasks();
+        const frames = snapshotMessages(capture.messages);
+        expect(frames).toHaveLength(1);
+        expect(frames[0].sharedSeq).toBeDefined();
+        expect(frames[0].neuronGridLayout?.count).toBeGreaterThan(0);
+        expect(frames[0].artifacts?.neuronGrids).toBeDefined();
+        // Scalar neuron computation currently also supplies its exact output;
+        // a multiclass neuron-only frame must not claim a scalar boundary.
+        const preset = PREPARED_PRESETS.find((entry) => entry.id === 'three-class-clusters')!;
+        await workerApi.initializeExperimentV2(requestForPrepared(preset.prepared));
+        workerApi.updateDemand(none);
+        capture.messages.length = 0;
+        workerApi.updateDemand({ ...none, needNeuronGrids: true });
+        await flushMicrotasks();
+        const multi = snapshotMessages(capture.messages).at(-1);
+        expect(isWorkerToMainMessage(multi)).toBe(true);
+        expect(multi?.artifacts?.neuronGrids).toBeDefined();
+        expect(multi?.artifacts?.decisionBoundary).toBeUndefined();
+        expect(multi?.multiclassClassGrid).toBeUndefined();
+    });
+
+    it('produces multiclass hidden and all output neuron grids without a scalar boundary', async () => {
+        const preset = PREPARED_PRESETS.find((entry) => entry.id === 'three-class-clusters')!;
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, needDecisionBoundary: true, needNeuronGrids: true });
+        const initial = await workerApi.initializeExperimentV2(requestForPrepared(preset.prepared));
+        const grid = initial.snapshot.neuronGrids;
+        const total = preset.prepared.document.recipe.model.hiddenLayers.reduce((sum, width) => sum + width, 0) + 3;
+        const gridSize = initial.snapshot.gridSize ** 2;
+        expect(grid).toBeInstanceOf(Float32Array);
+        expect(grid).toHaveLength(total * gridSize);
+        expect(initial.snapshot.outputGrid).toHaveLength(0);
+        expect(initial.snapshot.multiclassBoundary?.classGrid).toHaveLength(gridSize);
+        const capture = createCapturingPort();
+        workerApi.setStreamPort(capture.port);
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, needDecisionBoundary: false, needNeuronGrids: false });
+        workerApi.updateDemand({ ...DEFAULT_DEMAND, needDecisionBoundary: true, needNeuronGrids: true });
+        await flushMicrotasks();
+        const frame = snapshotMessages(capture.messages).at(-1);
+        expect(frame?.neuronGrids).toHaveLength(total * gridSize);
+        expect(frame?.multiclassClassGrid).toHaveLength(gridSize);
+        expect(frame?.sharedSeq).toBeUndefined();
+        expect(isWorkerToMainMessage(frame)).toBe(true);
+        const flat = grid as Float32Array;
+        for (const sample of [0, Math.floor(gridSize / 2), gridSize - 1]) {
+            const probabilities = [0, 1, 2].map((offset) => flat[(total - 3 + offset) * gridSize + sample]);
+            expect(probabilities.every((value) => value >= 0 && value <= 1)).toBe(true);
+            expect(probabilities.reduce((sum, value) => sum + value, 0)).toBeCloseTo(1, 6);
+        }
+    });
+
     it('returns exact direct artifact provenance and omits cadence-reused binary grids', async () => {
         const fixtures = await createScientificTrustFixtures();
         await workerApi.initializeExperimentV2(withFreshId(fixtures.request));
@@ -1267,7 +1354,7 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(produced.snapshot.multiclassBoundary?.confidenceGrid).toHaveLength(
             produced.snapshot.gridSize * produced.snapshot.gridSize,
         );
-        expect(produced.snapshot.neuronGrids).toBeUndefined();
+        expect(produced.snapshot.neuronGrids).toBeInstanceOf(Float32Array);
         expect(produced.snapshot.testMetrics.multiclassConfusionMatrix)
             .toEqual(pair.test.values.confusionMatrix);
         expect(produced.artifacts?.decisionBoundary).toEqual({
@@ -1280,7 +1367,7 @@ describe('training worker scientific-trust V2 boundary', () => {
                 domain: [-1, 1, -1, 1],
             },
         });
-        expect(produced.artifacts?.neuronGrids).toBeUndefined();
+        expect(produced.artifacts?.neuronGrids).toEqual(produced.artifacts?.decisionBoundary);
         expect(produced.artifacts?.confusionMatrix).toEqual({
             model: pair.model,
             dataset: pair.dataset,
@@ -1908,6 +1995,9 @@ describe('training worker scientific-trust V2 boundary', () => {
             gridInterval: 1,
             activationHistogramInterval: 1,
         });
+        await flushMicrotasks();
+        const pausedSnapshot = snapshotMessages(capture.messages).at(-1);
+        expect(pausedSnapshot?.model?.step).toBe(0);
         const grid = vi.spyOn(Network.prototype, 'predictGridInto');
         const statistics = vi.spyOn(Network.prototype, 'computeLayerStatistics');
 
@@ -1919,6 +2009,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             typeof message === 'object'
             && message !== null
             && (message as { type?: unknown }).type === 'snapshot'
+            && (message as WorkerSnapshotMessage).model?.step === 1
         ));
         const populationCount = initialized.evidence.latestEvaluation!.dataset.trainCount;
         const sampleCount = Math.min(128, populationCount);
@@ -1951,19 +2042,19 @@ describe('training worker scientific-trust V2 boundary', () => {
             sampleCount,
             populationCount,
         });
-        expect(snapshot?.artifacts?.confusionMatrix?.basis).toEqual({
+        expect(pausedSnapshot?.artifacts?.confusionMatrix?.basis).toEqual({
             kind: 'full-split',
             split: 'test',
             sampleCount: initialized.evidence.latestEvaluation!.dataset.testCount,
             populationCount: initialized.evidence.latestEvaluation!.dataset.testCount,
         });
-        expect(snapshot?.confusionMatrix).toEqual(
+        expect(pausedSnapshot?.confusionMatrix).toEqual(
             initialized.evidence.latestEvaluation!.test.values.confusionMatrix,
         );
-        expect(snapshot?.artifacts?.confusionMatrix?.model).toEqual(
+        expect(pausedSnapshot?.artifacts?.confusionMatrix?.model).toEqual(
             initialized.evidence.latestEvaluation!.model,
         );
-        expect(snapshot?.confusionMatrixEvaluationId).toBe(
+        expect(pausedSnapshot?.confusionMatrixEvaluationId).toBe(
             initialized.evidence.latestEvaluation!.evaluationId,
         );
         expect(snapshot?.layerStatsGradientRevision).toBe(1);
@@ -1981,6 +2072,7 @@ describe('training worker scientific-trust V2 boundary', () => {
             typeof message === 'object'
             && message !== null
             && (message as { type?: unknown }).type === 'snapshot'
+            && (message as WorkerSnapshotMessage).model!.step >= 1
         ));
         expect(snapshots).toHaveLength(2);
         expect(snapshots[1]?.confusionMatrix).toBeUndefined();

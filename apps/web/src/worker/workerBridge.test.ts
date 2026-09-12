@@ -1505,6 +1505,28 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.neuronGridLayout).toBeNull();
     });
 
+    it('retains fresh multiclass neuron grids alongside the winning-class boundary', () => {
+        const listener = getRegisteredStreamListener();
+        const neurons = new Float32Array(12).fill(1 / 3);
+        listener({ data: makeStrictSnapshotMessage(1, {
+            outputGrid: undefined,
+            neuronGrids: neurons,
+            neuronGridLayout: { count: 3, gridSize: 2 },
+            weights: new Float32Array(6), biases: new Float32Array(3),
+            weightLayout: { layerSizes: [2, 3] },
+            layerStats: undefined, activationHistogramBins: undefined,
+            activationHistogramLayout: undefined, activationHistogramVersion: undefined,
+            multiclassClassGrid: new Uint8Array([0, 1, 2, 1]),
+            multiclassConfidenceGrid: new Float32Array([.7, .6, .9, .5]),
+            multiclassBoundaryLayout: { gridSize: 2, classCount: 3, classLabels: [0, 1, 2] },
+            multiclassBoundaryVersion: 1,
+        }) } as MessageEvent);
+        expect(getFrameBuffer().neuronGrids).toEqual(neurons);
+        expect(getFrameBuffer().neuronGridLayout).toEqual({ count: 3, gridSize: 2 });
+        expect(getFrameBuffer().outputGrid).toBeNull();
+        expect(getFrameBuffer().multiclassClassGrid).toEqual(new Uint8Array([0, 1, 2, 1]));
+    });
+
     it('stores multiclass boundary payloads and clears cached scalar grids', () => {
         const listener = getRegisteredStreamListener();
 
@@ -1949,6 +1971,16 @@ describe('workerBridge streamed snapshots', () => {
         expect(frame.neuronGrids).toEqual(new Float32Array([0.8, 0.6, 0.4, 0.2]));
     });
 
+    it('applies a paused visualization frame without starting a render loop', () => {
+        const listener = getRegisteredStreamListener();
+        stopRenderLoop();
+        listener({ data: makeStrictSnapshotMessage(1) } as MessageEvent);
+        expect(getFrameBuffer().outputGrid).toBeInstanceOf(Float32Array);
+        expect(receivedMessages.at(-1)?.msg).toMatchObject({ type: 'snapshot', snapshotId: 1 });
+        expect(fakePort1.postMessage).toHaveBeenCalledWith({ type: 'frameAck', protocolVersion: WORKER_PROTOCOL_VERSION });
+        expect(rafCallback).toBeNull();
+    });
+
     it('drops stale out-of-order snapshots before they reach the frame buffer', () => {
         const listener = getRegisteredStreamListener();
 
@@ -2026,7 +2058,10 @@ describe('workerBridge streamed snapshots', () => {
             type: 'frameAck',
             protocolVersion: WORKER_PROTOCOL_VERSION,
         });
-        // The loop stops instead of rescheduling, so startRenderLoop can revive it.
+        // A later frame cannot bypass the failed-application recovery fence.
+        expect(rafCallback).toBeNull();
+        listener({ data: makeStrictSnapshotMessage(2) } as MessageEvent);
+        expect(getFrameBuffer()).toBe(before);
         expect(rafCallback).toBeNull();
 
         startRenderLoop();

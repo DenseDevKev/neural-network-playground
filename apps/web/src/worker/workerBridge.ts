@@ -59,6 +59,7 @@ let _currentRunId = 0;
 let _latestSnapshotId = -1;
 let _minimumSnapshotRevision = 0;
 let _rafId: number | null = null;
+let _frameApplicationBlocked = false;
 let _pendingSnapshot: WorkerToMainMessage | null = null;
 
 // ── Shared-snapshot transport (AS-3) ──────────────────────────────────────
@@ -436,8 +437,10 @@ function handleWorkerMessage(value: unknown): void {
         if (snapshot.snapshotId <= _latestSnapshotId && snapshot.runId === _currentRunId) return;
         _latestSnapshotId = snapshot.snapshotId;
 
-        // Store as pending — will be applied on next rAF tick (latest-wins)
-        _pendingSnapshot = snapshot;
+        // Paused demand refreshes have no animation loop. Apply through the
+        // same validated boundary once; running frames remain latest-wins.
+        if (_rafId === null && !_frameApplicationBlocked) applyPendingSnapshotMessage(snapshot);
+        else _pendingSnapshot = snapshot;
     } else if (msg.type === 'sharedBuffers') {
         // Worker (re)allocated its SAB transport. Install views immediately
         // so the very next snapshot can read from them. Never queued to rAF
@@ -553,8 +556,10 @@ function buildSnapshotFramePatch(
 
     if (hasMulticlassBoundaryPayload) {
         patch.outputGrid = null;
-        patch.neuronGrids = null;
-        patch.neuronGridLayout = null;
+        if (!msg.neuronGrids?.length) {
+            patch.neuronGrids = null;
+            patch.neuronGridLayout = null;
+        }
     }
     if (msg.multiclassClassGrid !== undefined) {
         patch.multiclassClassGrid = msg.multiclassClassGrid;
@@ -708,6 +713,7 @@ function applyPendingSnapshotMessage(msg: WorkerToMainMessage): void {
         // Notify the subscriber (typically updates useTrainingStore scalars)
         if (_onSnapshot) _onSnapshot(msg);
     } catch (error) {
+        _frameApplicationBlocked = true;
         emitWorkerError('Failed to apply a streamed frame from the worker: ' + describeApplyFailure(error));
         // Stop the render loop deliberately: a failed strict-frame application
         // leaves buffer identity unresolved, so retrying cannot recover and
@@ -750,6 +756,7 @@ function rafLoop(): void {
  * Start the rAF render loop that applies pending snapshots.
  */
 export function startRenderLoop(): void {
+    _frameApplicationBlocked = false;
     if (_rafId !== null) return; // Already running
     _rafId = requestAnimationFrame(rafLoop);
 }
@@ -792,6 +799,7 @@ export function newRun(): number {
     _currentRunId++;
     _latestSnapshotId = -1;
     _minimumSnapshotRevision = 0;
+    _frameApplicationBlocked = false;
     _pendingSnapshot = null;
     clearSharedBuffersIfRunMismatch();
     return _currentRunId;
@@ -804,6 +812,7 @@ export function newRunTo(targetRunId: number): void {
     _currentRunId = targetRunId;
     _latestSnapshotId = -1;
     _minimumSnapshotRevision = 0;
+    _frameApplicationBlocked = false;
     _pendingSnapshot = null;
     clearSharedBuffersIfRunMismatch();
 }
@@ -888,6 +897,7 @@ export function terminateWorker(): void {
     _currentRunId = 0;
     _latestSnapshotId = -1;
     _minimumSnapshotRevision = 0;
+    _frameApplicationBlocked = false;
     _pendingSnapshot = null;
     _onSnapshot = null;
     // SAB views outlive a single run (they're shared with the worker) but
