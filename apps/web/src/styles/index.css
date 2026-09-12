@@ -346,34 +346,7 @@ body {
     overflow: hidden;
 }
 
-/* ── Sidebar ── */
-.sidebar {
-    width: 300px;
-    flex-shrink: 0;
-    overflow-y: auto;
-    min-height: 0;
-    background: var(--bg-surface);
-    border-right: 1px solid var(--border-subtle);
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: var(--space-sm);
-}
-
-.sidebar::-webkit-scrollbar {
-    width: 4px;
-}
-
-.sidebar::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.sidebar::-webkit-scrollbar-thumb {
-    background: var(--border-default);
-    border-radius: 2px;
-}
-
-/* ── Panel (sidebar sections) ── */
+/* ── Shared panel surfaces ── */
 .panel {
     background: var(--bg-elevated);
     border-radius: var(--radius-md);
@@ -393,66 +366,6 @@ body {
     text-transform: uppercase;
     color: var(--text-tertiary);
     margin-bottom: var(--space-md);
-}
-
-.collapsible-panel {
-    padding: 0;
-    overflow: hidden;
-    flex-shrink: 0;
-}
-
-.panel__header {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-md);
-    border: 0;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
-    transition: background var(--duration-fast) var(--ease-out);
-}
-
-.panel__header:hover {
-    background: rgba(255, 255, 255, 0.03);
-}
-
-.panel__icon {
-    font-size: 14px;
-    color: var(--text-secondary);
-    flex-shrink: 0;
-}
-
-.collapsible-panel .panel__title {
-    margin-bottom: 0;
-}
-
-.panel__badge {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 24px;
-    height: 20px;
-    padding: 0 6px;
-    border-radius: var(--radius-sm);
-    background: rgba(124, 92, 252, 0.12);
-    border: 1px solid rgba(124, 92, 252, 0.2);
-    color: var(--color-primary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-}
-
-.panel__content {
-    overflow: hidden;
-    transition: max-height 300ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.panel__content-inner {
-    padding: 0 var(--space-md) var(--space-md);
 }
 
 /* ── Buttons ── */
@@ -492,7 +405,6 @@ body {
 .speed-btn:focus-visible,
 .chart-tab:focus-visible,
 .preset-card:focus-visible,
-.panel__header:focus-visible,
 .select:focus-visible,
 .checkbox-row:focus-within {
     outline: none;
@@ -911,16 +823,6 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     transition: background var(--duration-fast) var(--ease-out),
         color var(--duration-fast) var(--ease-out),
         border-color var(--duration-fast) var(--ease-out);
-}
-
-/* ── Center Area ── */
-.center-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    padding: var(--space-sm);
-    gap: var(--space-sm);
 }
 
 /* ── Training Controls Bar ── */
@@ -1400,29 +1302,6 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     height: 100%;
 }
 
-/* ── Right Panel ── */
-.right-panel {
-    width: 360px;
-    flex-shrink: 0;
-    overflow-y: auto;
-    min-height: 0;
-    background: var(--bg-surface);
-    border-left: 1px solid var(--border-subtle);
-    padding: var(--space-sm);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-sm);
-}
-
-.right-panel::-webkit-scrollbar {
-    width: 4px;
-}
-
-.right-panel::-webkit-scrollbar-thumb {
-    background: var(--border-default);
-    border-radius: 2px;
-}
-
 /* ── Decision Boundary Canvas ── */
 .decision-boundary {
     width: 100%;
@@ -1857,15 +1736,6 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 }
 
 /* ── Responsive ── */
-@media (min-width: 860px) and (max-width: 1199px) {
-    .sidebar {
-        width: 260px;
-    }
-
-    .right-panel {
-        width: 320px;
-    }
-}
 
 @media (max-width: 1400px) {
     /* Hide keyboard shortcut hints to save horizontal space */
@@ -1880,59 +1750,12 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     }
 }
 
-@media (min-width: 1200px) and (max-width: 1599px) {
-    .sidebar {
-        width: 300px;
-    }
-    
-    .right-panel {
-        width: 360px;
-    }
-}
-
-@media (min-width: 1600px) {
-    .sidebar {
-        width: 320px;
-    }
-
-    .right-panel {
-        width: 380px;
-    }
-}
-
 @media (min-width: 540px) and (max-width: 859px) {
     .main-layout {
         display: grid;
         grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
         grid-template-rows: minmax(0, 1fr) auto;
         overflow-y: auto;
-    }
-
-    .sidebar {
-        grid-column: 1;
-        grid-row: 1 / span 2;
-        width: auto;
-        max-height: none;
-        border-right: 1px solid var(--border-subtle);
-        border-bottom: none;
-        flex-direction: column;
-        flex-wrap: nowrap;
-        overflow-y: auto;
-    }
-
-    .center-area {
-        grid-column: 2;
-        grid-row: 1;
-        min-height: 360px;
-    }
-
-    .right-panel {
-        grid-column: 2;
-        grid-row: 2;
-        width: auto;
-        max-height: none;
-        border-left: none;
-        border-top: 1px solid var(--border-subtle);
     }
 
     .header__metrics {
@@ -1970,31 +1793,6 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 
     .header__mobile-play {
         display: inline-flex;
-    }
-
-    .sidebar {
-        width: 100%;
-        max-height: none;
-        border-right: none;
-        border-bottom: 1px solid var(--border-subtle);
-        flex-direction: column;
-        flex-wrap: nowrap;
-        overflow-y: visible;
-    }
-
-    .sidebar .panel {
-        min-width: initial;
-    }
-
-    .center-area {
-        min-height: 300px;
-    }
-
-    .right-panel {
-        width: 100%;
-        max-height: none;
-        border-left: none;
-        border-top: 1px solid var(--border-subtle);
     }
 
     .decision-boundary {
@@ -3216,34 +3014,6 @@ input[type="range"]:focus-visible::-moz-range-thumb {
         opacity: 0.5;
         r: 18px;
     }
-}
-
-/* Sidebar toggling */
-.sidebar {
-    transition: width 0.3s ease;
-    display: flex;
-    flex-direction: column;
-}
-
-.sidebar--collapsed {
-    width: 60px;
-}
-
-.sidebar__toggle-container {
-    padding: 10px;
-    display: flex;
-    justify-content: flex-end;
-}
-
-.sidebar__toggle {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    font-size: 1.2rem;
-}
-.sidebar__toggle:hover {
-    color: var(--text-primary);
 }
 
 /* Network Visualization Specifics */

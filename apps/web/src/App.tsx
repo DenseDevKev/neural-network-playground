@@ -24,14 +24,14 @@ import { PinnedBoundaryRail } from './components/visualization/PinnedBoundaryRai
 import { BoundaryEvidencePanel } from './components/visualization/BoundaryEvidencePanel.tsx';
 import { AdvancedRecipeNotice } from './components/controls/AdvancedRecipeNotice.tsx';
 import {
-    CanvasContent,
+    TopologyContent,
     LossContent,
     ConfusionContent,
     InspectContent,
     CodeContent,
     HistoryContent,
     ConfigurationContent,
-} from './components/layout/MainArea.tsx';
+} from './components/layout/PrecisionLabContent.tsx';
 import { TrainingControls } from './components/controls/TrainingControls.tsx';
 import { PresetPanel } from './components/controls/PresetPanel.tsx';
 const GuidedLessonPanel = lazy(() => import('./components/EducationContent.ts').then((module) => ({ default: module.GuidedLessonPanel })));
@@ -268,7 +268,7 @@ function CompatiblePlayground() {
 
     const topologyContent = (
         <div className="forge-buildrun__topology-stage">
-            <CanvasContent selectionController={selection} />
+            <TopologyContent selectionController={selection} />
         </div>
     );
 

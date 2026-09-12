@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { Header } from './Header';
 import { TrainingControls } from '../controls/TrainingControls';
-import { Sidebar } from './Sidebar';
+import { PresetPanel } from '../controls/PresetPanel.tsx';
 import { DataPanel } from '../controls/DataPanel';
 import { useTrainingStore } from '../../store/useTrainingStore';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore';
@@ -55,14 +55,12 @@ describe('UI integration flows', () => {
         const user = userEvent.setup();
         const onReset = vi.fn();
 
-        render(<Sidebar onReset={onReset} />);
+        render(<PresetPanel onReset={onReset} />);
 
         const presetButton = screen.getByRole('button', { name: 'Apply preset: XOR Needs Hidden Layers' });
         await user.click(presetButton);
 
         await waitFor(() => expect(onReset).toHaveBeenCalledTimes(1));
-        await screen.findByText('Learning rate');
-        await screen.findByRole('button', { name: /Export JSON/ });
         const { access } = usePlaygroundStore.getState();
         expect(access.status === 'ready' ? access.prepared.compiled.task.dataset : null).toBe('xor');
         expect(presetButton).toHaveClass('preset-card--selected');

@@ -130,9 +130,8 @@ vi.mock('./components/layout/Header.tsx', () => ({
     ),
 }));
 
-vi.mock('./components/layout/MainArea.tsx', () => ({
-    CanvasContent:   () => <div>Canvas</div>,
-    BoundaryContent: () => <div>Boundary</div>,
+vi.mock('./components/layout/PrecisionLabContent.tsx', () => ({
+    TopologyContent: () => <div>Canvas</div>,
     LossContent:     () => <div>Loss</div>,
     ConfusionContent:() => <div>Confusion</div>,
     InspectContent:  () => <div>Inspect</div>,

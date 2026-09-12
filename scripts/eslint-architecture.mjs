@@ -10,7 +10,7 @@ const stripExtension = (path) => path.replace(/\.[cm]?[jt]sx?$/, '');
 // Remove each exception only with its consumer-proven retirement.
 const owners = new Map([
     [`${web}hooks/useTraining`, [app]],
-    [`${web}hooks/useSaveCurrentRun`, [app, `${web}components/layout/MainArea`, `${web}components/controls/RunHistoryPanel`]],
+    [`${web}hooks/useSaveCurrentRun`, [app, `${web}components/controls/RunHistoryPanel`]],
     [`${web}components/visualization/useNetworkSelectionController`, [app, ...['NetworkGraph', 'NetworkGraphCanvas', 'NetworkGraphSVG'].map((name) => `${web}components/visualization/${name}`)]],
     [`${web}components/visualization/useDecisionBoundaryController`, [app]],
 ]);

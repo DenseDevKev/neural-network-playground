@@ -35,7 +35,7 @@ Transport and History share the App-owned save controller. Capture obtains one a
 
 `nn-forge/dependency-boundaries` in `scripts/eslint-architecture.mjs` rejects engine/shared imports of UI, engine imports of shared, production imports of tests/prototypes, and newly introduced controller-owner modules. It checks relative/package-alias static imports, re-exports, type imports, literal `import()` and literal `require()`; nonliteral computed imports are outside its resolution scope. Runtime controller counts still require integration tests.
 
-Type-only imports of controller interfaces are permitted. Existing `MainArea`/`RunHistoryPanel` save wrappers and `NetworkGraph`/Canvas/SVG selection wrappers are exact, documented exceptions, not permission to add more owners. Remove exceptions only with consumer-proven retirement. `NetworkGraphSVG` remains a live fallback.
+Type-only imports of controller interfaces are permitted. The existing `RunHistoryPanel` save wrapper and `NetworkGraph`/Canvas/SVG selection wrappers are exact, documented exceptions, not permission to add more owners. Remove exceptions only with consumer-proven retirement. `NetworkGraphSVG` remains a live fallback.
 
 Production explicit `any` is an error. Test/spec/benchmark entries, `__tests__`, `__benchmarks__`, and `apps/web/src/test` retain intentionally malformed-input exceptions. Runtime `apps/web/src/testing/e2eFaults.ts` is production and is not exempt.
 
@@ -43,9 +43,8 @@ Maintenance tooling is not shipped in the app. Start with `docs/maintenance/READ
 
 ## Resolved transition searches
 
-- Production imports and JSX usage of `RegionShell` are absent. The file and deprecated layout aliases remain temporarily for compatibility tests and historical fallback coverage, not because `RegionShell` has a live production consumer.
+- The retired `BuildRunShell`, `RegionShell`, `MainArea`, and `Sidebar` presentation paths have no production or test consumers. `App` composes the live display exports from `PrecisionLabContent` through `PrecisionLabShell` and retains controller ownership.
 - The unused `deriveVisualizationDemand.historyDrawerOpen` argument has been removed.
-- The legacy/default `MainArea` and `Sidebar` paths have no production consumer. App uses the `MainArea` named content exports through `PrecisionLabShell`; the defaults remain until a dedicated removal slice proves all fallback and test consumers can migrate.
 
 ## Historical July product-shell baseline evidence
 
@@ -93,7 +92,6 @@ These are candidates only; do not delete or relocate them in this slice.
 
 - `usePlaygroundStore.dataset` and `regenerateData`: baseline searches find only the store implementation and its unit test, but removal requires a dedicated consumer search and compatibility proof.
 - Deprecated layout aliases (`layout`, `phase`, `activeTabLeft`, `activeTabRight`, and their setters): persisted-state sanitization and compatibility tests still accept them. Retain until a dedicated compatibility migration proves older local layout state remains safe without them.
-- `RegionShell` and the default legacy `MainArea` and `Sidebar` render paths: no production imports remain, but retain them for direct-render/fallback tests until a separate removal slice migrates those consumers and reruns compatibility coverage.
 - `NetworkGraphSVG`: a live runtime fallback selected by `featuresUI.canvasNetworkGraph`, not a dead path.
 
 ## Exact verification commands

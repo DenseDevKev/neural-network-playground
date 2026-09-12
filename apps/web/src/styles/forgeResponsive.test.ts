@@ -22,7 +22,7 @@ function extractMediaBlocks(css: string, header: string): string[] {
     }
 }
 
-describe('forge Build/Run instrument CSS', () => {
+describe('Precision Lab supporting CSS', () => {
     it('defines local hierarchy polish tokens without overriding base tokens', () => {
         const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
 
@@ -33,61 +33,25 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).toContain('--forge-control-gap');
     });
 
-    it('defines the Build/Run instrument grids and modules', () => {
+    it('keeps the live first-visit lesson module chrome', () => {
         const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
 
-        expect(css).toContain('.forge-buildrun__grid--build');
-        expect(css).toContain('.forge-buildrun__grid--run');
         expect(css).toContain('.forge-instrument-module');
-        expect(css).toContain('.forge-instrument-module__tag--build');
-        expect(css).toContain('.forge-instrument-module__tag--run');
+        expect(css).toContain('.forge-instrument-module__head');
+        expect(css).toContain('.forge-instrument-module__grip');
+        expect(css).toContain('.forge-instrument-module__title');
+        expect(css).toContain('.forge-instrument-module__body');
     });
 
-    it('keeps menus and history in drawer chrome instead of permanent panels', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
+    it('keeps production topology and evidence controls touch-sized', () => {
+        const css = readFileSync(resolve(__dirname, 'precisionLab.css'), 'utf8');
 
-        expect(css).toContain('.forge-menu-button');
-        expect(css).toContain('.forge-instrument-drawer');
-        expect(css).toContain('.forge-instrument-drawer--history');
-    });
-
-    it('keeps the compact active-run transport reachable on mobile', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('.forge-buildrun__transport');
-        expect(css).toContain('position: sticky');
-        expect(css).toContain('bottom: 0');
-    });
-
-    it('defines compact mobile graph and neuron stepper controls', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('.neuron-stepper');
-        expect(css).toContain('.neuron-stepper__input');
-        expect(css).toContain('.forge-buildrun__transport[data-status="running"]');
-        expect(css).toContain('.forge-buildrun__topology-stage .network-graph-toolbar');
-        expect(css).toContain('height: 300px');
-    });
-
-    it('touch-sizes compact graph and evidence controls in one owning media block', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-        const compactBlocks = extractMediaBlocks(css, '@media (max-width: 900px)');
-        const owningBlock = compactBlocks.find((block) => {
-            const targets = block.match(
-                /\.forge-buildrun__topology-stage \.network-graph-toolbar button\s*,\s*\.forge-buildrun__topology-stage \.network-graph-legend__filter\s*,\s*\.forge-buildrun__evidence-body \.decision-overlay-controls button\s*\{([^}]*)\}/,
-            );
-            const summary = block.match(
-                /\.forge-buildrun__topology-stage \.network-graph-summary\s*\{([^}]*)\}/,
-            );
-            return Boolean(
-                targets
-                && /min-width:\s*44px/.test(targets[1])
-                && /min-height:\s*44px/.test(targets[1])
-                && summary
-                && /top:\s*62px/.test(summary[1]),
-            );
-        });
-        expect(owningBlock).toBeDefined();
+        expect(css).toMatch(
+            /\.forge-shell \.network-graph-frame :is\([^}]+\)\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/,
+        );
+        expect(css).toMatch(
+            /\.precision-evidence \.decision-overlay-controls button\s*\{[^}]*min-width:\s*44px;[^}]*min-height:\s*44px/,
+        );
     });
 
     it('keeps the compact evaluation disclosure hidden by default and wholly owned by one compact block', () => {
@@ -203,23 +167,4 @@ describe('forge Build/Run instrument CSS', () => {
         expect(css).toContain('.run-comparison-loop');
     });
 
-    it('defines lab notebook context cards and evidence ownership chrome', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('.forge-experiment-context');
-        expect(css).toContain('.forge-context-card');
-        expect(css).toContain('.forge-state-badge');
-        expect(css).toContain('.forge-evidence-context');
-        expect(css).toContain('.forge-evidence-frame');
-        expect(css).toContain('.forge-cockpit-strip');
-        expect(css).toContain('.run-comparison-loop');
-    });
-
-    it('keeps compact active-run transport reachable on mobile', () => {
-        const css = readFileSync(resolve(__dirname, 'forge.css'), 'utf8');
-
-        expect(css).toContain('.forge-dock--compact .forge-dock__bottom');
-        expect(css).toContain('position: sticky');
-        expect(css).toContain('bottom: 0');
-    });
 });
