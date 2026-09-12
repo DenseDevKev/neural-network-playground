@@ -51,6 +51,12 @@ async function hydrateSingleton(): Promise<void> {
     });
 }
 
+async function openActions() {
+    for (const summary of document.querySelectorAll('summary')) {
+        if (!summary.parentElement?.hasAttribute('open')) await userEvent.click(summary);
+    }
+}
+
 describe('RunHistoryPanel V2 evidence memory', () => {
     beforeEach(async () => {
         window.localStorage.clear();
@@ -66,7 +72,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
     it('delegates capture to the injected App controller', async () => {
         const commands = { save: vi.fn(async () => true), retry: vi.fn(async () => true),
-            discard: vi.fn(async () => {}), dismiss: vi.fn() };
+            discard: vi.fn(async () => {}), downloadPending: vi.fn(async () => true), dismiss: vi.fn() };
         render(<RunHistoryPanel saveController={{ busy: false, error: null, pending: false,
             disabledReason: null, commands }} />);
         await userEvent.type(screen.getByRole('textbox', { name: 'Run name' }), ' Shared title ');
@@ -314,6 +320,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
         setItem.mockRestore();
         await userEvent.click(screen.getByRole('button', { name: 'Discard pending save' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
         expect(screen.queryByRole('button', { name: 'Retry saving' })).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Save current run' })).toBeEnabled();
     });
@@ -326,7 +333,10 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument');
 
         render(<RunHistoryPanel />);
+        await openActions();
         await userEvent.click(screen.getByRole('button', { name: 'Apply saved recipe' }));
+        expect(replaceDocument).not.toHaveBeenCalled();
+        await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
 
         await waitFor(() => expect(replaceDocument).toHaveBeenCalledWith(expect.objectContaining({
             kind: 'nn-playground-experiment',
@@ -353,6 +363,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
                 <RunHistoryPanel />
             </>,
         );
+        await openActions();
         const panels = [...container.querySelectorAll<HTMLElement>('.run-history-panel')];
         const allOwnedIds: string[] = [];
 
@@ -411,6 +422,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
         render(<RunHistoryPanel />);
 
+        await userEvent.click(screen.getByRole('button', { name: 'Compare selected' }));
         const comparison = screen.getByRole('group', { name: /Saved run comparison/ });
         expect(comparison).toHaveTextContent('Not directly comparable');
         expect(comparison).not.toHaveTextContent(/winner|lower by|better/i);
@@ -425,6 +437,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
         render(<RunHistoryPanel />);
 
+        await userEvent.click(screen.getByRole('button', { name: 'Compare selected' }));
         expect(screen.getByRole('group', { name: /Saved run comparison/ }))
             .toHaveTextContent('Tuned has lower test data loss by 0.2000');
     });
@@ -460,6 +473,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         await userEvent.click(middleChoice);
         await userEvent.click(firstChoice);
 
+        await userEvent.click(screen.getByRole('button', { name: 'Compare selected' }));
         let comparison = screen.getByRole('group', {
             name: 'Saved run comparison: Latest and First',
         });
@@ -481,7 +495,10 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         });
         expect(comparison).toBeInTheDocument();
 
+        await userEvent.click(screen.getByRole('button', { name: '← Saved runs' }));
+        await openActions();
         await userEvent.click(screen.getByRole('button', { name: 'Delete Latest' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
         await waitFor(() => expect(screen.queryByRole('article', { name: 'Latest' }))
             .not.toBeInTheDocument());
         expect(screen.queryByRole('group', { name: /Saved run comparison/ })).not.toBeInTheDocument();
@@ -525,6 +542,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
             .toBeChecked();
         expect(screen.getByRole('checkbox', { name: `Compare ${title} (${IDS[1]})` }))
             .toBeChecked();
+        await userEvent.click(screen.getByRole('button', { name: 'Compare selected' }));
         expect(screen.getByRole('group', {
             name: `Saved run comparison: ${title} (${IDS[1]}) and ${title} (${IDS[0]})`,
         })).toHaveTextContent(`${title} (${IDS[1]}) has lower test data loss by 0.2000`);
@@ -550,12 +568,63 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
         render(<RunHistoryPanel />);
 
+        await userEvent.click(screen.getByRole('button', { name: 'Compare selected' }));
         const comparison = screen.getByRole('group', { name: /Saved run comparison/ });
         expect(comparison).toHaveTextContent('Not directly comparable');
         expect(comparison).toHaveTextContent(
             'Dataset and objective identities must both match before losses can be ranked.',
         );
         expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('requires explicit comparison, caps two choices, filters differences and returns to retained selection', async () => {
+        const prepared = preset('circle-one-layer');
+        await act(async () => {
+            for (let index = 0; index < 3; index++) await useExperimentMemoryStore.getState().saveRecord(makeSavedRunRecord(prepared, IDS[index], `Run ${index}`, 0.3 + index / 10));
+        });
+        render(<RunHistoryPanel />);
+        expect(screen.queryByRole('group', { name: /Saved run comparison/ })).toBeNull();
+        expect(screen.getByRole('checkbox', { name: 'Compare Run 0' })).toBeDisabled();
+        await userEvent.click(screen.getByRole('button', { name: 'Compare selected' }));
+        expect(screen.getByText('Stored learning history')).toBeVisible();
+        expect(screen.getByText('Recipe identity')).toBeVisible();
+        await userEvent.click(screen.getByRole('checkbox', { name: 'Only show differences' }));
+        expect(screen.queryByText('Recipe identity')).toBeNull();
+        expect(screen.getByText('Full evaluation')).toBeVisible();
+        await userEvent.click(screen.getByRole('button', { name: '← Saved runs' }));
+        expect(screen.getByRole('checkbox', { name: 'Compare Run 2' })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: 'Compare Run 1' })).toBeChecked();
+        await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+        expect(screen.getByRole('button', { name: 'Compare selected' })).toBeDisabled();
+    });
+
+    it('renames within the code-point limit and persists the title without changing evidence', async () => {
+        const record = makeSavedRunRecord(preset('circle-one-layer'), IDS[0], 'Before');
+        await act(async () => { await useExperimentMemoryStore.getState().saveRecord(record); });
+        render(<RunHistoryPanel />); await openActions();
+        await userEvent.click(screen.getByRole('button', { name: 'Rename Before' }));
+        const dialog = screen.getByRole('dialog', { name: 'Rename run' });
+        const name = within(dialog).getByRole('textbox', { name: 'Run name' });
+        fireEvent.change(name, { target: { value: '🧠'.repeat(121) } });
+        expect(within(dialog).getByRole('button', { name: 'Save name' })).toBeDisabled();
+        fireEvent.change(name, { target: { value: '🧠'.repeat(120) } });
+        await userEvent.click(within(dialog).getByRole('button', { name: 'Save name' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+        expect(useExperimentMemoryStore.getState().records[0].title).toBe('🧠'.repeat(120));
+        expect(useExperimentMemoryStore.getState().records[0].snapshot).toEqual(record.snapshot);
+    });
+
+    it('cancels deletion and keeps an action-specific failed deletion error available', async () => {
+        await act(async () => { await useExperimentMemoryStore.getState().saveRecord(makeSavedRunRecord(preset('circle-one-layer'), IDS[0], 'Keep me')); });
+        render(<RunHistoryPanel />); await openActions();
+        await userEvent.click(screen.getByRole('button', { name: 'Delete Keep me' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(useExperimentMemoryStore.getState().records).toHaveLength(1);
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+        await userEvent.click(screen.getByRole('button', { name: 'Delete Keep me' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+        expect(await within(screen.getByRole('alertdialog')).findByRole('alert')).toHaveTextContent('Delete saved run failed');
+        expect(useExperimentMemoryStore.getState().records).toHaveLength(1);
     });
 
     it('preserves legacy bytes through dismissal and deletes only explicitly', async () => {
@@ -598,6 +667,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         expect(useExperimentMemoryStore.getState().pendingSave?.title).toBe('Saved after recovery');
 
         await userEvent.click(screen.getByRole('button', { name: 'Delete incompatible saved-run file' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
         await userEvent.click(screen.getByRole('button', { name: 'Retry saving' }));
         await screen.findByText('Saved after recovery');
         expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toBe(raw);
@@ -618,6 +688,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         expect(screen.getByRole('button', { name: 'Download rejected record' })).toBeInTheDocument();
 
         await userEvent.click(screen.getByRole('button', { name: 'Delete rejected record' }));
+        await userEvent.click(screen.getByRole('button', { name: 'Confirm' }));
         await waitFor(() => expect(screen.queryByText('Rejected saved record')).not.toBeInTheDocument());
         expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).not.toContain('"schemaVersion":1');
     });

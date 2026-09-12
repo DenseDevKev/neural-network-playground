@@ -15,7 +15,7 @@ vi.mock('../worker/workerBridge.ts', () => ({ getWorkerApi: async () => workerAp
 
 
 describe('one shared current-run capture controller', () => {
-    afterEach(() => vi.restoreAllMocks());
+    afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
     beforeEach(async () => {
         vi.restoreAllMocks();
@@ -74,6 +74,32 @@ describe('one shared current-run capture controller', () => {
         expect(JSON.stringify(useExperimentMemoryStore.getState().records[0])).toBe(bytes);
         expect(localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toContain(bytes);
         expect(result.current.pending).toBe(false);
+    });
+
+    it('downloads byte-identical pending evidence after live recipe changes and retains it for retry', async () => {
+        const pending = makeSavedRunRecord(currentPreparedForTest()!);
+        const bytes = JSON.stringify(pending);
+        const create = vi.fn((_blob: Blob) => 'blob:pending-evidence');
+        const revoke = vi.fn();
+        vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = revoke; });
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        const { result } = renderHook(() => useSaveCurrentRun());
+        await act(async () => {
+            useExperimentMemoryStore.setState({ pendingSave: pending });
+            await usePlaygroundStore.getState().replaceDocument(PREPARED_PRESETS.at(-1)!.prepared.document);
+            expect(await result.current.commands.downloadPending()).toBe(true);
+        });
+        const blob = create.mock.calls[0][0] as Blob;
+        const downloaded = await new Promise<string>((resolve) => {
+            const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.readAsText(blob);
+        });
+        expect(downloaded).toBe(bytes);
+        expect(click).toHaveBeenCalledOnce();
+        expect(revoke).toHaveBeenCalledWith('blob:pending-evidence');
+        expect(useExperimentMemoryStore.getState().pendingSave).toBe(pending);
+        expect(workerApi.captureRunArtifact).not.toHaveBeenCalled();
+        expect(result.current.disabledReason).toContain('pending artifact');
+        vi.unstubAllGlobals();
     });
 
     it('checks pending storage synchronously even before React delivers the next render', async () => {

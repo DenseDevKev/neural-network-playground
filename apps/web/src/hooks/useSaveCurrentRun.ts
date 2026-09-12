@@ -14,6 +14,7 @@ export interface SaveCurrentRunController {
         readonly save: (title?: string) => Promise<boolean>;
         readonly retry: () => Promise<boolean>;
         readonly discard: () => Promise<void>;
+        readonly downloadPending: () => Promise<boolean>;
         readonly dismiss: () => void;
     };
 }
@@ -78,6 +79,19 @@ export function useSaveCurrentRun(): SaveCurrentRunController {
             return true;
         });
     }, [operate]);
+    const downloadPending = useCallback(() => operate(async () => {
+        const artifact = useExperimentMemoryStore.getState().pendingSave;
+        if (!artifact) return false;
+        // Serialize this exact retained artifact; never consult the active experiment.
+        const url = URL.createObjectURL(new Blob([JSON.stringify(artifact)], { type: 'application/json' }));
+        try {
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `${artifact.id}.json`;
+            anchor.click();
+        } finally { URL.revokeObjectURL(url); }
+        return true;
+    }), [operate]);
     const dismiss = useCallback(() => {
         setActionError(null);
         useExperimentMemoryStore.getState().dismissPersistenceError();
@@ -89,6 +103,6 @@ export function useSaveCurrentRun(): SaveCurrentRunController {
         busy, pending: pendingSave !== null,
         error: actionError ?? persistenceError?.message ?? null,
         disabledReason: saveDisabledReason(busy),
-        commands: { save, retry, discard, dismiss },
+        commands: { save, retry, discard, downloadPending, dismiss },
     };
 }
