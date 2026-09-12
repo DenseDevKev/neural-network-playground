@@ -37,6 +37,15 @@ describe('commitRecipeEdit', () => {
         resetTrainingTransaction();
     });
 
+    it('rejects a stale setup base before starting a config transaction', async () => {
+        const before = currentPreparedForTest();
+        const edit = vi.fn((recipe) => setNoise(recipe, 17));
+        expect(await commitRecipeEdit('setup', edit, 'stale-key')).toBe(false);
+        expect(edit).not.toHaveBeenCalled();
+        expect(currentPreparedForTest()).toBe(before);
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+    });
+
     it('awaits and recognizes only the exact published result', async () => {
         const published = await commitRecipeEdit(
             'data',

@@ -70,7 +70,17 @@ function errorMessage(error: unknown): string {
 export async function commitRecipeEdit(
     source: RecipeConfigChangeSource,
     edit: RecipeEdit,
+    expectedBaseKey?: string,
 ): Promise<boolean> {
+    // Compare before beginning a transaction: stale drafts must not pause or
+    // replace the active recipe, nor supersede another pending preparation.
+    const current = usePlaygroundStore.getState();
+    if (expectedBaseKey !== undefined && (
+        current.access.status !== 'ready'
+        || current.access.prepared.identities.canonicalRecipeKey !== expectedBaseKey
+        || current.preparation.status === 'preparing'
+        || useTrainingStore.getState().pendingConfigSource !== null
+    )) return false;
     const transactionId = ++latestRecipeEditTransaction;
     const trainingStore = useTrainingStore.getState();
     trainingStore.beginConfigChange(source);
