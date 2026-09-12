@@ -1,6 +1,6 @@
 # Bugs to review — September 9, 2026
 
-Audit baseline: `cad28a4e6e076245cba7191cea2e78c711335003` on `codex/nn-forge-precision-lab`. Medium-risk closure source: `88e107a954cae016f4da3a71ffb29225d92028b7`, verified by Actions run `34410864082`. The high-risk persistence finding and its implementation remain unchanged.
+Audit baseline: `cad28a4e6e076245cba7191cea2e78c711335003` on `codex/nn-forge-precision-lab`. Medium-risk closure source: `88e107a954cae016f4da3a71ffb29225d92028b7`, verified by Actions run `34410864082`. The original persistence finding is preserved below with its September 12 resolution.
 
 ## Evidence and ordering
 
@@ -8,9 +8,9 @@ Sentry discovery and plugin lookup exposed no callable Sentry integration in thi
 
 Until telemetry is available, ordering below uses demonstrated potential impact: silent saved-run loss first, then blocked touch navigation, then visual instability. This is not a production-frequency ranking. Browser evidence comes from exact-baseline GitHub Actions run [34273895548](https://github.com/DenseDevKev/neural-network-playground/actions/runs/34273895548), preview job `102222301967`. That job stopped after five failures; unexecuted cases are not passing cases.
 
-## Deferred bugs
+## Saved-run concurrency resolution — September 12, 2026
 
-### [ ] 1. Independent saved-run stores can overwrite another successful save
+### [x] 1. Independent saved-run stores can overwrite another successful save
 
 **Risk: high — possible silent saved-run data loss.**
 
@@ -38,9 +38,13 @@ expect(stored.records.map((record: { id: string }) => record.id).sort())
     .toEqual([a.id, b.id].sort()); // Fails: only one ID remains.
 ```
 
-**Why deferred:** This is a concurrency and persisted-data problem, not a safe local cleanup. Save/delete/rename/eviction/retry need one coherent conflict policy. An ad hoc merge immediately before writing is still racy, and may mishandle rejected records or resurrect deletions.
+**Resolution in the completion candidate:** Every saved-run read/validate/modify/write transaction now takes the same origin-scoped Web Lock and reads the latest persisted envelope after acquiring it. The per-store queue preserves local action order; storage events refresh views but are not used as writer coordination. Saves, renames, removals, clear, rejected-record cleanup and exact-artifact retries operate on that fresh state. Capacity still rejects the 21st record without eviction. Unsupported lock environments refuse writes and retain the pending artifact instead of claiming a successful unsafe save.
 
-**Suggested approach:** First add a genuine two-tab reproduction with controlled interleavings. Agree cross-context write ownership and conflict semantics, then implement coordinated or transactional read/validate/modify/write. Preserve rejected/incompatible bytes, capacity rules, and the exact pending-save retry artifact. Test simultaneous save/save, save/delete, rename/save, quota failure, stale hydration, and an incompatible envelope appearing during a write. No storage schema change should be bundled into this audit.
+Rejected records remain byte-preserved. Cleanup refuses a mutation that would promote rejected duplicates into valid records; the user can explicitly delete those rejected entries first. Rejected deletion follows the selected raw bytes when another write shifts the index. Incompatible and legacy whole-file deletion verifies the originally selected bytes. A pre-write byte comparison also detects an older/uncoordinated client changing storage during validation; already-open versions that predate this lock contract should be reloaded.
+
+**New verification:** All six original added unit regressions failed on the intake code. The controlled two-tab stale-save reproduction failed in both Chromium and WebKit and passes with the fix, along with existing desktop/mobile exact-retry journeys. Store and related-hook checks cover concurrent independent saves, stale rename/delete, quota retry, latest-envelope capacity, incompatible arrival, rejected-index changes, unsupported locks, duplicate resurrection and replacement legacy bytes. A second real-browser test asserts one held and one pending lock while envelope validation is deliberately paused. Final release receipts are recorded in the completion PR and living execution plan.
+
+**Conflict policy:** Mutations are applied in lock-acquisition order to the latest envelope. A save adds its validated artifact; rename/remove address a record ID; clear removes the current valid records; rejected and whole-file deletion retain their originally selected byte identity. Failure publishes no candidate bytes and retains the exact pending save. The V2 storage schema is unchanged.
 
 **References:** Sentry unavailable; no visible Linear match. Local independent-store regression probe; not a Sentry-reported incident.
 
@@ -77,7 +81,7 @@ expect(stored.records.map((record: { id: string }) => record.id).sort())
 ## Coverage follow-ups — not confirmed vulnerabilities
 
 - [ ] Restore Sentry access, select the relevant project/environment and time window, retrieve frequent errors and slow transactions, and correlate stack/source maps and releases. Reorder the checklist from actual production evidence. No transaction name was available to designate as a post-deploy performance monitor; locate the real code-export/evidence interaction rather than inventing one.
-- [ ] **[VERIFY WITH SCANNER]** Run `pnpm audit --audit-level high` in a network-enabled environment. This audit attempted `pnpm audit --json` with bounded retry/timeout settings; the registry audit request failed with `EAI_AGAIN`. This is no vulnerability verdict, and no CVE is asserted.
+- [x] **Dependency scanner rerun, September 12:** `pnpm audit --json` initially reported 1 critical, 23 high, 16 moderate and 3 low advisories. Compatible Vite/Vitest updates and targeted transitive minimums reduce this to 0 critical, 0 high, 2 moderate, 0 low. The two remaining package entries describe the same [Vitest redirect-mock advisory](https://github.com/vitest-dev/vitest/security/advisories/GHSA-82fw-gwwq-j7x9) in `vitest` / `@vitest/mocker` 3.2.7. This repository runs Node/jsdom tests and separate Playwright tests; it does not load the standalone mocker/interceptor plugin, Vitest browser mode or UI/API server. The affected development-server route is not reachable in the configured test or deployed application. A future Vitest major upgrade must revalidate the test framework; no advisory is suppressed in scanner configuration.
 - [x] Complete browser qualification on code `88e107a9`: preview 62 passed / 6 intentional skips; subpath 66 passed / 2 intentional skips; zero failures, retries or flaky results. Fault-enabled recovery and normal rebuilt fault-disabled checks also pass in both browsers. Local application navigation remains administrator-blocked, so full application evidence is from GitHub Actions, not isolated local stylesheet fixtures. This is not a live deployment receipt.
 
 ## Scoped review notes

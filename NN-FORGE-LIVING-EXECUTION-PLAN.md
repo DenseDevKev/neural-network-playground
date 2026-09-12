@@ -2,6 +2,12 @@
 
 **Role of this file:** This is the checklist I will actually execute against. It is deliberately more detailed than a normal roadmap so you can audit what I am doing.
 
+## September 12 completion authority
+
+The owner has authorized finishing the outstanding branch work and merging a working release into `main`. [Completion PR #36](https://github.com/DenseDevKev/neural-network-playground/pull/36) is the authoritative record for final candidate SHA, reviews, qualification, merge, main CI and deployment receipts. Those events occur after this document is committed; their statuses are recorded on the PR and GitHub Actions instead of creating a new documentation commit for every completed check. The completion source/branch audit is in [the September 12 record](docs/superpowers/verification/2026-09-12-completion.md).
+
+The completion candidate fixes saved-run concurrency and destructive-cleanup identities without changing the storage schema, retires the unused presentation paths, patches critical/high development dependency advisories, and extends the full Precision Lab qualification to pushed `main` commits. Existing scientific contracts, browser assertions and release budgets remain in force. Dated no-merge/no-deploy restrictions below describe their historical audit scopes; they do not override the owner's current completion request.
+
 ## Status notation
 - `[x]` completed with evidence.
 - `[ ]` pending.
@@ -14,7 +20,7 @@
 
 # 0. Control state
 
-**Current qualification state — September 11, 2026:** exact tested product head `fcc382658396defa1a19c3a5543478ebe6b0986f`, tree `e74b3561f2287d3f921851bb877686dbd0cca83a`, passed all six required jobs on attempt 2 of exact-head run `34543410273`: source evidence, focused correctness/build/bundle, preview browsers, project-subpath browsers, recovery and accepted five-pair performance. The owner changed the repository from private to public before the bounded rerun; standard GitHub-hosted runners then started normally, removing the earlier account billing/spend-limit startup block. Preview passed 82 tests with 6 intentional mode skips; subpath passed 86 with 2 intentional mode skips; both reported zero unexpected and zero flaky tests. Recovery passed both fault-enabled tests and both clean-build fault-disabled tests. No additional product correction was needed after `6f478eae8a390e5a0c5d0ea80263198b10c66ddd`. Sections 28–29 preserve the historical failures and current evidence. A documentation-only closure commit created from this record must receive its own exact-head run before it becomes the final qualified branch head.
+**Historical qualification state — September 11, 2026:** exact tested product head `fcc382658396defa1a19c3a5543478ebe6b0986f`, tree `e74b3561f2287d3f921851bb877686dbd0cca83a`, passed all six required jobs on attempt 2 of exact-head run `34543410273`: source evidence, focused correctness/build/bundle, preview browsers, project-subpath browsers, recovery and accepted five-pair performance. The owner changed the repository from private to public before the bounded rerun; standard GitHub-hosted runners then started normally, removing the earlier account billing/spend-limit startup block. Preview passed 82 tests with 6 intentional mode skips; subpath passed 86 with 2 intentional mode skips; both reported zero unexpected and zero flaky tests. Recovery passed both fault-enabled tests and both clean-build fault-disabled tests. No additional product correction was needed after `6f478eae8a390e5a0c5d0ea80263198b10c66ddd`. Sections 28–29 preserve the historical failures and current evidence. A documentation-only closure commit created from this record must receive its own exact-head run before it becomes the final qualified branch head.
 
 **Reconciled September 10, 2026 against GitHub refs and exact-source CI. Sections explicitly marked historical are receipts, not current acceptance.**
 
@@ -607,54 +613,27 @@ At 50 steps/frame for at least 5 seconds:
 
 # 18. P7 — One final production shell
 
-**Migration state:** App already composes PrecisionLabShell, with later graph-control corrections through `6de861dd`. Maintenance removes only proven unused private primitives, not the legacy shell or styles. BuildRunShell/MainArea compatibility/test consumers remain until a dedicated migration and exact-candidate acceptance prove removal safe. P7 is not claimed complete; no browser, bundle or performance gate is waived.
+**September 12 completion:** `App` composes `PrecisionLabShell` and the live display exports in `PrecisionLabContent`. Dead `BuildRunShell`, `RegionShell`, `Sidebar`, `MainArea` adapters and their unused private components are retired. Relevant configuration, boundary, profile and preset tests are migrated to current production consumers. App retains training/save/selection/boundary ownership. Dead selectors are removed while live topology-stage and lesson-cue styles remain.
 
+The complete package suite, typechecks, production build and unchanged bundle budgets pass in the completion checkout. Final cross-browser, recovery, performance, review and exact-commit provenance receipts belong to [PR #36](https://github.com/DenseDevKev/neural-network-playground/pull/36); no historical result substitutes for the final candidate.
 
-## Migration
-- [x] identify current production App composition and retained legacy/test consumers/styles — committed through product tree `bf7115da...`.
-- [ ] migrate each consumer.
-- [ ] verify each migration.
-- [ ] keep old shell until all consumers are proven migrated.
-
-## Removal
-- [ ] remove obsolete shell.
-- [ ] remove dead styles.
-- [ ] remove obsolete presentation adapters.
-- [ ] preserve engine/schema/protocol unless separately justified.
-- [ ] confirm only one production shell remains.
-
-## Final qualification
-- [ ] correctness.
-- [ ] browser matrix.
-- [ ] responsive acceptance.
-- [ ] accessibility.
-- [ ] bundle.
-- [ ] accepted performance.
-- [ ] build provenance.
-- [ ] verification record.
-- [ ] diff review.
-
-**Exit:** Precision Lab is the sole production presentation layer.
+**Exit contract:** one production presentation layer, migrated behavior coverage and passing final qualification.
 
 ---
 
-# 19. Precision Lab release
+# 19. Precision Lab release acceptance
 
-**Product qualification is satisfied. Release remains separate: P7 legacy-shell retirement is incomplete, merge to `main` is not authorized here, and Pages still has an owner-controlled repository-settings blocker. The owner changed repository visibility to public on September 11; the qualification agent made no merge, deployment, Pages or billing change.**
+The owner authorized final integration and merge on September 12. Acceptance is recorded by post-commit events rather than a self-referential checklist:
 
+| Required event | Authoritative record |
+|---|---|
+| Exact qualified candidate and review | [Completion PR #36](https://github.com/DenseDevKev/neural-network-playground/pull/36) and its head SHA |
+| Merge into main | The PR's merge event and merge commit |
+| Main correctness and full qualification | [Actions](https://github.com/DenseDevKev/neural-network-playground/actions) runs for that exact main SHA |
+| Deployment and actual page URL | Successful `Deploy to GitHub Pages` run and its environment URL |
+| Live Chromium/WebKit, URLs, worker, fonts, base path and responsive behavior | Post-deployment browser receipt recorded on PR #36 |
 
-- [ ] Freeze qualified candidate.
-- [ ] Merge to `main`.
-- [ ] Re-run `main` CI.
-- [ ] Deploy accepted `main`.
-- [ ] Chromium live validation.
-- [ ] WebKit live validation.
-- [ ] shared URLs.
-- [ ] worker.
-- [ ] fonts.
-- [ ] project base path.
-- [ ] responsive layouts.
-- [ ] record release evidence.
+Qualification keeps the existing fixed bundle caps, zero Playwright retries, fault-on/fault-off recovery and five-pair performance comparison. Deployment must use the tested main SHA. Repository visibility and billing settings are outside this completion change; source is already public. No publication is claimed without the real deployment and live-browser receipts.
 
 ---
 
@@ -736,7 +715,7 @@ Status: caps preserved. Maintenance CI total 234,282 / 234,161 bytes was a histo
 
 ---
 
-# 23. Immediate execution queue (reconciled September 10)
+# 23. Historical execution queue (September 10; superseded by September 12 completion authority)
 
 ## NEXT-01 — Preserve and commit recovered integration (complete)
 - [x] Recover newer shell/boundary instead of overwriting it from the older checkpoint: `3e7da9a`.
@@ -1011,3 +990,12 @@ Authenticated GitHub UI inspection recovered the annotation hidden from the conn
 ## v7 — September 11 exact-head all-jobs-green receipt
 
 After the owner made the repository public, one bounded rerun of `34543410273` started normally and passed all six required jobs on `fcc38265`. Focused qualification passed 155 infrastructure tests and 2,022 package tests, lint, types, build and the unchanged gzip guard (151,321 entry; 5,432 InspectionPanel; 233,766 total JavaScript). Preview passed 82 with 6 intentional hosting/fault-mode skips; subpath passed 86 with 2 intentional fault-mode skips; recovery passed 2 fault-enabled plus 2 fault-disabled tests; every browser summary reports zero unexpected and zero flaky tests. The accepted five-pair macOS/ARM64 comparator passed all engine medians plus forced-pair 9.8853 ms and save-capture 11.8374 ms. The preserved raw baseline and candidate performance collections both exited `1` on the historical absolute engine constants, symmetrically confirming why those constants are not universal-host release thresholds. Product acceptance for `fcc38265` is complete; only the documentation-only closure head remains to receive its own exact-head qualification.
+
+
+# 30. September 12 branch completion
+
+- Storage fix: `06ade9f` coordinates origin-wide writes, applies mutations to freshly validated persisted state, preserves exact retries and rejected bytes, and guards selected file deletion. Regression-first unit and real-browser reproductions are retained.
+- Development dependency patches: `b1fe8e4`; critical/high findings are cleared. Two moderate entries for the same unconfigured Vitest mocker-server path remain disclosed in `BUGS-TO-REVIEW.md`; no scanner rule is suppressed.
+- P7 presentation retirement: `7e29402`, preserving live content, ownership and migrated behavior tests.
+- `codex/nn-forge-release-roadmap` is already merged. The `precision-apply` branch transports patches already committed in `precision-lab`; importing transport artifacts would add no product work. Old local cockpit/integration snapshots are superseded and remain archival. Other local branch heads are already ancestors of main.
+- Final commit, qualification, merge and deployment receipts: [PR #36](https://github.com/DenseDevKev/neural-network-playground/pull/36). Source/check status remains per-commit, never inferred from a prior run.

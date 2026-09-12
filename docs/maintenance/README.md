@@ -51,4 +51,4 @@ Playwright JSON is written alongside list/HTML output as `playwright-results.jso
 
 ## Boundaries
 
-Maintenance tests passing does not qualify Precision Lab. Existing browser/zoom failures, the inherited bundle overrun, legacy-shell retirement and the independent-tab saved-run overwrite remain separate work. Main, repository visibility, Pages settings and live deployment are not modified by this maintenance workflow.
+Maintenance tests alone do not qualify a release. The September 12 completion resolves legacy-shell retirement and the saved-run overwrite; final exact-commit acceptance and deployment receipts live in completion PR #36 and the living execution plan. This maintenance workflow itself does not modify repository visibility or Pages settings.

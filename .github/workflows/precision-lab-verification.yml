@@ -2,7 +2,7 @@ name: Precision Lab qualification
 
 on:
   push:
-    branches: [codex/nn-forge-precision-lab]
+    branches: [main, codex/nn-forge-precision-lab]
 
 permissions:
   contents: read
