@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deriveNodeGeometry, hitTestNode, paintEdges, type FlatNetworkView } from './networkGraphPainter.ts';
+import { nodeColor, deriveNodeGeometry, hitTestNode, paintEdges, type FlatNetworkView } from './networkGraphPainter.ts';
 
 describe('Precision Lab graph geometry', () => {
     it('keeps usable square tiles and lets the viewport pan dense layers', () => {
@@ -49,5 +49,12 @@ describe('selected paths', () => {
         const { ctx, strokes } = context();
         paintEdges(ctx, positions, flat, null, 'positive', { highlightedEdgeKeys: new Set(['1:0:0', '1:0:1']) });
         expect(strokes.some((s) => s.dash.length > 0)).toBe(false);
+    });
+});
+
+describe('shared tile sign policy', () => {
+    it('groups zero with nonnegative biases in both renderer palette calls', () => {
+        expect(nodeColor(0).split(',').slice(0,3)).toEqual(nodeColor(1).split(',').slice(0,3));
+        expect(nodeColor(-1).split(',').slice(0,3)).not.toEqual(nodeColor(0).split(',').slice(0,3));
     });
 });

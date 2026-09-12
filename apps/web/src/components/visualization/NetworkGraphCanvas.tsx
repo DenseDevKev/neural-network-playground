@@ -904,7 +904,7 @@ export function NetworkGraphCanvasView({ controller, renderer = 'canvas' }: { re
                         const selected = controller.selectedNode?.layerIdx === l && controller.selectedNode.nodeIdx === i;
                         return <rect key={nodeRefKey(l, i)} className="network-node" x={node.x - geometry.width / 2} y={node.y - geometry.height / 2}
                             width={geometry.width} height={geometry.height} rx={geometry.cornerRadius} fill={palette.surface}
-                            stroke={selected ? palette.text : l > 0 && l < layers.length - 1 ? nodeColor(flat?.biases[layerBiasOffset(flat.layerSizes, l - 1) + i] ?? 0) : palette.rule} strokeWidth={selected ? 3 : 1.5} />;
+                            stroke={selected ? palette.text : l > 0 && l < layers.length - 1 ? nodeColor((flat?.biases[layerBiasOffset(flat.layerSizes, l - 1) + i] ?? 0) >= 0 ? 1 : -1) : palette.rule} strokeWidth={selected ? 3 : 1.5} />;
                     }))}
                     {nodePositions.flatMap((layer, l) => layer.map((node, i) => {
                         const health = nodeHealthByKey.get(nodeRefKey(l, i));
@@ -975,9 +975,10 @@ export function NetworkGraphCanvasView({ controller, renderer = 'canvas' }: { re
                             }
                         }}
                         onFocus={() => {
-                            const x = node.x * viewport.zoom + viewport.panX, y = node.y * viewport.zoom + viewport.panY;
+                            let x = node.x * viewport.zoom + viewport.panX, y = node.y * viewport.zoom + viewport.panY;
                             if (x < size / 2 || x > containerSize.width - size / 2 || y < size / 2 || y > containerSize.height - size / 2) {
                                 setViewport((v) => ({ ...v, panX: containerSize.width / 2 - node.x * v.zoom, panY: containerSize.height / 2 - node.y * v.zoom }));
+                                x = containerSize.width / 2; y = containerSize.height / 2;
                             }
                             setTooltip({ x, y, text: buildNodeTooltipLines(layerIdx, nodeIdx) });
                         }}

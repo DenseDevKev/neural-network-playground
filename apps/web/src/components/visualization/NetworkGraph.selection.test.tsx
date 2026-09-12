@@ -180,3 +180,12 @@ it('fits the first real measured viewport, batches resize delivery, and preserve
     act(() => { deliver(600, 400); queued.shift()!(0); });
     expect(container.querySelector('.network-graph-controls__zoom')).toHaveTextContent('111%');
 });
+
+it('uses the Canvas nonnegative bias stroke for a zero-bias SVG hidden tile', () => {
+    snapshot = {...snapshot,biases:new Float32Array([0,-.1,.05])};
+    setRenderer(false);
+    const {container} = render(<Harness />);
+    const nodes = container.querySelectorAll('rect.network-node');
+    expect(nodes[2]).toHaveAttribute('stroke','rgba(244, 99, 48, 0.7)');
+    expect(nodes[3]).toHaveAttribute('stroke','rgba(59, 130, 246, 0.7)');
+});

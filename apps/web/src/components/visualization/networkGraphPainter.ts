@@ -86,7 +86,7 @@ const LABEL_Y = 20;
 
 export function nodeColor(value: number): string {
     const abs = Math.min(Math.abs(value), 2) / 2;
-    if (value > 0) return `rgba(244, 99, 48, ${0.4 + abs * 0.6})`;
+    if (value >= 0) return `rgba(244, 99, 48, ${0.4 + abs * 0.6})`;
     return `rgba(59, 130, 246, ${0.4 + abs * 0.6})`;
 }
 
