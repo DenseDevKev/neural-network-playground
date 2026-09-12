@@ -196,11 +196,6 @@ vi.mock('../components/visualization/DecisionBoundaryCanvas.tsx', () => ({
 
 
 vi.mock('../components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
-vi.mock('../components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
-vi.mock('../components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
-vi.mock('../components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: () => <div>Features</div> }));
-vi.mock('../components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
-vi.mock('../components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel: () => <div>Hyperparams</div> }));
 vi.mock('../components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
 vi.mock('../components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
 vi.mock('../components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));

@@ -296,10 +296,15 @@ function LocalNetworkGraphCanvas() {
 export function NetworkGraphCanvasView({ controller, renderer = 'canvas' }: { readonly controller: NetworkSelectionController; readonly renderer?: 'canvas' | 'svg' }) {
     const theme = useThemeStore((s) => s.resolved);
     const palette = useMemo(() => { void theme; return readPlotPalette(); }, [theme]);
+
+    const containerRef = useRef<HTMLDivElement>(null);
     const selectionOrigin = useRef<HTMLButtonElement | null>(null);
     const previousSelection = useRef(controller.selectedNode);
     useEffect(() => {
-        if (previousSelection.current && !controller.selectedNode) selectionOrigin.current?.focus();
+        if (controller.selectedNode) {
+            const key = nodeRefKey(controller.selectedNode.layerIdx, controller.selectedNode.nodeIdx);
+            selectionOrigin.current = containerRef.current?.querySelector<HTMLButtonElement>(`[data-neuron-key="${key}"]`) ?? null;
+        } else if (previousSelection.current) selectionOrigin.current?.focus();
         previousSelection.current = controller.selectedNode;
     }, [controller.selectedNode]);
     const compiled = usePlaygroundStore((s) => (
@@ -354,7 +359,7 @@ export function NetworkGraphCanvasView({ controller, renderer = 'canvas' }: { re
     const layersKey = layers.join(',');
     const maxNodes = Math.max(...layers);
 
-    const containerRef = useRef<HTMLDivElement>(null);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -962,7 +967,7 @@ export function NetworkGraphCanvasView({ controller, renderer = 'canvas' }: { re
                     const unavailable = layerIdx > 0 && !gridAvailable;
                     return <button key={nodeRefKey(layerIdx, nodeIdx)} type="button"
                         className="network-node-target" aria-label={renderer === 'svg' ? [label, ...buildNodeTooltipLines(layerIdx, nodeIdx).filter((line) => line !== label)].join('. ') : label} aria-pressed={selected}
-                        data-grid-available={gridAvailable}
+                        data-neuron-key={nodeRefKey(layerIdx, nodeIdx)} data-grid-available={gridAvailable}
                         aria-description={unavailable ? 'Activation grid not available' : undefined}
                         title={buildNodeTooltipLines(layerIdx, nodeIdx).join('. ')}
                         style={{ position: 'absolute', left: node.x * viewport.zoom + viewport.panX - size / 2,

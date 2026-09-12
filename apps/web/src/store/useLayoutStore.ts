@@ -1,5 +1,5 @@
 // ── Layout Store ──
-// Manages pure UI state for the Build / Run instrument shell.
+// Manages local Signal Atelier navigation and legacy layout adapters.
 // Persisted to localStorage so the user's workspace view survives reloads.
 // Deliberately separated from usePlaygroundStore (config) and
 // useTrainingStore (runtime) — layout is a pure UI concern.
@@ -103,8 +103,8 @@ export interface LayoutStore {
     advancedToolsOpen: boolean;
     buildContextOpen: boolean;
 
-    // Deprecated compatibility fields. User-facing UI should prefer view,
-    // activeRecipeSection, and activeEvidenceView.
+    // Deprecated compatibility fields. User-facing UI should prefer destination,
+    // workspaceTab, setupTab, resultsTab, and inspectTab.
     layout: LayoutVariant;
     phase: PhaseMode;
     activeTabLeft: LeftTabId;

@@ -1,26 +1,24 @@
-# Neural Network Playground 2.0
+# NN·FORGE — Signal Atelier
 
 An interactive, browser-based neural network playground for learning — inspired by [TensorFlow Playground](https://playground.tensorflow.org/).
 
-Build, train, and visualize neural networks in real time. Experiment with different architectures, datasets, and hyperparameters to develop intuition for how neural networks learn.
+Build, train, and inspect neural networks in a spacious data → network → prediction workspace. Every plot and metric comes from the local training engine. No account or server computation is required.
 
 ![Neural Network Playground screenshot](https://raw.githubusercontent.com/DenseDevKev/neural-network-playground/main/screenshot.png)
 
-## ✨ Features
+## Features
 
-- **9 classification datasets** — Eight binary datasets plus Three-Class Clusters
-- **2 regression datasets** — Plane, Gaussian
-- **Live training** — Watch the decision boundary and loss curve update in real time
-- **Mini neuron heatmaps** — See what each neuron learned inside the network graph
-- **Code export** — Export your network as Pseudocode, NumPy, or TensorFlow.js
-- **Advanced inspection** — Per-layer gradient magnitudes, weight stats, activation distributions
-- **Beginner, Explore, and Lab profiles** — Change visible tools and guidance without changing the experiment
-- **Advanced Tools** — Reveal specialist configuration, diagnostics, and export surfaces on demand
-- **Contextual concept help** — Consistent definitions for loss, objectives, boundaries, activations, gradients, and checkpoints
-- **Presets** — One-click configurations for common learning scenarios
-- **URL sharing** — Share the exact experiment recipe and shareable view settings via URL
-- **Config import/export** — Save and load configurations as JSON
-- **Responsive design** — Works on desktop, tablet, and mobile
+- **Eleven datasets** — Nine classification datasets (including Three-Class), plus Plane and Multi-Gauss regression.
+- **Unified Setup** — Edit Dataset, Network, and Training together; Apply commits one validated recipe and Cancel discards the draft.
+- **Network workspace** — Square neuron activation maps, signed connection filters, local pan/zoom, and a focused neuron inspector.
+- **Live training and Results** — Play/Pause, Step, Reset, speed, session checkpoints, prediction overlays, learning histories, and task-aware confusion metrics.
+- **Trace, Activations, and Gradients** — Inspect real samples, activation distributions, backpropagation, and diagnostic parameter probes with provenance.
+- **Local saved runs** — Save, rename, download, apply recipes, and compare two records with compatible-evidence checks and exact-artifact save recovery.
+- **Ten guided lessons** — Learn from single neurons through XOR, softmax, regression, regularization, and noisy data.
+- **Exports and sharing** — Pseudocode, NumPy, TensorFlow.js, configuration JSON, and shareable V2 setup links. Imported JSON is previewed before explicit Apply.
+- **System, Light, and Dark** — Follow the device or remember a chosen theme; plots repaint without changing training.
+- **Guidance and help** — More, Standard, or Compact explanations; every feature stays reachable.
+- **Responsive layouts** — Full desktop composition, dedicated tablet graph, and focused mobile regions with 44px controls.
 
 ## 🏗️ Architecture
 
@@ -31,7 +29,7 @@ neural-network-playground/
 │       └── src/
 │           ├── components/   # Controls, visualizations, and layout
 │           ├── concepts/     # Typed terminology catalog
-│           ├── productShell/ # Profiles, shell types, and visibility rules
+│           ├── productShell/ # Navigation types and legacy adapters
 │           ├── hooks/        # React hooks, including useTraining
 │           ├── store/        # Zustand state management
 │           ├── worker/       # Web Worker integration
@@ -55,27 +53,24 @@ neural-network-playground/
 | Web Worker training | UI stays responsive; training runs off the main thread |
 | Zustand store | Lightweight, minimal boilerplate, great React integration |
 | Monorepo (pnpm workspaces) | Clean separation: engine has zero DOM deps, testable in isolation |
-| One product shell | Profiles control visibility and guidance over one experiment and runtime |
+| One product shell | Navigation preserves one experiment, training runtime, and scientific identity |
 
-See [Product-shell architecture](docs/architecture/product-shell.md) for profile,
-Advanced Tools, persistence, and terminology-extension rules.
+See [Product-shell architecture](docs/architecture/product-shell.md),
+[state ownership](docs/architecture/state-ownership.md), and the
+[Signal Atelier design contract](docs/architecture/signal-atelier-design.md).
 
-## 🧭 Experience profiles
+## Workspace
 
-Profiles are flexible workspace views, not separate products or permission tiers.
-Switching profile never changes the recipe, model, training step, checkpoints,
-saved runs, exports, or share URL.
+New visitors start at Playground → Network with the default experiment paused.
+Use Setup to stage a complete recipe, Results to inspect learning and prediction,
+and Inspect for paused diagnostics. Saved runs and Lessons are separate header
+destinations. The utility menu contains exports/imports, checkpoints, guidance,
+and help. Switching views or themes never resets or pauses training.
 
-| Profile | Core Build tools | Core Run evidence | Advanced Tools default |
-|---|---|---|---|
-| Beginner | Data, Network | Boundary, Loss | Closed |
-| Explore | Data, Network, Features, Hyperparameters | Boundary, Loss, Confusion | Closed |
-| Lab | Data, Network, Features, Hyperparameters | Boundary, Loss, Confusion | Open |
-
-Explore is the default. Advanced Tools always provides the complete applicable
-set of additional configuration, confusion, inspection, and code-export tools.
-Profile and disclosure preferences are local workspace settings; they are not
-included in shared experiment URLs.
+Guidance More, Standard, and Compact preserve the former Beginner, Explore, and
+Lab explanation densities. They do not hide tools. Navigation and theme are local
+preferences; shared experiment URLs contain the experiment document only. Existing
+local layout preferences migrate without deleting the old key or saved records.
 
 ## 🚀 Quick Start
 
@@ -92,7 +87,7 @@ git clone https://github.com/DenseDevKev/neural-network-playground.git
 cd neural-network-playground
 
 # Install dependencies
-pnpm install
+pnpm install --frozen-lockfile
 
 # Start dev server
 pnpm dev
@@ -108,18 +103,20 @@ pnpm test:engine   # Run engine tests only
 pnpm build         # Production build
 pnpm test:bundle   # Enforce reviewed JavaScript gzip limits after build
 pnpm lint          # Lint all files
+pnpm typecheck     # Check all TypeScript packages
 pnpm test:perf     # Run repository performance gates
-pnpm test:e2e      # Run Chromium and WebKit smoke tests against a built app
+pnpm test:e2e      # Run Chromium and WebKit against a built app
+pnpm test:e2e:recovery # Exercise fault-enabled recovery; rebuild normally afterward
 ```
 
 ## Project status and roadmap
 
-`main` is the authoritative product. Work on an execution branch is not a release.
-See the [consolidated roadmap](docs/superpowers/plans/2026-09-05-nn-forge-release-roadmap.md),
-[verification record](docs/superpowers/verification/2026-09-05-release-roadmap.md), and
-[historical-plan reconciliation](docs/superpowers/README.md) before treating an old
-unchecked plan as unfinished work. The production UI remains one Build/Run shell;
-Precision Lab is a separately gated later milestone.
+`main` is the authoritative released product. Execution-branch work is not a
+release. The [complete Atelier plan](docs/superpowers/plans/2026-09-12-signal-atelier.md)
+and [feature acceptance checklist](docs/qa/signal-atelier-acceptance.md) describe
+this redesign. Historical plans and receipts remain under
+[plan reconciliation](docs/superpowers/README.md); dated measurements are not
+current release proof.
 
 ## 🚢 Deployment
 
@@ -134,7 +131,7 @@ For self-hosting or custom base-path configuration, see
 ## 🧪 Testing
 
 The repository combines engine/shared unit tests, React component and
-integration tests, performance gates, and Playwright smoke tests. Build before a
+integration tests, performance gates, and Playwright browser tests. Build before a
 local end-to-end run because Playwright serves the production output through
 Vite preview.
 
@@ -147,6 +144,7 @@ pnpm build
 pnpm test:bundle
 pnpm test:perf
 pnpm test:e2e
+pnpm test:e2e:recovery
 ```
 
 Engine coverage includes:

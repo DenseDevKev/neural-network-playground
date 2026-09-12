@@ -1,30 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-
-interface RecipeExpectation {
-    dataset: string;
-    taskKind: string;
-    hiddenLayers: readonly number[];
-    outputSize: number;
-    outputActivation: string;
-    objective: string;
-    learningRate: number;
-    noise: number;
-    datasetSettings: string;
-}
-
-interface PausedRunInvariant {
-    hash: string;
-    step: number;
-    evaluationStep: number;
-    modelGeneration: string;
-    modelRevision: string;
-    checkpointMax: string;
-    checkpointValue: string;
-    checkpointLabel: string;
-    checkpointSummary: string;
-    savedRunCount: number;
-}
+import { applyPreset, currentRun, expectEvidence, identity, learning, ready, transport, utility, workspace } from './atelier-helpers';
 
 const RECIPES = {
     regression: {
@@ -47,311 +23,37 @@ const RECIPES = {
     },
 } as const;
 
-const browserErrors = new WeakMap<Page, string[]>();
 
-function collectBrowserErrors(page: Page): string[] {
+const MEMORY_KEY = 'nn-playground-experiment-memory-v2';
+const browserErrors = new WeakMap<Page, string[]>();
+function collectErrors(page: Page) {
     const errors: string[] = [];
     browserErrors.set(page, errors);
-    page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`));
-    page.on('console', (message) => {
-        if (message.type() === 'error') errors.push(`console.error: ${message.text()}`);
-    });
-    return errors;
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
 }
+test.beforeEach(({ page }) => collectErrors(page));
+test.afterEach(({ page }) => expect(browserErrors.get(page) ?? []).toEqual([]));
 
-function expectNoBrowserErrors(page: Page): void {
-    const errors = browserErrors.get(page) ?? [];
-    expect(errors, `Unexpected browser errors:\n${errors.join('\n')}`).toEqual([]);
-}
-
-test.beforeEach(({ page }) => {
-    collectBrowserErrors(page);
-});
-
-test.afterEach(async ({ page }) => {
-    expectNoBrowserErrors(page);
-});
-
-function statusBar(page: Page): Locator {
-    return page.getByRole('group', { name: 'Status bar' });
-}
-
-function timeline(page: Page): Locator {
-    return page.getByRole('region', { name: 'Timeline strip' });
-}
-
-function currentRun(page: Page): Locator {
-    return page.locator('section[role="region"][aria-label="Current run"]');
-}
-
-function audienceMode(page: Page): Locator {
-    return page.getByRole('combobox', { name: 'Workspace profile' });
-}
-
-function advancedTools(page: Page): Locator {
-    return page.getByRole('button', { name: 'Advanced Tools' });
-}
-
-function parseNumber(value: string | undefined): number {
-    if (!value) return -1;
-    return Number(value.replaceAll(',', ''));
-}
-
-async function readStatusStep(page: Page): Promise<number> {
-    const match = (await statusBar(page).innerText()).match(/\bSTEP\s+([\d,]+)/);
-    return parseNumber(match?.[1]);
-}
-
-async function readFullEvaluationStep(page: Page): Promise<number> {
-    const match = (await currentRun(page).innerText()).match(/Full evaluation \d+ at step ([\d,]+)/);
-    return parseNumber(match?.[1]);
-}
-
-function formattedStep(step: number): string {
-    return step.toLocaleString('en-US');
-}
-
-async function expectEvidenceAtStep(page: Page, step: number): Promise<void> {
-    const value = formattedStep(step);
-    const exactStep = `${value}(?![0-9,])`;
-
-    await expect(statusBar(page)).toContainText(new RegExp(String.raw`STEP\s+${exactStep}`));
-    await expect(timeline(page)).toContainText(new RegExp(String.raw`Step\s+${exactStep}`));
-    await expect(currentRun(page)).toContainText(
-        new RegExp(String.raw`Full evaluation \d+ at step ${exactStep}`),
-    );
-}
-
-async function expectModelAndEvaluationToConverge(
-    page: Page,
-    expectedStep?: number,
-): Promise<number> {
-    await expect.poll(async () => {
-        const modelStep = await readStatusStep(page);
-        const evaluationStep = await readFullEvaluationStep(page);
-        return modelStep >= 0
-            && modelStep === evaluationStep
-            && (expectedStep === undefined || modelStep === expectedStep);
-    }).toBe(true);
-
-    return readStatusStep(page);
-}
-
-async function ensureRunView(page: Page): Promise<void> {
-    const runButton = page.getByRole('button', { name: 'run', exact: true });
-    if (await runButton.getAttribute('aria-pressed') !== 'true') {
-        await runButton.click();
-    }
-    await expect(currentRun(page)).toBeVisible();
-}
-
-async function loadPlayground(page: Page): Promise<void> {
+async function load(page: Page) {
     await page.goto('./');
-    await expect(page.getByRole('main', { name: 'Neural network playground workspace' })).toBeVisible();
-    await ensureRunView(page);
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');
-    await expectModelAndEvaluationToConverge(page, 0);
-    await expect(page.getByRole('slider', { name: 'Checkpoint timeline' }))
-        .toHaveAttribute('aria-valuetext', 'Step 0');
+    await learning(page);
+    await ready(page);
+    await expectEvidence(page, 0);
 }
-
-async function openDrawer(page: Page, name: 'Presets' | 'History'): Promise<Locator> {
-    const dialog = page.getByRole('dialog', { name });
-    if (!await dialog.isVisible()) {
-        await page.getByRole('button', { name, exact: true }).click();
-    }
-    await expect(dialog).toBeVisible();
-    return dialog;
+async function converge(page: Page) {
+    await expect.poll(async () => {
+        const step = Number(await transport(page).getAttribute('data-model-step'));
+        const evaluation = Number((await currentRun(page).innerText()).match(/Full evaluation \d+ at step ([\d,]+)/)?.[1]?.replaceAll(',', ''));
+        return step >= 0 && step === evaluation;
+    }).toBe(true);
+    return Number(await transport(page).getAttribute('data-model-step'));
 }
-
-async function closeDrawer(page: Page, name: 'Presets' | 'History'): Promise<void> {
-    const dialog = page.getByRole('dialog', { name });
-    await dialog.getByRole('button', { name: `Close ${name}` }).click();
-    await expect(dialog).toBeHidden();
+async function saved(page: Page) {
+    await page.getByRole('button', { name: 'Saved runs', exact: true }).click();
+    return page.locator('.saved-runs');
 }
-
-async function setAdvancedTools(page: Page, open: boolean): Promise<void> {
-    const trigger = advancedTools(page);
-    if ((await trigger.getAttribute('aria-expanded')) !== String(open)) {
-        await trigger.click();
-    }
-    await expect(trigger).toHaveAttribute('aria-expanded', String(open));
-}
-
-async function readSavedRunCount(page: Page): Promise<number> {
-    const history = await openDrawer(page, 'History');
-    const count = await history.getByRole('article').count();
-    await closeDrawer(page, 'History');
-    return count;
-}
-
-async function readPausedRunInvariant(page: Page): Promise<PausedRunInvariant> {
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
-    const run = currentRun(page);
-    const checkpoint = page.getByRole('slider', { name: 'Checkpoint timeline' });
-    const checkpointControls = page.getByLabel('Checkpoint timeline controls');
-
-    return {
-        hash: await page.evaluate(() => window.location.hash),
-        step: await readStatusStep(page),
-        evaluationStep: await readFullEvaluationStep(page),
-        modelGeneration: (await run.getAttribute('data-model-generation')) ?? '',
-        modelRevision: (await run.getAttribute('data-model-revision')) ?? '',
-        checkpointMax: (await checkpoint.getAttribute('max')) ?? '',
-        checkpointValue: await checkpoint.inputValue(),
-        checkpointLabel: (await checkpoint.getAttribute('aria-valuetext')) ?? '',
-        checkpointSummary: await checkpointControls.innerText(),
-        savedRunCount: await readSavedRunCount(page),
-    };
-}
-
-async function expectPausedRunInvariant(
-    page: Page,
-    expected: PausedRunInvariant,
-): Promise<void> {
-    expect(await readPausedRunInvariant(page)).toEqual(expected);
-}
-
-async function showCodeAndExpectNumPy(page: Page): Promise<void> {
-    await ensureRunView(page);
-    await setAdvancedTools(page, true);
-    await page.getByRole('tab', { name: 'Code', exact: true }).click();
-    await expect(page.getByRole('tabpanel', { name: 'Code' })).toBeVisible();
-    await expect(page.getByRole('tablist', { name: 'Code format' })).toBeVisible();
-    await expect(page.getByRole('tab', { name: 'NumPy', exact: true }))
-        .toHaveAttribute('aria-selected', 'true');
-}
-
-async function expectFullyInViewport(page: Page, locator: Locator): Promise<void> {
-    await expect(locator).toBeVisible();
-    const box = await locator.boundingBox();
-    const viewport = page.viewportSize();
-    expect(box, 'expected a measurable element box').not.toBeNull();
-    expect(viewport, 'expected a configured viewport').not.toBeNull();
-    if (!box || !viewport) return;
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1);
-    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1);
-}
-
-const VIEWPORT_OVERLAY_CONCEPTS: ReadonlySet<string> = new Set([
-    'Epoch',
-    'Train/test split',
-    'Learning rate',
-]);
-
-async function expectConceptHelpInViewport(
-    page: Page,
-    concept: 'Data loss' | 'Checkpoint' | 'Epoch' | 'Train/test split' | 'Learning rate',
-) {
-    const trigger = page.getByRole('button', { name: `Learn about ${concept}` }).first();
-    await trigger.click();
-    const panel = page.getByRole('region', { name: concept });
-    await expectFullyInViewport(page, panel);
-    if (VIEWPORT_OVERLAY_CONCEPTS.has(concept)) {
-        await expect(trigger.locator('xpath=..')).toHaveClass(/concept-help--viewport-overlay/);
-        const cornersAreExposed = await panel.evaluate((element) => {
-            const rect = element.getBoundingClientRect();
-            const points = [
-                [rect.left + 4, rect.top + 4],
-                [rect.right - 4, rect.top + 4],
-                [rect.left + 4, rect.bottom - 4],
-                [rect.right - 4, rect.bottom - 4],
-            ];
-            return points.every(([x, y]) => {
-                const hit = document.elementFromPoint(x, y);
-                return hit !== null && (hit === element || element.contains(hit));
-            });
-        });
-        expect(cornersAreExposed).toBe(true);
-    }
-    await trigger.press('Escape');
-    await expect(panel).toBeHidden();
-    await expect(trigger).toBeFocused();
-}
-
-async function expectMinimumTouchTarget(locator: Locator, minimum = 44): Promise<void> {
-    const count = await locator.count();
-    expect(count).toBeGreaterThan(0);
-    for (let index = 0; index < count; index++) {
-        const target = locator.nth(index);
-        await expect(target).toBeVisible();
-        const box = await target.boundingBox();
-        expect(box, 'expected a measurable touch target').not.toBeNull();
-        if (!box) continue;
-        expect(box.width).toBeGreaterThanOrEqual(minimum);
-        expect(box.height).toBeGreaterThanOrEqual(minimum);
-    }
-}
-
-function graphAndEvidenceTargets(page: Page): readonly Locator[] {
-    const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
-    const modes = toolbar.getByRole('group', { name: 'Topology view mode' });
-    const legend = page.getByLabel('Edge weight legend', { exact: true });
-    const boundaryPanel = page.getByRole('tabpanel', { name: 'Boundary', exact: true });
-    const overlays = boundaryPanel.getByLabel('Decision overlay controls', { exact: true });
-    return [
-        toolbar.getByRole('button', { name: 'Zoom out graph', exact: true }),
-        toolbar.getByRole('button', { name: 'Zoom in graph', exact: true }),
-        toolbar.getByRole('button', { name: 'Fit graph to view', exact: true }),
-        modes.getByRole('button', { name: 'Weights', exact: true }),
-        modes.getByRole('button', { name: 'Activations', exact: true }),
-        legend.getByRole('button', { name: 'Show all edges', exact: true }),
-        legend.getByRole('button', { name: 'Show only strong edges', exact: true }),
-        legend.getByRole('button', { name: 'Show positive edges', exact: true }),
-        legend.getByRole('button', { name: 'Show negative edges', exact: true }),
-        overlays.getByRole('button', { name: 'Output', exact: true }),
-        overlays.getByRole('button', { name: 'Uncertain', exact: true }),
-        overlays.getByRole('button', { name: 'Errors', exact: true }),
-        overlays.getByRole('button', { name: 'Split', exact: true }),
-    ];
-}
-
-async function expectGraphAndEvidenceTargets(page: Page): Promise<void> {
-    for (const target of graphAndEvidenceTargets(page)) {
-        await expect(target).toHaveCount(1);
-        await target.scrollIntoViewIfNeeded();
-        await expectFullyInViewport(page, target);
-        await expectMinimumTouchTarget(target);
-    }
-
-    const toolbar = page.getByRole('toolbar', { name: 'Network graph toolbar' });
-    const summary = page.locator(
-        '.forge-buildrun__topology-stage .network-graph-summary',
-    );
-    const toolbarBox = await toolbar.boundingBox();
-    const summaryBox = await summary.boundingBox();
-    expect(toolbarBox).not.toBeNull();
-    expect(summaryBox).not.toBeNull();
-    if (toolbarBox && summaryBox) {
-        expect(summaryBox.y - (toolbarBox.y + toolbarBox.height))
-            .toBeGreaterThanOrEqual(6);
-    }
-}
-
-async function touchTap(page: Page, locator: Locator): Promise<void> {
-    const box = await locator.boundingBox();
-    expect(box, 'expected a measurable touch target').not.toBeNull();
-    if (!box) return;
-    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-}
-
-function cssTimeToMs(value: string): number {
-    const trimmed = value.trim();
-    if (trimmed.endsWith('ms')) return Number.parseFloat(trimmed);
-    if (trimmed.endsWith('s')) return Number.parseFloat(trimmed) * 1000;
-    return Number.NaN;
-}
-
-async function expectRecipe(page: Page, recipe: RecipeExpectation): Promise<void> {
-    const summary = page.getByRole('region', { name: 'Recipe summary', exact: true });
-    await expect(summary).toBeVisible();
-    await expect(summary.getByText(recipe.dataset, { exact: true })).toBeVisible();
-    await expect(summary.getByText([2, ...recipe.hiddenLayers, recipe.outputSize].join(' -> '), { exact: true })).toBeVisible();
-    await expect(summary.getByText('tanh', { exact: true })).toBeVisible();
-    await expect(summary.getByText(`${recipe.outputActivation} · ${recipe.objective}`, { exact: true })).toBeVisible();
-    await expect(summary.getByText('Evaluation fresh', { exact: true })).toBeVisible();
+async function expectedRecipe(page: Page, recipe: typeof RECIPES[keyof typeof RECIPES]) {
     // Check the entire public recipe document, not a shortened UI summary or a test-only store.
     const payload = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('r');
     expect(payload).not.toBeNull();
@@ -365,527 +67,248 @@ async function expectRecipe(page: Page, recipe: RecipeExpectation): Promise<void
         training: { batchSize: 10, learningRate: recipe.learningRate, schedule: { kind: 'constant' }, optimizer: { kind: 'sgd' }, gradientClipping: { kind: 'none' } },
         objective: { dataLoss: { kind: recipe.objective }, penalty: { kind: 'none' }, reduction: 'mean-per-sample' },
     });
-    const workspaceView = page.getByRole('group', { name: 'Workspace view' });
-    await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
-    const tools = page.getByRole('navigation', { name: 'Build tools' });
-    await tools.getByRole('button', { name: 'Data', exact: true }).click();
-    await expect(page.getByRole('region', { name: 'Data context', exact: true })
-        .getByLabel(recipe.datasetSettings, { exact: true })).toBeVisible();
-    const openedAdvanced = await advancedTools(page).getAttribute('aria-expanded') !== 'true';
-    if (openedAdvanced) await advancedTools(page).click();
-    await tools.getByRole('button', { name: 'Hyperparameters', exact: true }).click();
-    const hyperparameters = page.getByRole('region', { name: 'Hyperparameters context', exact: true });
-    await expect(hyperparameters.getByLabel('Learning rate', { exact: true })).toHaveValue(String(recipe.learningRate));
-    await expect(hyperparameters.getByLabel('Optimizer', { exact: true })).toHaveValue('sgd');
-    await expect(hyperparameters.getByLabel('Batch size', { exact: true })).toHaveValue('10');
-    await tools.getByRole('button', { name: 'Features', exact: true }).click();
-    const features = page.getByRole('region', { name: 'Features context', exact: true });
-    await expect(features.getByRole('button', { name: 'X₁', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(features.getByRole('button', { name: 'X₂', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(features.locator('button[aria-pressed="true"]')).toHaveCount(2);
-    if (openedAdvanced) await advancedTools(page).click();
-    await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
-    await expect(currentRun(page)).toBeVisible();
+
+    await workspace(page, 'Setup');
+    const sections = page.getByRole('navigation', { name: 'Setup sections' });
+    await sections.getByRole('button', { name: 'Data', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Samples', exact: true })).toHaveValue('300');
+    await expect(page.getByRole('textbox', { name: 'Noise (%)', exact: true })).toHaveValue(String(recipe.noise));
+    await sections.getByRole('button', { name: 'Training', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Learning rate', exact: true })).toHaveValue(String(recipe.learningRate));
+    await expect(page.getByRole('combobox', { name: 'Optimizer', exact: true })).toHaveValue('sgd');
+    await expect(page.getByRole('textbox', { name: 'Batch size', exact: true })).toHaveValue('10');
+    await sections.getByRole('button', { name: 'Inputs & layers', exact: true }).click();
+    await expect(page.locator('.atelier-feature-choices input:checked')).toHaveCount(2);
+    await expect(page.getByRole('combobox', { name: 'Hidden activation' })).toHaveValue('tanh');
+    await learning(page);
+    await expectEvidence(page, 0);
 }
 
-async function applyPreset(
-    page: Page,
-    recipe: RecipeExpectation & { title: string },
-): Promise<void> {
-    const dialog = await openDrawer(page, 'Presets');
-    await dialog.getByRole('button', { name: `Apply preset: ${recipe.title}` }).click();
-    await expect(dialog).toBeHidden();
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');
-    await expectModelAndEvaluationToConverge(page, 0);
-    await expectRecipe(page, recipe);
+async function touchTarget(locator: Locator) {
+    const box = await locator.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(44);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
 }
 
-test('training can pause, single-step, and restore the initial checkpoint', async ({ page }) => {
-    await loadPlayground(page);
-    await expectEvidenceAtStep(page, 0);
-    await expect(statusBar(page)).toBeVisible();
-    await expect(statusBar(page).locator('xpath=ancestor-or-self::*[@aria-live or @role="status" or @role="alert"]')).toHaveCount(0);
-
-    const transport = timeline(page);
-    await transport.getByRole('button', { name: '1 step per frame' }).click();
-    await transport.getByRole('button', { name: 'Start training' }).click();
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'running');
-    await expect.poll(() => readStatusStep(page)).toBeGreaterThan(0);
-
-    await transport.getByRole('button', { name: 'Pause training' }).click();
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
-    const pausedStep = await expectModelAndEvaluationToConverge(page);
-    expect(pausedStep).toBeGreaterThan(0);
-    await expectEvidenceAtStep(page, pausedStep);
-
-    await transport.getByRole('button', { name: 'Run one training step' }).click();
-    const steppedTo = pausedStep + 1;
-    await expectModelAndEvaluationToConverge(page, steppedTo);
-    await expectEvidenceAtStep(page, steppedTo);
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
-
-    const checkpointSlider = page.getByRole('slider', { name: 'Checkpoint timeline' });
-    await checkpointSlider.focus();
-    await checkpointSlider.press('Home');
-    await expect(checkpointSlider).toHaveAttribute('aria-valuetext', 'Step 0');
-    await transport.getByRole('button', { name: 'Restore checkpoint Step 0' }).click();
-
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
-    await expectModelAndEvaluationToConverge(page, 0);
-    await expectEvidenceAtStep(page, 0);
-    await expect(checkpointSlider).toHaveAttribute('aria-valuetext', 'Step 0');
+test('training can pause, single-step, preview and restore the initial checkpoint', async ({ page }) => {
+    await load(page);
+    await expect(transport(page).locator('xpath=ancestor-or-self::*[@aria-live or @role="status" or @role="alert"]')).toHaveCount(0);
+    await page.getByRole('combobox', { name: 'Steps per frame' }).selectOption('1');
+    await page.getByRole('button', { name: 'Start training', exact: true }).click();
+    await expect(transport(page)).toHaveAttribute('data-status', 'running');
+    await expect.poll(async () => Number(await transport(page).getAttribute('data-model-step'))).toBeGreaterThan(0);
+    await page.getByRole('button', { name: 'Pause training', exact: true }).click();
+    const paused = await converge(page);
+    await expect(transport(page)).toHaveAttribute('data-status', 'paused');
+    await page.getByRole('button', { name: 'Run one training step' }).click();
+    await expectEvidence(page, paused + 1);
+    const before = await identity(page);
+    await utility(page, 'Session checkpoints');
+    const slider = page.getByRole('slider', { name: 'Checkpoint timeline' });
+    await slider.focus();
+    await slider.press('Home');
+    await expect(slider).toHaveAttribute('aria-valuetext', 'Step 0');
+    expect(await identity(page)).toEqual(before);
+    await page.getByRole('button', { name: 'Restore Step 0', exact: true }).click();
+    await expect(page.getByText('Restored checkpoint', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expectEvidence(page, 0);
+    await expect(transport(page)).toHaveAttribute('data-status', 'paused');
+    await expect(transport(page)).not.toHaveAttribute('data-model-revision', before.revision!);
 });
 
-test('curated presets reset complete recipes and expose multiclass evidence', async ({ page }) => {
-    await loadPlayground(page);
-
-    await applyPreset(page, RECIPES.regression);
-    await expectEvidenceAtStep(page, 0);
-
-    await applyPreset(page, RECIPES.xor);
-    await expectEvidenceAtStep(page, 0);
-
-    await applyPreset(page, RECIPES.threeClass);
-    await expectEvidenceAtStep(page, 0);
-    await expect(page.getByLabel('Architecture summary')).toContainText(
-        'X₁, X₂ -> [6] -> [6] -> 3 outputs (softmax)',
-    );
-
-    await page.getByRole('tab', { name: 'Confusion' }).click();
-    const confusionPanel = page.getByRole('tabpanel', { name: 'Confusion' });
-    await expect(confusionPanel.getByText('Multiclass Confusion Matrix (Full Test Split)', { exact: true }))
-        .toBeVisible();
-    await expect(confusionPanel.getByLabel(
-        /^\d+ test samples with actual Class [012] predicted Class [012]$/,
-    )).toHaveCount(9);
+test('canonical presets reset complete recipes and expose all multiclass cells', async ({ page }) => {
+    await load(page);
+    for (const recipe of Object.values(RECIPES)) {
+        await applyPreset(page, recipe.title);
+        await expectedRecipe(page, recipe);
+    }
+    await workspace(page, 'Network');
+    await expect(page.getByRole('region', { name: 'Architecture summary' })).toContainText('X₁, X₂ -> [6] -> [6] -> 3 outputs (softmax)');
+    await workspace(page, 'Results');
+    await page.getByRole('tab', { name: 'Errors & confusion', exact: true }).click();
+    await expect(page.getByText('Multiclass Confusion Matrix (Full Test Split)', { exact: true })).toBeVisible();
+    const cells = page.getByLabel(/^\d+ test samples with actual Class [012] predicted Class [012]$/);
+    await expect(cells).toHaveCount(9);
+    const total = await cells.evaluateAll(nodes => nodes.reduce((sum,node) => sum + Number(node.getAttribute('aria-label')!.match(/^\d+/)![0]),0));
+    expect(total).toBe(150);
 });
 
-test('saved runs survive reload and reapply their complete recipe', async ({ page }) => {
-    await loadPlayground(page);
-    await applyPreset(page, RECIPES.xor);
-    await expectEvidenceAtStep(page, 0);
-
-    let history = await openDrawer(page, 'History');
-    const saveButton = history.getByRole('button', { name: 'Save current run' });
-    await expect(saveButton).toBeEnabled();
-    await saveButton.click();
+test('saved runs survive reload and explicitly reapply their complete recipe', async ({ page }) => {
+    await load(page);
+    await applyPreset(page, RECIPES.xor.title);
+    const history = await saved(page);
+    await history.getByRole('button', { name: 'Save current run', exact: true }).click();
     await expect(history.getByRole('article')).toHaveCount(1);
-    await expect(history.getByRole('article')).toContainText('Full evaluation at step 0;');
-
+    const record = await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).records[0], MEMORY_KEY);
+    expect(record.snapshot.model.step).toBe(0);
     await page.reload();
-    await expect(page.getByRole('main', { name: 'Neural network playground workspace' })).toBeVisible();
-    await ensureRunView(page);
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');
-    await expectModelAndEvaluationToConverge(page, 0);
-
-    history = await openDrawer(page, 'History');
     await expect(history.getByRole('article')).toHaveCount(1);
-    await expect(history.getByRole('article')).toContainText('Full evaluation at step 0;');
-
-    await applyPreset(page, RECIPES.threeClass);
-    await expectRecipe(page, RECIPES.threeClass);
-
-    history = await openDrawer(page, 'History');
-    const savedRun = history.getByRole('article');
-    await expect(savedRun).toHaveCount(1);
-    await savedRun.getByRole('button', { name: 'Apply saved recipe' }).click();
-    await history.getByRole('button', { name: 'Close History' }).click();
-    await expect(history).toBeHidden();
-
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');
-    await expectModelAndEvaluationToConverge(page, 0);
-    await expectRecipe(page, RECIPES.xor);
-    await expectEvidenceAtStep(page, 0);
+    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)!).records[0], MEMORY_KEY)).toEqual(record);
+    await applyPreset(page, RECIPES.threeClass.title);
+    await saved(page);
+    const row = history.locator('tbody tr').first();
+    await row.locator('summary').click();
+    await row.getByRole('button', { name: 'Apply saved recipe', exact: true }).click();
+    const confirmation = page.getByRole('alertdialog', { name: 'Apply saved recipe', exact: true });
+    await expect(confirmation).toContainText('fresh model');
+    expect(new URL(page.url()).hash).not.toBe('');
+    await confirmation.getByRole('button', { name: 'Confirm', exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    await expectedRecipe(page, RECIPES.xor);
 });
 
 test('cross-tab saved-run memory follows native localStorage events', async ({ context, page }) => {
-    await loadPlayground(page);
+    await load(page);
     const peer = await context.newPage();
-    collectBrowserErrors(peer);
-    await loadPlayground(peer);
-
-    const peerHistory = await openDrawer(peer, 'History');
-    await expect(peerHistory.getByRole('article')).toHaveCount(0);
-    const ownerHistory = await openDrawer(page, 'History');
-    await ownerHistory.getByRole('button', { name: 'Save current run' }).click();
-    await expect(ownerHistory.getByRole('article')).toHaveCount(1);
+    collectErrors(peer);
+    await load(peer);
+    const peerHistory = await saved(peer);
+    const owner = await saved(page);
+    await owner.getByRole('button', { name: 'Save current run' }).click();
+    await expect(owner.getByRole('article')).toHaveCount(1);
     await expect(peerHistory.getByRole('article')).toHaveCount(1);
-
-    await page.evaluate(() => window.localStorage.clear());
-    await expect(ownerHistory.getByRole('article')).toHaveCount(1);
+    await page.evaluate(key => localStorage.removeItem(key), MEMORY_KEY);
+    await expect(owner.getByRole('article')).toHaveCount(1);
     await expect(peerHistory.getByRole('article')).toHaveCount(0);
-
-    expectNoBrowserErrors(peer);
-    await peer.close();
+    expect(browserErrors.get(peer)).toEqual([]);
 });
 
-test('paused scientific state survives every audience profile and disclosure state', async ({ page }) => {
-    await loadPlayground(page);
-    await applyPreset(page, RECIPES.xor);
-
-    const transport = timeline(page);
-    await transport.getByRole('button', { name: '50 steps per frame' }).click();
-    await transport.getByRole('button', { name: 'Start training' }).click();
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'running');
-    await expect.poll(() => readStatusStep(page)).toBeGreaterThanOrEqual(50);
-    await transport.getByRole('button', { name: 'Pause training' }).click();
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
-    const pausedStep = await expectModelAndEvaluationToConverge(page);
-
-    await transport.getByRole('button', { name: 'Run one training step' }).click();
-    await expectModelAndEvaluationToConverge(page, pausedStep + 1);
-
-    const history = await openDrawer(page, 'History');
+test('paused scientific evidence, checkpoints, records and code preference survive all navigation and guidance', async ({ page }) => {
+    await load(page);
+    await applyPreset(page, RECIPES.xor.title);
+    await learning(page);
+    await page.getByRole('combobox', { name: 'Steps per frame' }).selectOption('50');
+    await page.getByRole('button', { name: /^(Start|Resume) training$/ }).click();
+    await expect.poll(async () => Number(await transport(page).getAttribute('data-model-step'))).toBeGreaterThanOrEqual(50);
+    await page.getByRole('button', { name: 'Pause training', exact: true }).click();
+    const paused = await converge(page);
+    await page.getByRole('button', { name: 'Run one training step' }).click();
+    await expectEvidence(page, paused + 1);
+    const history = await saved(page);
     await history.getByRole('button', { name: 'Save current run' }).click();
     await expect(history.getByRole('article')).toHaveCount(1);
-    await closeDrawer(page, 'History');
-
-    await setAdvancedTools(page, true);
+    const records = await page.evaluate(key => localStorage.getItem(key), MEMORY_KEY);
+    await learning(page);
+    const before = await identity(page);
+    await utility(page, 'Session checkpoints');
+    const slider = page.getByRole('slider', { name: 'Checkpoint timeline' });
+    const checkpoint = { max:await slider.getAttribute('max'), value:await slider.inputValue(), label:await slider.getAttribute('aria-valuetext') };
+    expect(Number(checkpoint.max)).toBeGreaterThanOrEqual(1);
+    await page.keyboard.press('Escape');
+    await utility(page, 'Export / import');
     await page.getByRole('tab', { name: 'Code', exact: true }).click();
     await page.getByRole('tab', { name: 'NumPy', exact: true }).click();
-    await expect(page.getByRole('tab', { name: 'NumPy', exact: true }))
-        .toHaveAttribute('aria-selected', 'true');
-
-    const baseline = await readPausedRunInvariant(page);
-    expect(baseline.hash.length).toBeGreaterThan(2);
-    expect(baseline.step).toBeGreaterThanOrEqual(51);
-    expect(baseline.evaluationStep).toBe(baseline.step);
-    expect(baseline.modelGeneration).not.toBe('');
-    expect(baseline.modelRevision).not.toBe('');
-    expect(Number(baseline.checkpointMax)).toBeGreaterThanOrEqual(1);
-    expect(baseline.savedRunCount).toBe(1);
-
-    for (const mode of ['beginner', 'explore', 'lab'] as const) {
-        await audienceMode(page).selectOption(mode);
-        const defaultOpen = mode === 'lab';
-        await expect(advancedTools(page)).toHaveAttribute('aria-expanded', String(defaultOpen));
-        await expectPausedRunInvariant(page, baseline);
-
-        await setAdvancedTools(page, !defaultOpen);
-        await expectPausedRunInvariant(page, baseline);
-
-        await showCodeAndExpectNumPy(page);
-        await expectPausedRunInvariant(page, baseline);
-
-        await setAdvancedTools(page, false);
-        await expectPausedRunInvariant(page, baseline);
+    await page.keyboard.press('Escape');
+    for (const mode of ['beginner', 'explore', 'lab']) {
+        await utility(page, 'Guidance');
+        await page.getByRole('combobox', { name: 'Explanation density' }).selectOption(mode);
+        await page.keyboard.press('Escape');
+        for (const view of ['Setup', 'Network', 'Results', 'Inspect'] as const) {
+            await workspace(page, view);
+            expect(await identity(page)).toEqual(before);
+        }
+        await utility(page, 'Export / import');
+        await page.getByRole('tab', { name: 'Code', exact: true }).click();
+        await expect(page.getByRole('tab', { name: 'NumPy', exact: true })).toHaveAttribute('aria-selected', 'true');
+        await page.keyboard.press('Escape');
+        await utility(page, 'Session checkpoints');
+        expect({ max:await slider.getAttribute('max'), value:await slider.inputValue(), label:await slider.getAttribute('aria-valuetext') }).toEqual(checkpoint);
+        await page.keyboard.press('Escape');
+        await learning(page);
+        await expectEvidence(page, paused+1);
+        expect(await page.evaluate(key => localStorage.getItem(key), MEMORY_KEY)).toBe(records);
     }
 });
 
-test('concept help remains fully visible in the desktop Run workspace', async ({ page }) => {
-    await loadPlayground(page);
-    await expectConceptHelpInViewport(page, 'Data loss');
-    await expectConceptHelpInViewport(page, 'Checkpoint');
-    await expectConceptHelpInViewport(page, 'Epoch');
-    await page.getByRole('group', { name: 'Workspace view' })
-        .getByRole('button', { name: 'build', exact: true })
-        .click();
-    const tools = page.getByRole('navigation', { name: 'Build tools' });
-    await tools.getByRole('button', { name: 'Data', exact: true }).click();
-    await expectConceptHelpInViewport(page, 'Train/test split');
-    await setAdvancedTools(page, true);
-    await tools.getByRole('button', { name: 'Hyperparameters', exact: true }).click();
-    await expectConceptHelpInViewport(page, 'Learning rate');
-});
-
-for (const width of [1440, 1401, 1280, 950, 901] as const) {
-    test.describe(`${width}px desktop header`, () => {
-        test.use({ viewport: { width, height: 720 } });
-
-        test('keeps every global control inside the header and viewport', async ({ page }) => {
-            await page.route('https://fonts.googleapis.com/**', (route) => (
-                route.fulfill({ contentType: 'text/css', body: '' })
-            ));
-            await loadPlayground(page);
-
-            const geometry = await page.getByRole('banner').evaluate((header) => {
-                const headerRect = header.getBoundingClientRect();
-                const controls = Array.from(header.querySelectorAll<HTMLElement>('button, select'))
-                    .filter((control) => getComputedStyle(control).display !== 'none')
-                    .map((control) => {
-                        const rect = control.getBoundingClientRect();
-                        return {
-                            name: control.getAttribute('aria-label')
-                                ?? control.textContent?.trim()
-                                ?? control.tagName,
-                            insideHeader: rect.left >= headerRect.left - 1
-                                && rect.right <= headerRect.right + 1
-                                && rect.top >= headerRect.top - 1
-                                && rect.bottom <= headerRect.bottom + 1,
-                            insideViewport: rect.left >= -1
-                                && rect.right <= window.innerWidth + 1
-                                && rect.top >= -1
-                                && rect.bottom <= window.innerHeight + 1,
-                        };
-                    });
-                return {
-                    horizontalOverflow: header.scrollWidth - header.clientWidth,
-                    verticalOverflow: header.scrollHeight - header.clientHeight,
-                    controls,
-                };
+for (const width of [1440,1401,1280,950,901,800,390,320]) {
+    test(`global controls remain inside the header at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 });
+        await load(page);
+        const controls = await page.getByRole('banner').evaluate(header => {
+            const box = header.getBoundingClientRect();
+            return Array.from(header.querySelectorAll('button,select')).map(control => {
+                const rect = control.getBoundingClientRect();
+                return { name:control.getAttribute('aria-label') ?? control.textContent, contained:rect.left>=box.left-1 && rect.right<=box.right+1 && rect.top>=box.top-1 && rect.bottom<=box.bottom+1, inViewport:rect.left>=-1 && rect.right<=innerWidth+1, height:rect.height };
             });
-
-            expect(geometry.horizontalOverflow).toBeLessThanOrEqual(1);
-            expect(geometry.verticalOverflow).toBeLessThanOrEqual(1);
-            expect(geometry.controls.length).toBeGreaterThanOrEqual(8);
-            expect(geometry.controls.filter((control) => !control.insideHeader))
-                .toEqual([]);
-            expect(geometry.controls.filter((control) => !control.insideViewport))
-                .toEqual([]);
         });
+        expect(controls.length).toBe(6);
+        expect(controls.filter(control=>!control.contained||!control.inViewport||control.height<44)).toEqual([]);
     });
 }
 
-test('reduced motion collapses shell animation and transition timing', async ({ page }) => {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await loadPlayground(page);
-    expect(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
-
-    const transport = timeline(page);
-    await transport.getByRole('button', { name: 'Start training' }).click();
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'running');
-
-    const motion = await page.evaluate(() => {
-        const statusDot = document.querySelector<HTMLElement>('.forge-statusbar__dot');
-        const phaseButton = document.querySelector<HTMLElement>('.forge-phase__opt');
-        if (!statusDot || !phaseButton) throw new Error('release motion targets are missing');
-        const statusStyle = getComputedStyle(statusDot);
-        const phaseStyle = getComputedStyle(phaseButton);
-        return {
-            animationDurations: statusStyle.animationDuration.split(','),
-            animationIterations: statusStyle.animationIterationCount.split(','),
-            transitionDurations: phaseStyle.transitionDuration.split(','),
-        };
-    });
-
-    expect(motion.animationDurations.every((value) => cssTimeToMs(value) <= 1)).toBe(true);
-    expect(motion.animationIterations.every((value) => value.trim() === '1')).toBe(true);
-    expect(motion.transitionDurations.every((value) => cssTimeToMs(value) <= 1)).toBe(true);
-
-    await transport.getByRole('button', { name: 'Pause training' }).click();
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'paused');
+test('reduced motion disables shell animation and transitions', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion:'reduce' });
+    await load(page);
+    await page.getByRole('button', { name:'Start training' }).click();
+    await expect(transport(page)).toHaveAttribute('data-status','running');
+    const motion = await page.locator('.atelier button, .atelier-tabs').evaluateAll(nodes => nodes.map(node => ({ animation:getComputedStyle(node).animationName, transition:getComputedStyle(node).transitionDuration })));
+    expect(motion.every(value=>value.animation==='none' && value.transition.split(',').every(duration=>Number.parseFloat(duration)===0))).toBe(true);
+    await page.getByRole('button', { name:'Pause training', exact:true }).click();
 });
 
-test.describe('800px compact shell', () => {
-    test.use({ viewport: { width: 800, height: 844 } });
+for (const width of [1280,390,320]) {
+    test(`canonical concept help and keyboard shortcuts remain reachable at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width,height:844 });
+        await load(page);
+        const before = await identity(page);
+        await utility(page,'Shortcuts & help');
+        const dialog = page.getByRole('dialog',{name:'Shortcuts & help'});
+        await expect(dialog.locator('kbd')).toHaveCount(3);
+        const concepts = dialog.getByRole('region',{name:'Concept library'});
+        await expect(concepts.locator('details')).toHaveCount(9);
+        for (const term of ['Data loss','Checkpoint','Epoch','Train/test split','Learning rate']) {
+            const summary = concepts.locator('summary').filter({hasText:new RegExp(`^${term}$`)});
+            await summary.click();
+            await touchTarget(summary);
+            const details = summary.locator('..');
+            await expect(details.locator('div')).toBeVisible();
+            await summary.click();
+            await expect(details.locator('div')).toBeHidden();
+        }
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('button',{name:'Utilities',exact:true})).toBeFocused();
+        expect(await identity(page)).toEqual(before);
+    });
+}
 
-    test('keyboard shortcuts disclosure hides definitions when closed', async ({ page }) => {
-        await page.route('https://fonts.googleapis.com/**', (route) => (
-            route.fulfill({ contentType: 'text/css', body: '' })
-        ));
-        await loadPlayground(page);
-
-        const details = timeline(page).getByRole('group', { name: 'Keyboard shortcuts' });
-        const summary = details.locator('summary');
-        const definitions = details.locator('dl');
-
-        await expect(details).not.toHaveAttribute('open', '');
-        await expect(definitions).toBeHidden();
-        await expect(definitions).not.toHaveCSS('display', 'grid');
-
-        await expect(summary).toBeVisible();
-        await summary.click();
-        await expect(details).toHaveAttribute('open', '');
-        await expect(definitions).toBeVisible();
-
-        await summary.click();
-        await expect(details).not.toHaveAttribute('open', '');
-        await expect(definitions).toBeHidden();
-        await expect(definitions).not.toHaveCSS('display', 'grid');
+for (const width of [320,390]) test.describe(`${width}px touch controls`,()=>{
+    test.use({viewport:{width,height:844},hasTouch:true,isMobile:true});
+    test('graph, results, diagnostics, lessons and utilities remain reachable',async({page})=>{
+        await load(page);
+        const before = await identity(page);
+        await workspace(page,'Network');
+        for (const name of ['Zoom out graph','Zoom in graph','Fit graph to view','Show all edges','Show only strong edges','Show positive edges','Show negative edges']) {
+            const button = page.getByRole('button',{name,exact:true});
+            await button.scrollIntoViewIfNeeded();
+            await touchTarget(button);
+            await button.tap();
+        }
+        await workspace(page,'Results');
+        await page.getByRole('tab',{name:'Prediction',exact:true}).tap();
+        const overlays=page.getByLabel('Decision overlay controls',{exact:true});
+        for(const name of ['Output','Uncertain','Errors','Split']) {
+            const button=overlays.getByRole('button',{name,exact:true});
+            await button.scrollIntoViewIfNeeded();
+            await touchTarget(button);
+            await button.tap();
+            await expect(button).toHaveAttribute('aria-pressed','true');
+        }
+        await workspace(page,'Inspect');
+        for(const name of ['Trace','Activations','Gradients']) {
+            const tab=page.getByRole('tab',{name,exact:true});
+            await touchTarget(tab);await tab.tap();
+        }
+        await utility(page,'Export / import');
+        await page.getByRole('tab',{name:'Code',exact:true}).tap();
+        const formats=page.getByRole('tablist',{name:'Code format'}).getByRole('tab');
+        for(const format of await formats.all()){await touchTarget(format);await format.tap();}
+        await page.getByRole('button',{name:'Close Export / import',exact:true}).tap();
+        await page.getByRole('button',{name:'Lessons',exact:true}).tap();
+        await expect(page.getByRole('heading',{name:'Learn by experimenting'})).toBeVisible();
+        await workspace(page,'Network');
+        expect(await identity(page)).toEqual(before);
+        expect(await page.evaluate(()=>document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     });
 });
-
-async function compactShellJourney({ page }: { page: Page }): Promise<void> {
-    await page.route('https://fonts.googleapis.com/**', (route) => (
-        route.fulfill({ contentType: 'text/css', body: '' })
-    ));
-    await loadPlayground(page);
-
-    const shortcutDetails = timeline(page).getByRole('group', { name: 'Keyboard shortcuts' });
-    const shortcutSummary = shortcutDetails.locator('summary');
-    await shortcutSummary.scrollIntoViewIfNeeded();
-    await expectFullyInViewport(page, shortcutSummary);
-    await expectMinimumTouchTarget(shortcutSummary);
-    await expect(statusBar(page)).toHaveAttribute('data-status', 'idle');
-    expect(await readStatusStep(page)).toBe(0);
-    const initialTrainingSnapshot = {
-        status: await statusBar(page).getAttribute('data-status'),
-        step: await readStatusStep(page),
-        generation: await currentRun(page).getAttribute('data-model-generation'),
-        revision: await currentRun(page).getAttribute('data-model-revision'),
-    };
-    expect(initialTrainingSnapshot.status).toBe('idle');
-    expect(initialTrainingSnapshot.step).toBe(0);
-    expect(initialTrainingSnapshot.generation).not.toBeNull();
-    expect(initialTrainingSnapshot.generation).not.toBe('');
-    expect(initialTrainingSnapshot.revision).not.toBeNull();
-    expect(initialTrainingSnapshot.revision).not.toBe('');
-    const expectTrainingSnapshotUnchanged = async () => {
-        expect({
-            status: await statusBar(page).getAttribute('data-status'),
-            step: await readStatusStep(page),
-            generation: await currentRun(page).getAttribute('data-model-generation'),
-            revision: await currentRun(page).getAttribute('data-model-revision'),
-        }).toEqual(initialTrainingSnapshot);
-    };
-
-    await touchTap(page, shortcutSummary);
-    await expect(shortcutDetails).toHaveAttribute('open', '');
-    await expectTrainingSnapshotUnchanged();
-    await touchTap(page, shortcutSummary);
-    await expect(shortcutDetails).not.toHaveAttribute('open', '');
-    await expectTrainingSnapshotUnchanged();
-    await shortcutSummary.focus();
-    await expect(shortcutSummary).toBeFocused();
-    await shortcutSummary.press('Space');
-    await expect(shortcutDetails).toHaveAttribute('open', '');
-    await expectTrainingSnapshotUnchanged();
-    await shortcutSummary.press('Space');
-    await expect(shortcutDetails).not.toHaveAttribute('open', '');
-
-    await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Epoch' }));
-    await expectConceptHelpInViewport(page, 'Epoch');
-    const originalAdvancedExpanded = await advancedTools(page).getAttribute('aria-expanded');
-    const workspaceView = page.getByRole('group', { name: 'Workspace view' });
-    await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
-    for (const concept of ['Train/test split', 'Learning rate'] as const) {
-        if (concept === 'Learning rate' && await advancedTools(page).getAttribute('aria-expanded') !== 'true') await advancedTools(page).click();
-        await page.getByRole('navigation', { name: 'Build tools' }).getByRole('button', { name: concept === 'Train/test split' ? 'Data' : 'Hyperparameters', exact: true }).click();
-        await expectMinimumTouchTarget(
-            page.getByRole('button', { name: `Learn about ${concept}` }),
-        );
-        await expectConceptHelpInViewport(page, concept);
-    }
-    if (await advancedTools(page).getAttribute('aria-expanded') !== originalAdvancedExpanded) {
-        await advancedTools(page).click();
-    }
-    await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
-
-    const compactOutcome = page.getByRole('group', { name: 'Evaluation outcome' });
-    const compactOutcomeSummary = compactOutcome.locator('summary');
-    const compactOutcomeBody = compactOutcome.locator('.forge-compact-outcome__body');
-    await expectFullyInViewport(page, compactOutcome);
-    await expectFullyInViewport(page, compactOutcomeSummary);
-    await expect(page.getByRole('group', { name: 'Training metrics' })).toBeHidden();
-    await expectMinimumTouchTarget(compactOutcomeSummary);
-    await expect(compactOutcome).not.toHaveAttribute('open', '');
-    await expect(compactOutcomeSummary).toContainText(/Step 0 · Test accuracy \d+\.\d%/);
-    await expect(compactOutcomeBody).toBeHidden();
-    await compactOutcomeSummary.click();
-    await expect(compactOutcome).toHaveAttribute('open', '');
-    await expect(compactOutcomeBody).toBeVisible();
-    await expect(compactOutcomeBody).toContainText('Full evaluation at step 0');
-    await expect(compactOutcomeBody).toContainText(/Train data loss \(full split\) \d+\.\d{4}/);
-    await expect(compactOutcomeBody).toContainText(/Test data loss \(full split\) \d+\.\d{4}/);
-    const openOutcomeOverflow = await page.evaluate(() => {
-        const shell = document.querySelector<HTMLElement>('.forge-shell');
-        if (!shell) throw new Error('forge shell is missing');
-        return {
-            document: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
-            shell: shell.scrollWidth <= shell.clientWidth + 1,
-        };
-    });
-    expect(openOutcomeOverflow).toEqual({ document: true, shell: true });
-    await compactOutcomeSummary.click();
-    await expect(compactOutcome).not.toHaveAttribute('open', '');
-
-    await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Data loss' }));
-    await expectConceptHelpInViewport(page, 'Data loss');
-    await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Checkpoint' }));
-    await expectConceptHelpInViewport(page, 'Checkpoint');
-
-    const criticalTargets = [
-        workspaceView.getByRole('button', { name: 'build', exact: true }),
-        workspaceView.getByRole('button', { name: 'run', exact: true }),
-        audienceMode(page),
-        page.getByRole('button', { name: 'Presets', exact: true }),
-        page.getByRole('button', { name: 'Lessons', exact: true }),
-        page.getByRole('button', { name: 'History', exact: true }),
-        advancedTools(page),
-        page.getByRole('button', { name: 'Start training' }),
-        timeline(page).getByRole('button', { name: '10 steps per frame' }),
-        timeline(page).getByRole('button', { name: 'Run one training step' }),
-        timeline(page).getByRole('button', { name: 'Reset training' }),
-        page.getByRole('tab', { name: 'Boundary', exact: true }),
-        page.getByRole('tab', { name: 'Loss', exact: true }),
-        page.getByRole('tab', { name: 'Confusion', exact: true }),
-    ];
-    for (const target of criticalTargets) await expectMinimumTouchTarget(target);
-
-    for (const name of ['Boundary', 'Loss', 'Confusion'] as const) {
-        const tab = page.getByRole('tab', { name, exact: true });
-        await tab.scrollIntoViewIfNeeded();
-        await tab.click();
-        await expect(tab).toHaveAttribute('aria-selected', 'true');
-        await expectMinimumTouchTarget(tab);
-        await expectFullyInViewport(page, tab);
-    }
-
-    await touchTap(page, advancedTools(page));
-    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
-    const codeTab = page.getByRole('tab', { name: 'Code', exact: true });
-    await expectMinimumTouchTarget(codeTab);
-    await codeTab.click();
-    await expect(page.getByRole('tabpanel', { name: 'Code' })).toBeVisible();
-    const codeFormatList = page.getByRole('tablist', { name: 'Code format' });
-    await expect(codeFormatList).toBeVisible();
-    const codeFormats = codeFormatList.getByRole('tab');
-    await expectMinimumTouchTarget(codeFormats);
-    await page.keyboard.press('Escape');
-    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(advancedTools(page)).toBeFocused();
-
-    const historyTrigger = page.getByRole('button', { name: 'History', exact: true });
-    await touchTap(page, historyTrigger);
-    const history = page.getByRole('dialog', { name: 'History' });
-    await expect(history).toBeVisible();
-    const closeHistory = history.getByRole('button', { name: 'Close History' });
-    await expectMinimumTouchTarget(closeHistory);
-    await touchTap(page, closeHistory);
-    await expect(history).toBeHidden();
-    await expect(historyTrigger).toBeFocused();
-
-    await touchTap(page, advancedTools(page));
-    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'true');
-    await page.keyboard.press('Escape');
-    await expect(advancedTools(page)).toHaveAttribute('aria-expanded', 'false');
-    await expect(advancedTools(page)).toBeFocused();
-    const focusStyle = await advancedTools(page).evaluate((element) => {
-        const style = getComputedStyle(element);
-        return { outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, boxShadow: style.boxShadow };
-    });
-    expect(
-        (
-            focusStyle.outlineStyle !== 'none'
-            && Number.parseFloat(focusStyle.outlineWidth) >= 2
-        ) || focusStyle.boxShadow !== 'none',
-    ).toBe(true);
-
-    await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
-    const boundaryTab = page.getByRole('tab', { name: 'Boundary', exact: true });
-    await boundaryTab.click();
-    await expect(boundaryTab).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expectGraphAndEvidenceTargets(page);
-
-    const noGlobalOverflow = await page.evaluate(() => {
-        const shell = document.querySelector<HTMLElement>('.forge-shell');
-        if (!shell) throw new Error('forge shell is missing');
-        return {
-            document: document.documentElement.scrollWidth
-                <= document.documentElement.clientWidth + 1,
-            shell: shell.scrollWidth <= shell.clientWidth + 1,
-        };
-    });
-    expect(noGlobalOverflow).toEqual({ document: true, shell: true });
-}
-
-for (const width of [320, 390] as const) {
-    test.describe(`${width}px touch shell`, () => {
-        test.use({ viewport: { width, height: 844 }, hasTouch: true, isMobile: true });
-        test(
-            'keeps critical controls reachable, sized, focused, and unclipped',
-            compactShellJourney,
-        );
-    });
-}

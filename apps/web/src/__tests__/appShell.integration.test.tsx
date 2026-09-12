@@ -32,45 +32,6 @@ vi.mock('../hooks/useTraining.ts', () => ({
 }));
 
 
-vi.mock('../components/controls/PresetPanel.tsx', () => ({
-    PresetPanel: ({ onApplied }: { onApplied?: () => void }) => (
-        <div>
-            Mock Presets
-            {onApplied && <button type="button" onClick={onApplied}>Apply mock preset</button>}
-        </div>
-    ),
-}));
-vi.mock('../components/controls/DataPanel.tsx', async () => {
-    const { Tooltip } = await import('../components/common/Tooltip.tsx');
-    return {
-        DataPanel: () => (
-            <div>
-                Mock Data
-                <Tooltip content="Nested data help">
-                    <button
-                        type="button"
-                        onKeyDown={(event) => {
-                            if (event.key !== 'Escape') return;
-                            event.currentTarget.dataset.escapeReceived = 'true';
-                            event.currentTarget.dataset.escapeDefaultPrevented = String(event.defaultPrevented);
-                        }}
-                    >
-                        Nested tooltip trigger
-                    </button>
-                </Tooltip>
-            </div>
-        ),
-    };
-});
-vi.mock('../components/controls/FeaturesPanel.tsx', () => ({
-    FeaturesPanel: () => <div>Mock Features</div>,
-}));
-vi.mock('../components/controls/NetworkConfigPanel.tsx', () => ({
-    NetworkConfigPanel: () => <div>Mock Network Config</div>,
-}));
-vi.mock('../components/controls/HyperparamPanel.tsx', () => ({
-    HyperparamPanel: () => <div>Mock Hyperparameters</div>,
-}));
 vi.mock('../components/controls/ConfigPanel.tsx', () => ({
     ConfigPanel: () => <div>Mock Config Panel</div>,
 }));
@@ -329,6 +290,28 @@ describe('App shell integration', () => {
         expect(useLayoutStore.getState().workspaceTab).toBe('network');
         expect(usePlaygroundStore.getState().access).toBe(access);
         expect(trainingMock.reset).not.toHaveBeenCalled();
+    });
+
+    it('mounts and requests only the focused mobile network region and restores desktop composition on resize', async () => {
+        setViewportWidth(390);
+        const user = userEvent.setup(); render(<App />);
+        const access = usePlaygroundStore.getState().access;
+        const regions = screen.getByRole('tablist', {name:'Network regions'});
+        expect(screen.getByText('Mock Topology Graph')).toBeVisible();
+        expect(screen.queryByText('Mock Boundary')).not.toBeInTheDocument();
+        expect(usePlaygroundStore.getState().demand).toMatchObject({needNeuronGrids:true,needDecisionBoundary:false});
+        await user.click(within(regions).getByRole('tab',{name:'Prediction'}));
+        expect(screen.queryByText('Mock Topology Graph')).not.toBeInTheDocument();
+        expect(screen.getByText('Mock Boundary')).toBeVisible();
+        expect(usePlaygroundStore.getState().demand).toMatchObject({needNeuronGrids:false,needDecisionBoundary:true});
+        await user.click(within(regions).getByRole('tab',{name:'Data'}));
+        expect(screen.queryByText('Mock Boundary')).not.toBeInTheDocument();
+        expect(usePlaygroundStore.getState().demand).toMatchObject({needNeuronGrids:false,needDecisionBoundary:false});
+        act(() => setViewportWidth(1440));
+        expect(screen.getByText('Mock Topology Graph')).toBeVisible();
+        expect(screen.getByText('Mock Boundary')).toBeVisible();
+        expect(usePlaygroundStore.getState().access).toBe(access);
+        for (const command of Object.values(trainingMock)) expect(command).not.toHaveBeenCalled();
     });
 
     it('preserves all scientific identities, checkpoints, saved records and URL across themes, guidance and navigation', async () => {

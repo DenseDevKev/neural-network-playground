@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { ready, transport, workspace } from './atelier-helpers';
 
 type AxeViolations = Awaited<ReturnType<AxeBuilder['analyze']>>['violations'];
 const browserErrors = new WeakMap<Page, string[]>();
@@ -34,20 +35,14 @@ async function loadReadyPlayground(page: Page): Promise<void> {
     await expect(page.getByRole('main', {
         name: 'Neural network playground workspace',
     })).toBeVisible();
-    const run = page.getByRole('button', { name: 'run', exact: true });
-    if (await run.getAttribute('aria-pressed') !== 'true') await run.click();
-    await expect(page.getByRole('group', { name: 'Status bar' }))
-        .toHaveAttribute('data-status', 'idle');
-    await expect(page.locator('section[role="region"][aria-label="Current run"]'))
-        .toContainText(/Full evaluation \d+ at step 0(?![0-9,])/);
-    await expect(page.getByRole('slider', { name: 'Checkpoint timeline' }))
-        .toHaveAttribute('aria-valuetext', 'Step 0');
+    await ready(page);
+    await expect(transport(page)).toHaveAttribute('data-model-step', '0');
 }
 
 const SCAN_CASES = [
-    { name: '1437px Precision Lab accessibility', width: 1437, height: 742 },
-    { name: '735px Precision Lab accessibility', width: 735, height: 860 },
-    { name: '320px Precision Lab accessibility', width: 320, height: 844 },
+    { name: '1437px Signal Atelier accessibility', width: 1437, height: 742 },
+    { name: '735px Signal Atelier accessibility', width: 735, height: 860 },
+    { name: '320px Signal Atelier accessibility', width: 320, height: 844 },
     { name: 'desktop accessibility', width: 1280, height: 720 },
     { name: '390px compact accessibility', width: 390, height: 844 },
 ] as const;
@@ -66,16 +61,18 @@ for (const scanCase of SCAN_CASES) {
     });
 }
 
-test('320px architecture summary accepts Tab and native keyboard scrolling', async ({ page }) => {
+test('320px neuron targets support keyboard selection without changing the model', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 844 });
     await loadReadyPlayground(page);
-    const summary = page.getByRole('region', { name: 'Architecture summary', exact: true });
-    const mode = page.getByRole('group', { name: 'Topology view mode' });
-    await mode.getByRole('button', { name: 'Activations', exact: true }).focus();
+    await workspace(page, 'Network');
+    const nodes = page.getByRole('group', { name: 'Select a neuron' }).getByRole('button');
+    await nodes.first().focus();
+    await page.keyboard.press('Enter');
+    await expect(nodes.first()).toHaveAttribute('aria-pressed', 'true');
     await page.keyboard.press('Tab');
-    await expect(summary).toBeFocused();
-    expect(await summary.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
-    await page.keyboard.press('End');
-    await expect.poll(() => summary.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
-    await expect(page.getByRole('group', { name: 'Status bar' })).toHaveAttribute('data-status', 'idle');
+    await expect(nodes.nth(1)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(nodes.nth(1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(transport(page)).toHaveAttribute('data-model-step', '0');
+    await expect(transport(page)).toHaveAttribute('data-status', 'idle');
 });

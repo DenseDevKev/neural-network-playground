@@ -108,12 +108,7 @@ vi.mock('./hooks/useExperimentMemoryStorageSync.ts', () => ({
 
 vi.mock('./components/visualization/DecisionBoundaryCanvas.tsx', () => ({ DecisionBoundaryCanvas: () => <canvas data-decision-boundary-canvas aria-label="Boundary paint" /> }));
 vi.mock('./components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
-vi.mock('./components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
 vi.mock('./components/controls/DatasetPreviewCanvas.tsx', () => ({ DatasetPreviewCanvas: () => <canvas aria-hidden="true" /> }));
-vi.mock('./components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
-vi.mock('./components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: () => <div>Features</div> }));
-vi.mock('./components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
-vi.mock('./components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel: () => <div>Hyperparams</div> }));
 vi.mock('./components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
 vi.mock('./components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => { if (inspectionFailure.active) throw new Error('Inspection failed'); return <div>Inspection</div>; } }));
 vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));
@@ -171,11 +166,12 @@ describe('App accessibility shell', () => {
     it('uses the effective Prediction tab for regression demand after a task change', async () => {
         useLayoutStore.setState({ workspaceTab: 'results', resultsTab: 'errors' });
         render(<App />);
-        expect(usePlaygroundStore.getState().demand.needConfusionMatrix).toBe(true);
+        expect(usePlaygroundStore.getState().demand).toMatchObject({ needConfusionMatrix: true, needDecisionBoundary: true });
+        expect(await screen.findByLabelText('Boundary paint')).toBeInTheDocument();
         const prepared = PREPARED_PRESETS.find((entry) => entry.id === 'regression-plane')!.prepared;
         act(() => usePlaygroundStore.setState({ access: { status: 'ready', prepared } }));
         expect(screen.getByRole('tab', { name: 'Prediction', selected: true })).toBeInTheDocument();
-        expect(screen.getByLabelText('Boundary paint')).toBeInTheDocument();
+        expect(await screen.findByLabelText('Boundary paint')).toBeInTheDocument();
         expect(usePlaygroundStore.getState().demand).toMatchObject({ needDecisionBoundary: true, needConfusionMatrix: false });
     });
 
