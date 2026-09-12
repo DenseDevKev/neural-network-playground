@@ -6,8 +6,14 @@ import { InspectionPanelView } from './inspection/InspectionPanelView.tsx';
 import { useInspectionPanelController } from './inspection/useInspectionPanelController.ts';
 import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
-export const InspectionPanel = memo(function InspectionPanel() {
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
+
+export const InspectionPanel = memo(function InspectionPanel({ onPause }: { onPause?: () => void }) {
+    const tab = useLayoutStore((state) => state.inspectTab);
+    const onTabChange = useLayoutStore((state) => state.setInspectTab);
+    const running = useTrainingStore((state) => state.status === 'running');
     const controller = useInspectionPanelController();
     const guidanceLevel = useAudienceGuidanceLevel();
-    return <InspectionPanelView {...controller} guidanceLevel={guidanceLevel} />;
+    return <InspectionPanelView {...controller} guidanceLevel={guidanceLevel} tab={tab} onTabChange={onTabChange} running={running} onPause={onPause} />;
 });

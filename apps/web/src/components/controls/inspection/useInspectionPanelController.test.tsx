@@ -205,6 +205,7 @@ describe('useInspectionPanelController', () => {
             },
         });
         useTrainingStore.setState({
+            status: 'idle',
             trainPoints: [],
             testPoints: [],
             latestLiveSignal: null,
@@ -215,6 +216,26 @@ describe('useInspectionPanelController', () => {
     });
 
     afterEach(() => resetFrameBuffer());
+
+    it.each([
+        ['trace', 'getPredictionTraceV2', 'requestTrace', predictionTraceResponse()],
+        ['backprop', 'getBackpropExplanationV2', 'requestBackprop', backpropResponse()],
+        ['landscape', 'getObjectiveLandscapeV2', 'requestLandscape', landscapeResponse()],
+    ] as const)('blocks running and same-tick duplicate %s requests', async (_label, method, command, response) => {
+        installCurrentEvidence();
+        useTrainingStore.setState({ status: 'running', trainPoints: [{ x: 0.25, y: -0.5, label: 1 }] });
+        workerApi[method].mockResolvedValue(response);
+        const { result } = renderHook(() => useInspectionPanelController());
+        await act(async () => result.current.commands[command]());
+        expect(workerApi[method]).not.toHaveBeenCalled();
+        act(() => useTrainingStore.setState({ status: 'paused' }));
+        await act(async () => {
+            const first = result.current.commands[command]();
+            const second = result.current.commands[command]();
+            await Promise.all([first, second]);
+        });
+        expect(workerApi[method]).toHaveBeenCalledTimes(1);
+    });
 
     it('does not mutate shell-owned visualization demand while mounted or unmounted', () => {
         const initialDemand = usePlaygroundStore.getState().demand;

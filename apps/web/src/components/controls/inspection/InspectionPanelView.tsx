@@ -4,10 +4,17 @@ import {
     type InspectionPanelDisplayModel,
     type InspectionTraceSource,
 } from './inspectionPanelModel.ts';
+import { Tabs } from '../../atelier/ui.tsx';
+import type { InspectTab } from '../../../productShell/atelierTypes.ts';
+import './inspection.css';
 import { ConceptHelp } from '../../common/ConceptHelp.tsx';
 import type { GuidanceLevel } from '../../../productShell/audienceProfiles.ts';
 
 export interface InspectionPanelViewProps {
+    readonly tab?: InspectTab;
+    readonly onTabChange?: (tab: InspectTab) => void;
+    readonly running?: boolean;
+    readonly onPause?: () => void;
     readonly model: InspectionPanelDisplayModel;
     readonly commands: InspectionPanelCommands;
     readonly guidanceLevel: GuidanceLevel;
@@ -17,9 +24,16 @@ export const InspectionPanelView = memo(function InspectionPanelView({
     model,
     commands,
     guidanceLevel,
+    tab, onTabChange, running = false, onPause,
 }: InspectionPanelViewProps) {
     return (
-        <div className="inspection-panel">
+        <div className="inspection-panel atelier-inspection">
+            {tab && onTabChange && <Tabs label="Inspection views" items={[{ id: 'trace', label: 'Trace' }, { id: 'activations', label: 'Activations' }, { id: 'gradients', label: 'Gradients' }]} value={tab} onChange={onTabChange} />}
+            <header className="inspection__intro"><h1>{tab === 'gradients' ? 'See how the model would change' : tab === 'activations' ? 'Look inside each layer' : 'Follow one prediction'}</h1><p>{tab === 'gradients' ? 'Preview gradients and explore a local parameter grid.' : tab === 'activations' ? 'Activation distributions and per-layer statistics from sampled training examples.' : 'Inspect the activations and outputs for a single data point.'}</p></header>
+            {running && <div className="inspection__pause" role="status">Pause training to trace a sample, preview backpropagation, or run a probe.{onPause && <button className="btn" type="button" onClick={onPause}>Pause training</button>}</div>}
+            {(tab === undefined || tab === 'activations') && <section aria-label="Layer activations">
+
+            {model.activationStatus && <p role="status">{model.activationStatus}</p>}
             {model.activationBasis && (
                 <p className="inspection__basis">
                     <span>{model.activationBasis.label}</span>
@@ -76,6 +90,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
             )}
             <section className="inspection__layer" aria-label="Activation histogram explorer">
                 <div className="inspection__layer-name">Activation Histogram</div>
+                {model.histogramBasis && <p className="inspection__basis" role="status">{model.histogramBasis}</p>}
                 {!model.histogram ? (
                     <div className="inspection__empty">Open inspection while training to sample layer activations.</div>
                 ) : (
@@ -123,7 +138,8 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                     </>
                 )}
             </section>
-            <div className="inspection__layer" aria-label="Prediction trace">
+            </section>}
+            {(tab === undefined || tab === 'trace') && <div className="inspection__layer" aria-label="Prediction trace">
                 <div className="inspection__layer-name">Prediction Trace</div>
                 <div className="control-row">
                     <label htmlFor="trace-source">Sample</label>
@@ -165,7 +181,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                     type="button"
                     className="btn"
                     onClick={() => { void commands.requestTrace(); }}
-                    disabled={model.trace.buttonDisabled}
+                    disabled={running || model.trace.buttonDisabled}
                 >
                     {model.trace.buttonLabel}
                 </button>
@@ -176,10 +192,12 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                         </div>
                     ) : null}
                     {model.trace.result ? (
-                        <div className="inspection__layers">
+                        <div className="inspection__layers inspection__trace-result">
                             <p className="inspection__basis">
                                 {model.trace.result.provenance}
                             </p>
+                            {model.trace.result.sample && <p className="inspection__sample">Selected data point · x₁ {model.trace.result.sample.x} · x₂ {model.trace.result.sample.y} · Target {model.trace.result.sample.target}</p>}
+                            <p className="inspection__direction">Forward pass: input → hidden layers → output</p>
                             <div className="inspection__stat-row">
                                 <span className="inspection__stat-label">Output</span>
                                 <span className="inspection__stat-value">
@@ -197,18 +215,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                             {model.trace.result.layers.map((layer) => (
                                 <div key={layer.key} className="inspection__stat-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
                                     <span className="inspection__stat-label">{layer.label}</span>
-                                    <div style={{
-                                        width: '100%',
-                                        background: 'rgba(0,0,0,0.2)',
-                                        padding: '4px 6px',
-                                        borderRadius: 4,
-                                        fontFamily: 'var(--font-mono)',
-                                        fontSize: 9,
-                                        color: 'var(--text-secondary)',
-                                        overflowX: 'auto',
-                                        whiteSpace: 'nowrap',
-                                        border: '1px solid rgba(255,255,255,0.05)',
-                                    }}>
+                                    <div className="inspection__activation-values">
                                         {layer.activations}
                                     </div>
                                 </div>
@@ -217,7 +224,8 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                     ) : null}
                 </div>
             </div>
-            <section className="inspection__layer" aria-label="Slow-motion backprop preview">
+            }
+            {(tab === undefined || tab === 'gradients') && <div className="inspection__gradient-grid"><section className="inspection__layer" aria-label="Slow-motion backprop preview">
                 <div className="inspection__layer-name inspection__layer-name--concept">
                     <span>Slow-Motion Backprop</span>
                     <ConceptHelp conceptId="gradient" guidanceLevel={guidanceLevel} />
@@ -226,7 +234,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                     type="button"
                     className="btn"
                     onClick={() => { void commands.requestBackprop(); }}
-                    disabled={model.backprop.buttonDisabled}
+                    disabled={running || model.backprop.buttonDisabled}
                 >
                     {model.backprop.buttonLabel}
                 </button>
@@ -265,6 +273,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                                 {model.backprop.result.gradient[1]}
                             </span>
                         </div>
+                        <p className="inspection__direction">Backward pass: output → hidden layers → input</p>
                         <ul className="inspection__backprop-list" aria-label="Backprop layer summaries">
                             {model.backprop.result.layers.map((layer) => (
                                 <li key={layer.key} className="inspection__backprop-item">
@@ -298,7 +307,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                     type="button"
                     className="btn"
                     onClick={() => { void commands.requestLandscape(); }}
-                    disabled={model.landscape.buttonDisabled}
+                    disabled={running || model.landscape.buttonDisabled}
                 >
                     {model.landscape.buttonLabel}
                 </button>
@@ -317,6 +326,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                                 {model.landscape.result.provenance}
                             </span>
                         </div>
+                        {model.landscape.result.axes && <p className="inspection__axes">Horizontal: {model.landscape.result.axes[0]} · Vertical: {model.landscape.result.axes[1]}</p>}
                         <div
                             className="inspection__loss-heatmap"
                             role="img"
@@ -344,7 +354,8 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                         </div>
                     </div>
                 ) : null}
-            </section>
+            </section></div>}
+            <footer className="inspection__footer">Single-sample traces and local diagnostic views complement full-split evaluations in Results. Previews and probes do not update model weights.</footer>
         </div>
     );
 });

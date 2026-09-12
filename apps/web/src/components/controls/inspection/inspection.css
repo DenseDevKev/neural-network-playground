@@ -1,0 +1,33 @@
+.atelier-inspection { color: var(--text-primary); display: flex; flex-direction: column; gap: 28px; padding: clamp(16px, 3vw, 44px); min-width: 0; }
+.atelier-inspection .inspection__intro h1 { font-size: clamp(26px, 3vw, 40px); line-height: 1.15; font-weight: 500; margin: 0 0 12px; letter-spacing: -.035em; }
+.atelier-inspection .inspection__intro p { color: var(--text-secondary); font-size: 17px; margin: 0; }
+.atelier-inspection .inspection__layer { padding: 22px 0; border: 0; border-bottom: 1px solid var(--border-color); background: transparent; border-radius: 0; min-width: 0; }
+.atelier-inspection .inspection__layer-name { font-size: 17px; font-weight: 500; margin-bottom: 20px; color: var(--text-primary); }
+.atelier-inspection .inspection__layers { display: grid; gap: 20px; }
+.atelier-inspection .inspection__stat-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 12px 0; }
+.atelier-inspection .inspection__stat-label, .atelier-inspection .inspection__stat-value { font-size: 14px; }
+.atelier-inspection .inspection__stat-label, .atelier-inspection .inspection__basis, .atelier-inspection .inspection__empty, .atelier-inspection .inspection__direction, .atelier-inspection .inspection__axes { color: var(--text-secondary); font-size: 14px; line-height: 1.65; }
+.atelier-inspection .control-row { display: inline-flex; align-items: center; gap: 12px; margin: 0 20px 20px 0; }
+.atelier-inspection .select, .atelier-inspection .input, .atelier-inspection button { min-height: 44px; font-size: 14px; }
+.atelier-inspection .select, .atelier-inspection .input { color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 8px 12px; }
+.atelier-inspection .input { width: 100px; }
+.atelier-inspection .btn { padding: 10px 22px; background: var(--action-bg); color: var(--action-text); border: 1px solid var(--border-color); }
+.atelier-inspection .btn:disabled { opacity: .5; }
+.atelier-inspection .inspection__pause { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; color: var(--text-secondary); }
+.atelier-inspection .inspection__gradient-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 44px; }
+.atelier-inspection .inspection__histogram { height: 220px; display: flex; align-items: end; gap: 3px; padding: 12px 0 0; border-bottom: 1px solid var(--border-color); }
+.atelier-inspection .inspection__histogram-bin { flex: 1; min-width: 0; background: var(--color-primary); }
+.atelier-inspection .inspection__histogram-summary { display: flex; flex-wrap: wrap; gap: 16px; line-height: 1.65; font-size: 14px; margin-top: 20px; color: var(--text-secondary); }
+.atelier-inspection .inspection__histogram-summary strong { color: var(--text-primary); }
+.atelier-inspection .inspection__loss-heatmap { display: grid; aspect-ratio: 1; width: min(100%, 420px); gap: 1px; background: var(--bg-secondary); }
+.atelier-inspection .inspection__loss-cell { background: var(--color-primary); }
+.atelier-inspection .inspection__bar-track { height: 5px; flex: 1; min-width: 40px; background: var(--bg-secondary); }
+.atelier-inspection .inspection__bar-fill { height: 100%; background: var(--color-primary); }
+.atelier-inspection .inspection__activation-values { padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); font-family: var(--font-mono); font-size: 14px; width: 100%; overflow-wrap: anywhere; line-height: 1.8; }
+.atelier-inspection .inspection__sample { font-size: 17px; line-height: 1.8; overflow-wrap: anywhere; }
+.atelier-inspection .inspection__backprop-list { list-style: none; padding: 0; }
+.atelier-inspection .inspection__backprop-item { border-bottom: 1px solid var(--border-color); padding: 16px 0; }
+.atelier-inspection .inspection__backprop-heading, .atelier-inspection .inspection__backprop-metrics { display: flex; flex-wrap: wrap; gap: 18px; margin-bottom: 12px; }
+.atelier-inspection .inspection__backprop-note { font-size: 13px; color: var(--text-secondary); line-height: 1.65; }
+.atelier-inspection .inspection__footer { border-top: 1px solid var(--border-color); padding-top: 22px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+@media (max-width: 760px) { .atelier-inspection .inspection__gradient-grid { grid-template-columns: 1fr; gap: 20px; } .atelier-inspection { gap: 20px; } }
