@@ -28,10 +28,10 @@ export const InspectionPanelView = memo(function InspectionPanelView({
 }: InspectionPanelViewProps) {
     return (
         <div className="inspection-panel atelier-inspection">
-            {tab && onTabChange && <Tabs label="Inspection views" items={[{ id: 'trace', label: 'Trace' }, { id: 'activations', label: 'Activations' }, { id: 'gradients', label: 'Gradients' }]} value={tab} onChange={onTabChange} />}
+            {tab && onTabChange && <Tabs panelPrefix="inspection-panel" label="Inspection views" items={[{ id: 'trace', label: 'Trace' }, { id: 'activations', label: 'Activations' }, { id: 'gradients', label: 'Gradients' }]} value={tab} onChange={onTabChange} />}
             <header className="inspection__intro"><h1>{tab === 'gradients' ? 'See how the model would change' : tab === 'activations' ? 'Look inside each layer' : 'Follow one prediction'}</h1><p>{tab === 'gradients' ? 'Preview gradients and explore a local parameter grid.' : tab === 'activations' ? 'Activation distributions and per-layer statistics from sampled training examples.' : 'Inspect the activations and outputs for a single data point.'}</p></header>
             {running && <div className="inspection__pause" role="status">Pause training to trace a sample, preview backpropagation, or run a probe.{onPause && <button className="btn" type="button" onClick={onPause}>Pause training</button>}</div>}
-            {(tab === undefined || tab === 'activations') && <section aria-label="Layer activations">
+            {(tab === undefined || tab === 'activations') && <section id={tab ? `inspection-panel-${tab}` : undefined} aria-labelledby={tab && onTabChange ? `inspection-panel-tab-${tab}` : undefined} role={tab ? 'tabpanel' : undefined} aria-label={tab ? 'Activations' : 'Layer activations'}>
 
             {model.activationStatus && <p role="status">{model.activationStatus}</p>}
             {model.activationBasis && (
@@ -139,7 +139,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                 )}
             </section>
             </section>}
-            {(tab === undefined || tab === 'trace') && <div className="inspection__layer" aria-label="Prediction trace">
+            {(tab === undefined || tab === 'trace') && <div id={tab ? `inspection-panel-${tab}` : undefined} aria-labelledby={tab && onTabChange ? `inspection-panel-tab-${tab}` : undefined} role={tab ? 'tabpanel' : undefined} className="inspection__layer" aria-label="Prediction trace">
                 <div className="inspection__layer-name">Prediction Trace</div>
                 <div className="control-row">
                     <label htmlFor="trace-source">Sample</label>
@@ -225,7 +225,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                 </div>
             </div>
             }
-            {(tab === undefined || tab === 'gradients') && <div className="inspection__gradient-grid"><section className="inspection__layer" aria-label="Slow-motion backprop preview">
+            {(tab === undefined || tab === 'gradients') && <div id={tab ? `inspection-panel-${tab}` : undefined} aria-labelledby={tab && onTabChange ? `inspection-panel-tab-${tab}` : undefined} role={tab ? 'tabpanel' : undefined} aria-label={tab ? 'Gradients' : undefined} className="inspection__gradient-grid"><section className="inspection__layer" aria-label="Slow-motion backprop preview">
                 <div className="inspection__layer-name inspection__layer-name--concept">
                     <span>Slow-Motion Backprop</span>
                     <ConceptHelp conceptId="gradient" guidanceLevel={guidanceLevel} />

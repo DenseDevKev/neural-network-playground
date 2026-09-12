@@ -17,6 +17,7 @@ interface InspectionLayerStatsInput {
 }
 
 interface InspectionActivationBasisInput {
+    readonly modelStep?: number;
     readonly sampleCount: number;
     readonly populationCount: number;
     readonly modelRevision: number;
@@ -429,10 +430,7 @@ export function createInspectionPanelDisplayModel(
         activationBasis: input.activationBasis
             ? {
                 label: `Activation statistics across ${input.activationBasis.sampleCount.toLocaleString()} of ${input.activationBasis.populationCount.toLocaleString()} training examples`,
-                suffix: input.activationBasis.gradientRevision !== null
-                    && input.activationBasis.gradientRevision !== input.activationBasis.modelRevision
-                    ? `; gradient summary comes from model revision ${input.activationBasis.gradientRevision.toLocaleString()}.`
-                    : `; model revision ${input.activationBasis.modelRevision.toLocaleString()}.`,
+                suffix: `${input.activationBasis.modelStep === undefined ? '' : `; model step ${input.activationBasis.modelStep.toLocaleString()}`}; model revision ${input.activationBasis.modelRevision.toLocaleString()}${input.activationBasis.gradientRevision === null ? '; gradient summary unavailable' : `; gradient summary comes from model revision ${input.activationBasis.gradientRevision.toLocaleString()}`}.`,
             }
             : null,
         layers,

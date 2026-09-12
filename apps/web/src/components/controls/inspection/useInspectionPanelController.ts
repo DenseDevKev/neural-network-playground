@@ -271,6 +271,7 @@ export function useInspectionPanelController(): InspectionPanelController {
             ? {
                 sampleCount: activationBasis.sampleCount,
                 populationCount: activationBasis.populationCount,
+                modelStep: layerStatsState.provenance?.model.step,
                 modelRevision: layerStatsState.provenance?.model.revision ?? 0,
                 gradientRevision: layerStatsState.gradientRevision,
             }

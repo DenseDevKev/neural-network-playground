@@ -72,6 +72,7 @@ describe('createInspectionPanelDisplayModel', () => {
             activationBasis: {
                 sampleCount: 128,
                 populationCount: 210,
+                modelStep: 10,
                 modelRevision: 12,
                 gradientRevision: 11,
             },
@@ -79,7 +80,7 @@ describe('createInspectionPanelDisplayModel', () => {
 
         expect(model.activationBasis).toEqual({
             label: 'Activation statistics across 128 of 210 training examples',
-            suffix: '; gradient summary comes from model revision 11.',
+            suffix: '; model step 10; model revision 12; gradient summary comes from model revision 11.',
         });
         expect(model.layers).toEqual([
             {
