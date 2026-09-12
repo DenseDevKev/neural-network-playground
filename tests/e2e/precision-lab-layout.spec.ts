@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const REGIONS = ['recipe', 'rail', 'topology', 'boundary', 'selection', 'evidence', 'transport'] as const;
 async function bounds(page: Page) {
@@ -19,6 +19,43 @@ async function horizontalOverflow(page: Page) {
             workspace: workspace.scrollWidth - workspace.clientWidth,
             main: main.scrollWidth - main.clientWidth,
         };
+    });
+}
+
+async function expectControlContained(control: Locator, container: Locator, label: string) {
+    const [controlBox, containerBox] = await Promise.all([control.boundingBox(), container.boundingBox()]);
+    expect(controlBox, `${label} has measurable bounds`).not.toBeNull();
+    expect(containerBox, `${label} container has measurable bounds`).not.toBeNull();
+    expect(controlBox!.x, `${label} left edge`).toBeGreaterThanOrEqual(containerBox!.x - 1);
+    expect(controlBox!.x + controlBox!.width, `${label} right edge`).toBeLessThanOrEqual(containerBox!.x + containerBox!.width + 1);
+    expect(controlBox!.height, `${label} touch target height`).toBeGreaterThanOrEqual(44);
+}
+
+for (const viewport of [{ width: 1280, height: 720 }, { width: 1437, height: 742 }]) {
+    test(`first-visit lesson actions stay contained and work at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+        await page.setViewportSize(viewport);
+        await page.goto('./');
+
+        await expect(page.getByRole('combobox', { name: 'Workspace profile' })).toHaveValue('explore');
+        await expect(page.getByRole('button', { name: 'build', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+        const cue = page.getByRole('region', { name: 'Getting started' });
+        const body = cue.locator('.forge-instrument-module__body');
+        const start = cue.getByRole('button', { name: 'Start a 3-minute lesson', exact: true });
+        const dismiss = cue.getByRole('button', { name: 'Dismiss lesson suggestion', exact: true });
+        await expect(cue).toBeVisible();
+        await expectControlContained(start, body, 'Start lesson');
+        await expectControlContained(dismiss, body, 'Dismiss lesson suggestion');
+
+        await start.scrollIntoViewIfNeeded();
+        await start.click();
+        const lessons = page.getByRole('dialog', { name: 'Lessons', exact: true });
+        await expect(lessons).toBeVisible();
+        await lessons.getByRole('button', { name: 'Close Lessons', exact: true }).click();
+
+        await dismiss.scrollIntoViewIfNeeded();
+        await dismiss.click();
+        await expect(cue).toHaveCount(0);
     });
 }
 
