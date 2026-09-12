@@ -50,6 +50,7 @@ export type {
 } from '../productShell/shellTypes.ts';
 
 const DEFAULT_LAYOUT_STATE = {
+    exportRequest: null as { mode: 'setup' | 'code'; id: number } | null,
     destination: 'playground' as Destination,
     workspaceTab: 'network' as WorkspaceTab,
     setupTab: 'dataset' as SetupTab,
@@ -82,6 +83,9 @@ const VALID_RIGHT_TABS = VALID_EVIDENCE_VIEWS;
 const VALID_CODE_EXPORT_TABS = CODE_EXPORT_TABS;
 
 export interface LayoutStore {
+    exportRequest: { mode: 'setup' | 'code'; id: number } | null;
+    requestExport: (mode: 'setup' | 'code') => void;
+    clearExportRequest: () => void;
     destination: Destination;
     workspaceTab: WorkspaceTab;
     setupTab: SetupTab;
@@ -174,6 +178,7 @@ function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STA
         || !isEvidenceViewVisible(audienceMode, false, activeEvidenceView);
 
     return {
+        exportRequest: view === 'run' && activeEvidenceView === 'code' ? { mode: 'code', id: 1 } : activeRecipeSection === 'config' ? { mode: 'setup', id: 1 } : activeEvidenceView === 'code' ? { mode: 'code', id: 1 } : null,
         destination: isOneOf(state.destination, ['playground', 'saved-runs', 'lessons']) ? state.destination : 'playground',
         workspaceTab: isOneOf(state.workspaceTab, ['setup', 'network', 'results', 'inspect']) ? state.workspaceTab
             : view === 'build' ? 'setup' : evidenceFor(activeEvidenceView).workspaceTab,
@@ -181,15 +186,15 @@ function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STA
         resultsTab: isOneOf(state.resultsTab, ['boundary', 'learning', 'errors']) ? state.resultsTab : evidenceFor(activeEvidenceView).resultsTab,
         inspectTab: isOneOf(state.inspectTab, ['trace', 'activations', 'gradients']) ? state.inspectTab : 'trace',
         view,
-        activeRecipeSection,
-        activeEvidenceView,
+        activeRecipeSection: activeRecipeSection === 'config' ? 'data' : activeRecipeSection,
+        activeEvidenceView: activeEvidenceView === 'code' ? 'boundary' : activeEvidenceView,
         audienceMode,
         advancedToolsOpen,
         buildContextOpen: false,
         layout: DEFAULT_LAYOUT_STATE.layout,
         phase: view,
-        activeTabLeft: activeRecipeSection,
-        activeTabRight: activeEvidenceView,
+        activeTabLeft: activeRecipeSection === 'config' ? 'data' : activeRecipeSection,
+        activeTabRight: activeEvidenceView === 'code' ? 'boundary' : activeEvidenceView,
         codeExportTab: isOneOf(state.codeExportTab, VALID_CODE_EXPORT_TABS)
             ? state.codeExportTab
             : DEFAULT_LAYOUT_STATE.codeExportTab,
@@ -216,6 +221,8 @@ export function createLayoutStore() {
         persist(
             (set) => ({
                 ...initial,
+                requestExport: (mode) => set((state) => ({ exportRequest: { mode, id: (state.exportRequest?.id ?? 0) + 1 } })),
+                clearExportRequest: () => set({ exportRequest: null }),
                 navigate: (destination, workspaceTab) => set((state) => ({
                     destination, workspaceTab: workspaceTab ?? state.workspaceTab,
                     ...(workspaceTab ? { view: workspaceTab === 'setup' ? 'build' as const : 'run' as const, phase: workspaceTab === 'setup' ? 'build' as const : 'run' as const } : {}),
@@ -231,7 +238,7 @@ export function createLayoutStore() {
                     phase: view,
                     buildContextOpen: view === 'run' ? false : state.buildContextOpen,
                 })),
-                setActiveRecipeSection: (activeRecipeSection) => set((state) => ({
+                setActiveRecipeSection: (activeRecipeSection) => set((state) => activeRecipeSection === 'config' ? { exportRequest: { mode: 'setup' as const, id: (state.exportRequest?.id ?? 0) + 1 } } : ({
                     destination: 'playground', workspaceTab: 'setup', setupTab: setupFor(activeRecipeSection),
                     activeRecipeSection,
                     activeTabLeft: activeRecipeSection,
@@ -239,7 +246,7 @@ export function createLayoutStore() {
                     advancedToolsOpen: state.advancedToolsOpen
                         || !isRecipeSectionVisible(state.audienceMode, false, activeRecipeSection),
                 })),
-                setActiveEvidenceView: (activeEvidenceView) => set((state) => ({
+                setActiveEvidenceView: (activeEvidenceView) => set((state) => activeEvidenceView === 'code' ? { exportRequest: { mode: 'code' as const, id: (state.exportRequest?.id ?? 0) + 1 } } : ({
                     destination: 'playground', ...evidenceFor(activeEvidenceView),
                     activeEvidenceView,
                     activeTabRight: activeEvidenceView,
@@ -300,7 +307,7 @@ export function createLayoutStore() {
                     };
                 }),
                 setBuildContextOpen: (buildContextOpen) => set({ buildContextOpen }),
-                selectBuildContext: (activeRecipeSection) => set((state) => ({
+                selectBuildContext: (activeRecipeSection) => set((state) => activeRecipeSection === 'config' ? { exportRequest: { mode: 'setup' as const, id: (state.exportRequest?.id ?? 0) + 1 } } : ({
                     destination: 'playground', workspaceTab: 'setup', setupTab: setupFor(activeRecipeSection),
                     view: 'build',
                     phase: 'build',
@@ -310,7 +317,7 @@ export function createLayoutStore() {
                     advancedToolsOpen: state.advancedToolsOpen
                         || !isRecipeSectionVisible(state.audienceMode, false, activeRecipeSection),
                 })),
-                openAdvancedRecipeSection: (activeRecipeSection) => set({
+                openAdvancedRecipeSection: (activeRecipeSection) => set(activeRecipeSection === 'config' ? { exportRequest: { mode: 'setup', id: Date.now() } } : {
                     destination: 'playground', workspaceTab: 'setup', setupTab: setupFor(activeRecipeSection),
                     view: 'build',
                     phase: 'build',
@@ -327,7 +334,7 @@ export function createLayoutStore() {
                     phase,
                     buildContextOpen: phase === 'run' ? false : state.buildContextOpen,
                 })),
-                setActiveTabLeft: (activeTabLeft) => set((state) => ({
+                setActiveTabLeft: (activeTabLeft) => set((state) => activeTabLeft === 'config' ? { exportRequest: { mode: 'setup' as const, id: (state.exportRequest?.id ?? 0) + 1 } } : ({
                     destination: 'playground', workspaceTab: 'setup', setupTab: setupFor(activeTabLeft),
                     activeRecipeSection: activeTabLeft,
                     activeTabLeft,
@@ -335,7 +342,7 @@ export function createLayoutStore() {
                     advancedToolsOpen: state.advancedToolsOpen
                         || !isRecipeSectionVisible(state.audienceMode, false, activeTabLeft),
                 })),
-                setActiveTabRight: (activeTabRight) => set((state) => ({
+                setActiveTabRight: (activeTabRight) => set((state) => activeTabRight === 'code' ? { exportRequest: { mode: 'code' as const, id: (state.exportRequest?.id ?? 0) + 1 } } : ({
                     destination: 'playground', ...evidenceFor(activeTabRight),
                     activeEvidenceView: activeTabRight,
                     activeTabRight,

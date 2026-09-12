@@ -1,0 +1,11 @@
+.setup-export-panel,.code-export-panel,.atelier-checkpoints{min-width:0;color:var(--text-primary)}
+.setup-export-panel h3,.setup-import-review h3{margin:0 0 .7rem}.setup-export-panel p,.code-export-panel p,.atelier-checkpoints p{color:var(--text-secondary);line-height:1.6}
+.setup-export-panel button,.code-export-panel button,.atelier-checkpoints button{min-height:44px;white-space:normal;color:var(--text-primary);background:var(--bg-secondary);border:1px solid var(--border-color);padding:.6rem 1rem;border-radius:4px}
+.setup-export-panel button:disabled,.atelier-checkpoints button:disabled{opacity:.5;cursor:not-allowed}
+.export-actions,.code-export__tabs{display:flex;flex-wrap:wrap;gap:.5rem}.code-export__tabs{border-bottom:1px solid var(--border-color);margin-bottom:1rem}.code-export__tabs [aria-selected=true]{color:var(--action-text);background:var(--action-bg)}
+.setup-import-review{margin:1.5rem 0;padding:1.2rem;border:1px solid var(--border-color);background:var(--bg-secondary)}
+.setup-import-review dl,.atelier-checkpoints dl{display:flex;flex-wrap:wrap;gap:1rem 2rem}.setup-import-review dt,.atelier-checkpoints dt{color:var(--text-secondary);font-size:.85rem}.setup-import-review dd,.atelier-checkpoints dd{margin:.4rem 0;font-weight:600}
+.setup-link-fallback{display:grid;gap:.6rem;margin:1rem 0}.setup-link-fallback textarea{min-height:90px;width:100%;box-sizing:border-box;color:var(--text-primary);background:var(--bg-secondary);border:1px solid var(--border-color);padding:.7rem;resize:vertical}.setup-link-fallback span{font-size:.85rem;color:var(--text-secondary)}
+.code-export__code-container{max-width:100%;overflow:auto;background:var(--bg-secondary);border:1px solid var(--border-color);padding:1rem;margin-bottom:1rem}.code-export__code{margin:0;font-family:monospace;font-size:.82rem;line-height:1.65;user-select:text;white-space:pre}
+.config-feedback{margin-top:1rem;overflow-wrap:anywhere}.config-feedback--error{padding:.8rem;border:1px solid var(--border-color);color:var(--text-primary);border-left:3px solid var(--action-bg)}
+.atelier-checkpoints input[type=range]{width:100%;min-height:44px;accent-color:var(--action-bg)}

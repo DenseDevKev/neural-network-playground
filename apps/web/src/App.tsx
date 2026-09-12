@@ -91,6 +91,7 @@ function AtelierShell() {
     const [lessonsVisited, setLessonsVisited] = useState(destination === 'lessons' || activeLessonId !== null);
     const [lessonHighlight, setLessonHighlight] = useState<LessonTarget | null>(null);
     const [exportTab, setExportTab] = useState<'setup' | 'code'>('setup');
+    const exportRequest = useLayoutStore((state) => state.exportRequest);
     const backgroundRef = useRef<HTMLDivElement>(null);
     const trainingRef = useRef(training);
     useEffect(() => { trainingRef.current = training; }, [training]);
@@ -102,6 +103,11 @@ function AtelierShell() {
     const guardRef = useRef(guard);
     guardRef.current = guard;
     const requestGuardedNavigation = useCallback((action: () => void) => guardRef.current(action), []);
+    useEffect(() => {
+        if (!exportRequest) return;
+        useLayoutStore.getState().clearExportRequest();
+        requestGuardedNavigation(() => { setExportTab(exportRequest.mode); setUtility('exports'); });
+    }, [exportRequest, requestGuardedNavigation]);
     const navigate = (next: Destination, tab?: WorkspaceTab) => {
         if (next === destination && (!tab || tab === workspaceTab)) return;
         const action = () => { setUtility(null); useLayoutStore.getState().navigate(next,tab); };

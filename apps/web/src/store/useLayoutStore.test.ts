@@ -59,8 +59,9 @@ describe('useLayoutStore', () => {
         expect(useLayoutStore.getState().activeTabRight).toBe('loss');
 
         useLayoutStore.getState().setActiveEvidenceView('code');
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('code');
-        expect(useLayoutStore.getState().activeTabRight).toBe('code');
+        expect(useLayoutStore.getState().exportRequest?.mode).toBe('code');
+        expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
+        expect(useLayoutStore.getState().activeTabRight).toBe('loss');
     });
 
     it('persists the code export tab across panel remounts', () => {
@@ -296,10 +297,11 @@ describe('useLayoutStore', () => {
 
         expect(freshStore.getState().view).toBe('run');
         expect(freshStore.getState().activeRecipeSection).toBe('features');
-        expect(freshStore.getState().activeEvidenceView).toBe('code');
+        expect(freshStore.getState().exportRequest?.mode).toBe('code');
+        expect(freshStore.getState().activeEvidenceView).toBe('boundary');
         expect(freshStore.getState().phase).toBe('run');
         expect(freshStore.getState().activeTabLeft).toBe('features');
-        expect(freshStore.getState().activeTabRight).toBe('code');
+        expect(freshStore.getState().activeTabRight).toBe('boundary');
         expect(freshStore.getState().codeExportTab).toBe('numpy');
         expect(freshStore.getState().audienceMode).toBe('explore');
         expect(freshStore.getState().advancedToolsOpen).toBe(true);

@@ -408,4 +408,24 @@ describe('CodeExportPanel', () => {
 
         expect(screen.getByRole('tab', { name: 'NumPy' })).toHaveClass('active');
     });
+    it('keeps clipboard failure persistent and provides a code download', async () => {
+        vi.useFakeTimers();
+        try {
+            Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('Denied')) } });
+            Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:code') });
+            Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+            const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+            render(<CodeExportPanel />);
+            await act(async () => fireEvent.click(screen.getByRole('button', { name: /copy code/i })));
+            act(() => vi.advanceTimersByTime(10_000));
+            expect(screen.getByRole('alert')).toHaveTextContent('Select the preview');
+            fireEvent.click(screen.getByRole('button', { name: 'Download code' }));
+            expect(click).toHaveBeenCalledOnce();
+            const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+            expect(await blob.text()).toBe(screen.getByRole('tabpanel').textContent);
+            expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:code');
+            click.mockRestore();
+        } finally { vi.useRealTimers(); }
+    });
+
 });
