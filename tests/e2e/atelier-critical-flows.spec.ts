@@ -21,7 +21,7 @@ async function apply(page: Page) {
     await ready(page);
 }
 
-test.beforeEach(async ({ page }) => { await page.goto('/'); await ready(page); });
+test.beforeEach(async ({ page }) => { await page.goto('./'); await ready(page); });
 
 for (const colorScheme of ['light', 'dark'] as const) {
     test(`system ${colorScheme}, live preference, override and persistence preserve model`, async ({ page }) => {
