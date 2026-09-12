@@ -3,7 +3,7 @@
 .saved-runs p, .saved-runs .inspection__empty { color: var(--text-secondary); line-height: 1.6; }
 .saved-runs button, .saved-runs summary, .saved-actions button, .saved-primary { min-height: 44px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary); padding: 10px 16px; border-radius: 3px; cursor: pointer; font: inherit; }
 .saved-runs button:disabled, .saved-primary:disabled { opacity: .45; cursor: not-allowed; }
-.saved-runs .saved-primary, button.saved-primary { background: var(--color-primary); color: white; border-color: var(--color-primary); }
+.saved-runs .saved-primary, button.saved-primary { background: var(--action-bg, #b92f0c); color: var(--action-text, #fff); border-color: var(--action-bg, #b92f0c); }
 .saved-runs input[type="text"], .saved-name input { min-height: 44px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 3px; padding: 10px; font: inherit; }
 .saved-runs input[type="checkbox"] { width: 24px; height: 24px; margin: 10px; accent-color: var(--color-primary); }
 .saved-runs .inspection__layer { padding: 20px; margin: 20px 0; border: 1px solid var(--border-color); background: var(--bg-secondary); border-radius: 3px; }
