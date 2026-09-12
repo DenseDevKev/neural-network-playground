@@ -991,7 +991,7 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     border-radius: 999px;
     background: color-mix(in srgb, var(--color-primary) 5%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-primary) 14%, transparent);
-    color: color-mix(in srgb, var(--color-primary) 78%, var(--text-secondary));
+    color: var(--text-primary);
     font-size: 14px;
     font-weight: 800;
     text-transform: uppercase;

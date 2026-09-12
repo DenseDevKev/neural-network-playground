@@ -41,6 +41,6 @@ export function EvidenceMetrics() {
             {full?.testAccuracy !== undefined ? <div><dt>Test accuracy</dt><dd>{(full.testAccuracy * 100).toFixed(1)}%<small>Full held-out evaluation</small></dd></div> : <div><dt>Training objective</dt><dd>{metric(full?.trainingObjective)}<small>Data loss + regularization</small></dd></div>}
             <div><dt>Batch loss · EMA</dt><dd>{metric(evidence.batchTrend?.dataLoss)}<small>{evidence.batchTrend ? `Batch signal at step ${evidence.batchTrend.step}` : 'No batch signal yet'}</small></dd></div>
         </dl>
-        {full && <p className="atelier-plot-caption">Full evaluation at step {full.step}.{evidence.evaluationAgeSteps ? ` Current model is ${evidence.evaluationAgeSteps} steps ahead; these metrics describe the evaluated model.` : ' Evaluation matches the current step.'}</p>}
+        {full && <p className="atelier-plot-caption">Full evaluation at step <span className="atelier-evaluation-step">{full.step}</span>.{evidence.evaluationAgeSteps ? ` Current model is ${evidence.evaluationAgeSteps} steps ahead; these metrics describe the evaluated model.` : ' Evaluation matches the current step.'}</p>}
     </div>;
 }

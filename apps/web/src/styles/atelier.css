@@ -49,7 +49,7 @@ button:disabled {cursor:not-allowed;opacity:.48}
 .atelier-header nav button[aria-current],.atelier-header .atelier-lessons-link[aria-current] {color:var(--text-primary)}
 .atelier-header-end {margin-left:auto}
 .atelier-theme {display:flex;align-items:center;gap:6px;font-size:14px}
-.atelier-theme select {background:var(--bg-primary);color:inherit;border:0;min-height:44px;padding:0 8px}
+.atelier-theme select {background:var(--bg-primary);color:inherit;border:0;height:44px;min-height:44px;padding:0 8px}
 .atelier-menu {position:relative}
 .atelier .atelier-icon-button,.atelier-dialog .atelier-icon-button {display:inline-flex;align-items:center;justify-content:center;width:44px;flex-shrink:0;padding:8px}
 .atelier-menu-items {position:absolute;right:0;top:calc(100% + 8px);z-index:40;min-width:230px;padding:8px;border:1px solid var(--border-color);background:var(--bg-primary);box-shadow:0 8px 24px #0002}
@@ -178,19 +178,18 @@ button:disabled {cursor:not-allowed;opacity:.48}
 .atelier .loss-chart__diagnostics {display:flex;flex-wrap:wrap;gap:24px}
 
 @container atelier (min-width:1200px) {
- .atelier-main[data-guided] {display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:0 24px}
- .atelier-main[data-guided]>.atelier-heading,.atelier-main[data-guided]>.atelier-tabs,.atelier-main[data-guided]>.atelier-notice,.atelier-main[data-guided]>.atelier-transport {grid-column:1/-1}
- .atelier-main[data-guided]>.atelier-tab-content {grid-column:1;grid-row:auto}
- .atelier-main[data-guided]>.atelier-lesson-host {grid-column:2;grid-row:3;margin:0;padding:0;border:0;align-self:start}
+ .atelier-main[data-guided]>.atelier-workspace-layout {display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+ .atelier-main[data-guided] .atelier-workspace {grid-column:1}
+ .atelier-main[data-guided] .atelier-workspace-layout>.atelier-lesson-host {grid-column:2;margin:0;padding:0;border:0;align-self:start}
  .atelier-main[data-guided] .atelier-network {grid-template-columns:1fr 1fr}
  .atelier-main[data-guided] .atelier-network>section:nth-child(2) {grid-column:1/-1;grid-row:2}
 }
 
-.atelier-main>.atelier-tabs {background:var(--bg-primary)}
-@media(max-height:600px) {.atelier-transport,.atelier-header {position:static}.atelier-main>.atelier-tabs {top:0}}
+.atelier-workspace>.atelier-tabs {background:var(--bg-primary)}
+@media(max-height:600px) {.atelier-transport,.atelier-header {position:static}.atelier-workspace>.atelier-tabs {top:0}}
 
 .atelier[data-short-viewport] .atelier-transport,.atelier[data-short-viewport] .atelier-header {position:static}
-.atelier[data-short-viewport] .atelier-main>.atelier-tabs {top:0}
+.atelier[data-short-viewport] .atelier-workspace>.atelier-tabs {top:0}
 
 .atelier-artifact-step {display:block;min-height:1.6em;font-variant-numeric:tabular-nums}
 .atelier-transport-position>div {display:flex;align-items:center;gap:4px}
@@ -217,3 +216,11 @@ button:disabled {cursor:not-allowed;opacity:.48}
 
 .atelier-invitation {padding:4px 12px;gap:8px;margin-bottom:16px}.atelier-invitation p {margin:0}.atelier-invitation button {font-size:14px}
 @container atelier (max-width:759px) {.atelier-invitation {gap:4px 12px}.atelier-invitation p {flex-basis:auto}.atelier-heading-actions {display:none}.atelier-setup-footer button {flex:1}.atelier-setup-footer p {font-size:12px!important}}
+
+.atelier-results-errors { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-xl); align-items: start; }
+.atelier-error-map { min-width: 0; }
+.atelier-error-map h2 { margin-block: 0 var(--space-md); }
+@container atelier (max-width: 999px) { .atelier-results-errors { grid-template-columns: minmax(0, 1fr); } }
+
+.atelier-workspace-layout,.atelier-workspace {min-width:0}
+.atelier-evaluation-step {display:inline-block;width:8ch;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}

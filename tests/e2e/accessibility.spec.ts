@@ -52,16 +52,20 @@ for (const scanCase of SCAN_CASES) {
         test.use({ viewport: { width: scanCase.width, height: scanCase.height } });
         test('has no serious or critical Axe violations', async ({ page }) => {
             await loadReadyPlayground(page);
-            const results = await new AxeBuilder({ page }).analyze();
-            const blocking = results.violations.filter(
-                ({ impact }) => impact === 'serious' || impact === 'critical',
-            );
-            expect(blocking, formatViolations(blocking)).toEqual([]);
+            for (const theme of ['light', 'dark']) {
+                await page.getByLabel('Color theme').selectOption(theme);
+                await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+                const results = await new AxeBuilder({ page }).analyze();
+                const blocking = results.violations.filter(
+                    ({ impact }) => impact === 'serious' || impact === 'critical',
+                );
+                expect(blocking, `${theme}: ${formatViolations(blocking)}`).toEqual([]);
+            }
         });
     });
 }
 
-test('320px neuron targets support keyboard selection without changing the model', async ({ page }) => {
+test('320px neuron targets support keyboard selection without changing the model', async ({ page, browserName }) => {
     await page.setViewportSize({ width: 320, height: 844 });
     await loadReadyPlayground(page);
     await workspace(page, 'Network');
@@ -69,7 +73,10 @@ test('320px neuron targets support keyboard selection without changing the model
     await nodes.first().focus();
     await page.keyboard.press('Enter');
     await expect(nodes.first()).toHaveAttribute('aria-pressed', 'true');
-    await page.keyboard.press('Tab');
+    // macOS WebKit uses Option-Tab to include native buttons in sequential navigation.
+    // Enter preserves focus on Input 1 in both engines; traverse with the native full-control key.
+    await expect(nodes.first()).toBeFocused();
+    await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
     await expect(nodes.nth(1)).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(nodes.nth(1)).toHaveAttribute('aria-pressed', 'true');
