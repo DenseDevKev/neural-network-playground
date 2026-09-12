@@ -1,0 +1,231 @@
+/* Signal Atelier. These semantic tokens are the canonical HTML, Canvas and SVG palette. */
+:root {
+  --font-sans:"Inter",system-ui,sans-serif; --font-mono:"Space Grotesk",monospace;
+  --space-2xs:4px; --space-xs:4px; --space-sm:8px; --space-md:16px; --space-lg:24px; --space-xl:32px; --space-xxl:48px;
+  --text-xl:1.25rem; --text-2xl:1.5rem; --text-3xl:2rem;
+  --color-accent:var(--color-primary); --color-accent-dim:var(--color-primary); --color-primary-dim:var(--color-primary);
+  --color-primary-glow:transparent; --color-accent-glow:transparent; --color-loading:var(--color-negative); --color-loading-glow:transparent;
+  --color-difficulty-beginner:var(--color-success); --color-difficulty-intermediate:var(--color-warning); --color-difficulty-advanced:var(--color-error);
+  --shadow-sm:none; --shadow-md:none; --shadow-lg:none; --shadow-xl:none;
+  --ease-out:cubic-bezier(.16,1,.3,1); --duration-fast:120ms; --duration-normal:200ms;
+  --bg-primary:#F7F6F2; --bg-secondary:#EFEEE9; --text-primary:#202225;
+  --text-secondary:#666970; --border-color:#D7D7D2; --color-primary:#D64C28;
+  --action-bg:#C74424; --action-text:#FFFFFF; --color-positive:#C74424; --color-negative:#2875AE;
+  --color-success:#307449; --color-warning:#866000; --color-error:#B62F20;
+  --bg-base:var(--bg-primary); --bg-surface:var(--bg-primary); --bg-elevated:var(--bg-secondary);
+  --bg-hover:var(--bg-secondary); --bg-input:var(--bg-primary); --bg-control:var(--bg-primary);
+  --bg-overlay:var(--bg-primary); --accent:var(--color-primary); --text-on-accent:var(--action-text);
+  --text-tertiary:var(--text-secondary); --border-subtle:var(--border-color); --border-default:var(--border-color);
+  --border-hover:var(--text-secondary); --border-focus:var(--color-primary); --text-disabled:var(--text-secondary);
+  --radius-sm:3px; --radius-md:4px; --radius-lg:4px; --radius-xl:4px;
+  --text-xs:.75rem; --text-sm:.875rem; --text-base:1rem; --text-lg:1.125rem;
+  --control-height-sm:44px; --control-height-md:44px; --control-height-lg:48px;
+  --shadow-glow:none; --shadow-glow-accent:none;
+}
+:root[data-theme="dark"] {
+  --bg-primary:#17191B; --bg-secondary:#202326; --text-primary:#EEEDE8;
+  --text-secondary:#BCC0C2; --border-color:#43484D; --color-primary:#EF653F;
+  --action-bg:#EF653F; --action-text:#17191B; --color-positive:#EF653F; --color-negative:#69ACDC;
+  --color-success:#7EBD8F; --color-warning:#E2C26D; --color-error:#FF957F;
+}
+html,body,#root {min-height:100%;height:auto;font-size:16px;background:var(--bg-primary)}
+body {overflow:auto}
+#root {container:atelier / inline-size}
+button,input,select,textarea {font:inherit}
+button {cursor:pointer}
+button:disabled {cursor:not-allowed;opacity:.48}
+:focus-visible {outline:2px solid var(--color-primary);outline-offset:4px}
+[hidden] {display:none!important}
+.atelier {min-height:100dvh;color:var(--text-primary)}
+.atelier button,.atelier-dialog button {min-height:44px;min-width:44px}
+.atelier button,.atelier-dialog button,.atelier select,.atelier-dialog select {color:inherit}
+.atelier button:not(.btn):where(:not(.saved-primary)),.atelier-dialog button:not(.btn) {border:1px solid var(--border-color);border-radius:3px;padding:8px 14px;background:transparent}
+.atelier .atelier-primary,.atelier-dialog .atelier-primary,.atelier .atelier-action {background:var(--action-bg)!important;color:var(--action-text)!important;border-color:var(--action-bg)!important;font-weight:600}
+ .atelier-header {position:static;top:0;z-index:30;background:var(--bg-primary);min-height:88px;display:flex;align-items:center;gap:48px;padding:16px max(24px,calc((100vw - 1440px)/2));border-bottom:1px solid var(--border-color)}
+.atelier-header .atelier-wordmark {font-family:var(--font-mono);font-size:23px;font-weight:700;letter-spacing:-1px;border:0;padding:0;white-space:nowrap}
+.atelier-wordmark span {color:var(--color-primary)}
+.atelier-header nav,.atelier-header-end {display:flex;align-items:center;gap:24px}
+.atelier-header nav button,.atelier-header .atelier-lessons-link {border:0;padding:8px 0;color:var(--text-secondary)}
+.atelier-header nav button[aria-current],.atelier-header .atelier-lessons-link[aria-current] {color:var(--text-primary)}
+.atelier-header-end {margin-left:auto}
+.atelier-theme {display:flex;align-items:center;gap:6px;font-size:14px}
+.atelier-theme select {background:var(--bg-primary);color:inherit;border:0;height:44px;min-height:44px;padding:0 8px}
+.atelier-menu {position:relative}
+.atelier .atelier-icon-button,.atelier-dialog .atelier-icon-button {display:inline-flex;align-items:center;justify-content:center;width:44px;flex-shrink:0;padding:8px}
+.atelier-menu-items {position:absolute;right:0;top:calc(100% + 8px);z-index:40;min-width:230px;padding:8px;border:1px solid var(--border-color);background:var(--bg-primary);box-shadow:0 8px 24px #0002}
+.atelier-menu-items button {display:block;width:100%;text-align:left;border:0!important}
+.atelier-menu-items button:hover {background:var(--bg-secondary)!important}
+.atelier-main {max-width:1440px;margin:0 auto;padding:24px 32px 24px;min-width:0}
+.atelier-heading {display:flex;justify-content:space-between;align-items:center;gap:24px;margin-bottom:20px}
+.atelier-heading h1 {font-size:32px;line-height:1.2;font-weight:550;letter-spacing:-1px;margin:0 0 8px}
+.atelier-heading p {color:var(--text-secondary);margin:0}
+.atelier-heading-actions {display:flex;align-items:center;gap:12px}
+.atelier-eyebrow {font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-secondary)}
+.atelier-tabs {display:flex;gap:32px;overflow-x:auto;border-bottom:1px solid var(--border-color);margin:0 0 20px}
+.atelier-tabs button {position:relative;white-space:nowrap;border:0!important;border-radius:0!important;padding:12px 0!important;color:var(--text-secondary)!important;flex-shrink:0}
+.atelier-tabs button[aria-selected=true] {color:var(--text-primary)!important}
+.atelier-tabs button[aria-selected=true]::after {content:"";height:2px;background:var(--color-primary);position:absolute;bottom:0;left:0;right:0}
+.atelier-tab-content {min-width:0;min-height:400px}
+.atelier-section-title {display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+.atelier-section-title h2,.atelier-section-title h3 {font-size:16px;font-weight:550;margin:0}
+.atelier-section-title button {border:0!important;padding:0 8px!important;color:var(--text-secondary)!important;font-size:14px}
+.atelier-network {display:grid;grid-template-columns:minmax(180px,.85fr) minmax(360px,2.3fr) minmax(220px,1fr);gap:32px;align-items:start}
+.atelier-network>section {min-width:0}
+.atelier-data-plot {display:block;width:100%;height:auto;aspect-ratio:1;border:1px solid var(--border-color);background:var(--bg-secondary)}
+.atelier-plot-caption {font-size:14px;line-height:1.6;color:var(--text-secondary);margin:12px 0}
+.atelier-class-legend {display:flex;flex-wrap:wrap;gap:12px;font-size:14px;color:var(--text-secondary);margin-top:12px}
+.atelier-class-legend span {display:flex;align-items:center;gap:6px}
+.atelier-class-legend i {width:7px;height:7px;border-radius:50%;background:var(--class-color)}
+.atelier-network-graph {height:560px;min-width:0}
+.atelier-network .network-graph-container {height:100%;min-height:0}
+.atelier-network .network-graph-summary {position:static;max-height:88px;overflow:auto;padding:8px 0;font-size:14px}
+.atelier-neuron-detail {border-top:1px solid var(--border-color);margin-top:24px;padding-top:24px}
+.atelier-neuron-detail .precision-selection-details {display:grid;grid-template-columns:220px 1fr 1fr;gap:20px}
+.atelier-neuron-detail header,.atelier-neuron-detail .precision-selection-basis {grid-column:1/-1}
+.atelier-neuron-detail header {display:flex;justify-content:space-between;align-items:center}
+.atelier-neuron-detail dl {display:grid;gap:12px}.atelier-neuron-detail dl>div {display:flex;justify-content:space-between;gap:16px}
+.atelier-neuron-detail li {list-style:none;display:flex;justify-content:space-between;gap:12px;padding:6px 0}
+.atelier-transport {position:static;border-top:1px solid var(--border-color);background:var(--bg-primary);padding:12px 0;margin:0 0 16px}
+.atelier-transport-row {display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.atelier-transport-row button {display:flex;align-items:center;justify-content:center;gap:8px}
+.atelier-transport-row label {display:flex;gap:8px;align-items:center;margin-left:12px;color:var(--text-secondary);font-size:14px}
+.atelier-transport-row select {background:var(--bg-primary);border:1px solid var(--border-color);padding:8px;min-height:44px}
+.atelier-transport-position {display:flex;gap:24px;margin-left:auto;font-size:14px;font-variant-numeric:tabular-nums}
+.atelier-transport-position span {color:var(--text-secondary)}
+.atelier-transport-status {font-size:14px;color:var(--text-secondary);margin:8px 0 0;height:42px;overflow:auto;line-height:21px}
+.atelier-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--border-color);gap:24px;padding-top:24px;margin-top:24px}
+.atelier-metrics dt {font-size:14px;color:var(--text-secondary);margin-bottom:8px}
+.atelier-metrics dd {font-size:26px;line-height:1.2;font-family:var(--font-mono);font-variant-numeric:tabular-nums;margin:0}
+.atelier-metrics small {display:block;min-height:2.4em;line-height:1.2;margin-top:8px;font-family:var(--font-sans);font-size:14px;color:var(--text-secondary)}
+.atelier-evidence {min-width:0}.atelier-evidence h2 {font-size:24px;font-weight:550;margin-bottom:16px}
+.atelier-results-boundary {display:grid;grid-template-columns:minmax(280px,500px) 1fr;gap:48px}
+.atelier-evidence .chart-container {height:380px;min-height:300px}
+.atelier-evidence .evidence-frame {background:none;border:0;padding:0}
+.atelier-notice {padding:16px 20px;border:1px solid var(--border-color);display:flex;align-items:center;gap:16px;margin-bottom:24px;font-size:14px}
+.atelier-notice p {flex:1}.atelier-error {color:var(--color-error);margin:12px 0}
+.atelier-footer {max-width:1440px;margin:0 auto;padding:12px 32px 24px;display:flex;justify-content:space-between;gap:16px;color:var(--text-secondary);font-size:14px}
+.atelier-dialog {position:fixed;inset:0;margin:auto;width:min(720px,calc(var(--atelier-viewport-width,100vw) - 32px));max-height:calc(var(--atelier-viewport-height,100dvh) - 32px);padding:24px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-primary);color:var(--text-primary);overflow:auto}
+.atelier-dialog::backdrop {background:#0009}
+.atelier-dialog>header {display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}
+.atelier-dialog h2 {font-size:24px;font-weight:550}.atelier-dialog h3 {font-size:18px;margin:24px 0 12px}
+.atelier-dialog p {margin-bottom:16px;color:var(--text-secondary)}
+.atelier-dialog label {display:block;margin:16px 0 8px}.atelier-dialog input,.atelier-dialog select,.atelier-dialog textarea {max-width:100%;background:var(--bg-primary);color:inherit;border:1px solid var(--border-color);min-height:44px;padding:8px}
+.atelier-dialog-actions {display:flex;gap:12px;justify-content:flex-end;margin-top:24px;flex-wrap:wrap}
+.atelier-help dl {display:grid;grid-template-columns:100px 1fr;gap:16px}.atelier-help a {color:var(--color-primary)}
+.atelier-checkpoints {display:grid;gap:16px}.atelier-checkpoints input {width:100%}.atelier-checkpoints dl {display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.atelier-lesson-host {margin-top:24px;border-top:1px solid var(--border-color);padding-top:24px}
+@container atelier (max-width:1199px) {
+ .atelier-header {gap:28px;padding:12px 24px}.atelier-header nav,.atelier-header-end {gap:16px}
+ .atelier-network {grid-template-columns:1fr 1fr;gap:24px}.atelier-network>section:nth-child(2) {grid-column:1/-1;grid-row:2}
+ .atelier-network .atelier-network-graph {height:520px}.atelier-network .atelier-data-plot,.atelier-network .decision-boundary-container {max-width:320px;margin:0 auto}
+ .atelier-main {padding:32px 24px 20px}
+}
+@container atelier (max-width:759px) {
+ .atelier-header {flex-wrap:wrap;gap:4px 20px;padding:4px 16px;min-height:72px}.atelier-header .atelier-wordmark {font-size:20px}
+ .atelier-header nav {order:3;width:100%;gap:24px}.atelier-header-end {gap:8px}.atelier-header .atelier-lessons-link {font-size:14px}.atelier-theme svg {display:none}
+ .atelier-theme select {max-width:82px;padding:0}.atelier-main {padding:12px 16px 16px}
+ .atelier-heading {align-items:flex-start;margin-bottom:8px;gap:12px;flex-wrap:wrap}.atelier-heading h1 {font-size:24px}.atelier-heading p {display:none}
+ .atelier-heading-actions {flex-direction:row;align-items:center;gap:8px}.atelier-heading-actions button {font-size:14px;padding:8px!important}
+ .atelier-tabs {gap:28px;margin-bottom:12px}.atelier-tabs button {font-size:14px}
+ .atelier-network {display:flex;flex-direction:column;gap:24px}.atelier-network>section {width:100%}.atelier-network>section:first-child {order:1}.atelier-network>section:nth-child(2) {order:2}.atelier-network>section:last-child {order:3}
+ .atelier-network-graph {height:540px!important}.atelier-network .atelier-data-plot {max-width:100%}
+ .atelier-transport {padding:8px 0;margin:0 0 8px}.atelier-transport-row {gap:8px}.atelier-transport-row button {padding:8px!important}.atelier-transport-row label {margin-left:0}.atelier-transport-position {width:100%;margin-left:0;justify-content:space-between;gap:12px}
+ .atelier-metrics {grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 16px}.atelier-metrics dd {font-size:24px}
+ .atelier-results-boundary {grid-template-columns:1fr;gap:24px}.atelier-evidence .chart-container {height:300px}
+ .atelier-neuron-detail .precision-selection-details {grid-template-columns:1fr}.atelier-notice {flex-wrap:wrap}.atelier-notice p {flex-basis:100%}
+ .atelier-dialog {padding:20px;max-height:calc(var(--atelier-viewport-height,100dvh) - 16px);width:calc(var(--atelier-viewport-width,100vw) - 16px)}.atelier-dialog-actions>* {flex:1}
+ .atelier-footer {padding:12px 16px 24px;flex-wrap:wrap}
+}
+@media (prefers-reduced-motion:reduce) {*,*::before,*::after {scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+@media (forced-colors:active) {button,input,select,.atelier-data-plot {border:1px solid CanvasText!important}.atelier-tabs button[aria-selected=true] {border-bottom:3px solid Highlight!important}.atelier-primary {forced-color-adjust:auto}}
+
+.atelier .network-graph-frame {grid-template-rows:auto auto minmax(220px,1fr) auto;gap:12px;min-height:360px}
+.atelier .network-graph-frame>.network-graph-toolbar,.atelier .network-graph-frame>.network-graph-legend {position:static;inset:auto;width:100%;max-width:100%;height:auto;min-width:0;background:none;box-shadow:none;border:0;padding:0;margin:0;transform:none;overflow:visible}
+.atelier .network-graph-toolbar {display:flex;gap:8px;flex-wrap:wrap}
+.atelier .network-graph-toolbar .network-graph-controls,.atelier .network-graph-toolbar .network-graph-mode-toggle {position:static;display:flex;gap:4px;border:0;padding:0;background:none}
+.atelier .network-graph-legend {display:grid;gap:8px}
+.atelier .network-graph-legend__scale {flex-wrap:wrap;gap:8px}
+.atelier .network-graph-legend__filters {gap:4px;flex-wrap:wrap}
+.atelier .network-graph-legend button,.atelier .network-graph-toolbar button {min-height:44px;padding:6px 8px;font-size:14px}
+.atelier .network-graph-wrapper {border:0;background:none;min-height:220px}
+.atelier .network-graph-legend__swatch--positive {background:var(--color-positive)}
+.atelier .network-graph-legend__swatch--negative {background:var(--color-negative)}
+.atelier .decision-boundary {border-radius:2px}
+.atelier .decision-boundary__legend,.atelier .decision-boundary__overlay-badge,.atelier .decision-boundary__summary {background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);font-size:14px;backdrop-filter:none}
+
+.atelier .atelier-header .atelier-wordmark,.atelier .atelier-header nav button,.atelier .atelier-header .atelier-lessons-link {border:0;background:none;padding:8px 0}
+.atelier .atelier-header .atelier-lessons-link {display:flex;align-items:center;gap:8px}
+.atelier .atelier-header .atelier-wordmark {font-family:Inter,system-ui,sans-serif;letter-spacing:-1px}
+
+.atelier .atelier-setup-tabs button {background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:12px 0;color:var(--text-secondary)}
+.atelier .atelier-setup-tabs button[aria-current] {border-bottom-color:var(--color-primary);color:var(--text-primary)}
+.atelier .atelier-setup h2 {font-size:24px;font-weight:550;margin-bottom:12px;letter-spacing:-.6px}
+.atelier .atelier-setup h3 {font-size:16px;font-weight:600;margin-bottom:12px}
+.atelier .atelier-setup p {color:var(--text-secondary);font-size:14px;line-height:1.6;margin-bottom:20px}
+.atelier .atelier-datasets button {padding:12px;gap:12px}
+.atelier .atelier-datasets canvas {width:100%!important;height:auto!important;aspect-ratio:1}
+.atelier .atelier-selected-preview {aspect-ratio:1}
+.atelier .atelier-selected-preview canvas {height:100%!important;aspect-ratio:1}
+.atelier .atelier-setup-footer {position:static;flex-shrink:0;background:var(--bg-primary);padding:12px 0 max(12px,env(safe-area-inset-bottom));margin-top:0}
+.atelier .atelier-setup-footer p {margin:0}
+@container atelier (max-width:759px){.atelier .atelier-setup-footer {gap:8px}.atelier .atelier-setup .atelier-form-grid {grid-template-columns:1fr}.atelier .atelier-datasets {gap:8px}.atelier .atelier-datasets button {padding:8px;font-size:14px}}
+
+.atelier .loss-chart {padding:24px 0;background:none;min-width:0}
+.atelier .loss-chart__legend {display:flex;flex-wrap:wrap;gap:16px 24px;margin:24px 0;font-size:14px}
+.atelier .loss-chart__swatch {width:24px;height:0;border-top:2px solid transparent;background:none!important;border-radius:0}
+.atelier .loss-chart__swatch--train {border-color:#3984BD}.atelier .loss-chart__swatch--test {border-color:#DF633B;border-top-style:dashed}.atelier .loss-chart__swatch--trend {border-color:var(--text-secondary);border-top-style:dotted}.atelier .loss-chart__swatch--objective {border-color:#4D9568;border-top-style:dashed}
+.atelier .loss-chart__basis,.atelier .loss-chart__diagnostics {font-size:14px;line-height:1.7;color:var(--text-secondary);margin-top:16px}
+.atelier .loss-chart__diagnostics {display:flex;flex-wrap:wrap;gap:24px}
+
+@container atelier (min-width:1200px) {
+ .atelier-main[data-guided]>.atelier-workspace-layout {display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+ .atelier-main[data-guided] .atelier-workspace {grid-column:1}
+ .atelier-main[data-guided] .atelier-workspace-layout>.atelier-lesson-host {grid-column:2;margin:0;padding:0;border:0;align-self:start}
+ .atelier-main[data-guided] .atelier-network {grid-template-columns:1fr 1fr}
+ .atelier-main[data-guided] .atelier-network>section:nth-child(2) {grid-column:1/-1;grid-row:2}
+}
+
+.atelier-workspace>.atelier-tabs {background:var(--bg-primary)}
+@media(max-height:600px) {.atelier-transport,.atelier-header {position:static}.atelier-workspace>.atelier-tabs {top:0}}
+
+.atelier[data-short-viewport] .atelier-transport,.atelier[data-short-viewport] .atelier-header {position:static}
+.atelier[data-short-viewport] .atelier-workspace>.atelier-tabs {top:0}
+
+.atelier-artifact-step {display:block;min-height:1.6em;font-variant-numeric:tabular-nums}
+.atelier-transport-position>div {display:flex;align-items:center;gap:4px}
+.atelier-transport-position strong {display:inline-block;min-width:6ch;font-variant-numeric:tabular-nums}
+@container atelier (max-width:759px) {
+ .atelier-transport {display:grid;grid-template-columns:44px 52px 44px minmax(60px,1fr) 44px;gap:6px}
+ .atelier-transport-row {display:contents}
+ .atelier-transport-row>button>span {display:none}
+ .atelier-transport-row>label {grid-column:4;grid-row:1;gap:0;font-size:0;justify-content:center}
+ .atelier-transport-row>label select {min-width:0;width:100%;font-size:14px}
+ .atelier-transport-position {display:contents}
+ .atelier-transport-position>div {display:flex;gap:4px;grid-row:2;font-size:12px}
+ .atelier-transport-position>div:first-child {grid-column:1}
+ .atelier-transport-position>div:nth-child(2) {grid-column:2}
+ .atelier-transport-position strong {min-width:0}
+ .atelier-transport-position button {grid-column:5;grid-row:1;width:44px}
+ .atelier-transport-position button span {display:none}
+ .atelier-transport-status {grid-column:3/-1;grid-row:2;font-size:12px;line-height:18px;height:36px;margin:0}
+}
+
+.atelier-concepts details {border-top:1px solid var(--border-color)}
+.atelier-concepts summary {padding:12px 0;min-height:44px;cursor:pointer}
+.atelier-concepts details>div {padding:8px 0}
+
+.atelier-invitation {padding:4px 12px;gap:8px;margin-bottom:16px}.atelier-invitation p {margin:0}.atelier-invitation button {font-size:14px}
+@container atelier (max-width:759px) {.atelier-invitation {gap:4px 12px}.atelier-invitation p {flex-basis:auto}.atelier-heading-actions {display:none}.atelier-setup-footer button {flex:1}.atelier-setup-footer p {font-size:12px!important}}
+
+.atelier-results-errors { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-xl); align-items: start; }
+.atelier-error-map { min-width: 0; }
+.atelier-error-map h2 { margin-block: 0 var(--space-md); }
+@container atelier (max-width: 999px) { .atelier-results-errors { grid-template-columns: minmax(0, 1fr); } }
+
+.atelier-workspace-layout,.atelier-workspace {min-width:0}
+.atelier-evaluation-step {display:inline-block;width:8ch;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+@media (forced-colors: active) {
+  .decision-boundary__swatch, .atelier-class-legend i, .atelier-data-plot circle, .network-graph-legend__swatch {forced-color-adjust:none}
+  .network-graph-container > canvas, .network-graph-container > svg {forced-color-adjust:none;background:var(--bg-primary);color:var(--text-secondary)}
+}

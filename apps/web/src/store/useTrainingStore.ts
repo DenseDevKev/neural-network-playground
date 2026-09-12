@@ -26,7 +26,7 @@ import {
 import { normalizeTrainingSpeed } from '../worker/trainingLoop.ts';
 import type { FrameVersions } from '../worker/frameBuffer.ts';
 
-export type ConfigChangeSource = 'data' | 'network' | 'features' | 'training' | 'preset' | null;
+export type ConfigChangeSource = 'data' | 'network' | 'features' | 'training' | 'preset' | 'setup' | null;
 export type TrainedRecipeSource = 'initialize' | 'config-sync' | 'reset' | 'restore';
 
 export interface PreparedTrainingEvidenceReplacement {

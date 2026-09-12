@@ -1,50 +1,73 @@
-# State Ownership Contract
+# State ownership contract
 
-This contract records the state boundaries retained by the Precision Lab branch and its behavior-preserving maintenance pass. The refactor must preserve the V2 experiment document, URL behavior, engine and worker protocols, checkpoints, and saved runs.
-
-The release continuation is specified in `docs/superpowers/specs/2026-07-16-release-ready-product-shell-design.md`. Its measured pre-change evidence and browser diagnosis are recorded in `docs/qa/2026-07-16-product-shell-baseline.md`. The implemented shell rules and extension points are documented in `docs/architecture/product-shell.md`.
+Signal Atelier retains the V2 document, experiment URL, engine and worker
+protocols, checkpoints, and saved-run formats. Its current presentation contract
+is [product-shell.md](product-shell.md); historical receipts below remain dated.
 
 ## Ownership
 
 | Owner | Authoritative responsibility |
 |---|---|
-| `usePlaygroundStore` | The shareable V2 document (`recipe` plus `document.view`), preparation/import/URL compatibility, and the temporary visualization-demand delivery cache. |
-| `useTrainingStore` | Volatile runtime status; worker-authored live-evidence references; train/test points; React invalidation versions; configuration synchronization and errors; trained-recipe identity; checkpoint metadata; pause/worker errors; and session speed. |
-| `metricHistoryBuffer` | Bounded metric-series storage. `useTrainingStore` publishes its independent invalidation versions. |
-| Worker | Authoritative model state and scientific artifacts, including checkpoint payloads. |
-| `frameBuffer` | Accepted main-thread typed-array and provenance cache. Its React invalidation versions live in `useTrainingStore`; it is not a second scientific authority. |
-| `useLayoutStore` | Persisted local workspace navigation, disclosure, code-tab, and audience preferences. These values never enter the V2 document, URL, checkpoints, exports, or saved runs. |
-| `experimentMemoryStore` | Saved, rejected, and pending run artifacts, plus their persistence/compatibility bookkeeping. |
-| Feature hooks/components | Request state, selections, focus/hover state, and ephemeral drawers. These do not belong in the shareable document or persisted layout state. |
+| `usePlaygroundStore` | Shareable V2 recipe and document view; preparation/import/URL compatibility; temporary demand delivery cache. |
+| `useTrainingStore` | Volatile runtime, worker-authored evidence references, data points and invalidation versions, configuration synchronization/errors, trained recipe identity, checkpoint metadata, pause reasons, and speed. |
+| `metricHistoryBuffer` | Bounded metric series, independently invalidated by the training store. |
+| Worker | Model, optimizer, scientific artifacts, and checkpoint payloads. |
+| `frameBuffer` | Accepted main-thread typed arrays and provenance; not a second scientific authority. |
+| `useLayoutStore` | Versioned local navigation, guidance, code format, and lesson invitation preferences; legacy preference migration and session export requests. |
+| Theme store | System/Light/Dark preference and resolved theme; no experiment or runtime state. |
+| `useRecipeDraft` | App-owned session candidate, base identity, raw numeric text, dirty/validation/submission state, and atomic Apply/Cancel. |
+| `useAtelierViewport` | Effective available viewport, including document zoom and virtual keyboard; no scientific state. |
+| `experimentMemoryStore` | Saved, rejected, legacy/incompatible, and exact pending artifacts plus persistence bookkeeping. |
+| Feature hooks/components | Request lifecycle, focus/hover/selection, dialog state, comparison selection, and active lesson execution. |
 
-Rendered visibility is authoritative for visualization demand. `usePlaygroundStore.demand` is only the delivery cache, and `useTraining` is the sender to the worker.
+No layout, theme, modal, draft, comparison, or lesson-execution state enters the
+persisted experiment document. Old layout storage is read without deletion.
 
-## Current adapter and compatibility boundaries
+## Production composition and adapters
 
-- `App` is the sole production writer of visualization demand. It derives demand from resolved shell visibility, writes the delivery cache, and `useTraining` remains the only sender to the worker. `InspectionPanel` no longer mutates demand on mount.
-- Inspection store, frame-buffer, selector, and worker-bridge access is confined to `useInspectionPanelController`; `inspectionPanelModel` is React-free and `InspectionPanelView` consumes display-safe model data and commands.
-- Decision-boundary store and frame-buffer access is confined to `useDecisionBoundaryModel`; `deriveDecisionBoundaryModel` is React-free and the canvas component owns only painting and responsive sizing.
-- `usePlaygroundStore.featuresUI` remains an existing renderer/capability-switch location; this roadmap does not relocate it.
-- Ephemeral `App` drawers remain local. Request lifecycle and selection state remain local to feature hooks.
+`App`/`CompatiblePlayground` owns the production `useTraining`,
+`useSaveCurrentRun`, `useNetworkSelectionController`, and
+`useDecisionBoundaryController` instances. `AtelierShell` composes their display
+models and commands. Hidden visualizations unmount while controllers survive.
+App alone derives demand from actual visibility, including the compact focused
+network region, and `useTraining` alone sends the cached demand to the worker.
 
-## Precision Lab production composition and maintenance guards
+Inspection store/frame-buffer/worker access stays in
+`useInspectionPanelController`; its React-free display model feeds the view.
+Boundary state access stays in `useDecisionBoundaryModel`; its pure derivation
+feeds a canvas responsible only for painting and size. Canvas and SVG network
+renderers remain supported and share geometry, tokens, and selection semantics.
 
-`App`/`CompatiblePlayground` owns the production `useTraining`, `useSaveCurrentRun`, `useNetworkSelectionController`, and `useDecisionBoundaryController` instances. `PrecisionLabShell` receives display content and commands. The canonical live boundary stays mounted; shell navigation never becomes an experiment URL fragment.
+Transport and Saved runs share one save controller. Capture obtains one artifact;
+persistence Retry and Download pending evidence reuse it exactly. Native locking
+and digest checks preserve independent-tab saves, renames, and deletions.
 
-Transport and History share the App-owned save controller. Capture obtains one artifact; persistence retry reuses the store's pending artifact. Exact-artifact retry is not a solution to independent-tab lost updates; that separate finding remains in `BUGS-TO-REVIEW.md`.
+A recipe commit has one preparation/publication/configuration acknowledgement
+lifecycle. Draft Apply uses expected-base identity and `setup` source. Submitted
+failures use synchronization recovery; unsubmitted preparation errors retain the
+draft. Staged imports validate before preview and prepare on explicit Apply.
+An unmounted import releases only its own failed pending transaction.
 
-`nn-forge/dependency-boundaries` in `scripts/eslint-architecture.mjs` rejects engine/shared imports of UI, engine imports of shared, production imports of tests/prototypes, and newly introduced controller-owner modules. It checks relative/package-alias static imports, re-exports, type imports, literal `import()` and literal `require()`; nonliteral computed imports are outside its resolution scope. Runtime controller counts still require integration tests.
+## Maintenance guards
 
-Type-only imports of controller interfaces are permitted. The existing `RunHistoryPanel` save wrapper and `NetworkGraph`/Canvas/SVG selection wrappers are exact, documented exceptions, not permission to add more owners. Remove exceptions only with consumer-proven retirement. `NetworkGraphSVG` remains a live fallback.
+`nn-forge/dependency-boundaries` in `scripts/eslint-architecture.mjs` rejects
+engine/shared imports of UI, engine imports of shared, production imports of
+tests/prototypes, and new controller-owner modules. It checks static imports,
+re-exports, type imports, literal `import()` and literal `require()`; nonliteral
+computed imports are outside resolution. Integration tests verify runtime owner
+counts and demand behavior.
 
-Production explicit `any` is an error. Test/spec/benchmark entries, `__tests__`, `__benchmarks__`, and `apps/web/src/test` retain intentionally malformed-input exceptions. Runtime `apps/web/src/testing/e2eFaults.ts` is production and is not exempt.
+Type-only controller interfaces are permitted. Existing RunHistoryPanel save and
+NetworkGraph renderer selection wrappers are exact documented exceptions, not
+permission to add owners. `NetworkGraphSVG` is a live fallback. Production explicit
+`any` is an error; malformed-input test exceptions do not exempt runtime fault
+injection code. Maintenance tooling is not shipped; see
+[maintenance commands](../maintenance/README.md).
 
-Maintenance tooling is not shipped in the app. Start with `docs/maintenance/README.md` for commands, source receipts and connector-friendly evidence.
-
-## Resolved transition searches
-
-- The retired `BuildRunShell`, `RegionShell`, `MainArea`, and `Sidebar` presentation paths have no production or test consumers. `App` composes the live display exports from `PrecisionLabContent` through `PrecisionLabShell` and retains controller ownership.
-- The unused `deriveVisualizationDemand.historyDrawerOpen` argument has been removed.
+Replaced shell components and styles were retired only after import-closure and
+compatibility checks. Deprecated layout setters and duplicate live fields were removed after consumer
+checks. The migration reader still accepts old persisted names, and explanation
+actions now navigate and focus the current destination and tab controls.
 
 ## Historical July product-shell baseline evidence
 
@@ -91,7 +114,6 @@ Idle-machine performance medians:
 These are candidates only; do not delete or relocate them in this slice.
 
 - `usePlaygroundStore.dataset` and `regenerateData`: baseline searches find only the store implementation and its unit test, but removal requires a dedicated consumer search and compatibility proof.
-- Deprecated layout aliases (`layout`, `phase`, `activeTabLeft`, `activeTabRight`, and their setters): persisted-state sanitization and compatibility tests still accept them. Retain until a dedicated compatibility migration proves older local layout state remains safe without them.
 - `NetworkGraphSVG`: a live runtime fallback selected by `featuresUI.canvasNetworkGraph`, not a dead path.
 
 ## Exact verification commands
@@ -101,12 +123,16 @@ Run from the repository root. Focused files must use direct Vitest invocation; `
 ```bash
 git rev-parse HEAD
 git status --short
+node --test scripts/*.test.mjs
 NODE_OPTIONS=--experimental-require-module pnpm --filter @nn-playground/web exec vitest run src/components/controls/InspectionPanel.test.tsx src/components/visualization/DecisionBoundary.test.tsx --pool=forks --reporter=dot
 pnpm lint
+pnpm typecheck
 pnpm test
 pnpm build
+pnpm test:bundle
 pnpm test:perf
 pnpm test:e2e
+pnpm test:e2e:recovery
 git diff --check
 git diff --cached --check
 ```

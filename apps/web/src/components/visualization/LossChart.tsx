@@ -6,14 +6,15 @@ import { metricHistoryBuffer } from '../../store/metricHistoryBuffer.ts';
 import { EmptyState } from '../common/EmptyState.tsx';
 import { Tooltip } from '../common/Tooltip.tsx';
 import { ConceptHelp } from '../common/ConceptHelp.tsx';
+import { readPlotPalette, useThemeStore } from '../../store/theme.ts';
 import { useAudienceGuidanceLevel } from '../../hooks/useAudienceGuidanceLevel.ts';
 
 type ChartTab = 'loss' | 'accuracy';
 export function deriveLossChartViewport(width: number) {
     const roundedWidth = Number.isFinite(width) ? Math.max(1, Math.round(width)) : 1;
-    return { width: roundedWidth, height: Math.max(96, Math.min(140, Math.round(roundedWidth * 0.35))) };
+    return { width: roundedWidth, height: Math.max(220, Math.min(360, Math.round(roundedWidth * 0.45))) };
 }
-const PADDING = { top: 18, right: 16, bottom: 24, left: 42 } as const;
+const PADDING = { top: 24, right: 24, bottom: 42, left: 64 } as const;
 
 interface ScalarPoint {
     readonly step: number;
@@ -33,6 +34,7 @@ function drawSeries(
     valueMax: number,
     width: number,
     height: number,
+    dash: number[] = [],
 ): void {
     const values = finitePoints(points);
     if (values.length === 0) return;
@@ -42,6 +44,7 @@ function drawSeries(
     const scaleX = (step: number) => PADDING.left + ((step - stepMin) / stepRange) * plotWidth;
     const scaleY = (value: number) => PADDING.top + plotHeight - (value / valueMax) * plotHeight;
 
+    ctx.setLineDash(dash);
     ctx.beginPath();
     values.forEach((point, index) => {
         const x = scaleX(point.step);
@@ -93,19 +96,32 @@ function drawChart(
         ? 1
         : Math.max(0.000001, ...values) * 1.05;
 
-    ctx.fillStyle = 'rgba(12, 16, 28, 0.9)';
+    const palette = readPlotPalette();
+    ctx.fillStyle = palette.background;
     ctx.fillRect(0, 0, width, height);
-    drawSeries(ctx, trend, '#f6c85f', stepMin, stepMax, valueMax, width, height);
-    drawSeries(ctx, train, '#00e5c3', stepMin, stepMax, valueMax, width, height);
-    drawSeries(ctx, test, '#7c5cfc', stepMin, stepMax, valueMax, width, height);
-    drawSeries(ctx, objective, '#ff8f70', stepMin, stepMax, valueMax, width, height);
-
-    ctx.fillStyle = 'rgba(255,255,255,0.58)';
-    ctx.font = '10px Inter, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(stepMin.toLocaleString(), PADDING.left, height - 7);
+    ctx.setLineDash([]);
+    ctx.font = '14px Inter, sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(stepMax.toLocaleString(), width - PADDING.right, height - 7);
+    for (let tick = 0; tick <= 4; tick++) {
+        const y = PADDING.top + (height - PADDING.top - PADDING.bottom) * tick / 4;
+        const value = valueMax * (1 - tick / 4);
+        ctx.beginPath(); ctx.moveTo(PADDING.left, y); ctx.lineTo(width - PADDING.right, y);
+        ctx.strokeStyle = palette.rule; ctx.lineWidth = 0.5; ctx.stroke();
+        ctx.fillStyle = palette.muted;
+        ctx.fillText(tab === 'accuracy' ? `${Math.round(value * 100)}%` : value < 0.01 ? value.toExponential(1) : value.toFixed(2), PADDING.left - 10, y + 4);
+    }
+    drawSeries(ctx, trend, palette.muted, stepMin, stepMax, valueMax, width, height, [2, 5]);
+    drawSeries(ctx, train, '#3984BD', stepMin, stepMax, valueMax, width, height);
+    drawSeries(ctx, test, '#DF633B', stepMin, stepMax, valueMax, width, height, [8, 4]);
+    drawSeries(ctx, objective, '#4D9568', stepMin, stepMax, valueMax, width, height, [10, 3, 2, 3]);
+    ctx.setLineDash([]);
+    ctx.fillStyle = palette.muted;
+    ctx.textAlign = 'left';
+    ctx.fillText(stepMin.toLocaleString(), PADDING.left, height - 16);
+    ctx.textAlign = 'right';
+    ctx.fillText(stepMax.toLocaleString(), width - PADDING.right, height - 16);
+    if (width > 320) { ctx.textAlign = 'center'; ctx.fillText('Model step', width / 2, height - 16); }
+
 }
 
 function formatSigned(value: number): string {
@@ -119,6 +135,7 @@ function isPlateau(evaluations: readonly EvaluationPoint[]): boolean {
 }
 
 export const LossChart = memo(function LossChart() {
+    const theme = useThemeStore((state) => state.resolved);
     const guidanceLevel = useAudienceGuidanceLevel();
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -172,6 +189,7 @@ export const LossChart = memo(function LossChart() {
     }, []);
 
     useEffect(() => {
+        void theme;
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -188,7 +206,7 @@ export const LossChart = memo(function LossChart() {
             history.trendHistory,
             history.evaluationHistory,
         );
-    }, [viewport, history, tab]);
+    }, [viewport, history, tab, theme]);
 
     if (history.trendHistory.length === 0 && history.evaluationHistory.length === 0) {
         return (

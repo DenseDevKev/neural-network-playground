@@ -5,8 +5,8 @@ type GatedWindow = Window & { releaseDigest?: () => void; digestBlocked?: boolea
 
 async function openHistory(page: Page) {
     await page.goto('./');
-    await page.getByRole('button', { name: 'History', exact: true }).click();
-    const history = page.getByRole('dialog', { name: 'History', exact: true });
+    await page.getByRole('button', { name: 'Saved runs', exact: true }).click();
+    const history = page.locator('.saved-runs');
     await expect(history.getByRole('button', { name: 'Save current run', exact: true })).toBeEnabled();
     return history;
 }
@@ -44,7 +44,7 @@ test('two tabs preserve both saves when a stale save is delayed during validatio
     expect(stored.find((record: { id: string }) => record.id === first.id)).toEqual(first);
     expect(new Set(stored.map((record: { id: string }) => record.id)).size).toBe(2);
     await second.reload();
-    await second.getByRole('button', { name: 'History', exact: true }).click();
+    await second.getByRole('button', { name: 'Saved runs', exact: true }).click();
     await expect(secondHistory.getByRole('article')).toHaveCount(2);
 });
 

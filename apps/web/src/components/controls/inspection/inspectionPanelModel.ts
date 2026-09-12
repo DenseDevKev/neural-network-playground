@@ -17,6 +17,7 @@ interface InspectionLayerStatsInput {
 }
 
 interface InspectionActivationBasisInput {
+    readonly modelStep?: number;
     readonly sampleCount: number;
     readonly populationCount: number;
     readonly modelRevision: number;
@@ -39,6 +40,7 @@ interface InspectionHistogramInput {
 }
 
 interface InspectionTraceResultInput {
+    readonly sample?: { readonly x: number; readonly y: number; readonly label: number };
     readonly source: InspectionTraceSource;
     readonly sampleIndex: number;
     readonly modelStep: number;
@@ -92,6 +94,8 @@ interface InspectionLandscapeResultInput {
 }
 
 export interface InspectionPanelModelInput {
+    readonly activationStatus?: string;
+    readonly histogramBasis?: string;
     readonly hiddenLayerCount: number;
     readonly layerStats: readonly InspectionLayerStatsInput[] | null;
     readonly activationBasis: InspectionActivationBasisInput | null;
@@ -154,6 +158,7 @@ interface InspectionPanelTraceDisplay {
     readonly errorMessage: string | null;
     readonly result: {
         readonly provenance: string;
+        readonly sample?: { readonly x: string; readonly y: string; readonly target: string };
         readonly output: string;
         readonly sampleDataLoss: string;
         readonly regularizationPenalty: string;
@@ -190,6 +195,7 @@ interface InspectionPanelLandscapeDisplay {
     readonly result: {
         readonly provenance: string;
         readonly summary: string;
+        readonly axes?: readonly [string, string];
         readonly gridTemplateColumns: string;
         readonly cells: readonly {
             readonly key: string;
@@ -203,6 +209,8 @@ interface InspectionPanelLandscapeDisplay {
 }
 
 export interface InspectionPanelDisplayModel {
+    readonly activationStatus?: string;
+    readonly histogramBasis?: string;
     readonly activationBasis: {
         readonly label: string;
         readonly suffix: string;
@@ -328,7 +336,7 @@ export function createInspectionPanelDisplayModel(
             summary: `${histogramName} activations: ${nearZeroText}, ${saturatedText}. ${describeActivationShape(selectedHistogram.nearZeroCount, selectedHistogram.saturatedCount, selectedHistogram.totalCount)}.`,
             bins: (selectedHistogramBins ?? []).map((count, index) => ({
                 key: index,
-                height: `${Math.max(6, (count / maxHistogramCount) * 100)}%`,
+                height: `${(count / maxHistogramCount) * 100}%`,
             })),
         }
         : null;
@@ -345,6 +353,7 @@ export function createInspectionPanelDisplayModel(
     const traceResult = input.traceResult
         ? {
             provenance: `Trace from ${input.traceResult.source === 'train' ? 'training' : 'test'} sample ${input.traceResult.sampleIndex.toLocaleString()} · model step ${input.traceResult.modelStep.toLocaleString()} · revision ${input.traceResult.modelRevision.toLocaleString()}`,
+            sample: input.traceResult.sample ? { x: String(input.traceResult.sample.x), y: String(input.traceResult.sample.y), target: String(input.traceResult.sample.label) } : undefined,
             output: input.traceResult.output.map((value) => value.toFixed(4)).join(', '),
             sampleDataLoss: input.traceResult.sampleDataLoss.toFixed(4),
             regularizationPenalty: input.traceResult.regularizationPenalty.toFixed(4),
@@ -398,6 +407,7 @@ export function createInspectionPanelDisplayModel(
             return {
                 provenance: `Probe from step ${result.modelStep} / epoch ${result.modelEpoch}`,
                 summary: `Training-objective parameter grid: center ${center}, min ${min}, max ${max}. Best direction ${result.axisALabel} ${offsetA}, ${result.axisBLabel} ${offsetB}.`,
+                axes: [result.axisALabel, result.axisBLabel] as const,
                 gridTemplateColumns: `repeat(${result.gridSize}, minmax(0, 1fr))`,
                 cells: result.objectives.map((objective, index) => {
                     const intensity = 1 - ((objective - result.minObjective) / spread);
@@ -415,13 +425,12 @@ export function createInspectionPanelDisplayModel(
         : null;
 
     return {
+        activationStatus: input.activationStatus,
+        histogramBasis: input.histogramBasis,
         activationBasis: input.activationBasis
             ? {
                 label: `Activation statistics across ${input.activationBasis.sampleCount.toLocaleString()} of ${input.activationBasis.populationCount.toLocaleString()} training examples`,
-                suffix: input.activationBasis.gradientRevision !== null
-                    && input.activationBasis.gradientRevision !== input.activationBasis.modelRevision
-                    ? `; gradient summary comes from model revision ${input.activationBasis.gradientRevision.toLocaleString()}.`
-                    : '.',
+                suffix: `${input.activationBasis.modelStep === undefined ? '' : `; model step ${input.activationBasis.modelStep.toLocaleString()}`}; model revision ${input.activationBasis.modelRevision.toLocaleString()}${input.activationBasis.gradientRevision === null ? '; gradient summary unavailable' : `; gradient summary comes from model revision ${input.activationBasis.gradientRevision.toLocaleString()}`}.`,
             }
             : null,
         layers,
@@ -446,7 +455,7 @@ export function createInspectionPanelDisplayModel(
             result: traceResult,
         },
         backprop: {
-            buttonDisabled: input.backpropLoading,
+            buttonDisabled: !input.hasCurrentModel || input.backpropLoading,
             buttonLabel: input.backpropLoading ? 'Previewing backprop' : 'Preview backprop',
             statusText: input.backpropLoading
                 ? 'Preparing backprop preview...'
@@ -456,7 +465,7 @@ export function createInspectionPanelDisplayModel(
             result: backpropResult,
         },
         landscape: {
-            buttonDisabled: input.landscapeLoading,
+            buttonDisabled: !input.hasCurrentModel || input.landscapeLoading,
             buttonLabel: input.landscapeLoading ? 'Probing loss surface' : 'Probe loss surface',
             statusText: input.landscapeLoading
                 ? 'Probing a bounded local loss surface...'

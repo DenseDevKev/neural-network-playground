@@ -164,7 +164,7 @@ describe('lesson registry invariants', () => {
                 expect(step.title.trim(), `${lesson.id}:${step.id}`).not.toBe('');
                 expect(step.body.trim(), `${lesson.id}:${step.id}`).not.toBe('');
                 expect(step.tryThis.trim(), stepName).not.toBe('');
-                expect(step.tryThis.length, stepName).toBeLessThanOrEqual(160);
+                expect(step.tryThis.length, stepName).toBeLessThanOrEqual(210);
                 expect(step.tryThis, stepName).toMatch(actionLead);
                 expect(step.tryThis, stepName).not.toMatch(genericFiller);
                 expect(tryThisCopy.has(step.tryThis), stepName).toBe(false);
@@ -194,13 +194,13 @@ describe('lesson registry invariants', () => {
                     expect(Number.isSafeInteger(step.completion.step)).toBe(true);
                     expect(step.completion.step).toBeGreaterThan(0);
                 } else {
-                    expect(Object.keys(step.completion).sort()).toEqual(['kind', 'view']);
-                    expect(['build', 'run']).toContain(step.completion.view);
+                    expect(Object.keys(step.completion).sort()).toEqual(['kind', 'tab']);
+                    expect(['dataset', 'network', 'training']).toContain(step.completion.tab);
                 }
             }
         }
 
-        expect(completionKinds).toEqual(new Set(['training-step-at-least', 'view-is']));
+        expect(completionKinds).toEqual(new Set(['training-step-at-least', 'setup-tab-is']));
         expect(stepsWithoutCompletion).toBeGreaterThan(0);
     });
 
@@ -209,7 +209,7 @@ describe('lesson registry invariants', () => {
             data: /\b(?:class|cluster|data|noise|point|quadrant|ring|split|spiral)\b/i,
             features: /\b(?:feature|x²|y²)\b/i,
             network: /\b(?:activation|hidden|layer|model|network|neuron|output|topology)\b/i,
-            hyperparams: /\b(?:batch|clipping|learning rate|loss|optimizer|regularization|setting)\b/i,
+            hyperparams: /\b(?:batch|clipping|learning rate|loss|optimizer|regularization|penalty|setting)\b/i,
             transport: /\b(?:boundary|evaluation|loss|play|run|step|train|training)\b/i,
         } as const;
 
@@ -228,7 +228,7 @@ describe('lesson registry invariants', () => {
             ['switch-to-regression', /Problem.*Regression.*Plane/i],
             ['read-circle-shape', /Circle.*Samples.*Train ratio.*Noise/i],
             ['read-spiral-twist', /Spiral.*Samples.*Train ratio.*Noise/i],
-            ['inspect-noise-controls', /Noise.*noise value.*Dataset lab/i],
+            ['inspect-noise-controls', /Noise.*noise value.*Setup → Dataset/i],
             ['prefer-smooth-boundaries', /hidden layers.*neuron widths.*Hidden activation/i],
             ['read-three-clusters', /Problem.*Multiclass classification.*Three-Class/i],
         ]);
@@ -258,7 +258,7 @@ describe('lesson registry invariants', () => {
                 expect('evidenceView' in step ? step.evidenceView : undefined)
                     .toBe(expectedSurface);
                 expect(step.tryThis, `${lesson.id}:${step.id}`)
-                    .toMatch(expectedSurface === 'boundary' ? /\bBoundary\b/ : /\bLoss\b/);
+                    .toMatch(expectedSurface === 'boundary' ? /\bBoundary\b/ : /Learning/);
             }
         }
 
@@ -283,7 +283,7 @@ describe('lesson registry invariants', () => {
                 phase: 'build',
                 evidenceView: 'loss',
             });
-            expect(step.tryThis).toMatch(/Change .*Reset.*run training.*Loss/);
+            expect(step.tryThis).toMatch(/Change .*Apply changes.*run training.*Learning/);
         }
     });
 

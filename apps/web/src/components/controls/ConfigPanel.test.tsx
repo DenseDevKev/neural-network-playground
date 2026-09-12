@@ -1,18 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { StrictMode } from 'react';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
     MAX_EXPERIMENT_JSON_BYTES,
     decodeExperimentJson,
     encodeExperimentJson,
     encodeExperimentUrl,
-    prepareExperimentDocument,
     type ExperimentDocumentV2,
     type PreparedExperimentDocumentV2,
-    type SchemaResult,
 } from '@nn-playground/shared';
 import { ConfigPanel } from './ConfigPanel';
+import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 
 function currentPrepared(): PreparedExperimentDocumentV2 | null {
@@ -43,21 +41,6 @@ function documentWithNoise(
     };
 }
 
-async function requirePrepared(
-    document: ExperimentDocumentV2,
-): Promise<PreparedExperimentDocumentV2> {
-    const result = await prepareExperimentDocument(document);
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error(JSON.stringify(result.issues));
-    return result.value;
-}
-
-function fileInput(container: HTMLElement): HTMLInputElement {
-    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
-    if (!input) throw new Error('Config file input was not rendered');
-    return input;
-}
-
 async function selectFile(input: HTMLInputElement, file: File): Promise<void> {
     await act(async () => {
         fireEvent.change(input, { target: { files: [file] } });
@@ -67,6 +50,8 @@ async function selectFile(input: HTMLInputElement, file: File): Promise<void> {
 describe('ConfigPanel strict V2 transport', () => {
     beforeEach(async () => {
         vi.restoreAllMocks();
+        vi.useRealTimers();
+        useTrainingStore.setState({ pendingConfigSource: null, configError: null, workerError: null, trainedRecipeFingerprint: null, trainedRecipeSource: null });
         window.history.replaceState(null, '', '/');
         const restored = await usePlaygroundStore.getState()
             .replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
@@ -98,7 +83,7 @@ describe('ConfigPanel strict V2 transport', () => {
 
         render(<ConfigPanel onReset={vi.fn()} />);
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+            fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
         });
 
         expect(syncToUrl).toHaveBeenCalledTimes(1);
@@ -127,7 +112,7 @@ describe('ConfigPanel strict V2 transport', () => {
         render(<ConfigPanel onReset={vi.fn()} />);
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+            fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
         });
 
         expect(screen.getByRole('alert')).toHaveTextContent(
@@ -147,11 +132,11 @@ describe('ConfigPanel strict V2 transport', () => {
         render(<ConfigPanel onReset={vi.fn()} />);
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+            fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
         });
 
         expect(syncToUrl).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('alert')).toHaveTextContent(/could not copy url/i);
+        expect(screen.getByRole('alert')).toHaveTextContent(/could not copy setup link/i);
     });
 
     it('replaces a failed URL copy alert with URL copied feedback on a later copy', async () => {
@@ -160,12 +145,12 @@ describe('ConfigPanel strict V2 transport', () => {
         render(<ConfigPanel onReset={vi.fn()} />);
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+            fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
         });
-        expect(screen.getByRole('alert')).toHaveTextContent(/could not copy url/i);
+        expect(screen.getByRole('alert')).toHaveTextContent(/could not copy setup link/i);
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+            fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
         });
 
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -181,11 +166,11 @@ describe('ConfigPanel strict V2 transport', () => {
         render(<ConfigPanel onReset={vi.fn()} />);
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+            fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
         });
 
         expect(syncToUrl).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('alert')).toHaveTextContent(/could not copy url/i);
+        expect(screen.getByRole('alert')).toHaveTextContent(/could not copy setup link/i);
     });
 
     it('deduplicates rapid Copy URL requests until the current clipboard write settles', async () => {
@@ -194,7 +179,7 @@ describe('ConfigPanel strict V2 transport', () => {
             .mockReturnValue(copyResult.promise);
         const syncToUrl = vi.spyOn(usePlaygroundStore.getState(), 'syncToUrl');
         render(<ConfigPanel onReset={vi.fn()} />);
-        const copyButton = screen.getByRole('button', { name: /copy url/i });
+        const copyButton = screen.getByRole('button', { name: /copy setup link/i });
 
         fireEvent.click(copyButton);
         await waitFor(() => {
@@ -224,7 +209,7 @@ describe('ConfigPanel strict V2 transport', () => {
             });
         render(<ConfigPanel onReset={vi.fn()} />);
 
-        fireEvent.click(screen.getByRole('button', { name: /copy url/i }));
+        fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
         await waitFor(() => {
             expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
         });
@@ -318,449 +303,239 @@ describe('ConfigPanel strict V2 transport', () => {
         );
     });
 
-    it('awaits V2 preparation and resets only after the exact import is published', async () => {
-        const onReset = vi.fn();
+    async function stageSetup(noise = 17) {
         const before = currentPrepared()!;
-        const target = await requirePrepared(documentWithNoise(before, 17));
-        const gate = deferred<void>();
-        const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
-            .mockImplementation(async (value) => {
-                const result = await originalReplace(value);
-                await gate.promise;
-                return result;
-            });
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-        const input = fileInput(container);
+        const document = documentWithNoise(before, noise);
+        const file = new File([JSON.stringify(document)], 'setup.json', { type: 'application/json' });
+        const input = screen.getByLabelText('Import setup JSON file') as HTMLInputElement;
+        await selectFile(input, file);
+        await screen.findByRole('region', { name: 'Imported setup review' });
+        return { before, document, input, file };
+    }
 
-        await selectFile(input, new File(
-            [encodeExperimentJson(target.document)],
-            'experiment-v2.json',
-            { type: 'application/json' },
-        ));
-        await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
-        });
+    function acknowledge() {
+        const prepared = currentPrepared()!;
+        act(() => useTrainingStore.setState({ pendingConfigSource: null, configError: null,
+            trainedRecipeSource: 'config-sync', trainedRecipeFingerprint: prepared.identities.recipeFingerprint }));
+    }
+
+    it('stages without publication, applies once, and only succeeds after exact worker acknowledgement', async () => {
+        const onReset = vi.fn();
+        const replace = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument');
+        render(<ConfigPanel onReset={onReset} />);
+        const { before, document } = await stageSetup();
+        expect(currentPrepared()).toBe(before);
+        expect(replace).not.toHaveBeenCalled();
+        const apply = screen.getByRole('button', { name: 'Apply imported setup' });
+        fireEvent.click(apply); fireEvent.click(apply);
+        await waitFor(() => expect(currentPrepared()?.document).toEqual(document));
+        expect(replace).toHaveBeenCalledTimes(1);
+        expect(screen.queryByText(/Imported setup applied/)).not.toBeInTheDocument();
         expect(onReset).not.toHaveBeenCalled();
-        expect(screen.queryByText('Imported!')).not.toBeInTheDocument();
-        expect(input.value).toBe('');
-
-        gate.resolve();
-        expect(await screen.findByRole('status')).toHaveTextContent('Imported');
-        expect(onReset).toHaveBeenCalledTimes(1);
-        expect(currentPrepared()?.document).toEqual(target.document);
-        expect(currentPrepared()?.identities).toEqual(target.identities);
+        acknowledge();
+        expect(await screen.findByText(/Imported setup applied/)).toBeInTheDocument();
     });
 
-    it('replaces a failed JSON import alert with Imported feedback on a later import', async () => {
-        const onReset = vi.fn();
-        const target = currentPrepared()!;
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-        const input = fileInput(container);
-
-        fireEvent.click(screen.getByRole('button', { name: /import json/i }));
-        await selectFile(input, new File(['{'], 'invalid.json', {
-            type: 'application/json',
-        }));
-        expect(await screen.findByRole('alert')).toHaveTextContent('$: invalid experiment JSON');
-
-        fireEvent.click(screen.getByRole('button', { name: /import json/i }));
-        await selectFile(input, new File(
-            [encodeExperimentJson(target.document)],
-            'valid.json',
-            { type: 'application/json' },
-        ));
-
-        expect(await screen.findByRole('status')).toHaveTextContent('Imported');
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(onReset).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps import publication callbacks active through the StrictMode effect probe', async () => {
-        const onReset = vi.fn();
-        const before = currentPrepared()!;
-        const target = await requirePrepared(documentWithNoise(before, 18));
-        const { container } = render(
-            <StrictMode>
-                <ConfigPanel onReset={onReset} />
-            </StrictMode>,
-        );
-
-        await selectFile(fileInput(container), new File(
-            [encodeExperimentJson(target.document)],
-            'strict-mode-v2.json',
-            { type: 'application/json' },
-        ));
-
-        expect(await screen.findByRole('status')).toHaveTextContent('Imported');
-        expect(onReset).toHaveBeenCalledTimes(1);
+    it('cancel leaves the active recipe untouched', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(currentPrepared()).toBe(before);
+        expect(screen.queryByRole('region', { name: 'Imported setup review' })).not.toBeInTheDocument();
     });
 
     it.each([
-        ['malformed JSON', '{', '$: invalid experiment JSON'],
-        [
-            'unversioned V1 runtime config',
-            JSON.stringify({ network: {}, training: {}, data: {}, features: {}, ui: {} }),
-            'schemaVersion: unversioned experiment documents are incompatible',
-        ],
-        [
-            'schema version 1',
-            JSON.stringify({ ...DEFAULT_EXPERIMENT_DOCUMENT, schemaVersion: 1 }),
-            'schemaVersion: schema version 1 experiment documents are incompatible',
-        ],
-        [
-            'future schema version',
-            JSON.stringify({ ...DEFAULT_EXPERIMENT_DOCUMENT, schemaVersion: 3 }),
-            'schemaVersion: schemaVersion 3 is unsupported',
-        ],
-        [
-            'duplicate object key',
-            encodeExperimentJson(DEFAULT_EXPERIMENT_DOCUMENT).replace(
-                '"schemaVersion": 2',
-                '"schemaVersion": 1,\n  "schemaVersion": 2',
-            ),
-            '$: invalid experiment JSON: duplicate JSON object member "schemaVersion"',
-        ],
-    ])('rejects %s into an exact source-preserving incompatible state', async (_label, json, message) => {
-        const onReset = vi.fn();
-        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument');
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-        const input = fileInput(container);
-        const file = new File([json], 'incompatible.json', {
-            type: 'application/json',
-        });
-
+        ['malformed JSON', '{'],
+        ['old schema', JSON.stringify({ ...DEFAULT_EXPERIMENT_DOCUMENT, schemaVersion: 1 })],
+        ['future schema', JSON.stringify({ ...DEFAULT_EXPERIMENT_DOCUMENT, schemaVersion: 3 })],
+        ['duplicate key', encodeExperimentJson(DEFAULT_EXPERIMENT_DOCUMENT).replace('"schemaVersion": 2', '"schemaVersion": 1, "schemaVersion": 2')],
+    ])('rejects %s without marking the active experiment incompatible; same-file retry stays available', async (_name, json) => {
+        const before = currentPrepared();
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const input = screen.getByLabelText('Import setup JSON file') as HTMLInputElement;
+        const file = new File([json], 'invalid.json');
         await selectFile(input, file);
-
-        expect(await screen.findByRole('alert')).toHaveTextContent(message);
-        expect(replaceDocument).not.toHaveBeenCalled();
-        expect(usePlaygroundStore.getState().access).toMatchObject({
-            status: 'incompatible',
-            prepared: null,
-            source: { kind: 'file', file },
-        });
-        expect(currentPrepared()).toBeNull();
-        expect(onReset).not.toHaveBeenCalled();
+        expect(await screen.findByRole('alert')).toBeInTheDocument();
+        expect(currentPrepared()).toBe(before);
         expect(input.value).toBe('');
-    });
-
-    it('rejects files over the exact UTF-8 byte limit before reading', async () => {
-        const onReset = vi.fn();
-        const readAsText = vi.spyOn(FileReader.prototype, 'readAsText');
-        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument');
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-        const input = fileInput(container);
-
-        const file = new File(
-            [new Uint8Array(MAX_EXPERIMENT_JSON_BYTES + 1)],
-            'oversized.json',
-            { type: 'application/json' },
-        );
         await selectFile(input, file);
-
-        expect(screen.getByRole('alert')).toHaveTextContent(
-            `$: experiment JSON exceeds ${MAX_EXPERIMENT_JSON_BYTES} UTF-8 bytes`,
-        );
-        expect(readAsText).not.toHaveBeenCalled();
-        expect(replaceDocument).not.toHaveBeenCalled();
-        expect(usePlaygroundStore.getState().access).toMatchObject({
-            status: 'incompatible',
-            prepared: null,
-            source: { kind: 'file', file },
-        });
-        expect(onReset).not.toHaveBeenCalled();
-        expect(input.value).toBe('');
+        expect(await screen.findByRole('alert')).toBeInTheDocument();
+        expect(currentPrepared()).toBe(before);
     });
 
-    it('allows a file exactly at the byte limit to reach strict decoding', async () => {
-        const originalRead = FileReader.prototype.readAsText;
-        const readAsText = vi.spyOn(FileReader.prototype, 'readAsText')
-            .mockImplementation(function (this: FileReader, blob, encoding) {
-                return originalRead.call(this, blob, encoding);
-            });
-        const { container } = render(<ConfigPanel onReset={vi.fn()} />);
-
-        await selectFile(fileInput(container), new File(
-            [new Uint8Array(MAX_EXPERIMENT_JSON_BYTES)],
-            'exact-limit.json',
-            { type: 'application/json' },
-        ));
-
-        const alert = await screen.findByRole('alert');
-        expect(readAsText).toHaveBeenCalledTimes(1);
-        expect(alert).toHaveTextContent('$: invalid experiment JSON');
-        expect(alert).not.toHaveTextContent('exceeds');
-    });
-
-    it('announces FileReader failures and resets the file control', async () => {
-        vi.spyOn(FileReader.prototype, 'readAsText')
-            .mockImplementation(function (this: FileReader) {
-                this.onerror?.call(
-                    this,
-                    new ProgressEvent('error') as ProgressEvent<FileReader>,
-                );
-            });
-        const onReset = vi.fn();
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-        const input = fileInput(container);
-        const file = new File(['{}'], 'unreadable.json', {
-            type: 'application/json',
-        });
-
-        await selectFile(input, file);
-
-        expect(screen.getByRole('alert')).toHaveTextContent('$: Could not read config file');
-        expect(usePlaygroundStore.getState().access).toMatchObject({
-            status: 'incompatible',
-            prepared: null,
-            source: { kind: 'file', file },
-            issues: [{ path: '$', message: 'Could not read config file' }],
-        });
+    it('rejects oversized bytes before reading and preserves unsupported initial URL access', async () => {
+        const source = { kind: 'url' as const, rawHash: '#unsupported' };
+        usePlaygroundStore.getState().markIncompatible(source, [{ code: 'invalid-field', path: '$', message: 'Unsupported URL' }]);
         const access = usePlaygroundStore.getState().access;
-        expect(access.status === 'incompatible' && access.source.kind === 'file'
-            ? access.source.file
-            : null).toBe(file);
-        expect(onReset).not.toHaveBeenCalled();
-        expect(input.value).toBe('');
+        const read = vi.spyOn(FileReader.prototype, 'readAsText');
+        render(<ConfigPanel onReset={vi.fn()} />);
+        await selectFile(screen.getByLabelText('Import setup JSON file') as HTMLInputElement,
+            new File([new Uint8Array(MAX_EXPERIMENT_JSON_BYTES + 1)], 'big.json'));
+        expect(screen.getByRole('alert')).toHaveTextContent('exceeds');
+        expect(read).not.toHaveBeenCalled();
+        expect(usePlaygroundStore.getState().access).toBe(access);
     });
 
-    it('releases the import transaction when FileReader aborts', async () => {
-        vi.spyOn(FileReader.prototype, 'readAsText')
-            .mockImplementation(function (this: FileReader) {
-                this.onabort?.call(
-                    this,
-                    new ProgressEvent('abort') as ProgressEvent<FileReader>,
-                );
-            });
-        const { container } = render(<ConfigPanel onReset={vi.fn()} />);
-        const input = fileInput(container);
-        const file = new File(['{}'], 'aborted.json', {
-            type: 'application/json',
-        });
-
-        await selectFile(input, file);
-
-        expect(screen.getByRole('alert')).toHaveTextContent('$: Config file read was canceled');
-        expect(screen.getByRole('button', { name: /import json/i })).toBeEnabled();
-        expect(usePlaygroundStore.getState().access).toMatchObject({
-            status: 'incompatible',
-            prepared: null,
-            source: { kind: 'file', file },
-        });
-        expect(input.value).toBe('');
+    it('allows exactly the resource byte limit to reach strict decoding', async () => {
+        const read = vi.spyOn(FileReader.prototype, 'readAsText');
+        render(<ConfigPanel onReset={vi.fn()} />);
+        await selectFile(screen.getByLabelText('Import setup JSON file') as HTMLInputElement,
+            new File([new Uint8Array(MAX_EXPERIMENT_JSON_BYTES)], 'limit.json'));
+        expect(await screen.findByRole('alert')).toHaveTextContent('invalid experiment JSON');
+        expect(read).toHaveBeenCalledTimes(1);
     });
 
-    it('retains the exact file and reports preparation issues', async () => {
-        const onReset = vi.fn();
-        const before = currentPrepared()!;
-        const target = await requirePrepared(documentWithNoise(before, 19));
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument').mockResolvedValue({
-            ok: false,
-            issues: [{
-                code: 'incompatible-task',
-                path: 'recipe.objective.dataLoss',
-                message: 'objective cannot be compiled for this task',
-            }],
-        });
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-        const file = new File(
-            [encodeExperimentJson(target.document)],
-            'unpreparable-v2.json',
-            { type: 'application/json' },
-        );
-
-        await selectFile(fileInput(container), file);
-
-        expect(await screen.findByRole('alert')).toHaveTextContent(
-            'recipe.objective.dataLoss: objective cannot be compiled for this task',
-        );
-        expect(usePlaygroundStore.getState().access).toMatchObject({
-            status: 'incompatible',
-            prepared: null,
-            source: { kind: 'file', file },
-        });
-        expect(currentPrepared()).toBeNull();
-        expect(onReset).not.toHaveBeenCalled();
+    it('preserves the stage and active access on preparation failure and allows retry', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument').mockResolvedValueOnce({ ok: false,
+            issues: [{ code: 'invalid-field', path: 'recipe', message: 'Preparation failed' }] });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Preparation failed');
+        expect(currentPrepared()).toBe(before);
+        expect(screen.getByRole('region', { name: 'Imported setup review' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        await waitFor(() => expect(currentPrepared()).not.toBe(before));
+        acknowledge();
+        expect(await screen.findByText(/Imported setup applied/)).toBeInTheDocument();
     });
 
-    it('does not reset or claim success for a stale successful import result', async () => {
-        const onReset = vi.fn();
-        const before = currentPrepared()!;
-        const imported = await requirePrepared(documentWithNoise(before, 21));
-        const newer = documentWithNoise(before, 23);
-        const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
-        const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
-            .mockImplementationOnce(() => importResult.promise);
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-
-        await selectFile(fileInput(container), new File(
-            [encodeExperimentJson(imported.document)],
-            'stale-import-v2.json',
-            { type: 'application/json' },
-        ));
-        await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
-        });
-        const newerResult = await originalReplace(newer);
-        expect(newerResult.ok).toBe(true);
-        const published = currentPrepared();
-
-        importResult.resolve({ ok: true, value: imported });
-        await act(async () => {
-            await importResult.promise;
-        });
-
-        expect(currentPrepared()).toBe(published);
-        expect(currentPrepared()?.document.recipe.data.noise).toBe(23);
-        expect(onReset).not.toHaveBeenCalled();
-        expect(screen.queryByText('Imported!')).not.toBeInTheDocument();
+    it('offers synchronization retry without publishing or resetting the setup twice', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        await stageSetup();
+        const replace = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument');
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        await waitFor(() => expect(currentPrepared()?.document.recipe.data.noise).toBe(17));
+        act(() => useTrainingStore.getState().failConfigChange('Worker refused setup'));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Worker refused setup');
+        fireEvent.click(screen.getByRole('button', { name: 'Retry synchronization' }));
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('setup');
+        acknowledge();
+        expect(await screen.findByText(/Imported setup applied/)).toBeInTheDocument();
+        expect(replace).toHaveBeenCalledTimes(1);
     });
 
-    it('deduplicates a second file selection while the first import is pending', async () => {
-        const onReset = vi.fn();
-        const before = currentPrepared()!;
-        const first = await requirePrepared(documentWithNoise(before, 25));
-        const second = await requirePrepared(documentWithNoise(before, 27));
-        const gate = deferred<void>();
-        const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
-            .mockImplementation(async (value) => {
-                const result = await originalReplace(value);
-                await gate.promise;
-                return result;
-            });
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-        const input = fileInput(container);
-
-        await selectFile(input, new File(
-            [encodeExperimentJson(first.document)],
-            'first-v2.json',
-            { type: 'application/json' },
-        ));
-        await waitFor(() => expect(replaceDocument).toHaveBeenCalledTimes(1));
-        const disabledWhilePending = screen.getByRole('button', { name: /import json/i })
-            .hasAttribute('disabled');
-
-        await selectFile(input, new File(
-            [encodeExperimentJson(second.document)],
-            'second-v2.json',
-            { type: 'application/json' },
-        ));
-        const callsAfterSecondSelection = replaceDocument.mock.calls.length;
-
-        gate.resolve();
-        expect(await screen.findByRole('status')).toHaveTextContent('Imported');
-
-        expect(disabledWhilePending).toBe(true);
-        expect(callsAfterSecondSelection).toBe(1);
-        expect(currentPrepared()?.document.recipe.data.noise).toBe(25);
-        expect(onReset).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('button', { name: /import json/i })).toBeEnabled();
-    });
-
-    it('does not apply a file whose read finishes after a newer store edit', async () => {
-        const onReset = vi.fn();
-        const before = currentPrepared()!;
-        const imported = await requirePrepared(documentWithNoise(before, 29));
-        const newer = documentWithNoise(before, 31);
-        const readers: FileReader[] = [];
-        vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) {
-            readers.push(this);
-        });
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-
-        await selectFile(fileInput(container), new File(
-            [encodeExperimentJson(imported.document)],
-            'slow-read-v2.json',
-            { type: 'application/json' },
-        ));
-        const newerResult = await usePlaygroundStore.getState().replaceDocument(newer);
-        expect(newerResult.ok).toBe(true);
-        const published = currentPrepared();
-
-        const reader = readers[0];
-        const onload = reader.onload;
-        expect(onload).not.toBeNull();
-        await act(async () => {
-            await onload?.call(reader, {
-                target: { result: encodeExperimentJson(imported.document) },
-            } as unknown as ProgressEvent<FileReader>);
-        });
-
-        expect(currentPrepared()).toBe(published);
+    it('invalidates a staged recipe when the active setup changes', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        await act(async () => { await usePlaygroundStore.getState().replaceDocument(documentWithNoise(before, 31)); });
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        expect(screen.getByRole('alert')).toHaveTextContent('active setup changed');
         expect(currentPrepared()?.document.recipe.data.noise).toBe(31);
-        expect(onReset).not.toHaveBeenCalled();
-        expect(screen.queryByText('Imported!')).not.toBeInTheDocument();
     });
 
-    it('does not report an older preparation failure over a newer store edit', async () => {
-        const onReset = vi.fn();
-        const before = currentPrepared()!;
-        const imported = await requirePrepared(documentWithNoise(before, 33));
-        const newer = documentWithNoise(before, 35);
-        const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
-        const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
-            .mockImplementationOnce(() => importResult.promise);
-        const { container } = render(<ConfigPanel onReset={onReset} />);
+    it('never reports success for an imported publication superseded before acknowledgement', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        await waitFor(() => expect(currentPrepared()?.document.recipe.data.noise).toBe(17));
+        await act(async () => { await usePlaygroundStore.getState().replaceDocument(documentWithNoise(before, 31)); });
+        acknowledge();
+        expect(screen.queryByText(/Imported setup applied/)).not.toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent('active setup changed');
+    });
 
-        await selectFile(fileInput(container), new File(
-            [encodeExperimentJson(imported.document)],
-            'stale-failure-v2.json',
-            { type: 'application/json' },
-        ));
-        await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
+    it('keeps a selectable setup link and downloadable JSON when clipboard is unavailable', async () => {
+        Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+        render(<ConfigPanel onReset={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /copy setup link/i }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Clipboard API');
+        expect(screen.getByRole('textbox')).toHaveValue(window.location.href);
+        expect(screen.getByRole('button', { name: /Export JSON/ })).toBeEnabled();
+    });
+    it.each(['error', 'abort'] as const)('preserves active setup after FileReader %s and permits the same file retry', async (event) => {
+        const before = currentPrepared();
+        vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) {
+            this.dispatchEvent(new ProgressEvent(event));
         });
-        const newerResult = await originalReplace(newer);
-        expect(newerResult.ok).toBe(true);
-        const published = currentPrepared();
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const input = screen.getByLabelText('Import setup JSON file') as HTMLInputElement;
+        const file = new File(['{}'], 'unreadable.json');
+        await selectFile(input, file);
+        expect(await screen.findByRole('alert')).toHaveTextContent(/Select the file again/);
+        expect(currentPrepared()).toBe(before);
+        expect(input.value).toBe('');
+    });
 
-        importResult.resolve({
-            ok: false,
-            issues: [{ code: 'invalid-field', path: 'recipe', message: 'Obsolete failure' }],
+    it('ignores an old read after a newer file is selected', async () => {
+        const readers: FileReader[] = [];
+        vi.spyOn(FileReader.prototype, 'readAsText').mockImplementation(function (this: FileReader) { readers.push(this); });
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const input = screen.getByLabelText('Import setup JSON file') as HTMLInputElement;
+        await selectFile(input, new File(['{}'], 'older.json'));
+        await selectFile(input, new File(['{}'], 'newer.json'));
+        const complete = async (index: number, noise: number) => act(async () => {
+            readers[index].onload?.call(readers[index], { target: { result: JSON.stringify(documentWithNoise(currentPrepared()!, noise)) } } as unknown as ProgressEvent<FileReader>);
         });
+        await complete(1, 11); await complete(0, 22);
+        expect(screen.getByText('newer.json')).toBeInTheDocument();
+        expect(screen.queryByText('older.json')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        await waitFor(() => expect(currentPrepared()?.document.recipe.data.noise).toBe(11));
+    });
+
+    it('ignores a stale successful preparation after another recipe is published', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        const original = usePlaygroundStore.getState().replaceDocument;
+        const result = deferred<Awaited<ReturnType<typeof original>>>();
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument').mockReturnValueOnce(result.promise);
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        const newer = await original(documentWithNoise(before, 33));
+        await act(async () => result.resolve(newer));
+        expect(currentPrepared()?.document.recipe.data.noise).toBe(33);
+        expect(screen.queryByText(/Imported setup applied/)).not.toBeInTheDocument();
+    });
+
+    it.each(['result', 'rejection'] as const)('releases a failed import after unmount for a deferred %s', async (outcome) => {
+        const { unmount } = render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        const pending = deferred<Awaited<ReturnType<ReturnType<typeof usePlaygroundStore.getState>['replaceDocument']>>>();
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument').mockReturnValueOnce(pending.promise);
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('setup');
+        unmount();
         await act(async () => {
-            await importResult.promise;
+            if (outcome === 'result') pending.resolve({ ok: false, issues: [{ code: 'invalid-field', path: 'recipe', message: 'Preparation failed' }] });
+            else pending.reject(new Error('Preparation failed'));
+            await pending.promise.catch(() => undefined);
         });
-
-        expect(currentPrepared()).toBe(published);
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(onReset).not.toHaveBeenCalled();
+        expect(currentPrepared()).toBe(before);
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+        expect(useTrainingStore.getState().configError).toMatch(/Preparation failed.*Reopen Export/);
+        expect(useTrainingStore.getState().configErrorSource).toBe('setup');
     });
 
-    it('does not report an older preparation rejection over a newer store edit', async () => {
-        const onReset = vi.fn();
-        const before = currentPrepared()!;
-        const imported = await requirePrepared(documentWithNoise(before, 37));
-        const newer = documentWithNoise(before, 39);
-        const importResult = deferred<SchemaResult<PreparedExperimentDocumentV2>>();
-        const originalReplace = usePlaygroundStore.getState().replaceDocument;
-        vi.spyOn(usePlaygroundStore.getState(), 'replaceImportedDocument')
-            .mockImplementationOnce(() => importResult.promise);
-        const { container } = render(<ConfigPanel onReset={onReset} />);
-
-        await selectFile(fileInput(container), new File(
-            [encodeExperimentJson(imported.document)],
-            'stale-rejection-v2.json',
-            { type: 'application/json' },
-        ));
-        await waitFor(() => {
-            expect(usePlaygroundStore.getState().replaceImportedDocument).toHaveBeenCalledTimes(1);
-        });
-        const newerResult = await originalReplace(newer);
-        expect(newerResult.ok).toBe(true);
-        const published = currentPrepared();
-        const observedRejection = importResult.promise.catch(() => undefined);
-
-        importResult.reject(new Error('Obsolete rejection'));
+    it.each(['result', 'rejection'] as const)('does not release a newer transaction after an unmounted stale %s', async (outcome) => {
+        const { unmount } = render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        const original = usePlaygroundStore.getState().replaceDocument;
+        const pending = deferred<Awaited<ReturnType<typeof original>>>();
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument').mockReturnValueOnce(pending.promise);
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        unmount();
+        useTrainingStore.getState().beginConfigChange('network');
+        await original(documentWithNoise(before, 44));
+        const newer = currentPrepared();
         await act(async () => {
-            await observedRejection;
+            if (outcome === 'result') pending.resolve({ ok: false, issues: [{ code: 'invalid-field', path: 'recipe', message: 'Obsolete failure' }] });
+            else pending.reject(new Error('Obsolete failure'));
+            await pending.promise.catch(() => undefined);
         });
-
-        expect(currentPrepared()).toBe(published);
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(onReset).not.toHaveBeenCalled();
+        expect(currentPrepared()).toBe(newer);
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('network');
+        expect(useTrainingStore.getState().configError).toBeNull();
     });
+
+    it('bounds synchronization errors shown after import publication', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        await stageSetup();
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        await waitFor(() => expect(currentPrepared()?.document.recipe.data.noise).toBe(17));
+        act(() => useTrainingStore.getState().failConfigChange('Worker refused: ' + 'x'.repeat(10_000)));
+        const alert = await screen.findByRole('alert');
+        expect(alert.textContent!.length).toBeLessThanOrEqual(1800);
+        expect(screen.getByRole('button', { name: 'Retry synchronization' })).toBeEnabled();
+    });
+
 });

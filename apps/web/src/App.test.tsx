@@ -8,10 +8,12 @@ import { useLayoutStore } from './store/useLayoutStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
+    PREPARED_PRESETS,
     encodeExperimentUrl,
     prepareExperimentDocument,
 } from '@nn-playground/shared';
 
+const inspectionFailure = vi.hoisted(() => ({ active: false }));
 const useTrainingMount = vi.hoisted(() => vi.fn());
 const useExperimentMemoryStorageSync = vi.hoisted(() => vi.fn());
 
@@ -99,62 +101,17 @@ vi.mock('./hooks/useExperimentMemoryStorageSync.ts', () => ({
     useExperimentMemoryStorageSync,
 }));
 
-vi.mock('./components/layout/Header.tsx', () => ({
-    Header: ({
-        openSurface,
-        onToggleSurface,
-        advancedToolsOpen,
-        onToggleAdvancedTools,
-    }: {
-        openSurface: 'presets' | 'lessons' | 'history' | null;
-        onToggleSurface: (surface: 'history') => void;
-        advancedToolsOpen: boolean;
-        onToggleAdvancedTools: () => void;
-    }) => (
-        <header>
-            <button
-                type="button"
-                aria-pressed={openSurface === 'history'}
-                onClick={() => onToggleSurface('history')}
-            >
-                History
-            </button>
-            <button
-                type="button"
-                aria-expanded={advancedToolsOpen}
-                onClick={onToggleAdvancedTools}
-            >
-                Advanced Tools
-            </button>
-        </header>
-    ),
-}));
-
-vi.mock('./components/layout/PrecisionLabContent.tsx', () => ({
-    TopologyContent: () => <div>Canvas</div>,
-    LossContent:     () => <div>Loss</div>,
-    ConfusionContent:() => <div>Confusion</div>,
-    InspectContent:  () => <div>Inspect</div>,
-    CodeContent:     () => <div>Code</div>,
-    HistoryContent:  () => <div>History</div>,
-    ConfigurationContent: () => <div>Config</div>,
-}));
-
-vi.mock('./components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
 vi.mock('./components/visualization/DecisionBoundaryCanvas.tsx', () => ({ DecisionBoundaryCanvas: () => <canvas data-decision-boundary-canvas aria-label="Boundary paint" /> }));
 vi.mock('./components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
-vi.mock('./components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
-vi.mock('./components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
-vi.mock('./components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: () => <div>Features</div> }));
-vi.mock('./components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
-vi.mock('./components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel: () => <div>Hyperparams</div> }));
+vi.mock('./components/controls/DatasetPreviewCanvas.tsx', () => ({ DatasetPreviewCanvas: () => <canvas aria-hidden="true" /> }));
 vi.mock('./components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
-vi.mock('./components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
+vi.mock('./components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => { if (inspectionFailure.active) throw new Error('Inspection failed'); return <div>Inspection</div>; } }));
 vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));
 vi.mock('./components/controls/RunHistoryPanel.tsx',   () => ({ RunHistoryPanel: () => <div>RunHistory</div> }));
 
 describe('App accessibility shell', () => {
     beforeEach(async () => {
+        inspectionFailure.active = false;
         window.localStorage.clear();
         window.history.replaceState(null, '', '/');
         trainingMock.play.mockReset();
@@ -187,17 +144,37 @@ describe('App accessibility shell', () => {
         });
 
         useLayoutStore.setState({
-            view: 'build',
-            buildContextOpen: false,
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
+            destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace',
+
             audienceMode: 'explore',
-            advancedToolsOpen: false,
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
+
         });
+    });
+
+    it('uses the effective Prediction tab for regression demand after a task change', async () => {
+        useLayoutStore.setState({ workspaceTab: 'results', resultsTab: 'errors' });
+        render(<App />);
+        expect(usePlaygroundStore.getState().demand).toMatchObject({ needConfusionMatrix: true, needDecisionBoundary: true });
+        expect(await screen.findByLabelText('Boundary paint')).toBeInTheDocument();
+        const prepared = PREPARED_PRESETS.find((entry) => entry.id === 'regression-plane')!.prepared;
+        act(() => usePlaygroundStore.setState({ access: { status: 'ready', prepared } }));
+        expect(screen.getByRole('tab', { name: 'Prediction', selected: true })).toBeInTheDocument();
+        expect(await screen.findByLabelText('Boundary paint')).toBeInTheDocument();
+        expect(usePlaygroundStore.getState().demand).toMatchObject({ needDecisionBoundary: true, needConfusionMatrix: false });
+    });
+
+    it('recovers a healthy workspace through navigation after a view fails', async () => {
+        inspectionFailure.active = true;
+        useLayoutStore.setState({ workspaceTab: 'inspect' });
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            render(<App />);
+            expect(await screen.findByText('Workspace unavailable')).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('tab', { name: 'Setup' }));
+            expect(screen.getByRole('region', { name: 'Experiment setup' })).toBeInTheDocument();
+            expect(screen.queryByText('Workspace unavailable')).not.toBeInTheDocument();
+            expect(trainingMock.reset).not.toHaveBeenCalled();
+        } finally { error.mockRestore(); }
     });
 
     it('loads a valid experiment hash changed after mount through the URL loader', async () => {
@@ -305,13 +282,8 @@ describe('App accessibility shell', () => {
         const user = userEvent.setup();
         const { container } = render(<App />);
         const skipLink = screen.getByRole('link', { name: 'Skip to main content' });
-        const historyTrigger = screen.getByRole('button', { name: 'History' });
-        const advancedTrigger = screen.getByRole('button', { name: 'Advanced Tools' });
-        const shell = container.querySelector('.forge-shell');
+        const shell = container.querySelector('.atelier');
         expect(shell).not.toBeNull();
-
-        await user.click(advancedTrigger);
-        await user.click(historyTrigger);
         skipLink.focus();
         act(() => useTrainingStore.setState({
             workerError: 'Worker channel closed unexpectedly.',
@@ -345,10 +317,6 @@ describe('App accessibility shell', () => {
 
         await user.keyboard('{Escape}');
         expect(useTrainingStore.getState().workerError).toBe('Worker channel closed unexpectedly.');
-        expect(historyTrigger).toHaveAttribute('aria-pressed', 'true');
-        expect(advancedTrigger).toHaveAttribute('aria-expanded', 'true');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
-
         for (const code of ['Space', 'ArrowRight', 'KeyR']) {
             dispatchGlobalKeyDown(code);
         }
@@ -474,15 +442,15 @@ describe('App accessibility shell', () => {
         expect(trainingMock.reset).not.toHaveBeenCalled();
     });
 
-    it('renders forge-shell with status bar', () => {
+    it('renders Atelier with a quiet model position', () => {
         const { container } = render(<App />);
-        expect(container.querySelector('.forge-shell')).toBeTruthy();
-        const statusBar = screen.getByRole('group', { name: 'Status bar' });
+        expect(container.querySelector('.atelier')).toBeTruthy();
+        const statusBar = screen.getByRole('region', { name: 'Training controls' });
         expect(statusBar).toBeInTheDocument();
         expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 
-    it('shows the newest scientific model in the status bar after a forced pause evaluation', () => {
+    it('shows the newest scientific model in transport after a forced pause evaluation', () => {
         useTrainingStore.setState({
             status: 'paused',
             evidenceGenerationId: 1,
@@ -492,15 +460,15 @@ describe('App accessibility shell', () => {
 
         render(<App />);
 
-        const statusBar = screen.getByRole('group', { name: 'Status bar' });
-        expect(statusBar).toHaveTextContent('STEP 2,500');
-        expect(statusBar).not.toHaveTextContent('STEP 2,450');
+        const statusBar = screen.getByRole('region', { name: 'Training controls' });
+        expect(statusBar).toHaveTextContent('Step 2,500');
+        expect(statusBar).not.toHaveTextContent('Step 2,450');
         expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
 
         act(() => useTrainingStore.setState({
             latestEvaluation: fullEvaluation(2_600, 2_600, 173),
         }));
-        expect(statusBar).toHaveTextContent('STEP 2,600');
+        expect(statusBar).toHaveTextContent('Step 2,600');
         expect(statusBar.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
     });
 
@@ -523,28 +491,29 @@ describe('App accessibility shell', () => {
         expect(announcements).not.toHaveTextContent('Network update complete');
     });
 
-    it('switches Build and Run views through the store', () => {
+    it('switches Setup and Results through canonical navigation', () => {
         render(<App />);
 
         act(() => {
-            useLayoutStore.getState().setView('run');
+            useLayoutStore.getState().navigate('playground','results');
         });
-        expect(useLayoutStore.getState().view).toBe('run');
+        expect(useLayoutStore.getState().workspaceTab).toBe('results');
 
         act(() => {
-            useLayoutStore.getState().setView('build');
+            useLayoutStore.getState().openSetup('dataset');
         });
-        expect(useLayoutStore.getState().view).toBe('build');
+        expect(useLayoutStore.getState().workspaceTab).toBe('setup');
     });
 
-    it('passes target hooks to the active Build context and permanent topology/transport', () => {
-        const { container } = render(<App />);
-        for (const section of ['data', 'network', 'features', 'hyperparams'] as const) {
-            act(() => useLayoutStore.getState().selectBuildContext(section));
-            expect(container.querySelector(`[data-forge-panel-targets="${section}"]`)).not.toBeNull();
+    it('adapts old lesson targets to the shared Setup editor without resetting training', () => {
+        render(<App />);
+        for (const [,tab] of [['data','dataset'],['network','network'],['features','network'],['hyperparams','training']] as const) {
+            act(() => useLayoutStore.getState().openSetup(tab));
+            expect(useLayoutStore.getState().workspaceTab).toBe('setup');
+            expect(useLayoutStore.getState().setupTab).toBe(tab);
+            expect(screen.getByRole('region',{name:'Experiment setup'})).toBeInTheDocument();
         }
-        for (const target of ['topology', 'transport']) {
-            expect(container.querySelector(`[data-forge-panel-targets="${target}"]`)).not.toBeNull();
-        }
+        expect(screen.getByRole('region',{name:'Training controls'})).toBeInTheDocument();
+        expect(trainingMock.reset).not.toHaveBeenCalled();
     });
 });

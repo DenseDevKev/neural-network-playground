@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { applyPreset, expectEvidence, learning, ready, transport, utility, workspace } from './atelier-helpers';
 
 type Resource = { url: string; status: number; contentType: string };
 
@@ -52,13 +53,13 @@ function expectChunk(resources: Resource[], baseURL: string, prefix: string) {
 async function readyAtZero(page: Page, url: string) {
     await page.goto(url);
     await expect(page.getByRole('main', { name: 'Neural network playground workspace' })).toBeVisible();
-    const runButton = page.getByRole('button', { name: 'run', exact: true });
-    if (await runButton.getAttribute('aria-pressed') !== 'true') await runButton.click();
-    await expect(page.getByRole('group', { name: 'Status bar' })).toHaveAttribute('data-status', 'idle');
-    await expect(page.locator('section[role="region"][aria-label="Current run"]'))
-        .toContainText(/Full evaluation \d+ at step 0(?![0-9,])/);
-    await expect(page.getByRole('slider', { name: 'Checkpoint timeline' }))
-        .toHaveAttribute('aria-valuetext', 'Step 0');
+    await learning(page);
+    await ready(page);
+    await expect(transport(page)).toHaveAttribute('data-status', 'idle');
+    await expectEvidence(page, 0);
+    await utility(page, 'Session checkpoints');
+    await expect(page.getByRole('slider', { name: 'Checkpoint timeline' })).toHaveAttribute('aria-valuetext', 'Step 0');
+    await page.keyboard.press('Escape');
 }
 
 function externalTarget(baseURL: string | undefined, info: TestInfo): string {
@@ -82,7 +83,7 @@ test('non-isolated project hosting loads the real worker and publishes a paired 
         await page.getByRole('button', { name: 'Run one training step' }).click();
         await expect(page.locator('section[role="region"][aria-label="Current run"]'))
             .toContainText(/Full evaluation \d+ at step 1(?![0-9,])/);
-        await expect(page.getByRole('group', { name: 'Status bar' })).toContainText(/STEP\s+1(?![0-9,])/);
+        await expect(transport(page)).toHaveAttribute('data-model-step', '1');
         expect(observed.errors).toEqual([]);
     } finally {
         await attachHosting(info, target, observed);
@@ -94,37 +95,23 @@ test('project hosting resolves lazy evidence and reopens an unchanged shared rec
     const observed = observeHosting(page, target);
     try {
         await readyAtZero(page, target);
-        await page.getByRole('button', { name: 'Presets', exact: true }).click();
-        const presets = page.getByRole('dialog', { name: 'Presets' });
-        await presets.getByRole('button', { name: 'Apply preset: XOR Needs Hidden Layers' }).click();
-        await expect(presets).toBeHidden();
+        await applyPreset(page, 'XOR Needs Hidden Layers');
         await expect(page).toHaveURL(/#v=2&r=/);
-        await page.getByRole('combobox', { name: 'Workspace profile' }).selectOption('lab');
-        await expect(page.getByRole('button', { name: 'Advanced Tools' })).toHaveAttribute('aria-expanded', 'true');
-        await page.getByRole('tab', { name: 'Inspect', exact: true }).click();
-        await expect(page.getByRole('tab', { name: 'Inspect', exact: true })).toHaveAttribute('aria-selected', 'true');
-        await expect(page.getByRole('tabpanel', { name: 'Inspect', exact: true })).toBeVisible();
+        await workspace(page, 'Inspect');
         await expect(page.locator('.inspection-panel')).toBeVisible();
-        await page.getByRole('tab', { name: 'Code', exact: true }).click();
-        await expect(page.getByRole('tab', { name: 'Code', exact: true })).toHaveAttribute('aria-selected', 'true');
-        await page.getByRole('tab', { name: 'NumPy', exact: true }).click();
-        await expect(page.getByRole('tabpanel', { name: 'NumPy', exact: true })).toContainText('import numpy as np');
-        // Utilities must stay off the initial/Inspect/Code path; opening History loads the shared chunk.
+        // Saved/export utilities stay off initial and diagnostics paths.
         expect(observed.resources.some(({ url }) => /\/WorkspaceUtilities-[^/]+\.js$/.test(new URL(url).pathname))).toBe(false);
-        await page.getByRole('button', { name: 'History', exact: true }).click();
-        const history = page.getByRole('dialog', { name: 'History' });
-        await expect(history).toContainText(/do not\s+contain trained parameters/);
-        await history.getByRole('button', { name: 'Close History' }).click();
-        await page.getByRole('button', { name: 'build', exact: true }).click();
-        await page.getByRole('navigation', { name: 'Build tools' }).getByRole('button', { name: 'Configuration', exact: true }).click();
-        await expect(page.getByRole('region', { name: 'Configuration context', exact: true })).toBeVisible();
-        await expect(page.getByRole('region', { name: 'Configuration context', exact: true })
-            .getByRole('button', { name: /Export JSON/ })).toBeVisible();
-        for (const prefix of ['InspectionPanel', 'CodeExportPanel', 'WorkspaceUtilities']) {
-            expectChunk(observed.resources, target, prefix);
-        }
-        const recipe = await page.getByRole('region', { name: 'Recipe summary', exact: true }).innerText();
-        const architecture = await page.getByLabel('Architecture summary', { exact: true }).textContent();
+        await utility(page, 'Export / import');
+        await expect(page.getByRole('button', { name:'Export JSON setup',exact:true })).toBeVisible();
+        await page.getByRole('tab', { name:'Code',exact:true }).click();
+        await page.getByRole('tab', { name:'NumPy',exact:true }).click();
+        await expect(page.getByRole('tabpanel', { name:'NumPy',exact:true })).toContainText('import numpy as np');
+        await page.keyboard.press('Escape');
+        await page.getByRole('button', { name:'Saved runs',exact:true }).click();
+        await expect(page.locator('.saved-runs')).toContainText('Saved evidence includes a recipe and full evaluation, without trained parameters. Applying a recipe starts a fresh model.');
+        for (const prefix of ['InspectionPanel', 'CodeExportPanel', 'WorkspaceUtilities']) expectChunk(observed.resources, target, prefix);
+        await workspace(page, 'Network');
+        const architecture = await page.getByLabel('Architecture summary', { exact:true }).textContent();
         const sharedURL = page.url();
         expect(new URL(sharedURL).hash).toMatch(/^#v=2&r=/);
         expect(new URL(sharedURL).origin).toBe(new URL(target).origin);
@@ -134,9 +121,7 @@ test('project hosting resolves lazy evidence and reopens an unchanged shared rec
         const peerObserved = observeHosting(peer, target);
         try {
             await readyAtZero(peer, sharedURL);
-            await peer.getByRole('combobox', { name: 'Workspace profile' }).selectOption('lab');
-            await peer.getByRole('button', { name: 'build', exact: true }).click();
-            await expect(peer.getByRole('region', { name: 'Recipe summary', exact: true })).toHaveText(recipe, { useInnerText: true });
+            await workspace(peer, 'Network');
             await expect(peer.getByLabel('Architecture summary', { exact: true })).toHaveText(architecture ?? '');
             expect(peer.url()).toBe(sharedURL);
             expect(peerObserved.errors).toEqual([]);

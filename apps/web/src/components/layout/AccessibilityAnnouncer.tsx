@@ -29,6 +29,7 @@ const CONFIG_START_MESSAGES = {
     features: 'Updating features',
     training: 'Updating training',
     preset: 'Applying preset',
+    setup: 'Applying setup',
 } as const;
 
 const CONFIG_SCOPE_LABELS = {
@@ -37,6 +38,7 @@ const CONFIG_SCOPE_LABELS = {
     features: 'Features',
     training: 'Training',
     preset: 'Preset',
+    setup: 'Setup',
 } as const;
 
 export function AccessibilityAnnouncer(props: AccessibilityAnnouncerProps) {

@@ -12,7 +12,7 @@ function displayModel(): InspectionPanelDisplayModel {
     return {
         activationBasis: {
             label: 'Activation statistics across 128 of 210 training examples',
-            suffix: '; gradient summary comes from model revision 11.',
+            suffix: '; model step 10; model revision 12; gradient summary comes from model revision 11.',
         },
         layers: [{
             key: 0,
@@ -110,6 +110,27 @@ function commands(): InspectionPanelCommands {
 }
 
 describe('InspectionPanelView', () => {
+    it('keeps every multiclass output and signed layer value in the forward flow', () => {
+        const model = displayModel();
+        const trace = { ...model.trace, result: { ...model.trace.result!, output: '0.1000, 0.2000, 0.7000', layers: [{key: 0, label: 'Layer 1', activations: '-0.400, 0.000, 0.900'}] } };
+        render(<InspectionPanelView model={{...model, trace}} commands={commands()} guidanceLevel="standard" tab="trace" onTabChange={vi.fn()} />);
+        const flow = screen.getByLabelText('Forward activation flow');
+        for (const value of ['0.1000', '0.2000', '0.7000', '-0.400', '0.000', '0.900']) expect(flow).toHaveTextContent(value);
+        expect(flow.querySelector('[data-sign="negative"]')).toHaveTextContent('-0.400');
+        expect(flow.querySelector('[data-sign="zero"]')).toHaveTextContent('0.000');
+    });
+
+    it('keeps activation and gradient provenance independently visible in the active tab panel', () => {
+        render(<InspectionPanelView model={displayModel()} commands={commands()} guidanceLevel="standard" tab="activations" onTabChange={vi.fn()} />);
+        const panel = screen.getByRole('tabpanel', { name: 'Activations' });
+        expect(panel).toHaveAttribute('id', 'inspection-panel-activations');
+        expect(panel).toHaveAttribute('aria-labelledby', 'inspection-panel-tab-activations');
+        expect(screen.getByRole('tab', { name: 'Activations' })).toHaveAttribute('aria-controls', panel.id);
+        expect(panel).toHaveTextContent('model step 10; model revision 12; gradient summary comes from model revision 11.');
+        expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+        expect(screen.queryByLabelText('Prediction trace')).not.toBeInTheDocument();
+    });
+
     it('renders the complete prepared model with semantic labels and live regions', () => {
         const { container } = render(
             <InspectionPanelView model={displayModel()} commands={commands()} guidanceLevel="standard" />,

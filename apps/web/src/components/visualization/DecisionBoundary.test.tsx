@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { DecisionBoundary } from './DecisionBoundary.tsx';
-import { classifyPointFromGrid } from './DecisionBoundary.tsx';
+import { DecisionBoundaryCanvas } from './DecisionBoundaryCanvas.tsx';
+import { useDecisionBoundaryModel, type UseDecisionBoundaryModelInput } from './useDecisionBoundaryModel.ts';
+function DecisionBoundary(props: UseDecisionBoundaryModelInput) {
+    return <DecisionBoundaryCanvas model={useDecisionBoundaryModel(props)} />;
+}
+import { classifyPointFromGrid } from './DecisionBoundaryCanvas.tsx';
 import {
     resetFrameBuffer,
     updateFrameBuffer,
@@ -338,6 +342,22 @@ describe('DecisionBoundary', () => {
         expect(screen.getByText(/Average confidence: 71%/i)).toBeInTheDocument();
         expect(document.getElementById(descriptionId ?? '')).toHaveTextContent(/25% of cells are below 60% confidence/i);
         expect(drawImage).toHaveBeenCalledTimes(1);
+    });
+
+    it('discretizes multiclass output into flat colors while preserving all three classes', () => {
+        usePlaygroundStore.setState({ access: { status: 'ready', prepared: MULTICLASS_PREPARED } });
+        updateFrameBuffer({ gridSize: 2, multiclassClassGrid: new Uint8Array([0, 1, 2, 2]),
+            multiclassConfidenceGrid: new Float32Array([0.5, 0.5, 0.4, 0.9]),
+            multiclassBoundaryLayout: { gridSize: 2, classCount: 3, classLabels: [0, 1, 2] } });
+        useTrainingStore.setState(getFrameVersions());
+        const props = { trainPoints: [{ x: 0, y: 0, label: 0 }], testPoints: [], showTestData: false };
+        const { rerender } = render(<DecisionBoundary {...props} discretize={false} />);
+        const smooth = Array.from((putImageData.mock.calls.at(-1)![0] as ImageData).data);
+        rerender(<DecisionBoundary {...props} discretize />);
+        const discrete = Array.from((putImageData.mock.calls.at(-1)![0] as ImageData).data);
+        expect(discrete).not.toEqual(smooth);
+        expect(discrete.slice(8, 12)).toEqual(discrete.slice(12, 16));
+        expect(new Set([discrete.slice(0, 4).join(), discrete.slice(4, 8).join(), discrete.slice(8, 12).join()]).size).toBe(3);
     });
 
     it('repaints when the multiclass boundary frame version changes', () => {

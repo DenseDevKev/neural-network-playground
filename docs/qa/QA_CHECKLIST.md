@@ -14,7 +14,7 @@ pnpm build
 pnpm test:bundle
 ```
 
-Expected current package counts at the September 6 release baseline:
+Historical package counts at the September 6 release baseline (current counts belong in the candidate receipt):
 
 - engine: 497 tests;
 - shared: 334 tests;
@@ -44,7 +44,7 @@ pnpm test:e2e
 
 This launches the normal local isolated preview and runs Chromium + WebKit with zero retries.
 
-Current release-baseline expectation:
+Historical September 6 release-baseline expectation (Atelier adds new cases):
 
 - 42 expected/passed;
 - 6 intentional skips;
@@ -63,7 +63,7 @@ node scripts/serve-release-fixture.mjs apps/web/dist 4174
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/ pnpm test:e2e
 ```
 
-Expected current release-baseline result:
+Historical September 6 release-baseline result (Atelier adds new cases):
 
 - 46 expected/passed;
 - 2 intentional fault-enabled skips;
@@ -134,8 +134,8 @@ Before accepting a release, explicitly verify:
 
 - skip-link keyboard and pointer activation do not change the V2 experiment URL;
 - skip-link activation does not change generation, revision, or training step;
-- Workspace profile changes do not mutate the experiment;
-- Advanced Tools disclosure does not mutate the experiment;
+- destination, workspace, guidance, and theme changes do not mutate the experiment;
+- unified Setup commits once, Cancel leaves the active experiment untouched, and dirty navigation is guarded;
 - saved-run records do not imply trained-parameter persistence;
 - Apply Saved Recipe creates the recipe state rather than pretending to restore a model;
 - paired train/test evaluation remains distinct from batch/EMA evidence;
@@ -154,7 +154,7 @@ For normal release checks:
 - reduced-motion behavior does not remove essential state feedback;
 - 200% zoom remains usable.
 
-Precision Lab acceptance additionally requires 44 px required touch targets and the viewport/layout-stability matrix documented in the roadmap.
+Signal Atelier acceptance additionally requires 44px touch targets, all20reference states in both themes, and the viewport/layout-stability matrix in [signal-atelier-acceptance.md](signal-atelier-acceptance.md).
 
 ## 9. Release-verification workflow
 

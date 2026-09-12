@@ -192,30 +192,8 @@ vi.mock('../worker/workerBridge.ts', () => ({
 vi.mock('../components/visualization/DecisionBoundaryCanvas.tsx', () => ({
     DecisionBoundaryCanvas: () => <canvas aria-label="Mock boundary canvas" />,
 }));
-vi.mock('../components/layout/Header.tsx', () => ({
-    Header: ({ training }: { training: { play: () => void; pause: () => void } }) => (
-        <header>
-            <button onClick={() => training.play()}>Play</button>
-            <button onClick={() => training.pause()}>Pause</button>
-        </header>
-    ),
-}));
-vi.mock('../components/layout/PrecisionLabContent.tsx', () => ({
-    TopologyContent: () => <div>Canvas</div>,
-    LossContent:     () => <div>Loss</div>,
-    ConfusionContent:() => <div>Confusion</div>,
-    InspectContent:  () => <div>Inspect</div>,
-    CodeContent:     () => <div>Code</div>,
-    HistoryContent:  () => <div>History</div>,
-    ConfigurationContent: () => <div>Config</div>,
-}));
-vi.mock('../components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
+
 vi.mock('../components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
-vi.mock('../components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
-vi.mock('../components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
-vi.mock('../components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: () => <div>Features</div> }));
-vi.mock('../components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
-vi.mock('../components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel: () => <div>Hyperparams</div> }));
 vi.mock('../components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
 vi.mock('../components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
 vi.mock('../components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));
@@ -249,15 +227,7 @@ describe('Training integration', () => {
 
         resetFrameBuffer();
 
-        useLayoutStore.setState({
-            view: 'build',
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
-        });
+        useLayoutStore.setState({ destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace' });
 
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: INITIAL_PREPARED },
@@ -311,7 +281,7 @@ describe('Training integration', () => {
         await waitFor(() => expect(fakeNewRunTo).toHaveBeenCalledWith(1));
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Start training' }));
         });
 
         expect(fakePostStreamCommand).toHaveBeenCalledWith({
@@ -330,14 +300,14 @@ describe('Training integration', () => {
 
         // Start training first
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'Play' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Start training' }));
         });
 
         fakePostStreamCommand.mockClear();
         fakeStopRenderLoop.mockClear();
 
         await act(async () => {
-            fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+            fireEvent.click(screen.getByRole('button', { name: 'Pause training' }));
         });
 
         expect(fakePostStreamCommand).toHaveBeenCalledWith({
@@ -448,7 +418,7 @@ describe('Training integration', () => {
             'Training diverged. Refresh the page to restart the playground.',
         );
         expect(dialog).toHaveFocus();
-        const shell = container.querySelector('.forge-shell');
+        const shell = container.querySelector('.atelier');
         expect(shell).toHaveAttribute('inert');
         expect(shell).toHaveAttribute('aria-hidden', 'true');
         expect(shell).not.toContainElement(dialog);
@@ -463,15 +433,7 @@ describe('Dataset switching scenario', () => {
         fakeStopRenderLoop = vi.fn();
         fakeNewRunTo = vi.fn();
 
-        useLayoutStore.setState({
-            view: 'build',
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
-        });
+        useLayoutStore.setState({ destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace' });
 
         fakeWorkerApi.initializeExperimentV2.mockReset().mockImplementation(
             (request: WorkerExperimentRequestV2) => fakeStrictResultForRequest(

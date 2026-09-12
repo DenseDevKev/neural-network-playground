@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type {
     ExperimentRunRecordV2,
     RejectedExperimentRunRecordV2,
@@ -8,6 +8,10 @@ import { useExperimentMemoryStore } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useSaveCurrentRun, type SaveCurrentRunController } from '../../hooks/useSaveCurrentRun.ts';
 import { reconcileComparisonSelection } from './runComparisonSelection.ts';
+import { SavedRunComparison } from '../atelier/saved/Comparison.tsx';
+import { ConfirmAction } from '../atelier/saved/ConfirmAction.tsx';
+import { RenameRun } from '../atelier/saved/RenameRun.tsx';
+import '../atelier/saved/saved.css';
 import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 function recordLabel(record: ExperimentRunRecordV2): string {
@@ -29,21 +33,25 @@ function formatMetric(value: number): string {
     return Number.isFinite(value) ? value.toFixed(4) : 'n/a';
 }
 
-function downloadText(filename: string, text: string, type = 'application/json'): void {
-    const blob = new Blob([text], { type });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+function downloadText(filename: string, text: string, onError: (message: string) => void): void {
+    let url: string | null = null;
+    try {
+        url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+    } catch (error) { onError(`Download failed: ${String(error)}`); }
+    finally { if (url !== null) URL.revokeObjectURL(url); }
 }
 
 function RejectedRecord({ record }: { record: RejectedExperimentRunRecordV2 }) {
+    const [downloadError, setDownloadError] = useState<string | null>(null);
     const deleteRejectedRecord = useExperimentMemoryStore((state) => state.deleteRejectedRecord);
     return (
         <article className="inspection__layer" aria-label={`Rejected saved record ${record.sourceIndex}`}>
             <div className="inspection__layer-name">Rejected saved record</div>
+            {downloadError && <p role="alert">{downloadError}</p>}
             <div className="inspection__empty" role="alert" style={{ marginTop: 6 }}>
                 {record.issues.map((entry) => `${entry.path}: ${entry.message}`).join(' ')}
             </div>
@@ -53,68 +61,15 @@ function RejectedRecord({ record }: { record: RejectedExperimentRunRecordV2 }) {
                     className="btn btn--ghost btn--sm"
                     onClick={() => downloadText(
                         `rejected-run-${record.sourceIndex}.json`,
-                        record.rawJson,
+                        record.rawJson, setDownloadError,
                     )}
                     aria-label="Download rejected record"
                 >
                     Download raw JSON
                 </button>
-                <button
-                    type="button"
-                    className="btn btn--ghost btn--sm"
-                    onClick={() => { void deleteRejectedRecord(record.sourceIndex); }}
-                    aria-label="Delete rejected record"
-                >
-                    Delete rejected record
-                </button>
+                <ConfirmAction label="Delete rejected record" title="Delete rejected record" onConfirm={() => deleteRejectedRecord(record.sourceIndex)}>Delete this rejected record? Download the raw JSON first to keep a copy.</ConfirmAction>
             </div>
         </article>
-    );
-}
-
-function SavedRunComparison({
-    current,
-    baseline,
-    currentLabel,
-    baselineLabel,
-}: {
-    current: ExperimentRunRecordV2;
-    baseline: ExperimentRunRecordV2;
-    currentLabel: string;
-    baselineLabel: string;
-}) {
-    const headingId = useId();
-    const currentEvaluation = current.snapshot.evaluation;
-    const baselineEvaluation = baseline.snapshot.evaluation;
-    const comparable = currentEvaluation.dataset.datasetKey === baselineEvaluation.dataset.datasetKey
-        && currentEvaluation.objectiveKey === baselineEvaluation.objectiveKey;
-
-    let summary = 'Not directly comparable';
-    if (comparable) {
-        const currentLoss = currentEvaluation.test.values.dataLoss;
-        const baselineLoss = baselineEvaluation.test.values.dataLoss;
-        if (currentLoss === baselineLoss) {
-            summary = `Equal test data loss at ${formatMetric(currentLoss)}`;
-        } else {
-            const winnerLabel = currentLoss < baselineLoss ? currentLabel : baselineLabel;
-            summary = `${winnerLabel} has lower test data loss by ${formatMetric(
-                Math.abs(currentLoss - baselineLoss),
-            )}`;
-        }
-    }
-
-    return (
-        <section className="inspection__layer" role="group" aria-labelledby={headingId}>
-            <h3 id={headingId} className="inspection__layer-name">
-                Saved run comparison: {currentLabel} and {baselineLabel}
-            </h3>
-            <div className="inspection__stat-value" style={{ marginTop: 6 }}>{summary}</div>
-            {!comparable && (
-                <div className="inspection__empty" style={{ marginTop: 6 }}>
-                    Dataset and objective identities must both match before losses can be ranked.
-                </div>
-            )}
-        </section>
     );
 }
 
@@ -148,6 +103,10 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
     const replaceDocument = usePlaygroundStore((state) => state.replaceDocument);
     const saving = saveController.busy;
     const [actionError, setActionError] = useState<string | null>(null);
+    const compareButtonRef = useRef<HTMLButtonElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
+    const listScroll = useRef<Array<{ node: HTMLElement; top: number; left: number }>>([]);
+    const [comparing, setComparing] = useState(false);
     const [runTitle, setRunTitle] = useState('');
     const [comparisonSelection, setComparisonSelection] = useState<readonly string[] | null>(null);
     const panelId = useId();
@@ -180,14 +139,38 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
 
     useEffect(() => {
         if (hydrationStatus !== 'ready') return;
-        setComparisonSelection((current) => current ?? records.slice(0, 2).map((record) => record.id));
+        setComparisonSelection((current) => {
+            if (current === null) return records.slice(0, 2).map((record) => record.id);
+            const next = reconcileComparisonSelection(current, records, null);
+            return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
+        });
     }, [hydrationStatus, records]);
+
+    useEffect(() => {
+        if (comparing && selectedComparisonRecords.length !== 2) setComparing(false);
+    }, [comparing, selectedComparisonRecords.length]);
+
+    useLayoutEffect(() => {
+        if (comparing) return;
+        if (listScroll.current.length) compareButtonRef.current?.focus({ preventScroll: true });
+        for (const { node, top, left } of listScroll.current) {
+            node.scrollTop = top; node.scrollLeft = left;
+        }
+    }, [comparing]);
+
+    function openComparison() {
+        const nodes = Array.from(listRef.current?.querySelectorAll<HTMLElement>('.saved-table-scroll') ?? []);
+        let ancestor: HTMLElement | null = listRef.current;
+        while (ancestor) { nodes.push(ancestor); ancestor = ancestor.parentElement; }
+        listScroll.current = nodes.map((node) => ({ node, top: node.scrollTop, left: node.scrollLeft }));
+        setComparing(true);
+    }
 
     const applySavedRecipe = useCallback(async (record: ExperimentRunRecordV2) => {
         setActionError(null);
         if (!prepared) {
             setActionError('A compatible version-2 experiment is required before applying a saved recipe.');
-            return;
+            return false;
         }
         const result = await replaceDocument({
             kind: 'nn-playground-experiment',
@@ -198,30 +181,62 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
         if (!result.ok) {
             setActionError(result.issues.map((entry) => entry.message).join(' '));
         }
+        return result.ok;
     }, [prepared, replaceDocument]);
 
     const deleteSavedRecord = useCallback(async (id: string) => {
         const removed = await removeRecord(id);
-        if (!removed || !mountedRef.current) return;
+        if (!removed || !mountedRef.current) return false;
         const currentRecords = useExperimentMemoryStore.getState().records;
         setComparisonSelection((current) => current === null
             ? current
             : reconcileComparisonSelection(current, currentRecords, null));
+        return true;
     }, [removeRecord]);
 
     return (
-        <div className="run-history-panel">
-            <div className="inspection__empty" role="note" style={{ marginBottom: 8 }}>
-                Saved runs contain a recipe plus worker-authored evaluation evidence. They do not
-                contain trained parameters.
-            </div>
-            <div
-                id={savedRecipeEffectsId}
-                className="inspection__empty"
-                style={{ marginBottom: 8 }}
-            >
-                {STATE_EFFECTS['saved-recipe-apply']}
-            </div>
+        <div className="run-history-panel saved-runs">
+            <div ref={listRef} hidden={comparing && selectedComparisonRecords.length === 2}>
+            <h2 className="saved-sr-only">Saved runs</h2>
+            <p>A notebook of your experiments, stored in this browser. {records.length} / 20 saved runs.</p>
+            <p id={savedRecipeEffectsId}>Saved evidence includes a recipe and full evaluation, without trained parameters. Applying a recipe starts a fresh model.</p>
+            {(persistenceError || pendingSave) && (
+                <div
+                    className="inspection__layer"
+                    {...(persistenceError ? { role: 'alert' as const } : { role: 'status' as const })}
+                    style={{ marginTop: 8 }}
+                >
+                    {persistenceError && (
+                        <div className="inspection__empty">{persistenceError.message}</div>
+                    )}
+                    {pendingSave && <><h3>This run couldn’t be saved</h3><p>{recordLabel(pendingSave)} · Full evaluation at step {pendingSave.snapshot.model.step.toLocaleString()}</p><p>{pendingSave.snapshot.evaluation.train.basis.sampleCount} train / {pendingSave.snapshot.evaluation.test.basis.sampleCount} test samples · Train loss {formatMetric(pendingSave.snapshot.evaluation.train.values.dataLoss)} · Test loss {formatMetric(pendingSave.snapshot.evaluation.test.values.dataLoss)}</p><p>Retry and download use this exact snapshot, even if training continues. Keep this tab open or download the pending evidence before leaving.</p></>}
+                    <div className="saved-actions">
+                        {pendingSave && (
+                            <button
+                                type="button"
+                                className="btn btn--ghost btn--sm"
+                                disabled={saving}
+                                onClick={() => { void saveController.commands.retry(); }}
+                            >
+                                Retry saving
+                            </button>
+                        )}
+                        {pendingSave && <><button type="button" disabled={saving} onClick={() => { void saveController.commands.downloadPending(); }}>Download pending evidence</button><ConfirmAction disabled={saving} label="Discard pending save" title="Discard pending save" onConfirm={saveController.commands.discard}>This removes the retained snapshot from this tab. Download its evidence first to keep a copy.</ConfirmAction></>}
+                        {persistenceError && (
+                            <button
+                                type="button"
+                                className="btn btn--ghost btn--sm"
+                                onClick={saveController.commands.dismiss}
+                            >
+                                Dismiss error
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            <div className="saved-capture">
+            <div>
             <label style={{ display: 'grid', gap: 4, marginBottom: 8 }}>
                 <span>Run name</span>
                 <input
@@ -240,10 +255,10 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
                     Run name must contain at most {EXPERIMENT_MEMORY_MAX_TITLE_CODE_POINTS} Unicode code points.
                 </div>
             )}
+            </div>
             <button
                 type="button"
-                className="btn btn--ghost btn--sm"
-                style={{ width: '100%' }}
+                className="saved-primary"
                 onClick={() => { void saveController.commands.save(trimmedRunTitle); }}
                 disabled={saveController.disabledReason !== null
                     || pendingSave !== null
@@ -253,51 +268,9 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
             >
                 {saving ? 'Saving…' : 'Save current run'}
             </button>
+            </div>
 
-            {(actionError || (saveController.error && !persistenceError)) && <div className="inspection__empty" role="alert" style={{ marginTop: 8 }}>{actionError || saveController.error}</div>}
-            {(persistenceError || pendingSave) && (
-                <div
-                    className="inspection__layer"
-                    {...(persistenceError ? { role: 'alert' as const } : { role: 'status' as const })}
-                    style={{ marginTop: 8 }}
-                >
-                    {persistenceError && (
-                        <div className="inspection__empty">{persistenceError.message}</div>
-                    )}
-                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                        {pendingSave && (
-                            <button
-                                type="button"
-                                className="btn btn--ghost btn--sm"
-                                disabled={saving}
-                                onClick={() => { void saveController.commands.retry(); }}
-                            >
-                                Retry saving
-                            </button>
-                        )}
-                        {pendingSave && (
-                            <button
-                                type="button"
-                                className="btn btn--ghost btn--sm"
-                                disabled={saving}
-                                onClick={() => { void saveController.commands.discard(); }}
-                            >
-                                Discard pending save
-                            </button>
-                        )}
-                        {persistenceError && (
-                            <button
-                                type="button"
-                                className="btn btn--ghost btn--sm"
-                                onClick={saveController.commands.dismiss}
-                            >
-                                Dismiss error
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
-
+            {(actionError || (saveController.error && saveController.error !== persistenceError?.message)) && <div className="inspection__empty" role="alert" style={{ marginTop: 8 }}>{actionError || saveController.error}</div>}
             {legacyRaw !== null && !legacyNoticeDismissed && (
                 <section
                     className="inspection__layer"
@@ -314,7 +287,7 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
                         <button
                             type="button"
                             className="btn btn--ghost btn--sm"
-                            onClick={() => downloadText('nn-playground-earlier-runs.json', legacyRaw)}
+                            onClick={() => downloadText('nn-playground-earlier-runs.json', legacyRaw, setActionError)}
                         >
                             Download earlier runs
                         </button>
@@ -326,13 +299,7 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
                         >
                             Dismiss notice
                         </button>
-                        <button
-                            type="button"
-                            className="btn btn--ghost btn--sm"
-                            onClick={() => { void deleteLegacyStorage(); }}
-                        >
-                            Delete earlier runs
-                        </button>
+                        <ConfirmAction label="Delete earlier runs" title="Delete earlier runs" onConfirm={deleteLegacyStorage}>Delete these stored bytes? Download a copy first; this cannot be undone.</ConfirmAction>
                     </div>
                 </section>
             )}
@@ -360,20 +327,13 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
                             className="btn btn--ghost btn--sm"
                             onClick={() => downloadText(
                                 'nn-playground-incompatible-saved-runs.json',
-                                incompatibleEnvelope.rawJson,
+                                incompatibleEnvelope.rawJson, setActionError,
                             )}
                             aria-label="Download incompatible saved-run file"
                         >
                             Download raw file
                         </button>
-                        <button
-                            type="button"
-                            className="btn btn--ghost btn--sm"
-                            onClick={() => { void deleteIncompatibleEnvelope(); }}
-                            aria-label="Delete incompatible saved-run file"
-                        >
-                            Delete incompatible file
-                        </button>
+                        <ConfirmAction label="Delete incompatible saved-run file" title="Delete incompatible file" onConfirm={deleteIncompatibleEnvelope}>Delete these stored bytes? Download a copy first; this cannot be undone.</ConfirmAction>
                     </div>
                 </section>
             )}
@@ -398,96 +358,30 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
                     >
                         <legend className="inspection__layer-name">Runs to compare</legend>
                         <div id={comparisonGuidanceId} className="inspection__empty" style={{ marginBottom: 8 }}>
-                            Choose up to two saved runs. Selecting a third replaces the earliest choice.
+                            Choose exactly two saved runs, then compare their stored evidence. Uncheck a run to select another.
                         </div>
-                        <div className="inspection__layers">
-                            {records.map((record) => {
-                                const comparisonLabel = comparisonRecordLabel(record, records);
-                                return (
-                                    <article
-                                        key={record.id}
-                                        className="inspection__layer"
-                                        aria-label={recordLabel(record)}
-                                    >
-                                        <div className="inspection__layer-name">{recordLabel(record)}</div>
-                                        <label style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedComparisonIds.includes(record.id)}
-                                                onChange={() => setComparisonSelection((current) => (
-                                                    reconcileComparisonSelection(
-                                                        current ?? initialComparisonSelection,
-                                                        records,
-                                                        record.id,
-                                                    )
-                                                ))}
-                                            />
-                                            <span>Compare {comparisonLabel}</span>
-                                        </label>
-                                        <div className="inspection__stat-row">
-                                            <span className="inspection__stat-label">Model revision</span>
-                                            <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
-                                                {record.snapshot.model.revision.toLocaleString()}
-                                            </span>
-                                        </div>
-                                        <div className="inspection__stat-row">
-                                            <span className="inspection__stat-label">Train / test data loss</span>
-                                            <span className="inspection__stat-value" style={{ marginLeft: 'auto' }}>
-                                                {formatMetric(record.snapshot.evaluation.train.values.dataLoss)} /{' '}
-                                                {formatMetric(record.snapshot.evaluation.test.values.dataLoss)}
-                                            </span>
-                                        </div>
-                                        <div className="inspection__empty" style={{ marginTop: 6 }}>
-                                            Full evaluation at step {record.snapshot.model.step.toLocaleString()};{' '}
-                                            {record.snapshot.evaluation.train.basis.sampleCount.toLocaleString()}{' '}
-                                            train and{' '}
-                                            {record.snapshot.evaluation.test.basis.sampleCount.toLocaleString()}{' '}
-                                            test samples.
-                                        </div>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                                            <button
-                                                type="button"
-                                                className="btn btn--ghost btn--sm"
-                                                onClick={() => { void applySavedRecipe(record); }}
-                                                aria-describedby={savedRecipeEffectsId}
-                                            >
-                                                Apply saved recipe
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="btn btn--ghost btn--sm"
-                                                onClick={() => downloadText(
-                                                    `${record.id}.json`,
-                                                    JSON.stringify(record, null, 2),
-                                                )}
-                                                aria-label={`Download evidence for ${recordLabel(record)}`}
-                                            >
-                                                Download evidence
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="btn btn--ghost btn--sm"
-                                                onClick={() => { void deleteSavedRecord(record.id); }}
-                                                aria-label={`Delete ${recordLabel(record)}`}
-                                            >
-                                                Delete
-                                            </button>
-                                        </div>
-                                    </article>
-                                );
-                            })}
-                        </div>
+                        <div className="saved-table-scroll"><table className="saved-run-table"><thead><tr><th scope="col">Select</th><th scope="col">Run</th><th scope="col">Dataset</th><th scope="col">Step</th><th scope="col">Train loss</th><th scope="col">Test loss</th><th scope="col">Actions</th></tr></thead><tbody>
+                            {records.map((record) => <tr key={record.id}>
+                                <td data-label="Select"><input type="checkbox" aria-label={`Compare ${comparisonRecordLabel(record, records)}`} checked={selectedComparisonIds.includes(record.id)} disabled={selectedComparisonIds.length === 2 && !selectedComparisonIds.includes(record.id)} onChange={() => setComparisonSelection((current) => reconcileComparisonSelection(current ?? initialComparisonSelection, records, record.id))} /></td>
+                                <td data-label="Run"><article aria-label={recordLabel(record)}><strong>{recordLabel(record)}</strong><small>{new Date(record.createdAt).toLocaleString()} · Model revision {record.snapshot.model.revision}</small></article></td>
+                                <td data-label="Dataset">{record.recipe.task.dataset}</td>
+                                <td data-label="Step">{record.snapshot.model.step.toLocaleString()}</td>
+                                <td data-label="Train loss">{formatMetric(record.snapshot.evaluation.train.values.dataLoss)}</td>
+                                <td data-label="Test loss">{formatMetric(record.snapshot.evaluation.test.values.dataLoss)}</td>
+                                <td data-label="Actions"><details><summary>Actions<span className="saved-sr-only"> for {comparisonRecordLabel(record, records)}</span></summary><div className="saved-actions">
+                                    <RenameRun record={record} />
+                                    <ConfirmAction label="Apply saved recipe" title="Apply saved recipe" descriptionId={savedRecipeEffectsId} onConfirm={() => applySavedRecipe(record)}>{STATE_EFFECTS['saved-recipe-apply']} This starts a fresh model; saved trained parameters are not available.</ConfirmAction>
+                                    <button type="button" aria-label={`Download evidence for ${recordLabel(record)}`} onClick={() => { try { downloadText(`${record.id}.json`, JSON.stringify(record, null, 2), setActionError); } catch (error) { setActionError(`Download failed: ${String(error)}`); } }}>Download evidence</button>
+                                    <ConfirmAction label={`Delete ${recordLabel(record)}`} title="Delete saved run" onConfirm={() => deleteSavedRecord(record.id)}>Delete {recordLabel(record)} permanently? Download the evidence first to keep a copy.</ConfirmAction>
+                                </div></details></td>
+                            </tr>)}
+                        </tbody></table></div>
+                        <div className="saved-selection"><span>{selectedComparisonIds.length} runs selected</span><button type="button" onClick={() => setComparisonSelection([])}>Clear</button><button ref={compareButtonRef} className="saved-primary" type="button" disabled={selectedComparisonRecords.length !== 2} onClick={openComparison}>Compare selected</button></div>
                     </fieldset>
-                    {selectedComparisonRecords.length === 2 && (
-                        <SavedRunComparison
-                            current={selectedComparisonRecords[0]}
-                            baseline={selectedComparisonRecords[1]}
-                            currentLabel={comparisonRecordLabel(selectedComparisonRecords[0], records)}
-                            baselineLabel={comparisonRecordLabel(selectedComparisonRecords[1], records)}
-                        />
-                    )}
                 </>
             )}
+            </div>
+            {comparing && selectedComparisonRecords.length === 2 && <SavedRunComparison current={selectedComparisonRecords[0]} baseline={selectedComparisonRecords[1]} currentLabel={comparisonRecordLabel(selectedComparisonRecords[0], records)} baselineLabel={comparisonRecordLabel(selectedComparisonRecords[1], records)} onBack={() => setComparing(false)} />}
         </div>
     );
 }

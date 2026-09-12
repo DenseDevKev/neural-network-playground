@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { getFrameVersions, resetFrameBuffer } from '../../worker/frameBuffer.ts';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
 import { InspectionPanel } from './InspectionPanel.tsx';
 
 const workerApi = vi.hoisted(() => ({
@@ -32,6 +33,8 @@ function oneLayerPrepared() {
 
 describe('InspectionPanel integration', () => {
     beforeEach(() => {
+        useLayoutStore.setState({ inspectTab: 'trace' });
+        useTrainingStore.setState({ status: 'idle' });
         Object.values(workerApi).forEach((mock) => mock.mockReset());
         const prepared = oneLayerPrepared();
         usePlaygroundStore.setState({
@@ -62,6 +65,25 @@ describe('InspectionPanel integration', () => {
 
         unmount();
         expect(usePlaygroundStore.getState().demand).toBe(initialDemand);
+    });
+
+    it('switches between accessible inspection views and exposes the supplied pause action', () => {
+        const onPause = vi.fn();
+        useTrainingStore.setState({ status: 'running' });
+        render(<InspectionPanel onPause={onPause} />);
+        expect(screen.getByRole('tab', { name: 'Trace' })).toHaveAttribute('aria-selected', 'true');
+        expect(screen.queryByRole('region', { name: 'Activation histogram explorer' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Trace prediction' })).toBeDisabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Pause training' }));
+        expect(onPause).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole('tab', { name: 'Activations' }));
+        expect(useLayoutStore.getState().inspectTab).toBe('activations');
+        expect(screen.getByRole('region', { name: 'Activation histogram explorer' })).toBeInTheDocument();
+        expect(screen.queryByLabelText('Prediction trace')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('tab', { name: 'Gradients' }));
+        expect(screen.getByRole('button', { name: 'Preview backprop' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Probe loss surface' })).toBeDisabled();
+        expect(workerApi.getBackpropExplanationV2).not.toHaveBeenCalled();
     });
 
     it('renders a worker prediction trace through the controller and view', async () => {
@@ -108,6 +130,7 @@ describe('InspectionPanel integration', () => {
         expect(screen.getByText('0.1900')).toBeInTheDocument();
         expect(screen.getByText('model penalty')).toBeInTheDocument();
         expect(screen.getByText('0.0300')).toBeInTheDocument();
+        expect(screen.getByText(/Selected data point · x₁ 0.25 · x₂ -0.5 · Target 1/)).toBeInTheDocument();
         expect(screen.getByText('Trace from training sample 0 · model step 12 · revision 12'))
             .toBeInTheDocument();
     });

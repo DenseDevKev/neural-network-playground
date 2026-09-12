@@ -12,12 +12,14 @@ import {
     type LessonStep,
     type LessonTarget,
 } from '../../lessons/lessonRegistry.ts';
+import '../../lessons/lessons.css';
 import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 export type { LessonTarget } from '../../lessons/lessonRegistry.ts';
 
 interface GuidedLessonPanelProps {
     onReset: () => void;
+    onNavigate?: (action: () => void) => void;
     onHighlightChange?: (target: LessonTarget | null) => void;
 }
 
@@ -46,13 +48,15 @@ function hasEvidenceAfterLessonStart(
     if (current.generationId !== activation.generationId) {
         return current.generationId > activation.generationId;
     }
-    return current.revision > activation.revision || current.step > activation.step;
+    return false; // The pre-reset generation is never evidence for this lesson.
 }
 
 function isLessonCompletionSatisfied(
     rule: LessonCompletionRule,
     state: {
-        view: 'build' | 'run';
+        workspaceTab: string;
+        setupTab: string;
+        destination: string;
         currentModel: LessonModelIdentity | null;
         activationModel: LessonModelIdentity | null;
     },
@@ -63,8 +67,8 @@ function isLessonCompletionSatisfied(
             return hasEvidenceAfterLessonStart(state.currentModel, state.activationModel)
                 && state.currentModel.step >= rule.step;
         }
-        case 'view-is':
-            return state.view === rule.view;
+        case 'setup-tab-is':
+            return state.destination === 'playground' && state.workspaceTab === 'setup' && state.setupTab === rule.tab;
     }
 }
 
@@ -81,23 +85,25 @@ function formatPreparationIssues(issues: readonly ExperimentSchemaIssue[]): stri
 
 export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     onReset,
+    onNavigate = (action) => action(),
     onHighlightChange,
 }: GuidedLessonPanelProps) {
     const [selectedLessonId, setSelectedLessonId] = useState(DEFAULT_LESSON_ID);
+    const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
     const [activeStepIndex, setActiveStepIndex] = useState<number | null>(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(getInitialDrawerOpen);
     const [isStarting, setIsStarting] = useState(false);
     const [lessonError, setLessonError] = useState<string | null>(null);
     const lessonEffectsId = `${useId()}-lesson-start-effects`;
     const startInFlight = useRef(false);
+    const lastStartLesson = useRef(selectedLessonId);
     const mounted = useRef(true);
     const activationModel = useRef<LessonModelIdentity | null>(null);
     const applyRecipe = usePlaygroundStore((s) => s.applyRecipe);
     const currentModel = useTrainingStore((s) => s.latestLiveSignal?.model ?? null);
-    const view = useLayoutStore((s) => s.view);
-    const setActiveRecipeSection = useLayoutStore((s) => s.setActiveRecipeSection);
-    const setActiveEvidenceView = useLayoutStore((s) => s.setActiveEvidenceView);
-    const setView = useLayoutStore((s) => s.setView);
+    const destination = useLayoutStore((s) => s.destination);
+    const workspaceTab = useLayoutStore((s) => s.workspaceTab);
+    const setupTab = useLayoutStore((s) => s.setupTab);
     const setActiveLessonStep = useLayoutStore((s) => s.setActiveLessonStep);
     const clearActiveLessonStep = useLayoutStore((s) => s.clearActiveLessonStep);
     const selectedLesson = useMemo(
@@ -105,15 +111,16 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         [selectedLessonId],
     );
     const lessonRecipe = useMemo(() => getLessonRecipe(selectedLesson), [selectedLesson]);
-    const activeStep = activeStepIndex === null ? null : selectedLesson.steps[activeStepIndex];
+    const activeLesson = activeLessonId ? getLessonDefinition(activeLessonId) : null;
+    const activeStep = activeStepIndex === null ? null : activeLesson?.steps[activeStepIndex];
+    const showLibrary = destination === 'lessons' || !activeStep;
     const completionSatisfied = activeStep?.completion
         ? isLessonCompletionSatisfied(activeStep.completion, {
-            view,
+            destination, workspaceTab, setupTab,
             currentModel,
             activationModel: activationModel.current,
         })
         : false;
-    const lessonStateClass = activeStep ? 'guided-lesson--active' : '';
 
     useEffect(() => {
         mounted.current = true;
@@ -124,12 +131,13 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
 
     const focusStep = useCallback(
         (step: LessonStep) => {
-            if (step.tab) setActiveRecipeSection(step.tab);
-            if (step.evidenceView) setActiveEvidenceView(step.evidenceView);
-            if (step.phase) setView(step.phase);
+            const layout = useLayoutStore.getState();
+            if (step.evidenceView) layout.setResultsTab(step.evidenceView === 'loss' ? 'learning' : step.evidenceView === 'confusion' ? 'errors' : 'boundary');
+            if (step.tab) layout.openSetup(step.tab === 'hyperparams' ? 'training' : step.tab === 'data' ? 'dataset' : 'network');
+            else layout.navigate('playground', step.evidenceView === 'inspection' ? 'inspect' : 'results');
             onHighlightChange?.(step.target);
         },
-        [onHighlightChange, setActiveEvidenceView, setActiveRecipeSection, setView],
+        [onHighlightChange],
     );
 
     useEffect(() => {
@@ -149,9 +157,10 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         return () => media.removeEventListener?.('change', syncDrawerDefault);
     }, []);
 
-    const startLesson = async () => {
+    const startLesson = async (lesson = selectedLesson) => {
         if (startInFlight.current) return;
         startInFlight.current = true;
+        lastStartLesson.current = lesson.id;
         setIsStarting(true);
         setLessonError(null);
         const trainingStore = useTrainingStore.getState();
@@ -159,7 +168,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         let requestId = usePlaygroundStore.getState().preparation.requestId;
 
         try {
-            const pendingResult = applyRecipe(lessonRecipe);
+            const pendingResult = applyRecipe(getLessonRecipe(lesson));
             requestId = usePlaygroundStore.getState().preparation.requestId;
             const result = await pendingResult;
             const playground = usePlaygroundStore.getState();
@@ -176,14 +185,15 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
             if (playground.access.status !== 'ready'
                 || playground.access.prepared !== result.value
                 || !mounted.current) return;
-            onReset();
-            if (!mounted.current) return;
             activationModel.current = snapshotModelIdentity(
                 useTrainingStore.getState().latestLiveSignal?.model ?? null,
             );
+            onReset();
+            if (!mounted.current) return;
+            setActiveLessonId(lesson.id);
             setActiveStepIndex(0);
-            setActiveLessonStep(selectedLesson.id, 0);
-            focusStep(selectedLesson.steps[0]);
+            setActiveLessonStep(lesson.id, 0);
+            focusStep(lesson.steps[0]);
         } catch (error) {
             if (usePlaygroundStore.getState().preparation.requestId === requestId) {
                 const message = error instanceof Error
@@ -198,149 +208,65 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
         }
     };
 
-    const goToStep = (nextIndex: number) => {
+    const goToStep = (nextIndex: number) => onNavigate(() => {
+        if (!activeLesson || startInFlight.current) return;
         setActiveStepIndex(nextIndex);
-        setActiveLessonStep(selectedLesson.id, nextIndex);
-        focusStep(selectedLesson.steps[nextIndex]);
-    };
+        setActiveLessonStep(activeLesson.id, nextIndex);
+        focusStep(activeLesson.steps[nextIndex]);
+    });
 
-    const finishLesson = () => {
+    const finishLesson = () => onNavigate(() => {
+        if (startInFlight.current) return;
+        setActiveLessonId(null);
         activationModel.current = null;
         setActiveStepIndex(null);
         clearActiveLessonStep();
         onHighlightChange?.(null);
-    };
+        useLayoutStore.getState().navigate('lessons');
+    });
 
     const selectLesson = (lessonId: string) => {
-        activationModel.current = null;
         setSelectedLessonId(lessonId);
-        setActiveStepIndex(null);
         setLessonError(null);
-        clearActiveLessonStep();
-        onHighlightChange?.(null);
     };
 
     return (
-        <aside
-            className={`guided-lesson ${lessonStateClass} ${isDrawerOpen ? 'guided-lesson--open' : 'guided-lesson--collapsed'}`}
-            aria-label="Guided lesson mode"
-            aria-busy={isStarting}
-        >
-            <div className="guided-lesson__header">
-                <div className="guided-lesson__identity">
-                    <div className="guided-lesson__eyebrow">Guided lesson</div>
-                    <div className="guided-lesson__title">{selectedLesson.title}</div>
-                </div>
-                {activeStep && (
-                    <div className="guided-lesson__step-chip" aria-live="polite">
-                        {activeStepIndex! + 1}/{selectedLesson.steps.length}
+        <aside className={`guided-lesson atelier-lessons ${activeStep ? 'guided-lesson--active' : ''} ${showLibrary ? 'atelier-lessons--library' : 'atelier-lessons--panel'}`} aria-label="Guided lesson mode" aria-busy={isStarting}>
+            <header className="lesson-heading">
+                <div>{!showLibrary && <><small>Active lesson</small><h2>{activeLesson!.title}</h2></>}</div>
+                <button type="button" aria-label={isDrawerOpen ? 'Collapse guided lesson drawer' : 'Expand guided lesson drawer'} aria-expanded={isDrawerOpen} onClick={() => setIsDrawerOpen(!isDrawerOpen)}>{isDrawerOpen ? '−' : '+'}</button>
+            </header>
+            {isDrawerOpen && <>
+                {isStarting && <p role="status">Preparing lesson. Navigation resumes when preparation finishes.</p>}
+                {lessonError && <div role="alert">{lessonError}<button type="button" disabled={isStarting} onClick={() => onNavigate(() => { void startLesson(getLessonDefinition(lastStartLesson.current)!); })}>Retry lesson</button></div>}
+                {showLibrary ? <div className="lesson-library">
+                    <div>
+                        <p>Small experiments that make neural networks tangible.</p>
+                        <label className="lesson-mobile-select">Lesson<select aria-label="Guided lesson" value={selectedLessonId} disabled={isStarting} onChange={(event) => selectLesson(event.target.value)}>{LESSON_DEFINITIONS.map((lesson) => <option key={lesson.id} value={lesson.id}>{lesson.title}</option>)}</select></label>
+                        <div className="lesson-list">{LESSON_DEFINITIONS.map((lesson, index) => <button key={lesson.id} type="button" aria-pressed={lesson.id === selectedLessonId} disabled={isStarting} onClick={() => selectLesson(lesson.id)}><span className="lesson-number">{String(index + 1).padStart(2, '0')}</span><span><strong>{lesson.title}</strong><small>{lesson.summary}</small></span><span aria-hidden="true">↗</span></button>)}</div>
                     </div>
-                )}
-                <button
-                    type="button"
-                    className="guided-lesson__toggle"
-                    aria-label={isDrawerOpen ? 'Collapse guided lesson drawer' : 'Expand guided lesson drawer'}
-                    aria-expanded={isDrawerOpen}
-                    onClick={() => setIsDrawerOpen((open) => !open)}
-                >
-                    {isDrawerOpen ? '▾' : '▴'}
-                </button>
-            </div>
-
-            {isDrawerOpen && (
-                <div className="guided-lesson__content">
-                    {lessonError && (
-                        <div className="config-feedback config-feedback--error">
-                            {lessonError}
-                        </div>
-                    )}
-                    {activeStep ? (
-                        <>
-                            <div className="guided-lesson__progress" aria-live="polite">
-                                Step {activeStepIndex! + 1} of {selectedLesson.steps.length}
-                            </div>
-                            <h2 className="guided-lesson__step-title">{activeStep.title}</h2>
-                            <p className="guided-lesson__body">{activeStep.body}</p>
-                            <div className="guided-lesson__try-this">
-                                <div className="guided-lesson__eyebrow">Try this</div>
-                                <p className="guided-lesson__body">{activeStep.tryThis}</p>
-                                {completionSatisfied && (
-                                    <div className="guided-lesson__meta" role="status">
-                                        Done
-                                    </div>
-                                )}
-                            </div>
-                            <div className="guided-lesson__actions">
-                                <button
-                                    type="button"
-                                    className="btn btn--ghost btn--sm"
-                                    onClick={() => activeStepIndex! > 0 && goToStep(activeStepIndex! - 1)}
-                                    disabled={activeStepIndex === 0}
-                                >
-                                    Back
-                                </button>
-                                {activeStepIndex === selectedLesson.steps.length - 1 ? (
-                                    <button
-                                        type="button"
-                                        className="btn btn--accent btn--sm"
-                                        onClick={finishLesson}
-                                        aria-label="Finish guided lesson"
-                                    >
-                                        Finish
-                                    </button>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        className="btn btn--accent btn--sm"
-                                        onClick={() => goToStep(activeStepIndex! + 1)}
-                                        aria-label="Next lesson step"
-                                    >
-                                        Next
-                                    </button>
-                                )}
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <label className="guided-lesson__selector">
-                                <span className="guided-lesson__selector-label">Lesson</span>
-                                <select
-                                    className="select guided-lesson__select"
-                                    value={selectedLesson.id}
-                                    onChange={(event) => selectLesson(event.target.value)}
-                                    aria-label="Guided lesson"
-                                    disabled={isStarting}
-                                >
-                                    {LESSON_DEFINITIONS.map((lesson) => (
-                                        <option key={lesson.id} value={lesson.id}>
-                                            {lesson.title}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                            <p className="guided-lesson__body">{selectedLesson.summary}</p>
-                            {selectedLesson.estimatedMinutes && (
-                                <div className="guided-lesson__meta">
-                                    About {selectedLesson.estimatedMinutes} min
-                                </div>
-                            )}
-                            <p id={lessonEffectsId} className="guided-lesson__consequence">
-                                {STATE_EFFECTS['lesson-start']}
-                            </p>
-                            <button
-                                type="button"
-                                className="btn btn--accent btn--sm guided-lesson__start"
-                                onClick={startLesson}
-                                aria-label="Start lesson and reset"
-                                aria-describedby={lessonEffectsId}
-                                disabled={isStarting}
-                            >
-                                {isStarting ? 'Starting...' : 'Start lesson and reset'}
-                            </button>
-                        </>
-                    )}
-                </div>
-            )}
+                    <section className="lesson-detail" aria-label="Selected lesson details">
+                        <small>About {selectedLesson.estimatedMinutes} min · {selectedLesson.steps.length} steps</small>
+                        <h3>{selectedLesson.title}</h3><p>{selectedLesson.summary}</p>
+                        <p className="lesson-recipe">{lessonRecipe.recipe.task.dataset} · {lessonRecipe.recipe.model.hiddenLayers.length ? `Hidden layers: ${lessonRecipe.recipe.model.hiddenLayers.join(' → ')}` : 'No hidden layers'} · {lessonRecipe.recipe.model.hiddenActivation}<br />Dataset seed {lessonRecipe.recipe.data.seed} · Model seed {lessonRecipe.recipe.model.seed}</p>
+                        <ol>{selectedLesson.steps.map((step) => <li key={step.id}><strong>{step.title}</strong><p>{step.body}</p></li>)}</ol>
+                        <p id={lessonEffectsId} className="guided-lesson__consequence">{STATE_EFFECTS['lesson-start']}</p>
+                        <button type="button" className="atelier-primary" aria-label="Start lesson and reset" aria-describedby={lessonEffectsId} disabled={isStarting} onClick={() => onNavigate(() => { void startLesson(); })}>{isStarting ? 'Starting…' : activeLesson ? 'Replace active lesson and reset' : 'Start lesson and reset'}</button>
+                        {activeLesson && <button type="button" disabled={isStarting} onClick={() => goToStep(activeStepIndex!)}>Resume {activeLesson.title}</button>}
+                    </section>
+                </div> : <div className="lesson-active">
+                    <div className="lesson-actions"><button type="button" disabled={isStarting} onClick={() => onNavigate(() => { if (!startInFlight.current) useLayoutStore.getState().navigate('lessons'); })}>All lessons</button><button type="button" disabled={isStarting} onClick={finishLesson}>Exit lesson</button></div>
+                    <p aria-live="polite">Step {activeStepIndex! + 1} of {activeLesson!.steps.length}</p>
+                    <progress aria-label="Lesson progress" value={activeStepIndex! + 1} max={activeLesson!.steps.length} />
+                    <h3>{activeStep!.title}</h3><p>{activeStep!.body}</p>
+                    <h4>Try this</h4><p>{activeStep!.tryThis}</p>
+                    {activeStep!.tab && <p className="lesson-note">Edit in Setup, then select Apply changes before leaving. Dataset seed changes the samples; Model seed changes initial weights.</p>}
+                    {completionSatisfied && <p role="status">Done</p>}
+                    <button type="button" disabled={isStarting} onClick={() => goToStep(activeStepIndex!)}>Show me →</button>
+                    <div className="lesson-actions"><button type="button" disabled={isStarting || activeStepIndex === 0} onClick={() => goToStep(activeStepIndex! - 1)}>Previous</button>{activeStepIndex === activeLesson!.steps.length - 1 ? <button type="button" className="atelier-primary" aria-label="Finish guided lesson" disabled={isStarting} onClick={finishLesson}>Finish</button> : <button type="button" className="atelier-primary" aria-label="Next lesson step" disabled={isStarting} onClick={() => goToStep(activeStepIndex! + 1)}>Continue</button>}</div>
+                    <details><summary>Restart lesson</summary><p id={lessonEffectsId}>{STATE_EFFECTS['lesson-start']}</p><button type="button" disabled={isStarting} aria-describedby={lessonEffectsId} onClick={() => onNavigate(() => { void startLesson(activeLesson!); })}>Restart lesson and reset</button></details>
+                </div>}
+            </>}
         </aside>
     );
 });

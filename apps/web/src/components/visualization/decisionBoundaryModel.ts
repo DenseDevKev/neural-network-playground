@@ -1,5 +1,5 @@
-import type { CompiledTaskContract, DataPoint } from '@nn-playground/engine';
-import type { MulticlassBoundaryLayout } from '@nn-playground/shared';
+import { getDatasetContract, type CompiledTaskContract, type DataPoint } from '@nn-playground/engine';
+import type { ArtifactProvenance, MulticlassBoundaryLayout } from '@nn-playground/shared';
 
 const MULTICLASS_LOW_CONFIDENCE_THRESHOLD = 0.6;
 
@@ -11,6 +11,7 @@ export interface DecisionOverlayCopy {
 }
 
 export interface DecisionBoundaryFrameSnapshot {
+    readonly decisionBoundaryProvenance?: ArtifactProvenance | null;
     readonly outputGrid: Float32Array | null;
     readonly gridSize: number;
     readonly multiclassClassGrid: Uint8Array | null;
@@ -26,6 +27,7 @@ export interface DecisionBoundaryModelInput {
     showTestData: boolean;
     discretize: boolean;
     overlayMode: DecisionOverlayMode;
+    noise?: number;
 }
 
 export interface MulticlassBoundarySummary {
@@ -49,12 +51,15 @@ interface DecisionBoundaryUnavailableModel {
 }
 
 interface DecisionBoundaryVisibleData {
+    provenance?: ArtifactProvenance | null;
     trainPoints: DataPoint[];
     visibleTestPoints: DataPoint[];
 }
 
 export interface DecisionBoundaryScalarModel extends DecisionBoundaryVisibleData {
     kind: 'scalar';
+    taskKind?: CompiledTaskContract['kind'];
+    valueDomain?: readonly [number,number];
     grid: Float32Array | null;
     gridSize: number;
     discretize: boolean;
@@ -66,6 +71,8 @@ export interface DecisionBoundaryScalarModel extends DecisionBoundaryVisibleData
 
 export interface DecisionBoundaryMulticlassModel extends DecisionBoundaryVisibleData {
     kind: 'multiclass';
+    discretize?: boolean;
+    overlayMode?: DecisionOverlayMode;
     classGrid: Uint8Array;
     confidenceGrid: Float32Array;
     layout: MulticlassBoundaryLayout;
@@ -190,6 +197,7 @@ export function deriveDecisionBoundaryModel({
     showTestData,
     discretize,
     overlayMode,
+    noise = 0,
 }: DecisionBoundaryModelInput): DecisionBoundaryDisplayModel {
     if (trainPoints.length === 0) {
         return {
@@ -214,6 +222,9 @@ export function deriveDecisionBoundaryModel({
     if (isMulticlassTask && multiclassSummary) {
         return {
             kind: 'multiclass',
+            discretize,
+            provenance: frame.decisionBoundaryProvenance,
+            overlayMode,
             classGrid: frame.multiclassClassGrid!,
             confidenceGrid: frame.multiclassConfidenceGrid!,
             layout: frame.multiclassBoundaryLayout!,
@@ -237,7 +248,12 @@ export function deriveDecisionBoundaryModel({
         };
     }
 
-    const overlayCopy = getDecisionOverlayCopy(overlayMode, showTestData, discretize);
+    const regression = task?.kind === 'regression';
+    const effectiveOverlay = regression && overlayMode !== 'split' ? 'none' : overlayMode;
+    const overlayCopy = regression ? {
+        label: effectiveOverlay === 'split' ? 'Train/test split' : 'Prediction',
+        description: 'Continuous model predictions. Point colors show numerical targets; the legend gives the displayed value range.',
+    } : getDecisionOverlayCopy(effectiveOverlay, showTestData, discretize);
     const validScalarGrid = frame.outputGrid
         && Number.isSafeInteger(frame.gridSize)
         && frame.gridSize > 0
@@ -245,12 +261,25 @@ export function deriveDecisionBoundaryModel({
         ? frame.outputGrid
         : null;
 
+    let valueDomain: readonly [number,number] = [0,1];
+    if (regression) {
+        const domain = getDatasetContract(task.dataset).targetDomain;
+        if (domain.kind === 'continuous') valueDomain = domain.boundsForNoise(noise);
+        let [minimum,maximum] = valueDomain;
+        for (const value of validScalarGrid ?? []) if (Number.isFinite(value)) {
+            minimum = Math.min(minimum,value); maximum = Math.max(maximum,value);
+        }
+        valueDomain = [minimum,maximum];
+    }
     return {
         kind: 'scalar',
+        provenance: frame.decisionBoundaryProvenance,
+        taskKind: task?.kind,
+        valueDomain,
         grid: validScalarGrid,
         gridSize: validScalarGrid ? frame.gridSize : 0,
-        discretize,
-        overlayMode,
+        discretize: regression ? false : discretize,
+        overlayMode: effectiveOverlay,
         overlayCopy,
         accessibleDescription: overlayCopy.description,
         trainPoints,

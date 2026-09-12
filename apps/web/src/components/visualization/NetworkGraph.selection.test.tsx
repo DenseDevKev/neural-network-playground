@@ -24,7 +24,7 @@ beforeEach(() => {
     frames.resetFrameBuffer();
     usePlaygroundStore.setState({ access: { status: 'ready', prepared } });
     updateCompiledForTest((c) => ({ ...c, network: { ...c.network, hiddenLayers: [2] } }));
-    useLayoutStore.setState({ audienceMode: 'lab', advancedToolsOpen: true, activeLessonId: null });
+    useLayoutStore.setState({ audienceMode: 'lab',  activeLessonId: null });
     useTrainingStore.setState({ evidenceGenerationId: 7, paramsVersion: 0, neuronGridsVersion: 0, frameVersion: 0, layerStatsVersion: 0 });
     const model = { generationId: 7, revision: 10, step: 10, epoch: 1 };
     snapshot = { ...frames.getFrameBuffer(), weightLayout: { layerSizes: [2, 2, 1] }, weights: new Float32Array([0.3, -0.5, 0.7, -0.2, 0.9, -0.4]), biases: new Float32Array([0.1, -0.1, 0.05]),
@@ -78,13 +78,40 @@ for (const canvas of [true, false]) describe(canvas ? 'Canvas selection' : 'SVG 
         const node = screen.getByRole('button', { name: /^Hidden 1, Neuron 2/ });
         fireEvent.click(node); fireEvent.focus(node); fireEvent.blur(node); fireEvent.pointerLeave(node);
         act(() => {
-            useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
+            useLayoutStore.setState({ audienceMode: 'beginner',  });
             useTrainingStore.setState({ frameVersion: 100, outputGridVersion: 100 });
         });
         expect(node).toHaveAttribute('aria-pressed', 'true');
         expect(screen.getByRole('region', { name: 'Selected neuron details' })).toHaveTextContent('Hidden 1 · neuron 2');
         fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
         expect(node).toHaveAttribute('aria-pressed', 'false');
+    });
+    it('restores focus to the chosen neuron when the inspector closes', () => {
+        render(<Harness />);
+        const node = screen.getByRole('button', { name: /^Hidden 1, Neuron 2/ });
+        fireEvent.click(node);
+        const close = screen.getByRole('button', { name: 'Clear selection' });
+        close.focus(); fireEvent.click(close);
+        expect(node).toHaveFocus();
+    });
+    it('hides grids from a different generation in graph and inspector', () => {
+        snapshot = { ...snapshot, neuronGridsProvenance: { ...snapshot.neuronGridsProvenance!, model: { ...snapshot.neuronGridsProvenance!.model, generationId: 6 } } };
+        const { container } = render(<Harness />);
+        expect(container.querySelectorAll('.network-graph-heatmap-slot')).toHaveLength(0);
+        fireEvent.click(screen.getByRole('button', { name: /^Hidden 1, Neuron 1/ }));
+        expect(screen.getByRole('region', { name: 'Selected neuron details' })).toHaveTextContent('activation grid at step not available');
+    });
+    it('keeps all maximum-topology neuron targets at least 44px without overlaps', () => {
+        updateCompiledForTest((c) => ({ ...c, features: { x: true, y: true, xSquared: true, ySquared: true, xy: true, sinX: true, sinY: true, cosX: true, cosY: true }, network: { ...c.network, hiddenLayers: [16,16,16,16,16,16] } }));
+        const { container } = render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Zoom out graph' }));
+        const targets = [...container.querySelectorAll<HTMLButtonElement>('.network-node-target')];
+        expect(targets).toHaveLength(106);
+        const rectangles = targets.map((target) => ({ x: parseFloat(target.style.left), y: parseFloat(target.style.top), w: parseFloat(target.style.width), h: parseFloat(target.style.height) }));
+        for (let i = 0; i < rectangles.length; i++) {
+            const a = rectangles[i]; expect(a.w).toBeGreaterThanOrEqual(44);
+            for (const b of rectangles.slice(i + 1)) expect(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y).toBe(true);
+        }
     });
     it('exposes zoom/fit, mode, edge filters and architecture summary', () => {
         render(<Harness />);
@@ -152,4 +179,13 @@ it('fits the first real measured viewport, batches resize delivery, and preserve
     expect(vi.mocked(HTMLCanvasElement.prototype.getContext).mock.calls.length).toBe(paints);
     act(() => { deliver(600, 400); queued.shift()!(0); });
     expect(container.querySelector('.network-graph-controls__zoom')).toHaveTextContent('111%');
+});
+
+it('uses the Canvas nonnegative bias stroke for a zero-bias SVG hidden tile', () => {
+    snapshot = {...snapshot,biases:new Float32Array([0,-.1,.05])};
+    setRenderer(false);
+    const {container} = render(<Harness />);
+    const nodes = container.querySelectorAll('rect.network-node');
+    expect(nodes[2]).toHaveAttribute('stroke','rgba(244, 99, 48, 0.7)');
+    expect(nodes[3]).toHaveAttribute('stroke','rgba(59, 130, 246, 0.7)');
 });

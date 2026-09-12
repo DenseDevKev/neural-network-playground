@@ -716,17 +716,17 @@ describe('Tooltip', () => {
 
   it('should support different placement props', () => {
     const placements = ['top', 'bottom', 'left', 'right'] as const;
-    
+
     placements.forEach((placement) => {
       const { unmount } = render(
         <Tooltip content="Test tooltip" placement={placement}>
           <button>Hover me</button>
         </Tooltip>
       );
-      
+
       const tooltip = document.querySelector('[role="tooltip"]');
       expect(tooltip).toBeInTheDocument();
-      
+
       unmount();
     });
   });

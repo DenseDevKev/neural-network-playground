@@ -1,110 +1,37 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useLayoutStore } from '../store/useLayoutStore.ts';
-import {
-    focusExplanationActionTarget,
-    scheduleExplanationPanelFocus,
-} from './explanationActionFocus.ts';
+import { focusExplanationActionTarget } from './explanationActionFocus.ts';
 
-function resetLayout() {
-    useLayoutStore.setState({
-        view: 'build',
-        activeRecipeSection: 'data',
-        activeEvidenceView: 'boundary',
-        audienceMode: 'explore',
-        advancedToolsOpen: false,
-        layout: 'dock',
-        phase: 'build',
-        activeTabLeft: 'data',
-        activeTabRight: 'boundary',
-        activeLessonId: null,
-        activeLessonStepIndex: null,
-    });
-}
-
-describe('focusExplanationActionTarget', () => {
+describe('explanation navigation and focus', () => {
     beforeEach(() => {
-        window.localStorage.clear();
-        document.body.innerHTML = '';
-        resetLayout();
+        localStorage.clear(); document.body.innerHTML = '';
+        useLayoutStore.setState({destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace',audienceMode:'explore',exportRequest:null});
     });
-
-    it('selects and focuses an existing Build recipe target', () => {
-        document.body.innerHTML = '<button id="forge-left-tab-hyperparams">Hyperparams</button>';
-
-        focusExplanationActionTarget('hyperparams', { scheduleFocus: (focus) => focus() });
-
-        expect(useLayoutStore.getState().view).toBe('build');
-        expect(useLayoutStore.getState().activeRecipeSection).toBe('hyperparams');
-        expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
-        expect(document.activeElement).toBe(document.getElementById('forge-left-tab-hyperparams'));
+    it.each([['presets','dataset'],['data','dataset'],['features','network'],['network','network'],['hyperparams','training']] as const)('opens %s in the shared %s draft editor and focuses its selected section', (target,tab) => {
+        document.body.innerHTML = '<nav class="atelier-setup-tabs"><button aria-current="page">Selected setup section</button></nav>';
+        focusExplanationActionTarget(target,{scheduleFocus:fn=>fn()});
+        expect(useLayoutStore.getState()).toMatchObject({destination:'playground',workspaceTab:'setup',setupTab:tab});
+        expect(document.activeElement).toBe(document.querySelector('button'));
     });
-
-    it('selects and focuses an existing Run evidence target', () => {
-        document.body.innerHTML = '<button id="forge-right-tab-loss">Loss</button>';
-
-        focusExplanationActionTarget('loss', { scheduleFocus: (focus) => focus() });
-
-        expect(useLayoutStore.getState().view).toBe('run');
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
-        expect(useLayoutStore.getState().activeTabRight).toBe('loss');
-        expect(document.activeElement).toBe(document.getElementById('forge-right-tab-loss'));
+    it.each([['loss','learning'],['confusion','errors'],['boundary','boundary']] as const)('opens %s in Results and focuses its active tab', (target,tab) => {
+        document.body.innerHTML = '<div aria-label="Results views"><button aria-selected="true">Evidence tab</button></div>';
+        focusExplanationActionTarget(target,{scheduleFocus:fn=>fn()});
+        expect(useLayoutStore.getState()).toMatchObject({workspaceTab:'results',resultsTab:tab});
+        expect(document.activeElement).toBe(document.querySelector('button'));
     });
-
-    it('switches to Run before focusing an evidence panel', () => {
-        useLayoutStore.setState({ view: 'build', phase: 'build' });
-        document.body.innerHTML = '<section id="forge-right-panel-loss" tabindex="-1">Loss</section>';
-
-        focusExplanationActionTarget('loss', { scheduleFocus: (focus) => focus() });
-
-        expect(useLayoutStore.getState().view).toBe('run');
-        expect(useLayoutStore.getState().phase).toBe('run');
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
-        expect(useLayoutStore.getState().activeTabRight).toBe('loss');
-        expect(document.activeElement).toBe(document.getElementById('forge-right-panel-loss'));
+    it('opens Inspect with More guidance without changing explanation density', () => {
+        useLayoutStore.setState({audienceMode:'beginner'});
+        document.body.innerHTML='<button id="workspace-tab-inspect">Inspect</button>';
+        focusExplanationActionTarget('inspection',{scheduleFocus:fn=>fn()});
+        expect(useLayoutStore.getState()).toMatchObject({workspaceTab:'inspect',audienceMode:'beginner'});
+        expect(document.activeElement).toBe(document.querySelector('button'));
     });
-
-    it('falls back to visible panel containers when direct tab targets are not present', () => {
-        document.body.innerHTML = '<section data-forge-panel-targets="hyperparams config" tabindex="-1">Controls</section>';
-
-        focusExplanationActionTarget('hyperparams', { scheduleFocus: (focus) => focus() });
-
-        expect(useLayoutStore.getState().view).toBe('build');
-        expect(document.activeElement).toBe(document.querySelector('[data-forge-panel-targets~="hyperparams"]'));
+    it.each([['config','setup'],['code','code']] as const)('opens the %s utility without discarding the workspace selection', (target,mode) => {
+        focusExplanationActionTarget(target,{scheduleFocus:fn=>fn()});
+        expect(useLayoutStore.getState()).toMatchObject({workspaceTab:'network',exportRequest:{mode}});
     });
-
-    it('schedules container-only focus without changing layout state', () => {
-        useLayoutStore.setState({ view: 'run', phase: 'run', activeRecipeSection: 'data' });
-        document.body.innerHTML = [
-            '<button id="forge-left-tab-hyperparams">Hidden tab</button>',
-            '<section data-forge-panel-targets="hyperparams" tabindex="-1">Controls</section>',
-        ].join('');
-
-        scheduleExplanationPanelFocus('hyperparams', {
-            scheduleFocus: (focus) => focus(),
-        });
-
-        expect(useLayoutStore.getState()).toMatchObject({
-            view: 'run',
-            phase: 'run',
-            activeRecipeSection: 'data',
-        });
-        expect(document.activeElement).toBe(
-            document.querySelector('[data-forge-panel-targets~="hyperparams"]'),
-        );
-    });
-
-    it('opens a hidden Beginner tool without changing audience mode', () => {
-        useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
-        document.body.innerHTML = '<button id="forge-right-tab-inspection">Inspect</button>';
-
-        focusExplanationActionTarget('inspection', { scheduleFocus: (focus) => focus() });
-
-        expect(useLayoutStore.getState()).toMatchObject({
-            view: 'run',
-            activeEvidenceView: 'inspection',
-            advancedToolsOpen: true,
-            audienceMode: 'beginner',
-        });
-        expect(document.activeElement).toBe(document.getElementById('forge-right-tab-inspection'));
+    it('opens Saved runs for a history action', () => {
+        focusExplanationActionTarget('history',{scheduleFocus:fn=>fn()});
+        expect(useLayoutStore.getState().destination).toBe('saved-runs');
     });
 });

@@ -3,7 +3,8 @@
 // with training/test data points overlaid.
 
 import { useRef, useEffect, useCallback, useState, memo, useId } from 'react';
-import { writeGridToImageData, HEX_BLUE, HEX_ORANGE } from '@nn-playground/shared';
+import { readPlotPalette, useThemeStore } from '../../store/theme.ts';
+import { CLASS_COLORS, CLASS_RGB, fieldColor, hexRgb, writeFieldColors } from './plotColors.ts';
 import type { DataPoint } from '@nn-playground/engine';
 import { EmptyState } from '../common/EmptyState.tsx';
 import type { DecisionBoundaryDisplayModel } from './decisionBoundaryModel.ts';
@@ -15,7 +16,6 @@ export {
 } from './decisionBoundaryModel.ts';
 
 // ── Constants ──
-const BG_COLOR = '#151822';
 const TRAIN_RADIUS = 3.5;
 const TEST_RADIUS = 3;
 const POINT_STROKE_DARK = 'rgba(0,0,0,0.5)';
@@ -23,9 +23,9 @@ const POINT_STROKE_LIGHT = '#fff';
 const HEATMAP_ALPHA = 255;
 const UNCERTAINTY_THRESHOLD = 0.12;
 const MULTICLASS_PALETTE = [
-    { label: 'Class 0', color: '#4f8cff', rgb: [79, 140, 255] },
-    { label: 'Class 1', color: '#ff9f43', rgb: [255, 159, 67] },
-    { label: 'Class 2', color: '#52d273', rgb: [82, 210, 115] },
+    { label: 'Class 0', color: CLASS_COLORS[0], rgb: CLASS_RGB[0] },
+    { label: 'Class 1', color: CLASS_COLORS[1], rgb: CLASS_RGB[1] },
+    { label: 'Class 2', color: CLASS_COLORS[2], rgb: CLASS_RGB[2] },
 ] as const;
 
 export interface DecisionBoundaryCanvasProps {
@@ -42,10 +42,11 @@ function drawHeatmap(
     discretize: boolean,
     tempCanvas: HTMLCanvasElement,
     imageData: ImageData,
+    background: readonly number[],
+    domain: readonly [number,number] = [0,1],
 ): void {
     const tempCtx = tempCanvas.getContext('2d')!;
-
-    writeGridToImageData(grid, imageData, HEATMAP_ALPHA, discretize);
+    writeFieldColors(grid,imageData.data,background,domain,discretize);
     tempCtx.putImageData(imageData, 0, 0);
 
     ctx.imageSmoothingEnabled = true;
@@ -57,15 +58,18 @@ function writeMulticlassBoundaryImageData(
     classGrid: Uint8Array,
     confidenceGrid: Float32Array,
     imageData: ImageData,
+    background: readonly number[],
+    uncertain: boolean,
+    discretize: boolean,
 ): void {
     for (let i = 0; i < classGrid.length; i++) {
         const palette = MULTICLASS_PALETTE[classGrid[i]] ?? MULTICLASS_PALETTE[0];
         const confidence = Math.max(0, Math.min(1, confidenceGrid[i]));
-        const mix = 0.35 + confidence * 0.65;
+        const mix = uncertain ? 1-confidence : discretize ? 1 : 0.35 + confidence * 0.65;
         const idx = i * 4;
-        imageData.data[idx] = Math.round(21 + (palette.rgb[0] - 21) * mix);
-        imageData.data[idx + 1] = Math.round(24 + (palette.rgb[1] - 24) * mix);
-        imageData.data[idx + 2] = Math.round(34 + (palette.rgb[2] - 34) * mix);
+        imageData.data[idx] = Math.round(background[0] + (palette.rgb[0] - background[0]) * mix);
+        imageData.data[idx + 1] = Math.round(background[1] + (palette.rgb[1] - background[1]) * mix);
+        imageData.data[idx + 2] = Math.round(background[2] + (palette.rgb[2] - background[2]) * mix);
         imageData.data[idx + 3] = HEATMAP_ALPHA;
     }
 }
@@ -78,11 +82,14 @@ function drawMulticlassHeatmap(
     canvasH: number,
     tempCanvas: HTMLCanvasElement,
     imageData: ImageData,
+    background: readonly number[],
+    uncertain: boolean,
+    discretize: boolean,
 ): void {
     const tempCtx = tempCanvas.getContext('2d')!;
-    writeMulticlassBoundaryImageData(classGrid, confidenceGrid, imageData);
+    writeMulticlassBoundaryImageData(classGrid, confidenceGrid, imageData, background, uncertain, discretize);
     tempCtx.putImageData(imageData, 0, 0);
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = uncertain || !discretize;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(tempCanvas, 0, 0, canvasW, canvasH);
 }
@@ -137,6 +144,7 @@ function drawMisclassificationOverlay(
     canvasW: number,
     canvasH: number,
     isTest: boolean,
+    multiclass = false,
 ): void {
     const radius = (isTest ? TEST_RADIUS : TRAIN_RADIUS) + 4;
     ctx.save();
@@ -146,8 +154,10 @@ function drawMisclassificationOverlay(
     ctx.shadowBlur = 8;
 
     for (const p of points) {
-        if (p.label !== 0 && p.label !== 1) continue;
-        if (classifyPointFromGrid(p, grid, gridSize) === p.label) continue;
+        if (!multiclass && p.label !== 0 && p.label !== 1) continue;
+        const gx = Math.max(0,Math.min(gridSize-1,Math.round((p.x+1)/2*(gridSize-1))));
+        const gy = Math.max(0,Math.min(gridSize-1,Math.round((1-p.y)/2*(gridSize-1))));
+        if ((multiclass ? grid[gy*gridSize+gx] : classifyPointFromGrid(p, grid, gridSize)) === p.label) continue;
         const px = ((p.x + 1) / 2) * canvasW;
         const py = (1 - (p.y + 1) / 2) * canvasH;
         ctx.beginPath();
@@ -169,6 +179,8 @@ function drawPoints(
     canvasH: number,
     isTest: boolean,
     multiclass: boolean,
+    domain?: readonly [number,number],
+    background: readonly number[] = [23,25,27],
 ): void {
     if (points.length === 0) return;
 
@@ -177,9 +189,9 @@ function drawPoints(
 
     for (const p of points) {
         const classIndex = Number.isInteger(p.label) ? p.label : -1;
-        const color = multiclass && classIndex >= 0 && classIndex < MULTICLASS_PALETTE.length
+        const color = domain ? `rgb(${fieldColor((p.label-domain[0])/(domain[1]-domain[0] || 1),background).join(',')})` : multiclass && classIndex >= 0 && classIndex < MULTICLASS_PALETTE.length
             ? MULTICLASS_PALETTE[classIndex].color
-            : p.label >= 0.5 ? HEX_ORANGE : HEX_BLUE;
+            : p.label >= 0.5 ? CLASS_COLORS[1] : CLASS_COLORS[0];
         const batch = batches.get(color);
         if (batch) {
             batch.push(p);
@@ -236,8 +248,9 @@ function formatPercent(value: number): string {
 
 // ── Component ──
 
-/** Paints a supplied accepted snapshot; this component never subscribes to stores. */
+/** Paints the supplied accepted snapshot; only presentation theme is subscribed locally. */
 export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ model }: DecisionBoundaryCanvasProps) {
+    const theme = useThemeStore((state) => state.resolved);
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const descriptionId = useId();
@@ -277,6 +290,7 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
 
     // Main paint callback – extracted so useEffect stays clean
     const paint = useCallback(() => {
+        void theme; // Theme-only changes repaint accepted pixels without a worker request.
         const canvas = canvasRef.current;
         if (!canvas) return;
 
@@ -299,7 +313,9 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         // Clear to background
-        ctx.fillStyle = BG_COLOR;
+        const palette = readPlotPalette();
+        const background = hexRgb(palette.background);
+        ctx.fillStyle = palette.background;
         ctx.fillRect(0, 0, logicalW, logicalH);
 
         if (model.kind === 'multiclass') {
@@ -320,8 +336,12 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
                 logicalW,
                 logicalH,
                 tempCanvasRef.current!,
-                imageDataRef.current!,
+                imageDataRef.current!, background, model.overlayMode === 'uncertainty', model.discretize ?? false,
             );
+            if (model.overlayMode === 'misclassification') {
+                drawMisclassificationOverlay(ctx,model.trainPoints,model.classGrid,model.layout.gridSize,logicalW,logicalH,false,true);
+                drawMisclassificationOverlay(ctx,model.visibleTestPoints,model.classGrid,model.layout.gridSize,logicalW,logicalH,true,true);
+            }
         }
 
         if (model.kind === 'scalar' && model.grid && model.gridSize > 0) {
@@ -343,7 +363,7 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
                 logicalH,
                 model.discretize,
                 tempCanvasRef.current!,
-                imageDataRef.current!,
+                imageDataRef.current!, background, model.valueDomain,
             );
 
             if (model.overlayMode === 'uncertainty' && overlayImageDataRef.current) {
@@ -367,10 +387,10 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
 
         // Draw data points on top
         if (model.kind === 'scalar' || model.kind === 'multiclass') {
-            drawPoints(ctx, model.trainPoints, logicalW, logicalH, false, model.kind === 'multiclass');
-            drawPoints(ctx, model.visibleTestPoints, logicalW, logicalH, true, model.kind === 'multiclass');
+            drawPoints(ctx, model.trainPoints, logicalW, logicalH, false, model.kind === 'multiclass', model.kind === 'scalar' && model.taskKind === 'regression' ? model.valueDomain : undefined, background);
+            drawPoints(ctx, model.visibleTestPoints, logicalW, logicalH, true, model.kind === 'multiclass', model.kind === 'scalar' && model.taskKind === 'regression' ? model.valueDomain : undefined, background);
         }
-    }, [canvasSize, model]);
+    }, [canvasSize, model, theme]);
 
     // Paint immediately after React commits the latest frame. Snapshot delivery
     // is already rAF-gated in workerBridge, so an extra rAF here can keep
@@ -432,7 +452,7 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
                 ref={canvasRef}
                 style={{ width: '100%', height: '100%' }}
                 role="img"
-                aria-label="Decision boundary visualization showing the neural network's classification regions"
+                aria-label={model.taskKind === 'regression' ? 'Continuous regression prediction field with numerical target values' : "Decision boundary visualization showing the neural network's classification regions"}
                 aria-describedby={descriptionId}
             />
             <p id={descriptionId} className="sr-only">
@@ -443,12 +463,12 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
             </div>
             <div className="decision-boundary__legend">
                 <div className="decision-boundary__legend-item">
-                    <div className="decision-boundary__swatch" style={{ background: HEX_BLUE }} />
-                    <span>Negative</span>
+                    <div className="decision-boundary__swatch" style={{ background: CLASS_COLORS[0] }} />
+                    <span>{model.taskKind === 'regression' ? `Value ${model.valueDomain?.[0].toFixed(2)}` : 'Class 0'}</span>
                 </div>
                 <div className="decision-boundary__legend-item">
-                    <div className="decision-boundary__swatch" style={{ background: HEX_ORANGE }} />
-                    <span>Positive</span>
+                    <div className="decision-boundary__swatch" style={{ background: CLASS_COLORS[1] }} />
+                    <span>{model.taskKind === 'regression' ? `Value ${model.valueDomain?.[1].toFixed(2)}` : 'Class 1'}</span>
                 </div>
             </div>
         </div>

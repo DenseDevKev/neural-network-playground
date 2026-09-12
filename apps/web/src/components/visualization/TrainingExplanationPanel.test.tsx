@@ -59,13 +59,7 @@ describe('TrainingExplanationPanel', () => {
             pauseReason: null,
         });
         useLayoutStore.setState({
-            view: 'build',
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
+
             activeLessonId: null,
             activeLessonStepIndex: null,
         });
@@ -126,7 +120,7 @@ describe('TrainingExplanationPanel', () => {
     it('focuses the selected action target when an action button is clicked', async () => {
         const user = userEvent.setup();
         useTrainingStore.setState({ pauseReason: 'diverged' });
-        document.body.innerHTML = '<button id="forge-left-tab-hyperparams">Hyperparams</button>';
+        document.body.innerHTML = '<nav class="atelier-setup-tabs"><button aria-current="page" id="setup-training">Training</button></nav>';
         const host = document.createElement('div');
         document.body.append(host);
 
@@ -134,11 +128,10 @@ describe('TrainingExplanationPanel', () => {
 
         await user.click(screen.getByRole('button', { name: 'Tune learning rate & clipping' }));
 
-        expect(useLayoutStore.getState().view).toBe('build');
-        expect(useLayoutStore.getState().activeRecipeSection).toBe('hyperparams');
-        expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
+        expect(useLayoutStore.getState().workspaceTab).toBe('setup');
+        expect(useLayoutStore.getState().setupTab).toBe('training');
         await waitFor(() => {
-            expect(document.activeElement).toBe(document.getElementById('forge-left-tab-hyperparams'));
+            expect(document.activeElement).toBe(document.getElementById('setup-training'));
         });
     });
 
@@ -146,7 +139,7 @@ describe('TrainingExplanationPanel', () => {
         const user = userEvent.setup();
         const keydownEvents: string[] = [];
         useTrainingStore.setState({ pauseReason: 'diverged' });
-        document.body.innerHTML = '<button id="forge-right-tab-loss">Loss</button>';
+        document.body.innerHTML = '<div aria-label="Results views"><button aria-selected="true" id="learning-results">Learning</button></div>';
         const host = document.createElement('div');
         document.body.append(host);
 
@@ -161,11 +154,10 @@ describe('TrainingExplanationPanel', () => {
         action.focus();
         await user.keyboard('{Enter}');
 
-        expect(useLayoutStore.getState().view).toBe('run');
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
-        expect(useLayoutStore.getState().activeTabRight).toBe('loss');
+        expect(useLayoutStore.getState().workspaceTab).toBe('results');
+        expect(useLayoutStore.getState().resultsTab).toBe('learning');
         await waitFor(() => {
-            expect(document.activeElement).toBe(document.getElementById('forge-right-tab-loss'));
+            expect(document.activeElement).toBe(document.getElementById('learning-results'));
         });
         expect(keydownEvents).toEqual([]);
     });

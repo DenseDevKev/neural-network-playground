@@ -1,147 +1,139 @@
-# Product-Shell Architecture
+# Signal Atelier product shell
 
-NN·FORGE uses one product shell, one experiment document, and one training
-runtime. Beginner, Explore, and Lab are visibility and guidance profiles over
-that shared system. They are not separate applications, permission tiers, or
-alternate business-logic paths.
+NN·FORGE has one experiment document and one training runtime. `AtelierShell`
+presents Playground, Saved runs, and Lessons. New visitors arrive at
+Playground → Network with a paused default experiment and an optional lesson
+invitation. See [state ownership](state-ownership.md) and the
+[design contract](signal-atelier-design.md).
 
-The state authority behind the shell is defined in
-[`state-ownership.md`](state-ownership.md). The approved design is recorded in
-[`2026-07-16-release-ready-product-shell-design.md`](../superpowers/specs/2026-07-16-release-ready-product-shell-design.md).
+## Navigation and guidance
 
-## Profile capability model
+| Destination | Views |
+|---|---|
+| Playground | Setup, Network, Results, Inspect |
+| Setup | Dataset, Network, Training |
+| Results | Boundary, Learning progress, Errors |
+| Inspect | Trace, Activations, Gradients |
+| Saved runs | Local records and explicit two-record comparison |
+| Lessons | Ten-lesson library and the active guided journey |
 
-`apps/web/src/productShell/audienceProfiles.ts` is the source of truth for
-profile labels, descriptions, core modules, core evidence, disclosure defaults,
-and guidance density. `apps/web/src/productShell/visibleShell.ts` resolves the
-actual visible target. Components must consume those tables and resolvers rather
-than add scattered profile conditionals.
+The utility menu opens Export/import, Session checkpoints, Guidance, or
+Shortcuts and help. One utility dialog owns focus at a time. Escape closes the
+innermost dismissible surface; closing restores focus to its trigger. The
+worker-recovery overlay remains a separate blocking recovery state.
 
-| Profile | Core Build modules | Core Run evidence | Advanced default | Guidance |
-|---|---|---|---|---|
-| Beginner | Data, Network | Boundary, Loss | Closed | High |
-| Explore | Data, Network, Features, Hyperparameters | Boundary, Loss, Confusion | Closed | Standard |
-| Lab | Data, Network, Features, Hyperparameters | Boundary, Loss, Confusion | Open | Compact |
+Guidance More, Standard, and Compact map to the retained Beginner, Explore, and
+Lab explanation densities. Guidance never hides a feature. Native finite-choice
+selects, keyboard tablists, persistent inline errors, and visible focus are shared
+across destinations. Navigation never starts, pauses, or resets the experiment.
 
-Current Recipe/Run, Topology, transport, Presets, Lessons, and History remain
-available in every profile. Opening Advanced Tools exposes the complete
-applicable union: Features, Hyperparameters, Configuration, Confusion,
-Inspection, and Code.
+## Local preferences and compatibility
 
-Hidden modules are unmounted, not CSS-hidden. Their recipe values are preserved
-and must remain discoverable through Current Recipe and an Advanced Tools
-recovery path; changing visibility never resets or silently replaces them.
+`useLayoutStore` stores navigation, code format, guidance, and lesson invitation
+preferences under `nn-playground-layout-v2`. It reads and migrates the old
+`nn-playground-layout` key without deleting it. Old Build selections map into
+Setup; Run evidence maps into Results, Inspect, or Saved runs. Old configuration and code
+selections create a session-only export request consumed by the shell.
 
-## Layout persistence and transitions
+Deprecated layout names are accepted only by the migration reader. Live layout
+state and explanation actions use the current destination and tab interfaces. The V2 experiment fragment remains exclusively a shareable experiment
+document; shell navigation and theme never enter it. Modal state, comparison
+selection, draft values, export requests, and active lesson execution are not
+persisted in experiment data. Saved-list position and comparison selection remain
+stable while navigating within the current mounted session.
 
-`useLayoutStore` persists local workspace state under `nn-playground-layout`:
+System, Light, and Dark are handled separately by the theme store and a
+before-paint initializer. System follows live device changes. Explicit choices
+survive reload when storage is available; unavailable storage leaves the current
+session usable. Canvas and SVG use the same theme tokens without resetting the
+worker or changing evidence identity.
 
-- Build/Run view and selected recipe/evidence target
-- selected code-export tab
-- `audienceMode`
-- `advancedToolsOpen`
+## One recipe draft and one configuration transaction
 
-These fields never enter the V2 experiment document, URL, checkpoints, exports,
-or saved runs. Missing or invalid profiles sanitize to Explore. Missing or
-invalid disclosure state uses the selected profile's default. A valid manually
-collapsed Lab state survives reload. If persisted navigation targets a hidden
-tool, hydration opens Advanced Tools instead of replacing the target or moving
-focus.
+`App` owns `useRecipeDraft`. Dataset, Network, and Training edit one candidate,
+including raw incomplete numeric text. Whole-candidate validation uses canonical
+schema limits. Invalid combinations have field and cross-field errors; values
+are never silently clamped. Apply is unavailable while unchanged, invalid, or
+submitting. Cancel discards all unsubmitted edits.
 
-An explicit profile change applies that profile's disclosure default. If the
-new visibility would hide the active target, the store falls back atomically to
-Data in Build or Boundary in Run and keeps deprecated aliases synchronized.
-Direct lesson or explanation navigation to a hidden tool opens Advanced Tools
-without changing profile.
+Apply submits one complete recipe through the existing worker synchronization
+path with source `setup` and an expected-base recipe identity. Success requires
+the matching accepted worker configuration; training remains paused. An old
+draft cannot overwrite a newer imported, lesson, or saved recipe. Preparation
+failures retain edits; submitted failures retain the synchronization retry path.
+An import whose dialog unmounts still releases its own failed preparation
+transaction, without clearing a newer operation.
 
-Profile changes must preserve the recipe, URL/hash, model identity and training
-step, checkpoints, saved runs, export selection, and ephemeral drawers. Tests
-and browser release evidence treat those values as invariants.
+Leaving dirty Setup opens Apply / Discard / Stay and page unload is guarded.
+Dataset, activation, layer, and preset shortcuts stage changes in this same
+draft. Imported JSON is separately staged, validated, summarized, and applied
+explicitly; it uses the same publication and worker-acknowledgement boundary.
 
-## Advanced Tools interaction contract
+## Controllers and visualization demand
 
-Advanced Tools is one inline disclosure, not a miscellaneous drawer and not a
-duplicate control path.
-
-- The trigger is outside the evidence tablist and exposes `aria-expanded` and
-  `aria-controls`.
-- The controlled region explains what opening it reveals.
-- Opening the disclosure alone does not request diagnostic worker artifacts.
-- The evidence tablist contains only visible tabs and uses roving focus with
-  Arrow keys, Home, and End.
-- Selecting Inspection or Code opens the disclosure atomically.
-- Collapsing while an advanced target is active resolves to Data or Boundary
-  before the hidden content unmounts.
-- Button- and Escape-driven closure restore focus to the disclosure trigger.
-  A nested dialog or concept disclosure handles its own Escape first.
-- Hydration never steals focus.
-- Narrow layouts retain reachable controls and at least 44px interactive
-  targets. Nonessential motion is disabled under `prefers-reduced-motion`.
-
-Presets, Lessons, and History remain distinct transient drawers. Their open
-state stays local to `App` and is not persisted with the shell.
-
-## Visualization demand flow
-
-Rendered shell visibility is authoritative:
+`App` owns the single production training, save, boundary, and network-selection
+controllers. The shell receives display content and commands. Expensive plots
+mount only while visible; navigating away does not dispose of the runtime.
 
 ```text
-audience profile + Advanced Tools + selected evidence
-    -> resolveVisibleEvidenceView
-    -> App derives and caches VisualizationDemand
-    -> useTraining sends demand
-    -> worker produces requested scientific artifacts
+active destination + workspace tab + task + compact network region
+    → App derives VisualizationDemand
+    → usePlaygroundStore delivery cache
+    → useTraining sends demand
+    → worker produces requested scientific artifacts
 ```
 
-The same resolved evidence target drives rendering, accessibility context, and
-demand. Legacy `history` resolves to Boundary. `App` is the sole production
-demand writer; `InspectionPanel` does not mutate demand on mount.
+App is the sole production demand writer. Inspection never writes demand on
+mount. On a compact viewport, Data, Network, and Prediction region tabs mount
+only the chosen region; hidden neurons do not request activation grids. A hidden
+inspector cannot keep those requests alive. Each plotted artifact retains its
+own recipe, generation, revision, and step provenance.
 
-## Terminology catalog
+Both graph renderers share geometry, selection, filters, and scientific colors.
+Graph-local pan/zoom and scrolling preserve target size for the largest networks.
+Structural summaries and keyboard neuron buttons provide access beyond Canvas.
+Selecting or closing an inspector restores the relevant selection focus.
 
-`apps/web/src/concepts/conceptCatalog.ts` is the React-free source of truth for
-the bounded domain vocabulary. Each entry has a stable ID, canonical term,
-plain definition, aliases, related concepts, applicable profiles, and
-difficulty. Extended explanations, examples, UI targets, and documentation
-links are optional. `ConceptHelp` renders accessible on-demand help while
-keeping essential labels and instructions visible without hover.
+## Scientific utilities and local evidence
 
-To add or change a concept:
+Saved runs retain their existing format and 20-record limit. Save, rename, and
+delete retain cross-tab locking and refresh. A failed save retains the exact
+artifact; Retry and Download pending evidence use it without recapture. A new
+capture is blocked until it is resolved. Applying a saved recipe creates a fresh
+model, while Download evidence preserves the stored observation.
 
-1. Add or update its stable ID in `CONCEPT_IDS`.
-2. Add one frozen `CONCEPTS` entry with an accurate plain definition, unique
-   canonical/alias terms, valid related IDs, profiles, and difficulty.
-3. Reuse that entry through `ConceptHelp`; do not duplicate its definition in a
-   component, tooltip, empty state, or onboarding path.
-4. Use the active profile's guidance level only to control optional detail. Do
-   not rewrite the scientific meaning by profile.
-5. Extend catalog tests for completeness, collisions, relationships, lookup,
-   filtering, and stable order, then add an accessible rendering test at the
-   consuming surface.
+Comparison requires exactly two explicit records. Loss ranking requires matching
+dataset and objective identities. Stored EMA, evaluation, and objective histories
+retain their separate meanings and consistent chart legends.
 
-Do not add a provider, copy CMS, i18n layer, or generic view-model framework
-solely to extend this catalog.
+Trace, activation statistics, backpropagation, and parameter probes use the
+existing worker requests with duplicate/stale response guards. One-off requests
+require a paused model and expose Pause while running. Checkpoint selection only
+previews metadata; explicit paused Restore restores parameters and optimizer
+state. Checkpoints are session-only; future shuffles may differ.
 
-## Compatibility and loading
+## Lessons and terminology
 
-- The engine, worker protocol, frame-buffer semantics, V2 schema, URL format,
-  checkpoints, and saved-run formats are unchanged.
-- Deprecated layout aliases remain synchronized while older persisted layout
-  state and compatibility tests still depend on them.
-- Configuration, Inspection, Code Export, and Run History retain meaningful
-  lazy boundaries. Hidden advanced panels are not mounted; final release
-  evidence records the resulting chunks and initial JavaScript cost.
-- The catalog and profile tables are small static modules shared by all modes;
-  there are no duplicated mode-specific application trees.
+The library retains all ten canonical lessons and their presets. The active
+lesson controller survives target navigation, and completion observes its actual
+model session. Instructions point to Setup and Apply changes. Desktop lessons
+use a side panel; compact lessons leave the target control reachable.
 
-## Known boundaries
+`concepts/conceptCatalog.ts` is the React-free vocabulary authority. The nine
+concepts are available through Shortcuts and help; contextual help and training
+explanations reuse them. Optional extended definitions/examples follow Guidance.
+Do not duplicate scientific definitions in new tooltips or onboarding copy.
 
-- Profiles change visible tools and explanation density only. They do not lock
-  capabilities or weaken validation and safety rules.
-- Profile and disclosure preferences are device-local and intentionally do not
-  travel with a shared experiment URL.
-- The initial catalog contains six high-value concepts. Search, broader
-  onboarding, localization, and copy/profile tuning are separate evidence-led
-  extensions.
-- Legacy layout aliases and fallback render files remain compatibility
-  candidates even though current production consumer searches are empty.
+## Loading and maintained boundaries
+
+Education, workspace utilities, code exports, inspection, and results plots have
+meaningful lazy boundaries. Sharing a lazy chunk does not mount hidden panels.
+Engine, worker protocol, frame-buffer semantics, V2 schema, URL format, saved-run
+format, and checkpoint format remain unchanged. The replaced Build/Run shell,
+unused panels, and old shell styles are retired after consumer checks; the SVG
+network renderer remains a live fallback.
+
+Runtime tokens live in `styles/atelier.css`. `styles/components.css` contains
+shared feature styling. Avoid reintroducing old shell overrides or hardcoded
+Canvas/SVG theme colors. The full feature and release gates live in the
+[Atelier acceptance checklist](../qa/signal-atelier-acceptance.md).

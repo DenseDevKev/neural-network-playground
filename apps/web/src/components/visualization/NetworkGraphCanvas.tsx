@@ -20,6 +20,8 @@
 // already-fast HeatmapCanvas component.
 
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
+import { readPlotPalette, useThemeStore } from '../../store/theme.ts';
+import './networkAtelier.css';
 import { NetworkGraphFrame } from './NetworkGraphFrame.tsx';
 import { useNetworkSelectionController, type NetworkSelectionController } from './useNetworkSelectionController.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
@@ -29,7 +31,7 @@ import { getActiveFeatures } from '@nn-playground/engine';
 import type { ActivationType, DatasetType, FeatureFlags, LayerStats } from '@nn-playground/engine';
 import { MAX_HIDDEN_LAYERS, writeNormalizedHeatmap } from '@nn-playground/shared';
 import { getFrameBuffer } from '../../worker/frameBuffer.ts';
-import { extractNeuronGrid, layerBiasOffset } from '../../worker/frameBufferLayout.ts';
+import { extractNeuronGrid, layerBiasOffset, layerWeightOffset } from '../../worker/frameBufferLayout.ts';
 import { getDatasetTopologyHint } from '../../data/datasetInsights.ts';
 import { getLessonDefinition } from '../../lessons/lessonRegistry.ts';
 import {
@@ -43,6 +45,8 @@ import {
     deriveNodeGeometry,
     describeGraphNode,
     edgeRefKey,
+    edgeColor,
+    nodeColor,
     hitTestEdge,
     hitTestNode,
     nodeRefKey,
@@ -58,7 +62,7 @@ const MIN_NODE_GAP = 42;
 const PAD_X = 60;
 const PAD_Y = 40;
 const HEATMAP_SIZE = 24;
-const MIN_ZOOM = 0.35;
+const MIN_ZOOM = 0.8;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 1.25;
 const EMPTY_HIDDEN_LAYERS: number[] = [];
@@ -109,7 +113,7 @@ interface HeatmapTileProps {
     displaySize: number;
 }
 
-const HeatmapTile = memo(function HeatmapTile({ grid, gridSize, displaySize }: HeatmapTileProps) {
+export const HeatmapTile = memo(function HeatmapTile({ grid, gridSize, displaySize }: HeatmapTileProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     useEffect(() => {
@@ -143,7 +147,7 @@ const HeatmapTile = memo(function HeatmapTile({ grid, gridSize, displaySize }: H
             style={{
                 width: '100%',
                 height: '100%',
-                borderRadius: '18%',
+                borderRadius: '2px',
                 display: 'block',
                 pointerEvents: 'none',
             }}
@@ -289,7 +293,20 @@ function LocalNetworkGraphCanvas() {
     const controller = useNetworkSelectionController();
     return <NetworkGraphCanvasView controller={controller} />;
 }
-function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSelectionController }) {
+export function NetworkGraphCanvasView({ controller, renderer = 'canvas' }: { readonly controller: NetworkSelectionController; readonly renderer?: 'canvas' | 'svg' }) {
+    const theme = useThemeStore((s) => s.resolved);
+    const palette = useMemo(() => { void theme; return readPlotPalette(); }, [theme]);
+
+    const containerRef = useRef<HTMLDivElement>(null);
+    const selectionOrigin = useRef<HTMLButtonElement | null>(null);
+    const previousSelection = useRef(controller.selectedNode);
+    useEffect(() => {
+        if (controller.selectedNode) {
+            const key = nodeRefKey(controller.selectedNode.layerIdx, controller.selectedNode.nodeIdx);
+            selectionOrigin.current = containerRef.current?.querySelector<HTMLButtonElement>(`[data-neuron-key="${key}"]`) ?? null;
+        } else if (previousSelection.current) selectionOrigin.current?.focus();
+        previousSelection.current = controller.selectedNode;
+    }, [controller.selectedNode]);
     const compiled = usePlaygroundStore((s) => (
         s.access.status === 'ready' ? s.access.prepared.compiled : null
     ));
@@ -301,6 +318,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
     const dataset = compiled?.data.dataset ?? 'circle';
     const paramsVersion = useTrainingStore((s) => s.paramsVersion);
     const neuronGridsVersion = useTrainingStore((s) => s.neuronGridsVersion);
+    const generation = useTrainingStore((s) => s.evidenceGenerationId);
     const layerStatsVersion = useTrainingStore((s) => s.layerStatsVersion);
     const activeLessonId = useLayoutStore((s) => s.activeLessonId);
     const activeLessonStepIndex = useLayoutStore((s) => s.activeLessonStepIndex);
@@ -341,8 +359,9 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
     const layersKey = layers.join(',');
     const maxNodes = Math.max(...layers);
 
-    const containerRef = useRef<HTMLDivElement>(null);
+
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
     // Latest observed size without participating in render identity, so the
     // auto-fit effect does not re-run (and reset user pan/zoom) on resizes.
@@ -385,7 +404,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
             ? Math.max(MIN_LAYER_GAP, usableW / (layers.length - 1))
             : MIN_LAYER_GAP;
         const nodeGap = maxNodes > 1
-            ? Math.max(geometry.height + 8, usableH / (maxNodes - 1))
+            ? Math.max(geometry.height + 16, usableH / (maxNodes - 1))
             : MIN_NODE_GAP;
         const canvasWidth = Math.max(w, (layers.length - 1) * layerGap + PAD_X * 2);
         const canvasHeight = Math.max(h, (maxNodes - 1) * nodeGap + PAD_Y * 2);
@@ -419,7 +438,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
     const flat = useMemo<FlatNetworkView | null>(() => {
         void paramsVersion;
         const fb = getFrameBuffer();
-        if (fb.weights && fb.biases && fb.weightLayout) {
+        if (fb.weights && fb.biases && fb.weightLayout && fb.weightLayout.layerSizes.join(',') === layersKey && (!generation || fb.parameterProvenance?.model.generationId === generation)) {
             return {
                 weights: fb.weights,
                 biases: fb.biases,
@@ -427,7 +446,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
             };
         }
         return null;
-    }, [paramsVersion]);
+    }, [paramsVersion, layersKey, generation]);
 
     // Per-neuron heatmap source data — same derivation as the SVG renderer.
     // Output: array indexed [hidden1, hidden2, ..., output], one entry per
@@ -435,7 +454,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
     const neuronGrids = useMemo<NeuronGridEntry[] | null>(() => {
         void neuronGridsVersion;
         const fb = getFrameBuffer();
-        if (fb.neuronGrids && fb.neuronGridLayout) {
+        if (fb.neuronGrids && fb.neuronGridLayout && fb.neuronGrids.length === fb.neuronGridLayout.count * fb.neuronGridLayout.gridSize ** 2 && fb.neuronGrids.every(Number.isFinite) && fb.neuronGridLayout.count === layers.slice(1).reduce((sum, count) => sum + count, 0) && (!generation || fb.neuronGridsProvenance?.model.generationId === generation)) {
             const { count, gridSize } = fb.neuronGridLayout;
             const cells = gridSize * gridSize;
             return Array.from({ length: count }, (_, idx) => ({
@@ -444,7 +463,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
             }));
         }
         return null;
-    }, [neuronGridsVersion]);
+    }, [neuronGridsVersion, generation, layers]);
 
     /** Map (layerIdx, nodeIdx) → index into neuronGrids, or null for input. */
     const getNeuronGridIndex = useCallback(
@@ -622,10 +641,11 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
             changedEdgeKeys,
             nodeActivationByKey,
         });
-        paintNodes(ctx, nodePositions, flat, { nodeHealthByKey, geometry, selectedNode: controller.selectedNode });
-        paintLabels(ctx, nodePositions, layerLabels);
+        paintNodes(ctx, nodePositions, flat, { nodeHealthByKey, geometry, selectedNode: controller.selectedNode, palette });
+        paintLabels(ctx, nodePositions, layerLabels, palette);
         ctx.restore();
     }, [
+        palette,
         canvasWidth,
         canvasHeight,
         containerSize.width,
@@ -650,8 +670,8 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
 
     // ── Pointer wiring ──────────────────────────────────────────────────────
     const handlePointerMove = useCallback(
-        (event: React.PointerEvent<HTMLCanvasElement>) => {
-            const canvas = canvasRef.current;
+        (event: React.PointerEvent<HTMLCanvasElement | SVGSVGElement>) => {
+            const canvas = canvasRef.current ?? svgRef.current;
             if (!canvas) return;
             const rect = canvas.getBoundingClientRect();
             const screenX = event.clientX - rect.left;
@@ -728,7 +748,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
         ],
     );
 
-    const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    const handlePointerDown = useCallback((event: React.PointerEvent<HTMLCanvasElement | SVGSVGElement>) => {
         if (event.button !== 0) return;
         dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, startX: event.clientX, startY: event.clientY, moved: false };
         setIsDragging(true);
@@ -738,7 +758,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
         setTooltip(null);
     }, []);
 
-    const finishPointerDrag = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    const finishPointerDrag = useCallback((event: React.PointerEvent<HTMLCanvasElement | SVGSVGElement>) => {
         if (dragRef.current?.pointerId === event.pointerId) {
             if (event.type !== 'pointercancel' && !dragRef.current.moved) {
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -758,7 +778,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
     // there is a no-op and zooming would also scroll the workspace. A native
     // non-passive listener is required for the zoom gesture.
     useEffect(() => {
-        const canvas = canvasRef.current;
+        const canvas = canvasRef.current ?? svgRef.current;
         if (!canvas) return undefined;
         const handleWheel = (event: WheelEvent) => {
             event.preventDefault();
@@ -776,8 +796,8 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
                 };
             });
         };
-        canvas.addEventListener('wheel', handleWheel, { passive: false });
-        return () => canvas.removeEventListener('wheel', handleWheel);
+        canvas.addEventListener('wheel', handleWheel as EventListener, { passive: false });
+        return () => canvas.removeEventListener('wheel', handleWheel as EventListener);
     }, [setViewport]);
 
     const handlePointerLeave = useCallback(() => {
@@ -847,7 +867,7 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
                 }
             }}
         >
-            <canvas
+            {renderer === 'canvas' ? <canvas
                 ref={canvasRef}
                 role="img"
                 aria-label="Neural network graph"
@@ -863,7 +883,43 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
                 onPointerUp={finishPointerDrag}
                 onPointerCancel={finishPointerDrag}
                 onPointerLeave={handlePointerLeave}
-            />
+            /> : <svg ref={svgRef} role="img" aria-label="Neural network graph" aria-describedby="network-graph-desc"
+                viewBox={`0 0 ${Math.max(1, containerSize.width)} ${Math.max(1, containerSize.height)}`}
+                style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
+                onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={finishPointerDrag}
+                onPointerCancel={finishPointerDrag} onPointerLeave={handlePointerLeave}>
+                <g transform={`translate(${viewport.panX} ${viewport.panY}) scale(${viewport.zoom})`}>
+                    {flat && nodePositions.flatMap((layer, l) => l === 0 ? [] : layer.flatMap((node, i) => nodePositions[l - 1].map((prev, j) => {
+                        const weight = flat.weights[layerWeightOffset(flat.layerSizes, l - 1) + i * flat.layerSizes[l - 1] + j];
+                        if (!Number.isFinite(weight) || !shouldRenderEdge(weight, edgeFilter)) return null;
+                        const key = edgeRefKey(l, i, j);
+                        const selected = controller.model.kind === 'selected' && controller.model.highlightedEdgeKeys.has(key);
+                        const intensity = nodeActivationByKey.get(nodeRefKey(l, i)) ?? 0;
+                        const cp = (node.x - prev.x) * .45;
+                        return <path key={key} role="button" tabIndex={0}
+                            aria-label={`Weight: ${toFixedLabel(weight)}. Connection: ${describeGraphNode(l - 1, j, layers.length)} to ${describeGraphNode(l, i, layers.length)}`}
+                            onFocus={() => setTooltip({ x: (prev.x + node.x) / 2 * viewport.zoom + viewport.panX, y: (prev.y + node.y) / 2 * viewport.zoom + viewport.panY, text: [`Weight: ${toFixedLabel(weight)}`, `Layer ${l}, [${j}→${i}]`] })}
+                            onBlur={() => setTooltip(null)} data-edge-key={key} data-edge-selected={selected}
+                            d={`M ${prev.x},${prev.y} C ${prev.x + cp},${prev.y} ${node.x - cp},${node.y} ${node.x},${node.y}`}
+                            fill="none" stroke={viewMode === 'activations' && !selected ? `rgba(${weight >= 0 ? '244, 99, 48' : '59, 130, 246'},${.12 + intensity * .72})` : edgeColor(weight, selected)}
+                            strokeWidth={selected ? 1.5 + Math.min(3, Math.abs(weight)) * 1.5 : viewMode === 'activations' ? .5 + intensity * 2.2 : Math.max(.5, Math.min(3, Math.abs(weight) * 1.5))}
+                            opacity={controller.model.kind === 'selected' && !selected ? .28 : 1} strokeDasharray={selected && weight < 0 ? '6 4' : undefined} />;
+                    })))}
+                    {nodePositions.flatMap((layer, l) => layer.map((node, i) => {
+                        const selected = controller.selectedNode?.layerIdx === l && controller.selectedNode.nodeIdx === i;
+                        return <rect key={nodeRefKey(l, i)} className="network-node" x={node.x - geometry.width / 2} y={node.y - geometry.height / 2}
+                            width={geometry.width} height={geometry.height} rx={geometry.cornerRadius} fill={palette.surface}
+                            stroke={selected ? palette.text : l > 0 && l < layers.length - 1 ? nodeColor((flat?.biases[layerBiasOffset(flat.layerSizes, l - 1) + i] ?? 0) >= 0 ? 1 : -1) : palette.rule} strokeWidth={selected ? 3 : 1.5} />;
+                    }))}
+                    {nodePositions.flatMap((layer, l) => layer.map((node, i) => {
+                        const health = nodeHealthByKey.get(nodeRefKey(l, i));
+                        return health ? <rect key={`health-${l}-${i}`} x={node.x - geometry.width / 2 - 4} y={node.y - geometry.height / 2 - 4}
+                            width={geometry.width + 8} height={geometry.height + 8} rx={geometry.cornerRadius + 4} fill="none"
+                            stroke={health === 'low' ? 'rgba(239, 68, 68, .78)' : 'rgba(234, 179, 8, .82)'} strokeWidth={2} strokeDasharray={health === 'low' ? '3 3' : '1 3'} /> : null;
+                    }))}
+                    {nodePositions.map((layer, l) => <text key={l} x={layer[0]?.x ?? 0} y={20} textAnchor="middle" fill={palette.muted} fontSize={10}>{layerLabels[l]}</text>)}
+                </g>
+            </svg>}
 
             {showLessonGhostLayer && ghostLayerX != null && (
                 <div
@@ -910,24 +966,31 @@ function NetworkGraphCanvasView({ controller }: { readonly controller: NetworkSe
                     const gridAvailable = getNeuronGridIndex(layerIdx, nodeIdx) !== null;
                     const unavailable = layerIdx > 0 && !gridAvailable;
                     return <button key={nodeRefKey(layerIdx, nodeIdx)} type="button"
-                        className="network-node-target" aria-label={label} aria-pressed={selected}
-                        data-grid-available={gridAvailable}
+                        className="network-node-target" aria-label={renderer === 'svg' ? [label, ...buildNodeTooltipLines(layerIdx, nodeIdx).filter((line) => line !== label)].join('. ') : label} aria-pressed={selected}
+                        data-neuron-key={nodeRefKey(layerIdx, nodeIdx)} data-grid-available={gridAvailable}
                         aria-description={unavailable ? 'Activation grid not available' : undefined}
                         title={buildNodeTooltipLines(layerIdx, nodeIdx).join('. ')}
                         style={{ position: 'absolute', left: node.x * viewport.zoom + viewport.panX - size / 2,
                             top: node.y * viewport.zoom + viewport.panY - size / 2, width: size, height: size,
-                            background: 'transparent', border: 'none', color: '#94a3b8', borderRadius: geometry.cornerRadius * viewport.zoom, padding: 0 }}
-                        onClick={() => controller.commands.selectNode({ layerIdx, nodeIdx })}
+                            background: 'transparent', border: 'none', color: palette.muted, borderRadius: geometry.cornerRadius * viewport.zoom, padding: 0 }}
+                        onClick={(event) => { selectionOrigin.current = event.currentTarget; controller.commands.selectNode({ layerIdx, nodeIdx }); }}
                         onKeyDown={(event) => {
                             if (event.key === 'Enter' || event.key === ' ') {
-                                event.preventDefault(); event.stopPropagation(); controller.commands.selectNode({ layerIdx, nodeIdx });
+                                event.preventDefault(); event.stopPropagation(); selectionOrigin.current = event.currentTarget; controller.commands.selectNode({ layerIdx, nodeIdx });
                             }
                         }}
-                        onFocus={() => setTooltip({ x: node.x * viewport.zoom + viewport.panX, y: node.y * viewport.zoom + viewport.panY, text: buildNodeTooltipLines(layerIdx, nodeIdx) })}
+                        onFocus={() => {
+                            let x = node.x * viewport.zoom + viewport.panX, y = node.y * viewport.zoom + viewport.panY;
+                            if (x < size / 2 || x > containerSize.width - size / 2 || y < size / 2 || y > containerSize.height - size / 2) {
+                                setViewport((v) => ({ ...v, panX: containerSize.width / 2 - node.x * v.zoom, panY: containerSize.height / 2 - node.y * v.zoom }));
+                                x = containerSize.width / 2; y = containerSize.height / 2;
+                            }
+                            setTooltip({ x, y, text: buildNodeTooltipLines(layerIdx, nodeIdx) });
+                        }}
                         onBlur={() => setTooltip(null)}
                         onPointerEnter={() => setTooltip({ x: node.x * viewport.zoom + viewport.panX, y: node.y * viewport.zoom + viewport.panY, text: buildNodeTooltipLines(layerIdx, nodeIdx) })}
                         onPointerLeave={() => setTooltip(null)}
-                    >{unavailable && <span aria-hidden="true">—</span>}</button>;
+                    >{layerIdx === 0 ? <span aria-hidden="true">{activeFeatureLabels[nodeIdx]}</span> : unavailable && <span aria-hidden="true">—</span>}</button>;
                 }))}
             </div>
 

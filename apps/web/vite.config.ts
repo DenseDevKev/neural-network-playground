@@ -34,16 +34,14 @@ export default defineConfig(({ mode }) => ({
     build: {
         target: 'es2022',
         minify: 'terser',
-        // Revisit constants exposed by the first safe compression pass. This
-        // reduces split-chunk overhead without changing any bundle budget.
-        terserOptions: { compress: { passes: 2 } },
+        // Two safe compression passes reduce repeated expressions without unsafe rewrites.
+        terserOptions: { compress: { passes: 2, inline: 1 } },
         sourcemap: mode === 'development',
         rollupOptions: {
             output: {
-                manualChunks: {
-                    react: ['react', 'react-dom'],
-                    engine: ['@nn-playground/engine'],
-                },
+                // Keep all initial capabilities in the capped entry. Merge tiny
+                // shared helpers to avoid separate gzip overhead; feature lazies stay split.
+                experimentalMinChunkSize: 10000,
                 chunkFileNames: 'assets/[name]-[hash].js',
                 entryFileNames: 'assets/[name]-[hash].js',
                 assetFileNames: 'assets/[name]-[hash].[ext]',

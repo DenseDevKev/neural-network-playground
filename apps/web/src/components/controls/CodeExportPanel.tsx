@@ -1,7 +1,8 @@
 // ── Code Export Panel ──
 // Tabbed panel that generates pseudocode, NumPy, and TF.js code from the current network.
 
-import { useMemo, useCallback, useId, useRef, memo, type KeyboardEvent } from 'react';
+import './exportUtilities.css';
+import { useMemo, useCallback, useId, useRef, useState, memo, type KeyboardEvent } from 'react';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useLayoutStore, type CodeExportTab } from '../../store/useLayoutStore.ts';
@@ -69,7 +70,7 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
     const activeTab = useLayoutStore((s) => s.codeExportTab);
     const setActiveTab = useLayoutStore((s) => s.setCodeExportTab);
     const [copied, setCopied] = useTimedState(false, 2000);
-    const [copyError, setCopyError] = useTimedState<string | null>(null, 2000);
+    const [copyError, setCopyError] = useState<string | null>(null);
     const tabIdBase = useId();
     const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -155,9 +156,22 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
             setCopied(true);
         } catch {
             setCopied(false);
-            setCopyError('Could not copy code.');
+            setCopyError('Could not copy code. Select the preview below or download the code, then try copying again.');
         }
     }, [code, setCopied, setCopyError]);
+
+    const handleDownload = useCallback(() => {
+        let url: string | null = null;
+        try {
+            url = URL.createObjectURL(new Blob([code], { type: 'text/plain;charset=utf-8' }));
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = `nn-forge-setup.${activeTab === 'numpy' ? 'py' : activeTab === 'tfjs' ? 'js' : 'txt'}`;
+            anchor.click();
+        } catch {
+            setCopyError('Could not download code. Select and copy the preview, or retry the download.');
+        } finally { if (url) URL.revokeObjectURL(url); }
+    }, [activeTab, code]);
 
     const handleTabKeyDown = useCallback((event: KeyboardEvent<HTMLButtonElement>, index: number) => {
         let nextIndex: number | null = null;
@@ -221,6 +235,9 @@ export const CodeExportPanel = memo(function CodeExportPanel() {
                     {copied ? '✓ Copied!' : '📋 Copy Code'}
                 </button>
             </Tooltip>
+            <button type="button" className="btn btn--ghost" onClick={handleDownload}>Download code</button>
+            <p>Generated from the current setup. {exportSnapshot ? `Parameter snapshot: step ${exportSnapshot.step}.` : 'No accepted parameter snapshot; code initializes a new model.'}</p>
+            <p>Evaluation evidence downloads are in Saved runs.</p>
             {copyError && (
                 <div className="config-feedback config-feedback--error" role="alert">
                     {copyError}

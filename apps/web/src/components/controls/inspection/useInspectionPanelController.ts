@@ -77,6 +77,7 @@ export function useInspectionPanelController(): InspectionPanelController {
     const [landscapeResult, setLandscapeResult] = useState<ObjectiveLandscapeResponseV2 | null>(null);
     const [landscapeError, setLandscapeError] = useState<string | null>(null);
     const [landscapeLoading, setLandscapeLoading] = useState(false);
+    const pendingRef = useRef({ trace: false, backprop: false, landscape: false });
     const traceRequestRef = useRef(0);
     const backpropRequestRef = useRef(0);
     const landscapeRequestRef = useRef(0);
@@ -86,6 +87,7 @@ export function useInspectionPanelController(): InspectionPanelController {
     useEffect(() => {
         if (previousModelKeyRef.current === currentModelKey) return;
         previousModelKeyRef.current = currentModelKey;
+        pendingRef.current = { trace: false, backprop: false, landscape: false };
         traceRequestRef.current++;
         backpropRequestRef.current++;
         landscapeRequestRef.current++;
@@ -122,13 +124,14 @@ export function useInspectionPanelController(): InspectionPanelController {
             return {
                 bins: frame.activationHistogramBins,
                 layout: frame.activationHistogramLayout,
+                provenance: frame.activationHistogramProvenance,
             };
         }
         return null;
     }, [activationHistogramsVersion]);
 
     const requestTrace = useCallback(async () => {
-        if (traceLoading || currentModel === null) return;
+        if (useTrainingStore.getState().status === 'running' || pendingRef.current.trace || traceLoading || currentModel === null) return;
 
         const requestSource = traceSourceRef.current;
         const requestSampleIndex = sampleIndexRef.current;
@@ -144,10 +147,12 @@ export function useInspectionPanelController(): InspectionPanelController {
 
         const requestModel = currentModel;
         const requestId = ++traceRequestRef.current;
+        pendingRef.current.trace = true;
         setTraceLoading(true);
         setTraceError(null);
         try {
             const api = await getWorkerApi();
+            if (useTrainingStore.getState().status === 'running' || !sameModelRevision(requestModel, activeModelRevision())) return;
             const response = await api.getPredictionTraceV2({
                 source: requestSource,
                 index: requestIndex,
@@ -170,19 +175,24 @@ export function useInspectionPanelController(): InspectionPanelController {
                 setTraceError(error instanceof Error ? error.message : String(error));
             }
         } finally {
-            if (traceRequestRef.current === requestId) setTraceLoading(false);
+            if (traceRequestRef.current === requestId) {
+                pendingRef.current.trace = false;
+                setTraceLoading(false);
+            }
         }
     }, [currentModel, traceLoading]);
 
     const requestBackprop = useCallback(async () => {
-        if (backpropLoading || currentModel === null) return;
+        if (useTrainingStore.getState().status === 'running' || pendingRef.current.backprop || backpropLoading || currentModel === null) return;
         const requestModel = currentModel;
         const requestId = ++backpropRequestRef.current;
+        pendingRef.current.backprop = true;
         setBackpropLoading(true);
         setBackpropError(null);
         setBackpropResult(null);
         try {
             const api = await getWorkerApi();
+            if (useTrainingStore.getState().status === 'running' || !sameModelRevision(requestModel, activeModelRevision())) return;
             const response = await api.getBackpropExplanationV2();
             if (
                 backpropRequestRef.current === requestId
@@ -200,19 +210,24 @@ export function useInspectionPanelController(): InspectionPanelController {
                 setBackpropError(error instanceof Error ? error.message : String(error));
             }
         } finally {
-            if (backpropRequestRef.current === requestId) setBackpropLoading(false);
+            if (backpropRequestRef.current === requestId) {
+                pendingRef.current.backprop = false;
+                setBackpropLoading(false);
+            }
         }
     }, [backpropLoading, currentModel]);
 
     const requestLandscape = useCallback(async () => {
-        if (landscapeLoading || currentModel === null) return;
+        if (useTrainingStore.getState().status === 'running' || pendingRef.current.landscape || landscapeLoading || currentModel === null) return;
         const requestModel = currentModel;
         const requestId = ++landscapeRequestRef.current;
+        pendingRef.current.landscape = true;
         setLandscapeLoading(true);
         setLandscapeError(null);
         setLandscapeResult(null);
         try {
             const api = await getWorkerApi();
+            if (useTrainingStore.getState().status === 'running' || !sameModelRevision(requestModel, activeModelRevision())) return;
             const response = await api.getObjectiveLandscapeV2();
             if (
                 landscapeRequestRef.current === requestId
@@ -230,17 +245,33 @@ export function useInspectionPanelController(): InspectionPanelController {
                 setLandscapeError(error instanceof Error ? error.message : String(error));
             }
         } finally {
-            if (landscapeRequestRef.current === requestId) setLandscapeLoading(false);
+            if (landscapeRequestRef.current === requestId) {
+                pendingRef.current.landscape = false;
+                setLandscapeLoading(false);
+            }
         }
     }, [currentModel, landscapeLoading]);
 
     const model = useMemo(() => createInspectionPanelDisplayModel({
         hiddenLayerCount,
+        activationStatus: layerStatsState.provenance
+            ? sameModelRevision(layerStatsState.provenance.model, currentModel)
+                ? 'Activation statistics match the current model revision.'
+                : 'Stale activation statistics: the active model has changed. Waiting for a fresh sample.'
+            : 'Activation statistics unavailable. Waiting for a sampled model frame.',
+        histogramBasis: activationHistograms?.provenance
+            ? (() => {
+                const provenance = activationHistograms.provenance;
+                const basis = provenance.basis;
+                return `Histogram at model revision ${provenance.model.revision}${basis.kind === 'bounded-sample' ? ` · ${basis.sampleCount} of ${basis.populationCount} training examples` : ''}. ${sameModelRevision(provenance.model, currentModel) ? 'Current model revision.' : 'Stale histogram: waiting for a fresh sample.'}`;
+            })()
+            : 'Histogram provenance unavailable. Waiting for a sampled model frame.',
         layerStats: layerStatsState.values,
         activationBasis: activationBasis
             ? {
                 sampleCount: activationBasis.sampleCount,
                 populationCount: activationBasis.populationCount,
+                modelStep: layerStatsState.provenance?.model.step,
                 modelRevision: layerStatsState.provenance?.model.revision ?? 0,
                 gradientRevision: layerStatsState.gradientRevision,
             }
@@ -261,6 +292,7 @@ export function useInspectionPanelController(): InspectionPanelController {
         traceError,
         traceResult: traceResult
             ? {
+                sample: traceResult.sample,
                 source: traceResult.sample.source,
                 sampleIndex: traceResult.sample.index,
                 modelStep: traceResult.model.step,
@@ -332,6 +364,7 @@ export function useInspectionPanelController(): InspectionPanelController {
     ]);
 
     const selectTraceSource = useCallback((source: InspectionTraceSource) => {
+        pendingRef.current.trace = false;
         traceRequestRef.current++;
         traceResultRef.current = null;
         traceSourceRef.current = source;
@@ -343,6 +376,7 @@ export function useInspectionPanelController(): InspectionPanelController {
 
     const selectSampleIndex = useCallback((index: number) => {
         const normalizedIndex = normalizeInspectionSampleIndex(index);
+        pendingRef.current.trace = false;
         traceRequestRef.current++;
         traceResultRef.current = null;
         sampleIndexRef.current = normalizedIndex;

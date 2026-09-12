@@ -5,7 +5,7 @@ import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { useDecisionBoundaryController } from './useDecisionBoundaryController.ts';
 import { BoundaryEvidencePanel } from './BoundaryEvidencePanel.tsx';
-import { PinnedBoundaryRail } from './PinnedBoundaryRail.tsx';
+import { DecisionBoundaryCanvas } from './DecisionBoundaryCanvas.tsx';
 import { getConceptById } from '../../concepts/conceptCatalog.ts';
 
 vi.mock('./DecisionBoundaryCanvas.tsx', () => ({ DecisionBoundaryCanvas: () => <canvas data-testid="live-boundary" /> }));
@@ -100,13 +100,10 @@ describe('shared decision boundary controller', () => {
             .not.toBeInTheDocument();
     });
     it('keeps exactly one live canvas mounted while expanding evidence', () => {
-        const expand = vi.fn();
         const { result } = renderHook(() => useDecisionBoundaryController());
-        const { container, rerender } = render(<PinnedBoundaryRail controller={result.current} onExpand={expand} />);
+        const { container, rerender } = render(<DecisionBoundaryCanvas model={result.current.model} />);
         const canvas = screen.getByTestId('live-boundary');
-        fireEvent.click(screen.getByRole('button', { name: 'Boundary details' }));
-        expect(expand).toHaveBeenCalledOnce();
-        rerender(<><PinnedBoundaryRail controller={result.current} onExpand={expand} /><BoundaryEvidencePanel controller={result.current} /></>);
+        rerender(<><DecisionBoundaryCanvas model={result.current.model} /><BoundaryEvidencePanel controller={result.current} /></>);
         expect(container.querySelectorAll('canvas')).toHaveLength(1);
         expect(screen.getByTestId('live-boundary')).toBe(canvas);
     });

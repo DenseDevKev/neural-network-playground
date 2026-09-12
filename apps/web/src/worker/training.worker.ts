@@ -642,6 +642,10 @@ interface V2RuntimeBuild {
 let experimentRequestGate = new ExperimentRequestGate();
 let v2MutationSequence = 0;
 let v2MutationTail: Promise<void> = Promise.resolve();
+let pendingPausedDemandRefresh: {
+    runId: number;
+    needs: Set<keyof VisualizationDemand>;
+} | null = null;
 let v2AllocationCount = 0;
 let runtimeStopConditions: readonly StopCondition[] = DEFAULT_RUNTIME_STOP_CONDITIONS;
 let detectWebGPUForRuntime: typeof detectWebGPU = detectWebGPU;
@@ -1522,7 +1526,7 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         state.networkConfig?.outputSize === WORKER_MULTICLASS_OUTPUT_SIZE &&
         state.networkConfig.outputActivation === 'softmax';
     const wantGrid = supportsScalarGrid && (demand.needDecisionBoundary || demand.needNeuronGrids);
-    const wantMulticlassBoundary = supportsMulticlassBoundary && demand.needDecisionBoundary;
+    const wantMulticlassBoundary = supportsMulticlassBoundary && (demand.needDecisionBoundary || demand.needNeuronGrids);
     const shouldRebuildGrid =
         wantGrid &&
         state.gridStale &&
@@ -1572,7 +1576,11 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         state.multiclassConfidenceGridBuffer
     ) {
         workerPerfMark('perf:worker:predictMulticlassBoundary:start');
-        network.predictMulticlassBoundaryInto(
+        if (demand.needNeuronGrids && state.outputGridBuffer && state.neuronGridsBuffer) {
+            network.predictGridWithNeuronsInto(state.gridInputs, state.outputGridBuffer, state.neuronGridsBuffer);
+            neuronGrids = state.neuronGridsBuffer;
+        }
+        if (demand.needDecisionBoundary) network.predictMulticlassBoundaryInto(
             state.gridInputs,
             state.multiclassClassGridBuffer,
             state.multiclassConfidenceGridBuffer,
@@ -1584,7 +1592,7 @@ function computeSnapshotUnchecked(opts: { lightweight?: boolean } = {}): Network
         outputGrid = [];
         state.snapshotsSinceLastGrid = 0;
         state.gridStale = false;
-        state.multiclassBoundaryFresh = true;
+        state.multiclassBoundaryFresh = demand.needDecisionBoundary;
     } else if (wantGrid && state.outputGridBuffer) {
         // Reuse the last computed grid(s) without recomputing. The main
         // thread retains the previous Float32Arrays in its frame buffer;
@@ -1802,7 +1810,9 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
     // from the transferable postMessage path. When SAB is active we always fed
     // the Float32Array pre-alloc buffers into the network predictors, so
     // the `instanceof Float32Array` branches are the only ones that fire.
-    const sharedViews = state.sharedViews;
+    // The existing shared protocol carries a scalar output plane. Multiclass
+    // neuron maps travel inline alongside their separate winning-class field.
+    const sharedViews = state.networkConfig?.outputSize === 1 ? state.sharedViews : null;
     let sharedSeq: number | undefined;
     let outputGrid: Float32Array | undefined;
     let neuronGrids: Float32Array | undefined;
@@ -1928,9 +1938,7 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
 
     if (multiclassClassGrid && multiclassConfidenceGrid) {
         outputGrid = new Float32Array(0);
-        neuronGrids = new Float32Array(0);
-        neuronGridLayout = undefined;
-        transferables.push(outputGrid.buffer, neuronGrids.buffer);
+        transferables.push(outputGrid.buffer);
     }
 
     const evaluation = state.evaluationRuntime?.latestEvaluation;
@@ -1961,7 +1969,7 @@ function packSnapshotMessage(snap: NetworkSnapshot): { message: WorkerSnapshotMe
         const produced: WorkerArtifactProvenanceV2 = {
             ...((outputGrid !== undefined && outputGrid.length > 0)
                 || multiclassClassGrid !== undefined
-                || sharedSeq !== undefined
+                || (sharedSeq !== undefined && snap.outputGrid.length > 0)
                 ? {
                     decisionBoundary: currentArtifactProvenance({
                         kind: 'prediction-grid',
@@ -2337,6 +2345,9 @@ function stopInternalLoop(): void {
 
 function applyDemand(demand: VisualizationDemand): void {
     const confusionDemandChanged = state.demand.needConfusionMatrix !== demand.needConfusionMatrix;
+    const newlyVisible = (Object.keys(demand) as (keyof VisualizationDemand)[]).filter((key) =>
+        key.startsWith('need') && demand[key as keyof VisualizationDemand] === true
+        && state.demand[key as keyof VisualizationDemand] !== true);
     state.demand = { ...demand };
     // Force the next snapshot to refresh its requested visualization payloads.
     state.snapshotsSinceLastGrid = demand.gridInterval;
@@ -2345,6 +2356,30 @@ function applyDemand(demand: VisualizationDemand): void {
     if (confusionDemandChanged) {
         state.lastPackedConfusionEvaluationId = null;
         state.confusionMatrixVersion++;
+    }
+    // A paused view has no training tick to publish its newly requested grids.
+    // Use the existing ordered lane and snapshot transport without creating an
+    // evaluation, checkpoint, parameter update, or status transition.
+    if (newlyVisible.length > 0 && !state.running && state.prepared && state.streamPort) {
+        if (pendingPausedDemandRefresh?.runId === state.runId) {
+            for (const key of newlyVisible) pendingPausedDemandRefresh.needs.add(key);
+            return;
+        }
+        const refresh = { runId: state.runId, needs: new Set(newlyVisible) };
+        pendingPausedDemandRefresh = refresh;
+        void enqueueV2Mutation(() => {
+            if (pendingPausedDemandRefresh !== refresh) return;
+            pendingPausedDemandRefresh = null;
+            // Cadence changes and hiding another region must not cancel a
+            // still-visible request. Read the latest demand when the lane drains.
+            if (state.running || state.runId !== refresh.runId || !state.streamPort
+                || ![...refresh.needs].some((key) => state.demand[key] === true)) return;
+            const { message, transferables } = packSnapshotMessage(computeSnapshot({ lightweight: true }));
+            state.streamPort.postMessage(message, transferables);
+            // The next model update should still get a fresh visual frame.
+            state.snapshotsSinceLastGrid = state.demand.gridInterval;
+            state.snapshotsSinceLastActivationHistogram = state.demand.activationHistogramInterval;
+        }).catch(reportStreamCommandFailure);
     }
 }
 

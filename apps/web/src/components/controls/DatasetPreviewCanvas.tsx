@@ -1,24 +1,24 @@
 import { memo, useEffect, useRef } from 'react';
-import { HEX_BLUE, HEX_ORANGE, valueToColor } from '@nn-playground/shared';
+import { readPlotPalette, useThemeStore } from '../../store/theme.ts';
+import { CLASS_COLORS, fieldColor, hexRgb } from '../visualization/plotColors.ts';
 import type { DatasetPreviewModel } from './datasetPreviewModel.ts';
 
-const CLASS_COLORS = ['#4f8cff', '#ff9f43', '#52d273'] as const;
 
-export function paintDatasetPreview(ctx: CanvasRenderingContext2D, model: DatasetPreviewModel, width: number, height: number): void {
+export function paintDatasetPreview(ctx: CanvasRenderingContext2D, model: DatasetPreviewModel, width: number, height: number, background = '#17191B'): void {
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#151822';
+    ctx.fillStyle = background;
     ctx.fillRect(0, 0, width, height);
     const { x: [xMin, xMax], y: [yMin, yMax] } = model.inputDomain;
     const [valueMin, valueMax] = model.valueDomain;
     for (const point of model.points) {
         if (![point.x, point.y, point.label].every(Number.isFinite)) continue;
         if (model.taskKind === 'regression') {
-            const rgb = valueToColor((point.label - valueMin) / (valueMax - valueMin || 1));
+            const rgb = fieldColor((point.label - valueMin) / (valueMax - valueMin || 1),hexRgb(background));
             ctx.fillStyle = `rgb(${rgb.join(',')})`;
         } else {
             ctx.fillStyle = model.taskKind === 'multiclass-classification'
                 ? CLASS_COLORS[point.label] ?? '#a0a4b8'
-                : point.label === 1 ? HEX_ORANGE : HEX_BLUE;
+                : point.label === 1 ? CLASS_COLORS[1] : CLASS_COLORS[0];
         }
         ctx.beginPath();
         ctx.arc(2 + (point.x - xMin) / (xMax - xMin) * Math.max(0, width - 4),
@@ -29,6 +29,7 @@ export function paintDatasetPreview(ctx: CanvasRenderingContext2D, model: Datase
 
 /** Owns paint resources only. The dataset button owns its accessible name. */
 export const DatasetPreviewCanvas = memo(function DatasetPreviewCanvas({ model }: { readonly model: DatasetPreviewModel }) {
+    const theme = useThemeStore((state) => state.resolved);
     const ref = useRef<HTMLCanvasElement>(null);
     useEffect(() => {
         const canvas = ref.current;
@@ -45,7 +46,7 @@ export const DatasetPreviewCanvas = memo(function DatasetPreviewCanvas({ model }
             canvas.width = Math.round(width * dpr);
             canvas.height = Math.round(height * dpr);
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            paintDatasetPreview(ctx, model, width, height);
+            paintDatasetPreview(ctx, model, width, height,readPlotPalette().background);
         };
         const measure = (nextWidth: number, nextHeight: number) => {
             if (Math.abs(nextWidth - width) < 1 && Math.abs(nextHeight - height) < 1) return;
@@ -60,6 +61,6 @@ export const DatasetPreviewCanvas = memo(function DatasetPreviewCanvas({ model }
         });
         observer?.observe(canvas);
         return () => { observer?.disconnect(); if (frame !== null) cancelAnimationFrame(frame); };
-    }, [model]);
+    }, [model,theme]);
     return <canvas ref={ref} className="precision-dataset-preview" aria-hidden="true" style={{ width: '100%', height: '100%' }} />;
 });

@@ -33,6 +33,20 @@ function baseInput(
 }
 
 describe('createInspectionPanelDisplayModel', () => {
+    it.each([[0.1, 0.2, 0.7], [-1.2345]])('preserves all trace outputs and exact sample identity for %j', (...output: number[]) => {
+        const model = createInspectionPanelDisplayModel(baseInput({
+            traceResult: {
+                source: 'test', sampleIndex: 3, modelStep: 42, modelRevision: 44,
+                sample: { x: 0.123456789, y: -0.987654321, label: 2 },
+                output, sampleDataLoss: 0.03, regularizationPenalty: 0,
+                layers: [{ layerIndex: 0, activations: output }],
+            },
+        }));
+        expect(model.trace.result?.output).toBe(output.map((value) => value.toFixed(4)).join(', '));
+        expect(model.trace.result?.sample).toEqual({ x: '0.123456789', y: '-0.987654321', target: '2' });
+        expect(model.trace.result?.provenance).toContain('test sample 3 · model step 42 · revision 44');
+    });
+
     it('normalizes raw sample input without conflating it with the effective index', () => {
         expect(normalizeInspectionSampleIndex(4.9)).toBe(4);
         expect(normalizeInspectionSampleIndex(-3)).toBe(0);
@@ -58,6 +72,7 @@ describe('createInspectionPanelDisplayModel', () => {
             activationBasis: {
                 sampleCount: 128,
                 populationCount: 210,
+                modelStep: 10,
                 modelRevision: 12,
                 gradientRevision: 11,
             },
@@ -65,7 +80,7 @@ describe('createInspectionPanelDisplayModel', () => {
 
         expect(model.activationBasis).toEqual({
             label: 'Activation statistics across 128 of 210 training examples',
-            suffix: '; gradient summary comes from model revision 11.',
+            suffix: '; model step 10; model revision 12; gradient summary comes from model revision 11.',
         });
         expect(model.layers).toEqual([
             {
@@ -130,8 +145,8 @@ describe('createInspectionPanelDisplayModel', () => {
         });
         expect(model.histogram?.bins).toEqual([
             { key: 0, height: '50%' },
-            { key: 1, height: '6%' },
-            { key: 2, height: '6%' },
+            { key: 1, height: '0%' },
+            { key: 2, height: '0%' },
             { key: 3, height: '100%' },
         ]);
     });
@@ -156,7 +171,7 @@ describe('createInspectionPanelDisplayModel', () => {
             nearZeroText: '0.0% near zero',
             saturatedText: '0.0% near activation limits',
             summary: 'Hidden 1 activations: 0.0% near zero, 0.0% near activation limits. No activation samples yet.',
-            bins: [{ key: 0, height: '6%' }, { key: 1, height: '6%' }],
+            bins: [{ key: 0, height: '0%' }, { key: 1, height: '0%' }],
         });
     });
 

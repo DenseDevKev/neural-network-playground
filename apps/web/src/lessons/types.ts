@@ -5,7 +5,7 @@ export type LessonTarget = 'data' | 'features' | 'network' | 'hyperparams' | 'tr
 
 export type LessonCompletionRule =
     | { kind: 'training-step-at-least'; step: number }
-    | { kind: 'view-is'; view: 'build' | 'run' };
+    | { kind: 'setup-tab-is'; tab: 'dataset' | 'network' | 'training' };
 
 export interface LessonStep {
     id: string;

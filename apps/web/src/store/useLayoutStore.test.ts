@@ -1,434 +1,84 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createLayoutStore, LAYOUT_STORAGE_KEY, useLayoutStore } from './useLayoutStore.ts';
+import { createLayoutStore, LAYOUT_STORAGE_KEY, LEGACY_LAYOUT_STORAGE_KEY } from './useLayoutStore.ts';
 
-describe('useLayoutStore', () => {
-    beforeEach(() => {
-        window.localStorage.clear();
-        useLayoutStore.setState({
-            view: 'build',
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
-            audienceMode: 'explore',
-            advancedToolsOpen: false,
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
-            codeExportTab: 'pseudocode',
-            activeLessonId: null,
-            activeLessonStepIndex: null,
-            lessonCueDismissed: false,
-            hasStartedLesson: false,
-        });
+describe('local layout preferences', () => {
+    beforeEach(() => window.localStorage.clear());
+    it('starts on Network with Standard guidance and no duplicate legacy state', () => {
+        const state = createLayoutStore().getState();
+        expect(state).toMatchObject({ destination:'playground', workspaceTab:'network', audienceMode:'explore' });
+        for (const key of ['view','phase','activeTabLeft','activeTabRight','advancedToolsOpen','buildContextOpen']) expect(state).not.toHaveProperty(key);
     });
-
-    it('defaults to the Build view, Explore mode, and closed Advanced Tools', () => {
-        const state = useLayoutStore.getState();
-        expect(state.view).toBe('build');
-        expect(state.activeRecipeSection).toBe('data');
-        expect(state.activeEvidenceView).toBe('boundary');
-        expect(state.audienceMode).toBe('explore');
-        expect(state.advancedToolsOpen).toBe(false);
+    it.each(['dataset','network','training'] as const)('opens %s setup atomically without affecting the lesson session', (tab) => {
+        const store = createLayoutStore();
+        store.getState().setActiveLessonStep('lesson-xor-hidden-layers', 1);
+        store.getState().navigate('saved-runs');
+        let transitions = 0;
+        const unsubscribe = store.subscribe(() => { transitions++; });
+        store.getState().openSetup(tab); unsubscribe();
+        expect(transitions).toBe(1);
+        expect(store.getState()).toMatchObject({destination:'playground',workspaceTab:'setup',setupTab:tab,activeLessonId:'lesson-xor-hidden-layers',activeLessonStepIndex:1});
     });
-
-    it('setView toggles between Build and Run while keeping legacy phase in sync', () => {
-        const { setView } = useLayoutStore.getState();
-
-        setView('run');
-        expect(useLayoutStore.getState().view).toBe('run');
-        expect(useLayoutStore.getState().phase).toBe('run');
-
-        setView('build');
-        expect(useLayoutStore.getState().view).toBe('build');
-        expect(useLayoutStore.getState().phase).toBe('build');
+    it.each(['beginner','explore','lab'] as const)('guidance %s preserves selected diagnostic and setup tabs', (mode) => {
+        const store = createLayoutStore();
+        store.getState().openSetup('training');
+        store.getState().navigate('playground','inspect');
+        store.getState().setInspectTab('gradients');
+        let transitions = 0;
+        const unsubscribe = store.subscribe(() => { transitions++; });
+        store.getState().setAudienceMode(mode); unsubscribe();
+        expect(transitions).toBe(1);
+        expect(store.getState()).toMatchObject({audienceMode:mode,workspaceTab:'inspect',inspectTab:'gradients',setupTab:'training'});
     });
-
-    it('tracks the active recipe section', () => {
-        useLayoutStore.getState().setActiveRecipeSection('network');
-        expect(useLayoutStore.getState().activeRecipeSection).toBe('network');
-        expect(useLayoutStore.getState().activeTabLeft).toBe('network');
-
-        useLayoutStore.getState().setActiveRecipeSection('hyperparams');
-        expect(useLayoutStore.getState().activeRecipeSection).toBe('hyperparams');
-        expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
+    it('persists current navigation and code choice but excludes transient execution and overlays', () => {
+        const store = createLayoutStore();
+        store.getState().setResultsTab('errors'); store.getState().setCodeExportTab('numpy');
+        store.getState().navigate('saved-runs'); store.getState().requestExport('code');
+        store.getState().setActiveLessonStep('lesson-xor-hidden-layers',2); store.getState().dismissLessonCue();
+        const stored = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY)!);
+        expect(stored.state).toMatchObject({destination:'saved-runs',resultsTab:'errors',codeExportTab:'numpy',lessonCueDismissed:true,hasStartedLesson:true});
+        for (const key of ['exportRequest','activeLessonId','activeLessonStepIndex','view','advancedToolsOpen','draft','comparison']) expect(stored.state).not.toHaveProperty(key);
+        expect(createLayoutStore().getState()).toMatchObject({...stored.state,exportRequest:null,activeLessonId:null,activeLessonStepIndex:null});
     });
-
-    it('tracks the active evidence view', () => {
-        useLayoutStore.getState().setActiveEvidenceView('loss');
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('loss');
-        expect(useLayoutStore.getState().activeTabRight).toBe('loss');
-
-        useLayoutStore.getState().setActiveEvidenceView('code');
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('code');
-        expect(useLayoutStore.getState().activeTabRight).toBe('code');
+    it('dismisses the invitation and exits a lesson without erasing its completed-start preference', () => {
+        const store = createLayoutStore();
+        store.getState().setActiveLessonStep('lesson-circle-hidden-layer',1);
+        store.getState().dismissLessonCue(); store.getState().clearActiveLessonStep();
+        expect(store.getState()).toMatchObject({activeLessonId:null,activeLessonStepIndex:null,hasStartedLesson:true,lessonCueDismissed:true,workspaceTab:'network'});
     });
-
-    it('persists the code export tab across panel remounts', () => {
-        useLayoutStore.getState().setCodeExportTab('numpy');
-        expect(useLayoutStore.getState().codeExportTab).toBe('numpy');
-
-        useLayoutStore.getState().setCodeExportTab('tfjs');
-        expect(useLayoutStore.getState().codeExportTab).toBe('tfjs');
+    it('uses a fresh export request object and leaves underlying workspace selection intact', () => {
+        const store = createLayoutStore(); store.getState().navigate('playground','inspect');
+        store.getState().requestExport('setup'); const first = store.getState().exportRequest;
+        store.getState().requestExport('code'); expect(store.getState().exportRequest!.id).toBeGreaterThan(first!.id);
+        expect(store.getState().workspaceTab).toBe('inspect'); store.getState().clearExportRequest(); expect(store.getState().exportRequest).toBeNull();
     });
-
-    it('persists only app-local Build/Run workspace state to localStorage', () => {
-        useLayoutStore.getState().setView('run');
-        useLayoutStore.getState().setActiveRecipeSection('features');
-        useLayoutStore.getState().setActiveEvidenceView('inspection');
-        useLayoutStore.getState().setAudienceMode('lab');
-        useLayoutStore.getState().setAdvancedToolsOpen(false);
-        useLayoutStore.getState().setActiveLessonStep('lesson-xor-hidden-layers', 1);
-
-        const stored = JSON.parse(window.localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}');
-        expect(stored.state?.view).toBe('run');
-        expect(stored.state?.activeRecipeSection).toBe('features');
-        expect(stored.state?.activeEvidenceView).toBe('boundary');
-        expect(stored.state?.audienceMode).toBe('lab');
-        expect(stored.state?.advancedToolsOpen).toBe(false);
-        expect(stored.state?.layout).toBeUndefined();
-        expect(stored.state?.phase).toBeUndefined();
-        expect(stored.state?.activeLessonId).toBeUndefined();
-        expect(stored.state?.activeLessonStepIndex).toBeUndefined();
+    const legacyCases: Array<[Record<string, unknown>, Record<string, unknown>]> = [
+        [{view:'build',activeRecipeSection:'features'}, {workspaceTab:'setup',setupTab:'network'}],
+        [{phase:'run',activeTabLeft:'network',activeTabRight:'confusion',layout:'split',codeExportTab:'tfjs'}, {workspaceTab:'results',setupTab:'network',resultsTab:'errors',codeExportTab:'tfjs'}],
+        [{view:'run',activeEvidenceView:'inspection',audienceMode:'beginner',advancedToolsOpen:false}, {workspaceTab:'inspect',audienceMode:'beginner'}],
+        [{view:'build',activeRecipeSection:'hyperparams',audienceMode:'lab',advancedToolsOpen:false,buildContextOpen:true}, {workspaceTab:'setup',setupTab:'training',audienceMode:'lab'}],
+        [{view:'run',activeEvidenceView:'history'}, {destination:'saved-runs'}],
+        [{view:'run',activeEvidenceView:'loss'}, {workspaceTab:'results',resultsTab:'learning'}],
+        [{view:'run',activeRecipeSection:'features',activeEvidenceView:'code',codeExportTab:'numpy'}, {workspaceTab:'results',setupTab:'network',codeExportTab:'numpy',exportRequest:{mode:'code',id:1}}],
+        [{view:'build',activeRecipeSection:'config'}, {workspaceTab:'setup',exportRequest:{mode:'setup',id:1}}],
+        [{view:'build',activeRecipeSection:'config',activeEvidenceView:'code'}, {workspaceTab:'setup',exportRequest:{mode:'setup',id:1}}],
+        [{view:'run',activeRecipeSection:'config',activeEvidenceView:'code'}, {workspaceTab:'results',exportRequest:{mode:'code',id:1}}],
+        [{phase:'build',activeTabLeft:'config',activeTabRight:'code'}, {workspaceTab:'setup',exportRequest:{mode:'setup',id:1}}],
+        [{phase:'run',activeTabLeft:'config',activeTabRight:'code'}, {workspaceTab:'results',exportRequest:{mode:'code',id:1}}],
+    ];
+    it.each(legacyCases)('migrates old selections %j without writing or deleting the old key', (state, expected) => {
+        const serialized = JSON.stringify({state,version:0}); localStorage.setItem(LEGACY_LAYOUT_STORAGE_KEY,serialized);
+        const store = createLayoutStore(); expect(store.getState()).toMatchObject(expected);
+        store.getState().navigate('lessons'); expect(localStorage.getItem(LEGACY_LAYOUT_STORAGE_KEY)).toBe(serialized);
     });
-
-    it('applies the selected profile disclosure default without changing the profile for navigation', () => {
-        useLayoutStore.getState().setAudienceMode('lab');
-        expect(useLayoutStore.getState().audienceMode).toBe('lab');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
-
-        useLayoutStore.getState().setAudienceMode('beginner');
-        expect(useLayoutStore.getState().audienceMode).toBe('beginner');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
-
-        useLayoutStore.getState().setActiveRecipeSection('features');
-        expect(useLayoutStore.getState().audienceMode).toBe('beginner');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
+    it('prefers current explicit navigation over stale legacy aliases', () => {
+        localStorage.setItem(LAYOUT_STORAGE_KEY,JSON.stringify({state:{destination:'playground',workspaceTab:'inspect',inspectTab:'gradients',view:'run',activeEvidenceView:'code'},version:0}));
+        expect(createLayoutStore().getState()).toMatchObject({workspaceTab:'inspect',inspectTab:'gradients',exportRequest:null});
     });
-
-    it('falls back hidden targets and synchronizes aliases in one disclosure transition', () => {
-        useLayoutStore.getState().setAudienceMode('beginner');
-        useLayoutStore.getState().setAdvancedToolsOpen(true);
-        useLayoutStore.getState().setActiveRecipeSection('config');
-        useLayoutStore.getState().setActiveEvidenceView('inspection');
-
-        let notifications = 0;
-        const unsubscribe = useLayoutStore.subscribe(() => {
-            notifications += 1;
-        });
-        useLayoutStore.getState().setAdvancedToolsOpen(false);
-        unsubscribe();
-
-        const state = useLayoutStore.getState();
-        expect(notifications).toBe(1);
-        expect(state.advancedToolsOpen).toBe(false);
-        expect(state.activeRecipeSection).toBe('data');
-        expect(state.activeTabLeft).toBe('data');
-        expect(state.activeEvidenceView).toBe('boundary');
-        expect(state.activeTabRight).toBe('boundary');
+    it('sanitizes invalid enums and boolean flags while ignoring persisted active lessons', () => {
+        localStorage.setItem(LAYOUT_STORAGE_KEY,JSON.stringify({state:{view:'debug',phase:'debug',workspaceTab:'missing',setupTab:'missing',resultsTab:'missing',inspectTab:'missing',codeExportTab:'missing',audienceMode:'expert',lessonCueDismissed:'true',hasStartedLesson:true,activeLessonId:'stale',activeLessonStepIndex:4},version:0}));
+        expect(createLayoutStore().getState()).toMatchObject({workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace',codeExportTab:'pseudocode',audienceMode:'explore',lessonCueDismissed:false,hasStartedLesson:true,activeLessonId:null,activeLessonStepIndex:null});
     });
-
-    it('falls back targets hidden by a mode default in one atomic transition', () => {
-        useLayoutStore.getState().setAudienceMode('lab');
-        useLayoutStore.getState().setActiveRecipeSection('config');
-        useLayoutStore.getState().setActiveEvidenceView('code');
-
-        let notifications = 0;
-        const unsubscribe = useLayoutStore.subscribe(() => {
-            notifications += 1;
-        });
-        useLayoutStore.getState().setAudienceMode('beginner');
-        unsubscribe();
-
-        const state = useLayoutStore.getState();
-        expect(notifications).toBe(1);
-        expect(state.audienceMode).toBe('beginner');
-        expect(state.advancedToolsOpen).toBe(false);
-        expect(state.activeRecipeSection).toBe('data');
-        expect(state.activeTabLeft).toBe('data');
-        expect(state.activeEvidenceView).toBe('boundary');
-        expect(state.activeTabRight).toBe('boundary');
-    });
-
-    it('opens Advanced Tools for hidden canonical and legacy navigation targets', () => {
-        useLayoutStore.getState().setAudienceMode('beginner');
-
-        useLayoutStore.getState().setActiveTabLeft('hyperparams');
-        expect(useLayoutStore.getState().activeRecipeSection).toBe('hyperparams');
-        expect(useLayoutStore.getState().activeTabLeft).toBe('hyperparams');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
-        expect(useLayoutStore.getState().audienceMode).toBe('beginner');
-
-        useLayoutStore.getState().setAdvancedToolsOpen(false);
-        useLayoutStore.getState().setActiveTabRight('confusion');
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('confusion');
-        expect(useLayoutStore.getState().activeTabRight).toBe('confusion');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(true);
-        expect(useLayoutStore.getState().audienceMode).toBe('beginner');
-    });
-
-    it('opens an advanced recipe section in Build with one atomic notification', () => {
-        useLayoutStore.setState({
-            view: 'run',
-            phase: 'run',
-            audienceMode: 'beginner',
-            advancedToolsOpen: false,
-            activeRecipeSection: 'data',
-            activeTabLeft: 'data',
-        });
-        const transitions: Array<ReturnType<typeof useLayoutStore.getState>> = [];
-        const unsubscribe = useLayoutStore.subscribe((state) => transitions.push(state));
-
-        useLayoutStore.getState().openAdvancedRecipeSection('hyperparams');
-        unsubscribe();
-
-        expect(transitions).toHaveLength(1);
-        expect(transitions[0]).toMatchObject({
-            view: 'build',
-            phase: 'build',
-            activeRecipeSection: 'hyperparams',
-            activeTabLeft: 'hyperparams',
-            advancedToolsOpen: true,
-        });
-    });
-
-    it('keeps legacy History navigation available without opening Advanced Tools', () => {
-        useLayoutStore.getState().setAudienceMode('beginner');
-        useLayoutStore.getState().setActiveEvidenceView('history');
-
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('history');
-        expect(useLayoutStore.getState().activeTabRight).toBe('history');
-        expect(useLayoutStore.getState().advancedToolsOpen).toBe(false);
-    });
-
-    it('does not rewrite a visible legacy History alias during profile or disclosure changes', () => {
-        useLayoutStore.getState().setActiveEvidenceView('history');
-
-        useLayoutStore.getState().setAudienceMode('lab');
-        useLayoutStore.getState().setAdvancedToolsOpen(false);
-
-        expect(useLayoutStore.getState().activeEvidenceView).toBe('history');
-        expect(useLayoutStore.getState().activeTabRight).toBe('history');
-    });
-
-    it('tracks active lesson step as transient UI state', () => {
-        useLayoutStore.getState().setActiveLessonStep('lesson-xor-hidden-layers', 1);
-        expect(useLayoutStore.getState().activeLessonId).toBe('lesson-xor-hidden-layers');
-        expect(useLayoutStore.getState().activeLessonStepIndex).toBe(1);
-        expect(useLayoutStore.getState().hasStartedLesson).toBe(true);
-
-        useLayoutStore.getState().clearActiveLessonStep();
-        expect(useLayoutStore.getState().activeLessonId).toBeNull();
-        expect(useLayoutStore.getState().activeLessonStepIndex).toBeNull();
-        expect(useLayoutStore.getState().hasStartedLesson).toBe(true);
-    });
-
-    it('dismisses the first-visit lesson cue without changing other layout state', () => {
-        const before = useLayoutStore.getState();
-
-        before.dismissLessonCue();
-
-        expect(useLayoutStore.getState()).toMatchObject({
-            lessonCueDismissed: true,
-            hasStartedLesson: false,
-            view: before.view,
-            audienceMode: before.audienceMode,
-            activeLessonId: null,
-            activeLessonStepIndex: null,
-        });
-    });
-
-    it('persists sticky lesson history while keeping active lesson fields transient', async () => {
-        useLayoutStore.getState().dismissLessonCue();
-        useLayoutStore.getState().setActiveLessonStep('lesson-xor-hidden-layers', 2);
-
-        const stored = JSON.parse(window.localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}');
-        expect(stored.version).toBe(0);
-        expect(stored.state?.lessonCueDismissed).toBe(true);
-        expect(stored.state?.hasStartedLesson).toBe(true);
-        expect(stored.state?.activeLessonId).toBeUndefined();
-        expect(stored.state?.activeLessonStepIndex).toBeUndefined();
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-        expect(freshStore.getState()).toMatchObject({
-            lessonCueDismissed: true,
-            hasStartedLesson: true,
-            activeLessonId: null,
-            activeLessonStepIndex: null,
-        });
-    });
-
-    it('sanitizes sticky lesson flags as actual booleans', async () => {
-        window.localStorage.setItem(
-            LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-                state: {
-                    lessonCueDismissed: 'true',
-                    hasStartedLesson: true,
-                },
-                version: 0,
-            }),
-        );
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-
-        expect(freshStore.getState().lessonCueDismissed).toBe(false);
-        expect(freshStore.getState().hasStartedLesson).toBe(true);
-    });
-
-    it('rehydrates state from localStorage with a fresh store instance', async () => {
-        window.localStorage.setItem(
-            LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-                state: {
-                    view: 'run',
-                    activeRecipeSection: 'features',
-                    activeEvidenceView: 'code',
-                    codeExportTab: 'numpy',
-                },
-                version: 0,
-            }),
-        );
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-
-        expect(freshStore.getState().view).toBe('run');
-        expect(freshStore.getState().activeRecipeSection).toBe('features');
-        expect(freshStore.getState().activeEvidenceView).toBe('code');
-        expect(freshStore.getState().phase).toBe('run');
-        expect(freshStore.getState().activeTabLeft).toBe('features');
-        expect(freshStore.getState().activeTabRight).toBe('code');
-        expect(freshStore.getState().codeExportTab).toBe('numpy');
-        expect(freshStore.getState().audienceMode).toBe('explore');
-        expect(freshStore.getState().advancedToolsOpen).toBe(true);
-    });
-
-    it('migrates old persisted phase and tab state while ignoring old layout', async () => {
-        window.localStorage.setItem(
-            LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-                state: {
-                    layout: 'split',
-                    phase: 'run',
-                    activeTabLeft: 'network',
-                    activeTabRight: 'confusion',
-                    codeExportTab: 'tfjs',
-                },
-                version: 0,
-            }),
-        );
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-
-        expect(freshStore.getState().view).toBe('run');
-        expect(freshStore.getState().activeRecipeSection).toBe('network');
-        expect(freshStore.getState().activeEvidenceView).toBe('confusion');
-        expect(freshStore.getState().layout).toBe('dock');
-        expect(freshStore.getState().codeExportTab).toBe('tfjs');
-        expect(freshStore.getState().audienceMode).toBe('explore');
-        expect(freshStore.getState().advancedToolsOpen).toBe(false);
-    });
-
-    it('uses each profile default when persisted disclosure state is missing', async () => {
-        window.localStorage.setItem(
-            LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-                state: {
-                    audienceMode: 'lab',
-                    activeRecipeSection: 'data',
-                    activeEvidenceView: 'boundary',
-                },
-                version: 0,
-            }),
-        );
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-
-        expect(freshStore.getState().audienceMode).toBe('lab');
-        expect(freshStore.getState().advancedToolsOpen).toBe(true);
-    });
-
-    it('preserves a valid explicit collapsed Lab state across hydration', async () => {
-        window.localStorage.setItem(
-            LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-                state: {
-                    audienceMode: 'lab',
-                    advancedToolsOpen: false,
-                    activeRecipeSection: 'hyperparams',
-                    activeEvidenceView: 'confusion',
-                },
-                version: 0,
-            }),
-        );
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-
-        expect(freshStore.getState().audienceMode).toBe('lab');
-        expect(freshStore.getState().advancedToolsOpen).toBe(false);
-        expect(freshStore.getState().activeRecipeSection).toBe('hyperparams');
-        expect(freshStore.getState().activeEvidenceView).toBe('confusion');
-    });
-
-    it('opens disclosure on hydration to preserve a hidden persisted target', async () => {
-        window.localStorage.setItem(
-            LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-                state: {
-                    audienceMode: 'beginner',
-                    advancedToolsOpen: false,
-                    activeRecipeSection: 'features',
-                    activeEvidenceView: 'inspection',
-                },
-                version: 0,
-            }),
-        );
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-
-        expect(freshStore.getState().audienceMode).toBe('beginner');
-        expect(freshStore.getState().advancedToolsOpen).toBe(true);
-        expect(freshStore.getState().activeRecipeSection).toBe('features');
-        expect(freshStore.getState().activeTabLeft).toBe('features');
-        expect(freshStore.getState().activeEvidenceView).toBe('inspection');
-        expect(freshStore.getState().activeTabRight).toBe('inspection');
-    });
-
-    it('sanitizes invalid persisted layout state on rehydrate', async () => {
-        window.localStorage.setItem(
-            LAYOUT_STORAGE_KEY,
-            JSON.stringify({
-                state: {
-                    view: 'debug',
-                    layout: 'wide-open',
-                    phase: 'debug',
-                    activeRecipeSection: 'missing',
-                    activeEvidenceView: 'also-missing',
-                    codeExportTab: 'also-missing',
-                    audienceMode: 'expert',
-                    advancedToolsOpen: 'yes',
-                },
-                version: 0,
-            }),
-        );
-
-        const freshStore = createLayoutStore();
-        await Promise.resolve(freshStore.persist.rehydrate());
-
-        expect(freshStore.getState().view).toBe('build');
-        expect(freshStore.getState().activeRecipeSection).toBe('data');
-        expect(freshStore.getState().activeEvidenceView).toBe('boundary');
-        expect(freshStore.getState().phase).toBe('build');
-        expect(freshStore.getState().activeTabLeft).toBe('data');
-        expect(freshStore.getState().activeTabRight).toBe('boundary');
-        expect(freshStore.getState().codeExportTab).toBe('pseudocode');
-        expect(freshStore.getState().audienceMode).toBe('explore');
-        expect(freshStore.getState().advancedToolsOpen).toBe(false);
+    it('ignores malformed legacy JSON and keeps fresh defaults', () => {
+        localStorage.setItem(LEGACY_LAYOUT_STORAGE_KEY,'{broken'); expect(createLayoutStore().getState().workspaceTab).toBe('network');
     });
 });
