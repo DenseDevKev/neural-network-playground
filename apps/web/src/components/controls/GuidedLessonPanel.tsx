@@ -209,13 +209,14 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     };
 
     const goToStep = (nextIndex: number) => onNavigate(() => {
-        if (!activeLesson) return;
+        if (!activeLesson || startInFlight.current) return;
         setActiveStepIndex(nextIndex);
         setActiveLessonStep(activeLesson.id, nextIndex);
         focusStep(activeLesson.steps[nextIndex]);
     });
 
     const finishLesson = () => onNavigate(() => {
+        if (startInFlight.current) return;
         setActiveLessonId(null);
         activationModel.current = null;
         setActiveStepIndex(null);
@@ -236,6 +237,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                 <button type="button" aria-label={isDrawerOpen ? 'Collapse guided lesson drawer' : 'Expand guided lesson drawer'} aria-expanded={isDrawerOpen} onClick={() => setIsDrawerOpen(!isDrawerOpen)}>{isDrawerOpen ? '−' : '+'}</button>
             </header>
             {isDrawerOpen && <>
+                {isStarting && <p role="status">Preparing lesson. Navigation resumes when preparation finishes.</p>}
                 {lessonError && <div role="alert">{lessonError}<button type="button" disabled={isStarting} onClick={() => onNavigate(() => { void startLesson(getLessonDefinition(lastStartLesson.current)!); })}>Retry lesson</button></div>}
                 {showLibrary ? <div className="lesson-library">
                     <div>
@@ -250,18 +252,18 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
                         <ol>{selectedLesson.steps.map((step) => <li key={step.id}><strong>{step.title}</strong><p>{step.body}</p></li>)}</ol>
                         <p id={lessonEffectsId} className="guided-lesson__consequence">{STATE_EFFECTS['lesson-start']}</p>
                         <button type="button" className="atelier-primary" aria-label="Start lesson and reset" aria-describedby={lessonEffectsId} disabled={isStarting} onClick={() => onNavigate(() => { void startLesson(); })}>{isStarting ? 'Starting…' : activeLesson ? 'Replace active lesson and reset' : 'Start lesson and reset'}</button>
-                        {activeLesson && <button type="button" onClick={() => goToStep(activeStepIndex!)}>Resume {activeLesson.title}</button>}
+                        {activeLesson && <button type="button" disabled={isStarting} onClick={() => goToStep(activeStepIndex!)}>Resume {activeLesson.title}</button>}
                     </section>
                 </div> : <div className="lesson-active">
-                    <div className="lesson-actions"><button type="button" onClick={() => onNavigate(() => useLayoutStore.getState().navigate('lessons'))}>All lessons</button><button type="button" onClick={finishLesson}>Exit lesson</button></div>
+                    <div className="lesson-actions"><button type="button" disabled={isStarting} onClick={() => onNavigate(() => { if (!startInFlight.current) useLayoutStore.getState().navigate('lessons'); })}>All lessons</button><button type="button" disabled={isStarting} onClick={finishLesson}>Exit lesson</button></div>
                     <p aria-live="polite">Step {activeStepIndex! + 1} of {activeLesson!.steps.length}</p>
                     <progress aria-label="Lesson progress" value={activeStepIndex! + 1} max={activeLesson!.steps.length} />
                     <h3>{activeStep!.title}</h3><p>{activeStep!.body}</p>
                     <h4>Try this</h4><p>{activeStep!.tryThis}</p>
                     {activeStep!.tab && <p className="lesson-note">Edit in Setup, then select Apply changes before leaving. Dataset seed changes the samples; Model seed changes initial weights.</p>}
                     {completionSatisfied && <p role="status">Done</p>}
-                    <button type="button" onClick={() => goToStep(activeStepIndex!)}>Show me →</button>
-                    <div className="lesson-actions"><button type="button" disabled={activeStepIndex === 0} onClick={() => goToStep(activeStepIndex! - 1)}>Previous</button>{activeStepIndex === activeLesson!.steps.length - 1 ? <button type="button" className="atelier-primary" aria-label="Finish guided lesson" onClick={finishLesson}>Finish</button> : <button type="button" className="atelier-primary" aria-label="Next lesson step" onClick={() => goToStep(activeStepIndex! + 1)}>Continue</button>}</div>
+                    <button type="button" disabled={isStarting} onClick={() => goToStep(activeStepIndex!)}>Show me →</button>
+                    <div className="lesson-actions"><button type="button" disabled={isStarting || activeStepIndex === 0} onClick={() => goToStep(activeStepIndex! - 1)}>Previous</button>{activeStepIndex === activeLesson!.steps.length - 1 ? <button type="button" className="atelier-primary" aria-label="Finish guided lesson" disabled={isStarting} onClick={finishLesson}>Finish</button> : <button type="button" className="atelier-primary" aria-label="Next lesson step" disabled={isStarting} onClick={() => goToStep(activeStepIndex! + 1)}>Continue</button>}</div>
                     <details><summary>Restart lesson</summary><p id={lessonEffectsId}>{STATE_EFFECTS['lesson-start']}</p><button type="button" disabled={isStarting} aria-describedby={lessonEffectsId} onClick={() => onNavigate(() => { void startLesson(activeLesson!); })}>Restart lesson and reset</button></details>
                 </div>}
             </>}

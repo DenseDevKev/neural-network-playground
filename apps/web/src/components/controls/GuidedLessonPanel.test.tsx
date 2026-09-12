@@ -956,4 +956,52 @@ describe('GuidedLessonPanel', () => {
         expect(screen.getByText('Done')).toBeVisible();
     });
 
+    it('locks Exit and step transitions while a delayed restart prepares, then resets accurate progress once', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        render(<GuidedLessonPanel onReset={onReset} />);
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await user.click(await screen.findByRole('button', { name: 'Next lesson step' }));
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        act(() => usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe }));
+        await user.click(screen.getByText('Restart lesson', { selector: 'summary' }));
+        await user.click(screen.getByRole('button', { name: 'Restart lesson and reset' }));
+        for (const name of ['Exit lesson', 'Previous', 'Next lesson step', 'All lessons', 'Show me →']) {
+            const button = screen.getByRole('button', { name });
+            expect(button).toBeDisabled();
+            await user.click(button);
+        }
+        expect(screen.getByRole('status')).toHaveTextContent('Preparing lesson');
+        expect(useLayoutStore.getState()).toMatchObject({ activeLessonStepIndex: 1, setupTab: 'network' });
+        expect(onReset).toHaveBeenCalledTimes(1);
+        await act(async () => { deferred.release(); await deferred.wait(); });
+        expect(onReset).toHaveBeenCalledTimes(2);
+        expect(screen.getByText('Step 1 of 4')).toBeVisible();
+        expect(useLayoutStore.getState()).toMatchObject({ activeLessonStepIndex: 0, setupTab: 'dataset' });
+        await user.click(screen.getByRole('button', { name: 'Exit lesson' }));
+        expect(useLayoutStore.getState()).toMatchObject({ activeLessonId: null, destination: 'lessons' });
+    });
+
+    it('locks Resume while delayed replacement prepares and activates only the selected replacement', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        render(<GuidedLessonPanel onReset={onReset} />);
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await user.click(await screen.findByRole('button', { name: 'Next lesson step' }));
+        await user.click(screen.getByRole('button', { name: 'All lessons' }));
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), 'lesson-circle-hidden-layer');
+        const deferred = deferApplyCompletion(originalApplyRecipe);
+        act(() => usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe }));
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        const resume = screen.getByRole('button', { name: 'Resume XOR Needs Hidden Layers' });
+        expect(resume).toBeDisabled();
+        await user.click(resume);
+        expect(useLayoutStore.getState()).toMatchObject({ destination: 'lessons', activeLessonId: 'lesson-xor-hidden-layers', activeLessonStepIndex: 1 });
+        expect(onReset).toHaveBeenCalledTimes(1);
+        await act(async () => { deferred.release(); await deferred.wait(); });
+        expect(onReset).toHaveBeenCalledTimes(2);
+        expect(useLayoutStore.getState()).toMatchObject({ destination: 'playground', activeLessonId: 'lesson-circle-hidden-layer', activeLessonStepIndex: 0 });
+        expect(currentPreparedForTest()?.identities.recipeFingerprint).toBe(getLessonRecipe(getLessonDefinition('lesson-circle-hidden-layer')!).prepared.identities.recipeFingerprint);
+    });
+
 });

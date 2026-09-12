@@ -11,3 +11,9 @@ Scoped semantic CSS implements a split library/detail layout and desktop active 
 Verification: 43 focused registry/panel tests pass, including 70 catalog-source to canonical-lesson starts, exact preparation and stale request assertions, keyboard controls, error/retry availability, selection-only browsing, dirty guard deferral, and pre-reset generation evidence rejection. Web production and test TypeScript checks pass. Owned ESLint passes. No full-suite rerun. Reference images 10 and 11 inspected; browser matrix and aggregate bundle gates remain parent-owned.
 
 Integration concerns: parent must position .atelier-lesson-host beside the active workspace and pass onNavigate. Active panel alone cannot enforce dirty draft behavior without that callback. This report does not claim visual browser validation or aggregate bundle acceptance.
+
+## Fix round 1 — pending preparation lifecycle
+
+Read task-6-review.md and addressed the P2 restart/exit race using its permitted consistent-disable approach. While lesson preparation is pending, Exit, Finish, Previous, Continue, Show me, All lessons and Resume are disabled. Deferred step/exit/navigation guard callbacks also check the synchronous in-flight reference, so an already queued callback cannot alter lesson progress during preparation. A status message explains why navigation is temporarily unavailable. The existing preparation ownership and single reset after success remain unchanged.
+
+Added delayed active-restart coverage proving Exit and transitions cannot change state before completion, progress resets exactly once after successful preparation, and Exit then clears active state. Added delayed replacement coverage proving Resume cannot override the selected replacement. Focused panel/registry tests now pass 45/45; owned ESLint passes. No broad suite or additional scope changes.
