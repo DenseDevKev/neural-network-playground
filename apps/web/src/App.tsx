@@ -8,6 +8,7 @@ import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import { useThemeEffect } from './store/theme.ts';
 import { useSaveCurrentRun } from './hooks/useSaveCurrentRun.ts';
 import { useTraining } from './hooks/useTraining.ts';
+import { useAtelierViewport } from './hooks/useAtelierViewport.ts';
 import { useRecipeDraft } from './hooks/useRecipeDraft.ts';
 import { useExperimentMemoryStorageSync } from './hooks/useExperimentMemoryStorageSync.ts';
 import { useNetworkSelectionController } from './components/visualization/useNetworkSelectionController.ts';
@@ -28,14 +29,15 @@ import type { LessonTarget } from './lessons/lessonRegistry.ts';
 import type { Destination, WorkspaceTab, SetupTab, ResultsTab, UtilitySurface } from './productShell/atelierTypes.ts';
 import { resolveTrainingShortcut, TRAINING_SHORTCUTS } from './shortcuts/trainingShortcuts.ts';
 
+const ConceptLibrary = lazy(() => import('./components/EducationContent.ts').then((module) => ({ default: module.ConceptLibrary })));
 const GuidedLessonPanel = lazy(() => import('./components/EducationContent.ts').then((module) => ({ default: module.GuidedLessonPanel })));
 const TrainingExplanationPanel = lazy(() => import('./components/EducationContent.ts').then((module) => ({ default: module.TrainingExplanationPanel })));
 const RunHistoryPanel = lazy(() => import('./components/WorkspaceUtilities.ts').then((module) => ({ default: module.RunHistoryPanel })));
 const ConfigPanel = lazy(() => import('./components/WorkspaceUtilities.ts').then((module) => ({ default: module.ConfigPanel })));
 const CodeExportPanel = lazy(() => import('./components/controls/CodeExportPanel.tsx').then((module) => ({ default: module.CodeExportPanel })));
 const InspectionPanel = lazy(() => import('./components/controls/InspectionPanel.tsx').then((module) => ({ default: module.InspectionPanel })));
-const LossChart = lazy(() => import('./components/visualization/LossChart.tsx').then((module) => ({ default: module.LossChart })));
-const ConfusionMatrix = lazy(() => import('./components/visualization/ConfusionMatrix.tsx').then((module) => ({ default: module.ConfusionMatrix })));
+const LossChart = lazy(() => import('./components/ResultsContent.ts').then((module) => ({ default: module.LossChart })));
+const ConfusionMatrix = lazy(() => import('./components/ResultsContent.ts').then((module) => ({ default: module.ConfusionMatrix })));
 const WORKSPACE_TABS: { id: WorkspaceTab; label: string }[] = [{ id:'setup',label:'Setup' },{ id:'network',label:'Network' },{ id:'results',label:'Results' },{ id:'inspect',label:'Inspect' }];
 const RESULTS_TABS: { id: ResultsTab; label: string }[] = [{ id:'boundary',label:'Prediction' },{ id:'learning',label:'Learning progress' },{ id:'errors',label:'Errors & confusion' }];
 const loading = <p role="status">Loading workspace…</p>;
@@ -59,6 +61,8 @@ export default function App() {
 }
 
 function AtelierShell() {
+    const viewport = useAtelierViewport();
+    const [networkRegion, setNetworkRegion] = useState<'data' | 'network' | 'prediction'>('network');
     const training = useTraining();
     const saveController = useSaveCurrentRun();
     const draft = useRecipeDraft();
@@ -130,15 +134,15 @@ function AtelierShell() {
         const inspect = playground && workspaceTab === 'inspect';
         const results = playground && workspaceTab === 'results';
         const next = { ...DEFAULT_DEMAND,
-            needDecisionBoundary: network || (results && effectiveResultsTab === 'boundary'),
-            needNeuronGrids: network,
+            needDecisionBoundary: (network && (!viewport.compact || networkRegion === 'prediction')) || (results && effectiveResultsTab === 'boundary'),
+            needNeuronGrids: network && (!viewport.compact || networkRegion === 'network'),
             needLayerStats: inspect,
             needActivationHistograms: inspect && inspectTab === 'activations',
             needConfusionMatrix: results && effectiveResultsTab === 'errors',
         };
         const store = usePlaygroundStore.getState();
         if (Object.entries(next).some(([key,value]) => store.demand[key as keyof typeof next] !== value)) store.setDemand(next);
-    }, [destination,workspaceTab,effectiveResultsTab,inspectTab]);
+    }, [destination,workspaceTab,effectiveResultsTab,inspectTab,viewport.compact,networkRegion]);
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -163,25 +167,27 @@ function AtelierShell() {
 
     const dataset = prepared?.document.recipe.task.dataset ?? 'Experiment';
     const heading = destination === 'saved-runs' ? 'Saved runs' : destination === 'lessons' ? 'Learn by experimenting' : `${dataset.charAt(0).toUpperCase()}${dataset.slice(1)} experiment`;
-    const description = destination === 'saved-runs' ? 'Keep the evidence. Compare what changed.' : destination === 'lessons' ? 'Small experiments. Ideas that become visible.' : 'Shape a network. Watch it learn. Understand what changes.';
-    return <div className="atelier" ref={backgroundRef} data-lesson-highlight={lessonHighlight ?? undefined}>
+    const description = destination === 'saved-runs' ? 'Keep the evidence. Compare what changed.' : destination === 'lessons' ? 'Small experiments. Ideas that become visible.' : 'Shape a network. Watch it learn.';
+    return <div className="atelier" data-workspace={workspaceTab} data-destination={destination} data-short-viewport={viewport.short || undefined} ref={backgroundRef} data-lesson-highlight={lessonHighlight ?? undefined}>
         <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to main content</a>
         <AccessibilityAnnouncer status={status} pauseReason={pauseReason} workerError={workerError} pendingConfigSource={pendingConfigSource} configError={configError} configErrorSource={configErrorSource} evidenceGenerationId={evidenceGenerationId} trainedRecipe={trainedRecipe} trainedRecipeSource={trainedRecipeSource} />
         <AtelierHeader destination={destination} onNavigate={(next) => navigate(next)} onUtility={openUtility} />
         <main data-guided={activeLessonId && destination === 'playground' ? 'true' : undefined} id="main-content" tabIndex={-1} className="atelier-main" aria-label="Neural network playground workspace">
             <div className="atelier-heading"><div><h1>{heading}</h1><p>{description}</p></div>{destination === 'playground' && <div className="atelier-heading-actions"><button type="button" onClick={() => openUtility('exports')}>Share setup</button><button type="button" onClick={() => navigate('saved-runs')}>Save run</button></div>}</div>
             {configError && <div className="atelier-notice" role="alert"><p>{configError}</p><button type="button" onClick={() => useTrainingStore.getState().retryConfigSync()}>Retry configuration</button></div>}
+            <AtelierTransport training={training} onCheckpoints={() => openUtility('checkpoints')} />
             {destination === 'playground' && <>
                 <Tabs panelPrefix="workspace" label="Experiment workspace" items={WORKSPACE_TABS} value={workspaceTab} onChange={(tab) => navigate('playground',tab)} />
-                {recordsReady && !hasRecords && !cueDismissed && !hasStartedLesson && !activeLessonId && <aside className="atelier-notice" aria-label="Getting started"><p>New to neural networks? Start with one neuron and build your intuition.</p><button type="button" onClick={() => navigate('lessons')}>Explore lessons</button><button type="button" aria-label="Dismiss lesson suggestion" onClick={() => useLayoutStore.getState().dismissLessonCue()}>Not now</button></aside>}
+                {workspaceTab === 'network' && recordsReady && !hasRecords && !cueDismissed && !hasStartedLesson && !activeLessonId && <aside className="atelier-notice atelier-invitation" aria-label="Getting started"><p>Start small. Follow a guided experiment.</p><button type="button" onClick={() => navigate('lessons')}>Explore lessons</button><button type="button" aria-label="Dismiss lesson suggestion" onClick={() => useLayoutStore.getState().dismissLessonCue()}>Not now</button></aside>}
                 <div className="atelier-tab-content" role="tabpanel" id={`workspace-${workspaceTab}`} aria-labelledby={`workspace-tab-${workspaceTab}`}>
                     <ErrorBoundary key={workspaceTab} title="Workspace unavailable" description="This view could not render. Your experiment remains available in the other views.">
                     {workspaceTab === 'setup' && <SetupEditor controller={draft} tab={setupTab} onTabChange={(tab) => useLayoutStore.getState().setSetupTab(tab)} />}
-                    {workspaceTab === 'network' && <><AtelierNetwork boundary={boundary} selection={selection} onSetup={openSetup} onResults={() => { useLayoutStore.getState().setResultsTab('boundary'); navigate('playground','results'); }} /><EvidenceMetrics /></>}
+                    {workspaceTab === 'network' && <><AtelierNetwork compact={viewport.compact} region={networkRegion} onRegionChange={setNetworkRegion} boundary={boundary} selection={selection} onSetup={openSetup} onResults={() => { useLayoutStore.getState().setResultsTab('boundary'); navigate('playground','results'); }} /><EvidenceMetrics /></>}
                     {workspaceTab === 'results' && <section className="atelier-evidence">
                         <Tabs label="Results views" items={regression ? RESULTS_TABS.filter((tab) => tab.id !== 'errors') : RESULTS_TABS} value={effectiveResultsTab} onChange={(tab) => useLayoutStore.getState().setResultsTab(tab)} />
                         <Suspense fallback={loading}>
                             {effectiveResultsTab === 'boundary' && <div className="atelier-results-boundary"><DecisionBoundaryCanvas model={boundary.model} /><BoundaryEvidencePanel controller={boundary} /></div>}
+                            {effectiveResultsTab === 'boundary' && <EvidenceMetrics />}
                             {effectiveResultsTab === 'learning' && <><LossChart /><EvidenceMetrics /><TrainingExplanationPanel /><CurrentRunCard /></>}
                             {effectiveResultsTab === 'errors' && <ConfusionMatrix />}
                         </Suspense>
@@ -192,14 +198,13 @@ function AtelierShell() {
             </>}
             {savedVisited && <div hidden={destination !== 'saved-runs'}><Suspense fallback={loading}><RunHistoryPanel saveController={saveController} /></Suspense></div>}
             {lessonsVisited && <div className="atelier-lesson-host" hidden={destination !== 'lessons' && !activeLessonId}><Suspense fallback={loading}><GuidedLessonPanel onNavigate={requestGuardedNavigation} onReset={stableReset} onHighlightChange={setLessonHighlight} /></Suspense></div>}
-            <AtelierTransport training={training} onCheckpoints={() => openUtility('checkpoints')} />
         </main>
         <footer className="atelier-footer"><span>NN·FORGE · Experiments stay in your browser</span><span>Data → network → prediction</span></footer>
         {!workerError && !pendingNavigation && utility && <Dialog title={utility === 'exports' ? 'Export / import' : utility === 'checkpoints' ? 'Session checkpoints' : utility === 'preferences' ? 'Guidance' : 'Shortcuts & help'} onClose={() => setUtility(null)}>
             {utility === 'checkpoints' && <CheckpointPanel training={training} />}
             {utility === 'exports' && <><Tabs<'setup' | 'code'> label="Export type" items={[{id:'setup',label:'Setup & sharing'},{id:'code',label:'Code'}]} value={exportTab} onChange={setExportTab} /><Suspense fallback={loading}>{exportTab === 'setup' ? <ConfigPanel onReset={stableReset} /> : <CodeExportPanel />}</Suspense></>}
             {utility === 'preferences' && <><p>Choose how much explanation appears alongside the controls. Every feature remains available.</p><label htmlFor="atelier-guidance">Explanation density</label><select id="atelier-guidance" value={audienceMode} onChange={(event) => useLayoutStore.getState().setAudienceMode(event.target.value as 'beginner'|'explore'|'lab')}><option value="beginner">More</option><option value="explore">Standard</option><option value="lab">Compact</option></select></>}
-            {utility === 'help' && <div className="atelier-help"><p>Build a dataset and network in Setup, apply the recipe, then train and inspect the results. Training continues when you change views.</p><dl>{TRAINING_SHORTCUTS.map((shortcut) => <div key={shortcut.code}><dt><kbd>{shortcut.label}</kbd></dt><dd>{shortcut.description}</dd></div>)}</dl><p>Shortcuts are inactive while editing fields or using a menu or dialog. Step is available while paused.</p><p>Saved runs hold evaluated evidence. Applying a saved recipe starts a fresh model; session checkpoints restore parameters and optimizer state.</p></div>}
+            {utility === 'help' && <div className="atelier-help"><p>Build a dataset and network in Setup, apply the recipe, then train and inspect the results. Training continues when you change views.</p><dl>{TRAINING_SHORTCUTS.map((shortcut) => <div key={shortcut.code}><dt><kbd>{shortcut.label}</kbd></dt><dd>{shortcut.description}</dd></div>)}</dl><p>Shortcuts are inactive while editing fields or using a menu or dialog. Step is available while paused.</p><p>Saved runs hold evaluated evidence. Applying a saved recipe starts a fresh model; session checkpoints restore parameters and optimizer state.</p><Suspense fallback={loading}><ConceptLibrary /></Suspense></div>}
         </Dialog>}
         {!workerError && pendingNavigation && <Dialog title="Apply your setup changes?" onClose={() => { if (!draft.busy) setPendingNavigation(null); }} alert>
             <p>You have one shared draft across Dataset, Network, and Training. Apply it before leaving, discard it, or stay to keep editing.</p>

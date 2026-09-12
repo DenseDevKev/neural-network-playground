@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, type ReactNode, type KeyboardEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalFocusContainment } from '../../hooks/useModalFocusContainment.ts';
-import { X, Play, Pause, StepForward, RotateCcw, Settings2, Sun, Moon, Monitor, Ellipsis, ArrowUpRight, ChevronRight, Download, Upload, Check, CircleHelp, Layers, Plus, Minus, History, BookOpen, type LucideIcon } from 'lucide-react';
+import { X, Play, Pause, StepForward, RotateCcw, Settings2, Sun, Moon, Monitor, Ellipsis, ArrowUpRight, ChevronRight, History, BookOpen, type LucideIcon } from 'lucide-react';
 
-const icons = { close: X, play: Play, pause: Pause, step: StepForward, reset: RotateCcw, settings: Settings2, sun: Sun, moon: Moon, system: Monitor, more: Ellipsis, expand: ArrowUpRight, next: ChevronRight, download: Download, upload: Upload, check: Check, help: CircleHelp, layers: Layers, plus: Plus, minus: Minus, history: History, book: BookOpen } satisfies Record<string, LucideIcon>;
+const icons = { close: X, play: Play, pause: Pause, step: StepForward, reset: RotateCcw, settings: Settings2, sun: Sun, moon: Moon, system: Monitor, more: Ellipsis, expand: ArrowUpRight, next: ChevronRight, history: History, book: BookOpen } satisfies Record<string, LucideIcon>;
 export function Icon({ name, size = 18 }: { name: keyof typeof icons; size?: number }) { const Component = icons[name]; return <Component size={size} strokeWidth={1.6} aria-hidden="true" focusable="false" />; }
 
 export function Tabs<T extends string>({ label, items, value, onChange, panelPrefix }: { label: string; items: readonly { id: T; label: string }[]; value: T; onChange(value: T): void; panelPrefix?: string }) {

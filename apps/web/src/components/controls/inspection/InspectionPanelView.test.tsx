@@ -110,6 +110,16 @@ function commands(): InspectionPanelCommands {
 }
 
 describe('InspectionPanelView', () => {
+    it('keeps every multiclass output and signed layer value in the forward flow', () => {
+        const model = displayModel();
+        const trace = { ...model.trace, result: { ...model.trace.result!, output: '0.1000, 0.2000, 0.7000', layers: [{key: 0, label: 'Layer 1', activations: '-0.400, 0.000, 0.900'}] } };
+        render(<InspectionPanelView model={{...model, trace}} commands={commands()} guidanceLevel="standard" tab="trace" onTabChange={vi.fn()} />);
+        const flow = screen.getByLabelText('Forward activation flow');
+        for (const value of ['0.1000', '0.2000', '0.7000', '-0.400', '0.000', '0.900']) expect(flow).toHaveTextContent(value);
+        expect(flow.querySelector('[data-sign="negative"]')).toHaveTextContent('-0.400');
+        expect(flow.querySelector('[data-sign="zero"]')).toHaveTextContent('0.000');
+    });
+
     it('keeps activation and gradient provenance independently visible in the active tab panel', () => {
         render(<InspectionPanelView model={displayModel()} commands={commands()} guidanceLevel="standard" tab="activations" onTabChange={vi.fn()} />);
         const panel = screen.getByRole('tabpanel', { name: 'Activations' });

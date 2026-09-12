@@ -1,6 +1,6 @@
 import { useId, useMemo } from 'react';
 import { ALL_FEATURES, ACTIVATION_LABELS, type DatasetId } from '@nn-playground/engine';
-import { PREPARED_PRESETS } from '@nn-playground/shared';
+import { PREPARED_PRESETS, MAX_NEURONS_PER_LAYER } from '@nn-playground/shared';
 import type { RecipeDraftController, SetupTab } from '../../../hooks/useRecipeDraft.ts';
 import { deriveDatasetPreviewModel } from '../../controls/datasetPreviewModel.ts';
 import { DatasetPreviewCanvas } from '../../controls/DatasetPreviewCanvas.tsx';
@@ -140,19 +140,19 @@ export function SetupEditor({ controller: c, tab, onTabChange }: { controller: R
             </div>}
             {tab === 'network' && <>
                 <h2>Shape the network</h2>
-                <div className="atelier-network-draft" aria-label="Draft architecture">
+                <div className="atelier-network-draft" role="group" tabIndex={0} aria-label="Draft architecture">
                     <div>
                         <h3>Input</h3>
                         <p>
-                            {r.inputs.featureIds.length} features</p>
+                            {r.inputs.featureIds.length} features</p><div className="atelier-draft-inputs">{r.inputs.featureIds.map((id) => <span key={id}>{ALL_FEATURES.find((feature) => feature.id === id)?.label ?? id}</span>)}</div>
                     </div>
                     {r.model.hiddenLayers.map((width, i) => <section key={i}>
                         <h3>Hidden {String(i + 1).padStart(2, '0')}
                         </h3>
                         <div className="atelier-neuron-symbols" aria-hidden="true">
-                            {Array.from({ length: Number.isFinite(width) ? Math.max(0, Math.min(16, width)) : 0 }, (_, j) => <span key={j} />)}
+                            {Array.from({ length: Number.isFinite(width) ? Math.max(0, Math.min(16, width)) : 0 }, (_, j) => <span key={j}>{j + 1}</span>)}
                         </div>
-                        {number(`Layer ${i + 1} neurons`, `model.hiddenLayers.${i}`)}
+                        <div className="atelier-neuron-stepper"><button type="button" aria-label={`Decrease layer ${i + 1} neurons`} disabled={!Number.isInteger(width) || width <= 1} onClick={() => c.commands.number(`model.hiddenLayers.${i}`, String(width - 1))}>−</button>{number(`Layer ${i + 1} neurons`, `model.hiddenLayers.${i}`)}<button type="button" aria-label={`Increase layer ${i + 1} neurons`} disabled={!Number.isInteger(width) || width >= MAX_NEURONS_PER_LAYER} onClick={() => c.commands.number(`model.hiddenLayers.${i}`, String(width + 1))}>+</button></div>
                         <button type="button" onClick={() => c.commands.set('model.hiddenLayers', r.model.hiddenLayers.filter((_, j) => i !== j))}>Remove layer {i + 1}
                         </button>
                     </section>)}

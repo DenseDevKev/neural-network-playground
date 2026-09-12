@@ -127,3 +127,19 @@ it('exposes optimizer, schedule, penalty, clipping and regression loss parameter
     expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
     expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
 });
+
+it('steps neuron counts within the supported limits without applying the draft', () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByRole('button', { name: 'Inputs & layers' }));
+    if (!screen.queryByLabelText('Layer 1 neurons')) fireEvent.click(screen.getByRole('button', { name: '+ Add hidden layer' }));
+    const field = screen.getByLabelText('Layer 1 neurons');
+    fireEvent.change(field, { target: { value: '1' } });
+    expect(screen.getByRole('button', { name: 'Decrease layer 1 neurons' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Increase layer 1 neurons' }));
+    expect(field).toHaveValue('2');
+    fireEvent.change(field, { target: { value: '16' } });
+    expect(screen.getByRole('button', { name: 'Increase layer 1 neurons' })).toBeDisabled();
+    expect(usePlaygroundStore.getState().access).toMatchObject({ prepared: { document: DEFAULT_EXPERIMENT_DOCUMENT } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Apply changes' })).toBeDisabled();
+});

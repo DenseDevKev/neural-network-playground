@@ -1,9 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Destination, UtilitySurface } from '../../productShell/atelierTypes.ts';
 import { useThemeStore } from '../../store/theme.ts';
 import { Icon } from './ui.tsx';
 
 export function AtelierHeader({ destination, onNavigate, onUtility }: { destination: Destination; onNavigate(value: Destination): void; onUtility(value: UtilitySurface): void }) {
+    const header = useRef<HTMLElement>(null);
+    useLayoutEffect(() => {
+        const element = header.current;
+        if (!element) return;
+        const sync = () => document.documentElement.style.setProperty('--atelier-header-height', `${element.offsetHeight}px`);
+        sync();
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(sync);
+        observer?.observe(element);
+        return () => { observer?.disconnect(); document.documentElement.style.removeProperty('--atelier-header-height'); };
+    }, []);
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const trigger = useRef<HTMLButtonElement>(null);
@@ -16,7 +26,7 @@ export function AtelierHeader({ destination, onNavigate, onUtility }: { destinat
         document.addEventListener('pointerdown', outside);
         return () => document.removeEventListener('pointerdown', outside);
     }, [open]);
-    return <header className="atelier-header">
+    return <header ref={header} className="atelier-header">
         <button className="atelier-wordmark" type="button" onClick={() => onNavigate('playground')} aria-label="NN FORGE playground">NN·FORGE</button>
         <nav aria-label="Main navigation"><button type="button" aria-current={destination === 'playground' ? 'page' : undefined} onClick={() => onNavigate('playground')}>Playground</button><button type="button" aria-current={destination === 'saved-runs' ? 'page' : undefined} onClick={() => onNavigate('saved-runs')}>Saved runs</button></nav>
         <div className="atelier-header-end">

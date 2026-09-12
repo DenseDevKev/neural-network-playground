@@ -1,4 +1,4 @@
-.atelier-inspection { color: var(--text-primary); display: flex; flex-direction: column; gap: 28px; padding: clamp(16px, 3vw, 44px); min-width: 0; }
+.atelier-inspection { color: var(--text-primary); display: flex; flex-direction: column; gap: 20px; padding: 0; min-width: 0; }
 .atelier-inspection .inspection__intro h1 { font-size: clamp(26px, 3vw, 40px); line-height: 1.15; font-weight: 500; margin: 0 0 12px; letter-spacing: -.035em; }
 .atelier-inspection .inspection__intro p { color: var(--text-secondary); font-size: 17px; margin: 0; }
 .atelier-inspection .inspection__layer { padding: 22px 0; border: 0; border-bottom: 1px solid var(--border-color); background: transparent; border-radius: 0; min-width: 0; }
@@ -23,7 +23,7 @@
 .atelier-inspection .inspection__loss-cell { background: var(--color-primary); }
 .atelier-inspection .inspection__bar-track { height: 5px; flex: 1; min-width: 40px; background: var(--bg-secondary); }
 .atelier-inspection .inspection__bar-fill { height: 100%; background: var(--color-primary); }
-.atelier-inspection .inspection__activation-values { padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-color); font-family: var(--font-mono); font-size: 14px; width: 100%; overflow-wrap: anywhere; line-height: 1.8; }
+
 .atelier-inspection .inspection__sample { font-size: 17px; line-height: 1.8; overflow-wrap: anywhere; }
 .atelier-inspection .inspection__backprop-list { list-style: none; padding: 0; }
 .atelier-inspection .inspection__backprop-item { border-bottom: 1px solid var(--border-color); padding: 16px 0; }
@@ -31,3 +31,18 @@
 .atelier-inspection .inspection__backprop-note { font-size: 13px; color: var(--text-secondary); line-height: 1.65; }
 .atelier-inspection .inspection__footer { border-top: 1px solid var(--border-color); padding-top: 22px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
 @media (max-width: 760px) { .atelier-inspection .inspection__gradient-grid { grid-template-columns: 1fr; gap: 20px; } .atelier-inspection { gap: 20px; } }
+
+.atelier-inspection .inspection__trace-flow {display:flex;gap:32px;overflow:auto;padding:8px 0 20px;align-items:start}
+.atelier-inspection .inspection__trace-stage {min-width:144px;max-width:240px;flex-shrink:0;position:relative}
+.atelier-inspection .inspection__trace-stage:not(:last-child)::after {content:'→';position:absolute;right:-26px;top:64px;color:var(--text-secondary)}
+.atelier-inspection .inspection__trace-stage h3 {font-size:14px;font-weight:500;margin-bottom:16px}
+.atelier-inspection .inspection__activation-values {display:grid;grid-template-columns:repeat(2,minmax(64px,1fr));gap:8px;padding:0;border:0;background:none}
+.atelier-inspection .inspection__activation-values span {display:grid;place-items:center;min-height:64px;padding:8px;border:1px solid var(--border-color);background:var(--bg-secondary);font-variant-numeric:tabular-nums}
+.atelier-inspection .inspection__backprop-metrics {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.atelier-inspection .inspection__backprop-metrics>span {display:grid;gap:8px}
+.atelier-inspection .inspection__backprop-metrics strong {font:20px var(--font-mono);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.atelier-inspection .inspection__backprop-metrics>span>span {color:var(--text-secondary);font-size:12px}
+.atelier-inspection .inspection__backprop-heading {justify-content:space-between;border-left:3px solid var(--color-negative);padding-left:12px}
+
+.atelier-inspection .inspection__activation-values [data-sign=positive]{border-color:var(--color-positive);background:color-mix(in srgb,var(--color-positive) 12%,var(--bg-secondary))}.atelier-inspection .inspection__activation-values [data-sign=negative]{border-color:var(--color-negative);background:color-mix(in srgb,var(--color-negative) 12%,var(--bg-secondary))}
+.atelier-inspection .inspection__probe-legend{display:flex;gap:12px;align-items:center;font-size:12px;color:var(--text-secondary);max-width:420px}.atelier-inspection .inspection__probe-legend i {height:8px;flex:1;background:linear-gradient(to right,color-mix(in srgb,var(--color-primary) 28%,var(--bg-secondary)),var(--color-primary))}

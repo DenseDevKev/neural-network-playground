@@ -197,19 +197,9 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
     return (
         <div className="run-history-panel saved-runs">
             <div ref={listRef} hidden={comparing && selectedComparisonRecords.length === 2}>
-            <h2>Saved runs</h2>
+            <h2 className="saved-sr-only">Saved runs</h2>
             <p>A notebook of your experiments, stored in this browser. {records.length} / 20 saved runs.</p>
-            <div className="inspection__empty" role="note" style={{ marginBottom: 8 }}>
-                Saved runs contain a recipe plus worker-authored evaluation evidence. They do not
-                contain trained parameters.
-            </div>
-            <div
-                id={savedRecipeEffectsId}
-                className="inspection__empty"
-                style={{ marginBottom: 8 }}
-            >
-                {STATE_EFFECTS['saved-recipe-apply']}
-            </div>
+            <p id={savedRecipeEffectsId}>Saved evidence includes a recipe and full evaluation, without trained parameters. Applying a recipe starts a fresh model.</p>
             {(persistenceError || pendingSave) && (
                 <div
                     className="inspection__layer"

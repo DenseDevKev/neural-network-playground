@@ -20,7 +20,7 @@ export const BoundaryEvidencePanel = memo(function BoundaryEvidencePanel({ contr
                 {MODES.filter(([mode]) => taskKind !== 'regression' || mode === 'none' || mode === 'split').map(([mode, label]) => <button key={mode} type="button" aria-pressed={overlayMode === mode} onClick={() => commands.setOverlayMode(mode)}>{label}</button>)}
             </div>
             <p className="decision-overlay-note" aria-live="polite">{taskKind === 'regression' ? 'Continuous predictions and numerical target values. Test points use outlined markers.' : taskKind === 'multiclass-classification' && overlayMode === 'uncertainty' ? 'Winning-class confidence across all three classes; lower values indicate ambiguous regions.' : taskKind === 'multiclass-classification' && overlayMode === 'none' ? discretize ? 'Output mode shows flat winning-class regions for Class 0, Class 1, and Class 2.' : 'Output mode shows the winning class across all three classes, with color strength indicating winning-class confidence.' : overlayCopy.description}</p>
-            <p>{model.kind === 'empty' || model.kind === 'unavailable' ? model.description : model.accessibleDescription}</p>
+            {(model.kind === 'empty' || model.kind === 'unavailable') ? <p>{model.description}</p> : model.accessibleDescription !== overlayCopy.description && <p>{model.accessibleDescription}</p>}
         </div>
     </section>;
 });

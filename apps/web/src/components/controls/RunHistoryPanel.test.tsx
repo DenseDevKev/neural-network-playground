@@ -21,7 +21,6 @@ import {
 } from '../../store/experimentMemoryStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { currentPreparedForTest } from '../../test/playgroundStoreTestUtils.ts';
-import { STATE_EFFECTS } from '../../copy/stateEffects.ts';
 
 const workerApi = vi.hoisted(() => ({
     captureRunArtifact: vi.fn(),
@@ -379,7 +378,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
             );
 
             const effectsNote = within(panel).getByText(
-                STATE_EFFECTS['saved-recipe-apply'],
+                'Saved evidence includes a recipe and full evaluation, without trained parameters. Applying a recipe starts a fresh model.',
                 { exact: true },
             );
             expect(effectsNote).toBeVisible();
@@ -389,7 +388,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
                 name: 'Apply saved recipe',
             });
             const applyIds = applyButtons.map((button) => {
-                expect(button).toHaveAccessibleDescription(STATE_EFFECTS['saved-recipe-apply']);
+                expect(button).toHaveAccessibleDescription('Saved evidence includes a recipe and full evaluation, without trained parameters. Applying a recipe starts a fresh model.');
                 const ids = (button.getAttribute('aria-describedby') ?? '')
                     .split(/\s+/u)
                     .filter(Boolean);
@@ -608,10 +607,13 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         expect(screen.getByRole('checkbox', { name: 'Compare Run 0' })).toBeDisabled();
         await userEvent.click(screen.getByRole('button', { name: 'Compare selected' }));
         expect(screen.getByText('Stored learning history')).toBeVisible();
-        expect(screen.getByText('Recipe identity')).toBeVisible();
+        expect(screen.getByRole('rowheader', { name: 'Architecture' })).toBeVisible();
+        expect(screen.getByText('Exact identities and complete scientific evidence').closest('details')).not.toHaveAttribute('open');
         await userEvent.click(screen.getByRole('checkbox', { name: 'Only show differences' }));
-        expect(screen.queryByText('Recipe identity')).toBeNull();
-        expect(screen.getByText('Full evaluation')).toBeVisible();
+        expect(screen.queryByRole('rowheader', { name: 'Architecture' })).toBeNull();
+        await userEvent.click(screen.getByText('Exact identities and complete scientific evidence'));
+        expect(screen.getByText('Exact identities and complete scientific evidence').closest('details')).toHaveAttribute('open');
+        expect(screen.getByText('Exact identities and complete scientific evidence').parentElement?.textContent).toContain('recipeFingerprint');
         await userEvent.click(screen.getByRole('button', { name: '← Saved runs' }));
         expect(screen.getByRole('checkbox', { name: 'Compare Run 2' })).toBeChecked();
         expect(screen.getByRole('checkbox', { name: 'Compare Run 1' })).toBeChecked();

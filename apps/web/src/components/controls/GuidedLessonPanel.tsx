@@ -233,7 +233,7 @@ export const GuidedLessonPanel = memo(function GuidedLessonPanel({
     return (
         <aside className={`guided-lesson atelier-lessons ${activeStep ? 'guided-lesson--active' : ''} ${showLibrary ? 'atelier-lessons--library' : 'atelier-lessons--panel'}`} aria-label="Guided lesson mode" aria-busy={isStarting}>
             <header className="lesson-heading">
-                <div><small>{showLibrary ? 'Guided lessons' : 'Active lesson'}</small><h2>{showLibrary ? 'Learn by changing one thing' : activeLesson!.title}</h2></div>
+                <div>{!showLibrary && <><small>Active lesson</small><h2>{activeLesson!.title}</h2></>}</div>
                 <button type="button" aria-label={isDrawerOpen ? 'Collapse guided lesson drawer' : 'Expand guided lesson drawer'} aria-expanded={isDrawerOpen} onClick={() => setIsDrawerOpen(!isDrawerOpen)}>{isDrawerOpen ? '−' : '+'}</button>
             </header>
             {isDrawerOpen && <>

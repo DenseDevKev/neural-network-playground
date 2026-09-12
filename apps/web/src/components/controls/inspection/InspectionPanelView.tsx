@@ -212,14 +212,15 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                                     {model.trace.result.regularizationPenalty}
                                 </span>
                             </div>
-                            {model.trace.result.layers.map((layer) => (
-                                <div key={layer.key} className="inspection__stat-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
-                                    <span className="inspection__stat-label">{layer.label}</span>
-                                    <div className="inspection__activation-values">
-                                        {layer.activations}
-                                    </div>
-                                </div>
-                            ))}
+                            <div className="inspection__trace-flow" aria-label="Forward activation flow">
+                                {model.trace.result.sample && <section className="inspection__trace-stage"><h3>Input coordinates</h3><div className="inspection__activation-values"><span title={model.trace.result.sample.x}>{Number(model.trace.result.sample.x).toFixed(4)}</span><span title={model.trace.result.sample.y}>{Number(model.trace.result.sample.y).toFixed(4)}</span></div></section>}
+                                {model.trace.result.layers.map((layer) => (
+                                    <section key={layer.key} className="inspection__trace-stage"><h3>{layer.label}</h3>
+                                        <div className="inspection__activation-values">{layer.activations.split(', ').map((value, index) => <span key={index} data-sign={Number(value) > 0 ? 'positive' : Number(value) < 0 ? 'negative' : 'zero'}>{value}</span>)}</div>
+                                    </section>
+                                ))}
+                                <section className="inspection__trace-stage"><h3>Output</h3><div className="inspection__activation-values">{model.trace.result.output.split(', ').map((value, index) => <span key={index} data-sign={Number(value) > 0 ? 'positive' : Number(value) < 0 ? 'negative' : 'zero'}>{value}</span>)}</div></section>
+                            </div>
                         </div>
                     ) : null}
                 </div>
@@ -287,9 +288,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                                     </div>
                                     <div className="inspection__backprop-metrics">
                                         {layer.metrics.map((metric) => (
-                                            <span key={metric} className="inspection__stat-value">
-                                                {metric}
-                                            </span>
+                                            <span key={metric} className="inspection__stat-value"><span>{metric.slice(0, metric.lastIndexOf(' '))}</span><strong>{metric.slice(metric.lastIndexOf(' ') + 1)}</strong></span>
                                         ))}
                                     </div>
                                     <div className="inspection__backprop-note">
@@ -344,6 +343,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                                 />
                             ))}
                         </div>
+                        <div className="inspection__probe-legend"><span>Higher objective</span><i aria-hidden="true" /><span>Lower objective</span></div>
                         <div className="inspection__histogram-summary">
                             <strong>{model.landscape.result.title}</strong>
                             {model.landscape.result.values.map((value) => (
