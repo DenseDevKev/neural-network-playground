@@ -23,18 +23,42 @@ for (const theme of ['light', 'dark'] as const) {
         await mkdir(output, { recursive: true });
         await page.setViewportSize({ width: 1440, height: 1024 });
         await page.emulateMedia({ colorScheme: theme, reducedMotion: 'reduce' });
-        await page.goto('/'); await ready(page);
+        await page.goto('./'); await ready(page);
         await page.getByLabel('Color theme').selectOption(theme);
         await applyPreset(page, 'Circle with One Hidden Layer');
         await learning(page); await steps(page, 40);
         const receipts: object[] = [];
-        async function capture(id: number, fullPage = ![14, 18].includes(id)) {
+        async function capture(id: number, fullPage = ![5, 14, 16, 18].includes(id)) {
             await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
             await page.evaluate(() => document.fonts.ready);
             await page.evaluate(() => window.scrollTo(0, 0));
-            if ([1, 5, 15, 16, 19].includes(id)) await steps(page, 3);
+            await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))));
+            const stepBefore = await transport(page).getAttribute('data-model-step');
+            if ([1, 5, 11, 15, 16].includes(id)) {
+                const nodes = page.getByRole('group', { name: 'Select a neuron' }).getByRole('button', { name: /^(Hidden|Output)/ });
+                for (const node of await nodes.all()) await expect(node).toHaveAttribute('data-grid-available', 'true');
+                if (id === 15) await expect(page.getByRole('group', { name: 'Select a neuron' }).getByRole('button', { name: /^Output/ })).toHaveCount(3);
+            }
+            await expect(transport(page)).toHaveAttribute('data-model-step', stepBefore!);
+            const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth, scrollHeight: document.documentElement.scrollHeight }));
+            expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth + 1);
+            if ([5, 16].includes(id)) {
+                await page.waitForTimeout(200); // Requested canvas/DOM synchronization diagnostic, not scientific readiness.
+                const geometry = await page.evaluate(() => ({
+                    canvases: [...document.querySelectorAll('canvas')].map((canvas) => { const r = canvas.getBoundingClientRect(); const t = canvas.getContext('2d')?.getTransform(); return { className: canvas.className, width: canvas.width, height: canvas.height, clientWidth: canvas.clientWidth, clientHeight: canvas.clientHeight, bounds: {x:r.x,y:r.y,width:r.width,height:r.height}, transform: t ? { a:t.a,b:t.b,c:t.c,d:t.d,e:t.e,f:t.f } : null }; }),
+                    nodes: [...document.querySelectorAll('.network-node-target,.network-graph-heatmap-slot')].map((element) => { const r = element.getBoundingClientRect(); return {className:element.className,label:element.getAttribute('aria-label'),bounds:{x:r.x,y:r.y,width:r.width,height:r.height}}; }),
+                }));
+                await writeFile(resolve(output, `${String(id).padStart(2,'0')}-geometry-${theme}.json`), JSON.stringify(geometry,null,2));
+            }
+            if ([5, 11, 16].includes(id)) await page.screenshot({ path: resolve(output, `${String(id).padStart(2, '0')}-${names[id - 1]}-${theme}-viewport.png`), animations: 'disabled' });
             await page.screenshot({ path: resolve(output, `${String(id).padStart(2, '0')}-${names[id - 1]}-${theme}.png`), fullPage, animations: 'disabled' });
-            receipts.push({ id, name: names[id - 1], theme, url: page.url(), step: await transport(page).getAttribute('data-model-step'), viewport: page.viewportSize(), fullPage });
+            if ([2, 3, 4, 20].includes(id)) {
+                const fields = page.locator('.atelier-setup-fields');
+                await fields.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+                await page.screenshot({ path: resolve(output, `${String(id).padStart(2, '0')}-${names[id - 1]}-${theme}-controls.png`), animations: 'disabled' });
+                await fields.evaluate((element) => { element.scrollTop = 0; });
+            }
+            receipts.push({ id, name: names[id - 1], theme, url: page.url(), step: await transport(page).getAttribute('data-model-step'), viewport: page.viewportSize(), dimensions, fullPage });
             await writeFile(resolve(output, `capture-receipts-${theme}.json`), JSON.stringify(receipts, null, 2));
         }
         await workspace(page, 'Network'); await capture(1);
