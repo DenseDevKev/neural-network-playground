@@ -8,10 +8,12 @@ import { useLayoutStore } from './store/useLayoutStore.ts';
 import { usePlaygroundStore } from './store/usePlaygroundStore.ts';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
+    PREPARED_PRESETS,
     encodeExperimentUrl,
     prepareExperimentDocument,
 } from '@nn-playground/shared';
 
+const inspectionFailure = vi.hoisted(() => ({ active: false }));
 const useTrainingMount = vi.hoisted(() => vi.fn());
 const useExperimentMemoryStorageSync = vi.hoisted(() => vi.fn());
 
@@ -150,12 +152,13 @@ vi.mock('./components/controls/FeaturesPanel.tsx',     () => ({ FeaturesPanel: (
 vi.mock('./components/controls/NetworkConfigPanel.tsx',() => ({ NetworkConfigPanel: () => <div>Network</div> }));
 vi.mock('./components/controls/HyperparamPanel.tsx',   () => ({ HyperparamPanel: () => <div>Hyperparams</div> }));
 vi.mock('./components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
-vi.mock('./components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
+vi.mock('./components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => { if (inspectionFailure.active) throw new Error('Inspection failed'); return <div>Inspection</div>; } }));
 vi.mock('./components/controls/CodeExportPanel.tsx',   () => ({ CodeExportPanel: () => <div>CodeExport</div> }));
 vi.mock('./components/controls/RunHistoryPanel.tsx',   () => ({ RunHistoryPanel: () => <div>RunHistory</div> }));
 
 describe('App accessibility shell', () => {
     beforeEach(async () => {
+        inspectionFailure.active = false;
         window.localStorage.clear();
         window.history.replaceState(null, '', '/');
         trainingMock.play.mockReset();
@@ -200,6 +203,31 @@ describe('App accessibility shell', () => {
             activeTabLeft: 'data',
             activeTabRight: 'boundary',
         });
+    });
+
+    it('uses the effective Prediction tab for regression demand after a task change', async () => {
+        useLayoutStore.setState({ workspaceTab: 'results', resultsTab: 'errors' });
+        render(<App />);
+        expect(usePlaygroundStore.getState().demand.needConfusionMatrix).toBe(true);
+        const prepared = PREPARED_PRESETS.find((entry) => entry.id === 'regression-plane')!.prepared;
+        act(() => usePlaygroundStore.setState({ access: { status: 'ready', prepared } }));
+        expect(screen.getByRole('tab', { name: 'Prediction', selected: true })).toBeInTheDocument();
+        expect(screen.getByLabelText('Boundary paint')).toBeInTheDocument();
+        expect(usePlaygroundStore.getState().demand).toMatchObject({ needDecisionBoundary: true, needConfusionMatrix: false });
+    });
+
+    it('recovers a healthy workspace through navigation after a view fails', async () => {
+        inspectionFailure.active = true;
+        useLayoutStore.setState({ workspaceTab: 'inspect' });
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            render(<App />);
+            expect(await screen.findByText('Workspace unavailable')).toBeInTheDocument();
+            fireEvent.click(screen.getByRole('tab', { name: 'Setup' }));
+            expect(screen.getByRole('region', { name: 'Experiment setup' })).toBeInTheDocument();
+            expect(screen.queryByText('Workspace unavailable')).not.toBeInTheDocument();
+            expect(trainingMock.reset).not.toHaveBeenCalled();
+        } finally { error.mockRestore(); }
     });
 
     it('loads a valid experiment hash changed after mount through the URL loader', async () => {

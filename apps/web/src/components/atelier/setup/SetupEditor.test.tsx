@@ -23,3 +23,11 @@ it('retains one draft across tabs and cancels every pending section', () => {
     fireEvent.click(screen.getByRole('button',{name:'Training'}));
     expect(screen.getByLabelText('Batch size')).toHaveValue(String(DEFAULT_EXPERIMENT_DOCUMENT.recipe.training.batchSize));
 });
+
+it('keeps thumbnails and the selected preview available at valid noise 75', () => {
+    const { container } = render(<Harness/>);
+    fireEvent.change(screen.getByLabelText('Noise (%)'), { target: { value: '75' } });
+    expect(screen.getByRole('button', { name: 'Apply changes' })).toBeEnabled();
+    expect(screen.queryByText('Preview unavailable')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('canvas')).toHaveLength(12);
+});

@@ -60,11 +60,12 @@ function writeMulticlassBoundaryImageData(
     imageData: ImageData,
     background: readonly number[],
     uncertain: boolean,
+    discretize: boolean,
 ): void {
     for (let i = 0; i < classGrid.length; i++) {
         const palette = MULTICLASS_PALETTE[classGrid[i]] ?? MULTICLASS_PALETTE[0];
         const confidence = Math.max(0, Math.min(1, confidenceGrid[i]));
-        const mix = uncertain ? 1-confidence : 0.35 + confidence * 0.65;
+        const mix = uncertain ? 1-confidence : discretize ? 1 : 0.35 + confidence * 0.65;
         const idx = i * 4;
         imageData.data[idx] = Math.round(background[0] + (palette.rgb[0] - background[0]) * mix);
         imageData.data[idx + 1] = Math.round(background[1] + (palette.rgb[1] - background[1]) * mix);
@@ -83,11 +84,12 @@ function drawMulticlassHeatmap(
     imageData: ImageData,
     background: readonly number[],
     uncertain: boolean,
+    discretize: boolean,
 ): void {
     const tempCtx = tempCanvas.getContext('2d')!;
-    writeMulticlassBoundaryImageData(classGrid, confidenceGrid, imageData, background, uncertain);
+    writeMulticlassBoundaryImageData(classGrid, confidenceGrid, imageData, background, uncertain, discretize);
     tempCtx.putImageData(imageData, 0, 0);
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = uncertain || !discretize;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(tempCanvas, 0, 0, canvasW, canvasH);
 }
@@ -334,7 +336,7 @@ export const DecisionBoundaryCanvas = memo(function DecisionBoundaryCanvas({ mod
                 logicalW,
                 logicalH,
                 tempCanvasRef.current!,
-                imageDataRef.current!, background, model.overlayMode === 'uncertainty',
+                imageDataRef.current!, background, model.overlayMode === 'uncertainty', model.discretize ?? false,
             );
             if (model.overlayMode === 'misclassification') {
                 drawMisclassificationOverlay(ctx,model.trainPoints,model.classGrid,model.layout.gridSize,logicalW,logicalH,false,true);

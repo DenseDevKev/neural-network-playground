@@ -71,6 +71,7 @@ export interface DecisionBoundaryScalarModel extends DecisionBoundaryVisibleData
 
 export interface DecisionBoundaryMulticlassModel extends DecisionBoundaryVisibleData {
     kind: 'multiclass';
+    discretize?: boolean;
     overlayMode?: DecisionOverlayMode;
     classGrid: Uint8Array;
     confidenceGrid: Float32Array;
@@ -221,6 +222,7 @@ export function deriveDecisionBoundaryModel({
     if (isMulticlassTask && multiclassSummary) {
         return {
             kind: 'multiclass',
+            discretize,
             provenance: frame.decisionBoundaryProvenance,
             overlayMode,
             classGrid: frame.multiclassClassGrid!,

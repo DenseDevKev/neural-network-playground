@@ -15,11 +15,11 @@ export function SetupEditor({ controller: c, tab, onTabChange }: { controller: R
     const previews = useMemo(() => DATASETS.map(([datasetId,label]) => ({
         datasetId, label,
         model: Number.isInteger(previewSeed) && previewSeed! >= 0 && previewSeed! <= 4294967295
-            && Number.isFinite(previewNoise) && previewNoise! >= 0 && previewNoise! <= 50
+            && Number.isFinite(previewNoise) && previewNoise! >= 0 && previewNoise! <= 100
             ? deriveDatasetPreviewModel({ datasetId,seed:previewSeed!,noise:previewNoise! }) : null,
     })), [previewSeed,previewNoise]);
     const selectedPreview = useMemo(() => {
-        if (!r || !Number.isInteger(r.data.seed) || r.data.seed < 0 || r.data.seed > 4294967295 || !Number.isFinite(r.data.noise) || r.data.noise < 0 || r.data.noise > 50 || !Number.isInteger(r.data.sampleCount) || r.data.sampleCount < 2 || r.data.sampleCount > 1000) return null;
+        if (!r || !Number.isInteger(r.data.seed) || r.data.seed < 0 || r.data.seed > 4294967295 || !Number.isFinite(r.data.noise) || r.data.noise < 0 || r.data.noise > 100 || !Number.isInteger(r.data.sampleCount) || r.data.sampleCount < 2 || r.data.sampleCount > 1000) return null;
         return deriveDatasetPreviewModel({ datasetId:r.task.dataset, seed:r.data.seed, noise:r.data.noise, sampleCount:r.data.sampleCount });
     }, [r]);
     if (!r) return <p role="alert">No validated experiment is available for setup.</p>;

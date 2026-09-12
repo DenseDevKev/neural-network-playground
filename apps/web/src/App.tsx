@@ -55,10 +55,10 @@ export default function App() {
         if (!result.ok) throw new Error(result.issues.map((issue) => issue.message).join(' '));
     }, [startFresh]);
     if (access.status === 'incompatible') return <CompatibilityState access={access} onStartFresh={recoverWithDefault} />;
-    return <CompatiblePlayground />;
+    return <AtelierShell />;
 }
 
-function CompatiblePlayground() {
+function AtelierShell() {
     const training = useTraining();
     const saveController = useSaveCurrentRun();
     const draft = useRecipeDraft();
@@ -114,6 +114,9 @@ function CompatiblePlayground() {
     };
     useEffect(() => { if (destination === 'saved-runs') setSavedVisited(true); if (destination === 'lessons') setLessonsVisited(true); }, [destination]);
 
+    const regression = prepared?.document.recipe.task.kind === 'regression';
+    const effectiveResultsTab = regression && resultsTab === 'errors' ? 'boundary' : resultsTab;
+
     // Only mounted evidence demands expensive worker projections. This is the sole writer.
     useEffect(() => {
         const playground = destination === 'playground';
@@ -121,15 +124,15 @@ function CompatiblePlayground() {
         const inspect = playground && workspaceTab === 'inspect';
         const results = playground && workspaceTab === 'results';
         const next = { ...DEFAULT_DEMAND,
-            needDecisionBoundary: network || (results && resultsTab === 'boundary'),
+            needDecisionBoundary: network || (results && effectiveResultsTab === 'boundary'),
             needNeuronGrids: network,
             needLayerStats: inspect,
             needActivationHistograms: inspect && inspectTab === 'activations',
-            needConfusionMatrix: results && resultsTab === 'errors',
+            needConfusionMatrix: results && effectiveResultsTab === 'errors',
         };
         const store = usePlaygroundStore.getState();
         if (Object.entries(next).some(([key,value]) => store.demand[key as keyof typeof next] !== value)) store.setDemand(next);
-    }, [destination,workspaceTab,resultsTab,inspectTab]);
+    }, [destination,workspaceTab,effectiveResultsTab,inspectTab]);
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -152,7 +155,6 @@ function CompatiblePlayground() {
         }
     }, [pendingNavigation, draft.dirty, draft.submitted, draft.error]);
 
-    const regression = prepared?.document.recipe.task.kind === 'regression';
     const dataset = prepared?.document.recipe.task.dataset ?? 'Experiment';
     const heading = destination === 'saved-runs' ? 'Saved runs' : destination === 'lessons' ? 'Learn by experimenting' : `${dataset.charAt(0).toUpperCase()}${dataset.slice(1)} experiment`;
     const description = destination === 'saved-runs' ? 'Keep the evidence. Compare what changed.' : destination === 'lessons' ? 'Small experiments. Ideas that become visible.' : 'Shape a network. Watch it learn. Understand what changes.';
@@ -160,22 +162,22 @@ function CompatiblePlayground() {
         <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById('main-content')?.focus(); }}>Skip to main content</a>
         <AccessibilityAnnouncer status={status} pauseReason={pauseReason} workerError={workerError} pendingConfigSource={pendingConfigSource} configError={configError} configErrorSource={configErrorSource} evidenceGenerationId={evidenceGenerationId} trainedRecipe={trainedRecipe} trainedRecipeSource={trainedRecipeSource} />
         <AtelierHeader destination={destination} onNavigate={(next) => navigate(next)} onUtility={openUtility} />
-        <main id="main-content" tabIndex={-1} className="atelier-main" aria-label="Neural network playground workspace">
+        <main data-guided={activeLessonId && destination === 'playground' ? 'true' : undefined} id="main-content" tabIndex={-1} className="atelier-main" aria-label="Neural network playground workspace">
             <div className="atelier-heading"><div><h1>{heading}</h1><p>{description}</p></div>{destination === 'playground' && <div className="atelier-heading-actions"><button type="button" onClick={() => openUtility('exports')}>Share setup</button><button type="button" onClick={() => navigate('saved-runs')}>Save run</button></div>}</div>
             {configError && <div className="atelier-notice" role="alert"><p>{configError}</p><button type="button" onClick={() => useTrainingStore.getState().retryConfigSync()}>Retry configuration</button></div>}
             {destination === 'playground' && <>
                 <Tabs panelPrefix="workspace" label="Experiment workspace" items={WORKSPACE_TABS} value={workspaceTab} onChange={(tab) => navigate('playground',tab)} />
                 {recordsReady && !hasRecords && !cueDismissed && !hasStartedLesson && !activeLessonId && <aside className="atelier-notice" aria-label="Getting started"><p>New to neural networks? Start with one neuron and build your intuition.</p><button type="button" onClick={() => navigate('lessons')}>Explore lessons</button><button type="button" aria-label="Dismiss lesson suggestion" onClick={() => useLayoutStore.getState().dismissLessonCue()}>Not now</button></aside>}
                 <div className="atelier-tab-content" role="tabpanel" id={`workspace-${workspaceTab}`} aria-labelledby={`workspace-tab-${workspaceTab}`}>
-                    <ErrorBoundary title="Workspace unavailable" description="This view could not render. Your experiment remains available in the other views.">
+                    <ErrorBoundary key={workspaceTab} title="Workspace unavailable" description="This view could not render. Your experiment remains available in the other views.">
                     {workspaceTab === 'setup' && <SetupEditor controller={draft} tab={setupTab} onTabChange={(tab) => useLayoutStore.getState().setSetupTab(tab)} />}
                     {workspaceTab === 'network' && <><AtelierNetwork boundary={boundary} selection={selection} onSetup={openSetup} onResults={() => { useLayoutStore.getState().setResultsTab('boundary'); navigate('playground','results'); }} /><EvidenceMetrics /></>}
                     {workspaceTab === 'results' && <section className="atelier-evidence">
-                        <Tabs label="Results views" items={regression ? RESULTS_TABS.filter((tab) => tab.id !== 'errors') : RESULTS_TABS} value={regression && resultsTab === 'errors' ? 'boundary' : resultsTab} onChange={(tab) => useLayoutStore.getState().setResultsTab(tab)} />
+                        <Tabs label="Results views" items={regression ? RESULTS_TABS.filter((tab) => tab.id !== 'errors') : RESULTS_TABS} value={effectiveResultsTab} onChange={(tab) => useLayoutStore.getState().setResultsTab(tab)} />
                         <Suspense fallback={loading}>
-                            {(resultsTab === 'boundary' || (regression && resultsTab === 'errors')) && <div className="atelier-results-boundary"><DecisionBoundaryCanvas model={boundary.model} /><BoundaryEvidencePanel controller={boundary} /></div>}
-                            {resultsTab === 'learning' && <><LossChart /><EvidenceMetrics /><TrainingExplanationPanel /><CurrentRunCard /></>}
-                            {resultsTab === 'errors' && !regression && <ConfusionMatrix />}
+                            {effectiveResultsTab === 'boundary' && <div className="atelier-results-boundary"><DecisionBoundaryCanvas model={boundary.model} /><BoundaryEvidencePanel controller={boundary} /></div>}
+                            {effectiveResultsTab === 'learning' && <><LossChart /><EvidenceMetrics /><TrainingExplanationPanel /><CurrentRunCard /></>}
+                            {effectiveResultsTab === 'errors' && <ConfusionMatrix />}
                         </Suspense>
                     </section>}
                     {workspaceTab === 'inspect' && <section className="atelier-evidence"><Suspense fallback={loading}><InspectionPanel onPause={training.pause} /></Suspense></section>}
@@ -183,7 +185,7 @@ function CompatiblePlayground() {
                 </div>
             </>}
             {savedVisited && <div hidden={destination !== 'saved-runs'}><Suspense fallback={loading}><RunHistoryPanel saveController={saveController} /></Suspense></div>}
-            {lessonsVisited && <div className="atelier-lesson-host" hidden={destination !== 'lessons' && !activeLessonId}><Suspense fallback={loading}><GuidedLessonPanel onReset={stableReset} onHighlightChange={setLessonHighlight} /></Suspense></div>}
+            {lessonsVisited && <div className="atelier-lesson-host" hidden={destination !== 'lessons' && !activeLessonId}><Suspense fallback={loading}><GuidedLessonPanel onNavigate={requestGuardedNavigation} onReset={stableReset} onHighlightChange={setLessonHighlight} /></Suspense></div>}
             <AtelierTransport training={training} onCheckpoints={() => openUtility('checkpoints')} />
         </main>
         <footer className="atelier-footer"><span>NN·FORGE · Experiments stay in your browser</span><span>Data → network → prediction</span></footer>
