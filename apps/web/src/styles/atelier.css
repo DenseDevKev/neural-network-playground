@@ -224,3 +224,7 @@ button:disabled {cursor:not-allowed;opacity:.48}
 
 .atelier-workspace-layout,.atelier-workspace {min-width:0}
 .atelier-evaluation-step {display:inline-block;width:8ch;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+
+@media (forced-colors: active) {
+  .decision-boundary__swatch, .atelier-class-legend i, .atelier-data-plot circle {forced-color-adjust:none}
+}

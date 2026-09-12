@@ -1,3 +1,4 @@
+import process from 'node:process';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { ready, transport, workspace } from './atelier-helpers';
@@ -76,10 +77,72 @@ test('320px neuron targets support keyboard selection without changing the model
     // macOS WebKit uses Option-Tab to include native buttons in sequential navigation.
     // Enter preserves focus on Input 1 in both engines; traverse with the native full-control key.
     await expect(nodes.first()).toBeFocused();
-    await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+    await page.keyboard.press(browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab');
     await expect(nodes.nth(1)).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(nodes.nth(1)).toHaveAttribute('aria-pressed', 'true');
     await expect(transport(page)).toHaveAttribute('data-model-step', '0');
     await expect(transport(page)).toHaveAttribute('data-status', 'idle');
+});
+
+test('390px evidence regions support native keyboard focus and horizontal scrolling', async ({ page, browserName }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loadReadyPlayground(page);
+    const tab = browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab';
+    async function scrollEvidence(name: string) {
+        const region = page.getByRole('region', { name, exact: true });
+        await page.keyboard.press(tab);
+        await expect(region).toBeFocused();
+        expect(await region.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+        const before = await region.evaluate((node) => node.scrollLeft);
+        await page.keyboard.down('ArrowRight');
+        await page.waitForTimeout(150);
+        await page.keyboard.up('ArrowRight');
+        await expect.poll(() => region.evaluate((node) => node.scrollLeft)).toBeGreaterThan(before);
+        expect(await region.evaluate((node) => getComputedStyle(node).outlineStyle)).not.toBe('none');
+    }
+    await workspace(page, 'Inspect');
+    await page.getByRole('tab', { name: 'Trace', exact: true }).click();
+    const trace = page.getByRole('button', { name: 'Trace prediction', exact: true });
+    await trace.click();
+    await expect(page.getByRole('region', { name: 'Forward activation flow' })).toContainText('Output');
+    await trace.focus();
+    await scrollEvidence('Forward activation flow');
+    await expect(transport(page)).toHaveAttribute('data-model-step', '0');
+    await page.getByRole('button', { name: 'Saved runs', exact: true }).click();
+    await page.getByRole('button', { name: 'Save current run', exact: true }).click();
+    await expect(page.locator('.saved-runs').getByRole('article')).toHaveCount(1);
+    await workspace(page, 'Results');
+    await page.getByRole('button', { name: 'Run one training step' }).click();
+    await expect(transport(page)).toHaveAttribute('data-model-step', '1');
+    await page.getByRole('button', { name: 'Saved runs', exact: true }).click();
+    await page.getByRole('button', { name: 'Save current run', exact: true }).click();
+    await expect(page.locator('.saved-runs').getByRole('article')).toHaveCount(2);
+    const choices = page.getByRole('checkbox', { name: /^Compare / });
+    await choices.nth(0).check(); await choices.nth(1).check();
+    await page.getByRole('button', { name: 'Compare selected', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Only show differences' }).focus();
+    await scrollEvidence('Configuration and evidence');
+    await expect(transport(page)).toHaveAttribute('data-model-step', '1');
+});
+
+test('forced colors preserves distinct data legend colors and native control styling', async ({ page }, info) => {
+    await page.emulateMedia({ forcedColors: 'active' });
+    await loadReadyPlayground(page);
+    test.skip(!await page.evaluate(() => matchMedia('(forced-colors: active)').matches), 'Browser does not emulate active forced colors');
+    await page.getByLabel('Color theme').selectOption('dark');
+    const supportsAdjustment = await page.evaluate(() => CSS.supports('forced-color-adjust', 'none'));
+    for (const selector of ['.decision-boundary__swatch', '.atelier-class-legend i']) {
+        const marks = page.locator(selector);
+        await expect(marks.first()).toBeVisible();
+        const colors = await marks.evaluateAll((nodes) => nodes.map((node) => {
+            const style = getComputedStyle(node);
+            return { color: style.backgroundColor, adjustment: style.forcedColorAdjust };
+        }));
+        expect(new Set(colors.map(({ color }) => color)).size).toBeGreaterThan(1);
+        if (supportsAdjustment) expect(colors.every(({ adjustment }) => adjustment === 'none')).toBe(true);
+    }
+    if (supportsAdjustment) expect(await page.getByLabel('Color theme').evaluate((node) => getComputedStyle(node).forcedColorAdjust)).toBe('auto');
+    await page.screenshot({ path: `../../outputs/nn-forge-implementation/display-modes/${info.project.name}-dark-forced-colors-fixed.png` });
+    await info.attach('forced-colors-data-legends', { body: await page.screenshot(), contentType: 'image/png' });
 });

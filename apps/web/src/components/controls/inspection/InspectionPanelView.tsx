@@ -212,7 +212,7 @@ export const InspectionPanelView = memo(function InspectionPanelView({
                                     {model.trace.result.regularizationPenalty}
                                 </span>
                             </div>
-                            <div className="inspection__trace-flow" aria-label="Forward activation flow">
+                            <div className="inspection__trace-flow" role="region" aria-label="Forward activation flow" tabIndex={0}>
                                 {model.trace.result.sample && <section className="inspection__trace-stage"><h3>Input coordinates</h3><div className="inspection__activation-values"><span title={model.trace.result.sample.x}>{Number(model.trace.result.sample.x).toFixed(4)}</span><span title={model.trace.result.sample.y}>{Number(model.trace.result.sample.y).toFixed(4)}</span></div></section>}
                                 {model.trace.result.layers.map((layer) => (
                                     <section key={layer.key} className="inspection__trace-stage"><h3>{layer.label}</h3>

@@ -141,20 +141,28 @@ for (const dataset of ['XOR', 'Three-Class', 'Plane']) {
 }
 
 test('export files roundtrip through staged review and invalid files preserve the model', async ({ page }) => {
+    await page.getByRole('button', { name: 'Run one training step' }).click();
+    await expect(transport(page)).toHaveAttribute('data-model-step', '1');
     await utility(page, 'Export / import');
     const downloadPromise = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export JSON setup', exact: true }).click();
     const download = await downloadPromise; const json = await readFile((await download.path())!, 'utf8');
     const document = JSON.parse(json); expect(document.schemaVersion).toBe(2);
+    const changed = structuredClone(document);
+    changed.recipe.model.seed += 1;
+    changed.recipe.training.learningRate = 0.07;
+    changed.view.showTestData = !document.view.showTestData;
+    changed.view.discretizeOutput = !document.view.discretizeOutput;
     const before = await identity(page);
     await page.getByLabel('Import setup JSON file').setInputFiles({ name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from('{') });
     await expect(page.getByRole('alert')).toBeVisible(); expect(await identity(page)).toEqual(before);
-    await page.getByLabel('Import setup JSON file').setInputFiles({ name: 'roundtrip.json', mimeType: 'application/json', buffer: Buffer.from(json) });
+    await page.getByLabel('Import setup JSON file').setInputFiles({ name: 'roundtrip.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(changed)) });
     await expect(page.getByRole('region', { name: 'Imported setup review' })).toBeVisible(); expect(await identity(page)).toEqual(before);
     await page.getByRole('button', { name: 'Apply imported setup' }).click();
     await expect(page.getByText('Imported setup applied. Training is paused.', { exact: true })).toBeVisible();
     await expect(transport(page)).toHaveAttribute('data-model-step', '0');
+    await expect.poll(async () => Number((await identity(page)).generation)).toBeGreaterThan(Number(before.generation));
     const againPromise = page.waitForEvent('download'); await page.getByRole('button', { name: 'Export JSON setup', exact: true }).click();
-    expect(JSON.parse(await readFile((await (await againPromise).path())!, 'utf8'))).toEqual(document);
+    expect(JSON.parse(await readFile((await (await againPromise).path())!, 'utf8'))).toEqual(changed);
     await page.getByRole('tab', { name: 'Code', exact: true }).click();
     const codePromise = page.waitForEvent('download'); await page.getByRole('button', { name: 'Download code' }).click();
     expect((await readFile((await (await codePromise).path())!, 'utf8')).length).toBeGreaterThan(100);

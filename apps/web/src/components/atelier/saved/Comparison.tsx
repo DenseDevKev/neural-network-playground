@@ -60,7 +60,7 @@ export function SavedRunComparison({ current, baseline, currentLabel, baselineLa
         {!comparable && <p>Dataset and objective identities must both match before losses can be ranked.</p>}
         <h3>Stored learning history</h3><div className="saved-learning-pair"><StoredLearningChart record={current} label={currentLabel} maximumStep={maximumStep} maximumLoss={maximumLoss} /><StoredLearningChart record={baseline} label={baselineLabel} maximumStep={maximumStep} maximumLoss={maximumLoss} /></div>
         <label className="saved-differences"><input type="checkbox" checked={differences} onChange={(event) => setDifferences(event.target.checked)} />Only show differences</label>
-        <div className="saved-table-scroll"><table className="saved-comparison-table"><thead><tr><th scope="col">Configuration and evidence</th><th scope="col">{currentLabel}</th><th scope="col">{baselineLabel}</th></tr></thead><tbody>
+        <div className="saved-table-scroll" role="region" aria-label="Configuration and evidence" tabIndex={0}><table className="saved-comparison-table"><thead><tr><th scope="col">Configuration and evidence</th><th scope="col">{currentLabel}</th><th scope="col">{baselineLabel}</th></tr></thead><tbody>
             {keys.map((key) => <tr key={key} className={x[key] !== y[key] ? 'saved-different' : undefined}><th scope="row">{key}</th><td title={x[key]}>{displayValue(key, x[key])}</td><td title={y[key]}>{displayValue(key, y[key])}</td></tr>)}
             {!keys.length && <tr><td colSpan={3}>No differences in these configuration and evidence rows.</td></tr>}
         </tbody></table></div>
