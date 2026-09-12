@@ -2063,14 +2063,20 @@ describe('workerBridge streamed snapshots', () => {
         listener({ data: makeStrictSnapshotMessage(2) } as MessageEvent);
         expect(getFrameBuffer()).toBe(before);
         expect(rafCallback).toBeNull();
+        // Status/error handlers can stop again before recovery. That final
+        // flush must not apply the frame received behind the failure fence.
+        stopRenderLoop();
+        expect(getFrameBuffer()).toBe(before);
+        expect(receivedMessages.filter(({ msg }) => msg.type === 'snapshot')).toHaveLength(0);
+        expect(fakePort1.postMessage.mock.calls.filter(([message]) => message.type === 'frameAck')).toHaveLength(2);
 
         startRenderLoop();
         expect(rafCallback).not.toBeNull();
-        listener({ data: makeStrictSnapshotMessage(2) } as MessageEvent);
+        listener({ data: makeStrictSnapshotMessage(3) } as MessageEvent);
         runNextAnimationFrame();
         expect(receivedMessages.at(-1)?.msg).toMatchObject({
             type: 'snapshot',
-            model: { generationId: 1, revision: 2 },
+            model: { generationId: 1, revision: 3 },
         });
     });
 

@@ -1193,6 +1193,52 @@ describe('training worker scientific-trust V2 boundary', () => {
         expect(evidenceMessages(capture.messages)).toHaveLength(0);
     });
 
+    it.each(['cadence-only', 'hide-other-region'] as const)(
+        'preserves a queued paused neuron refresh after %s demand supersession', async (change) => {
+            vi.stubGlobal('crossOriginIsolated', false);
+            const preset = PREPARED_PRESETS.find((entry) => entry.id === 'three-class-clusters')!;
+            const initialDemand = { ...DEFAULT_DEMAND, needDecisionBoundary: true, needNeuronGrids: false };
+            workerApi.updateDemand(initialDemand);
+            const capture = createCapturingPort();
+            workerApi.setStreamPort(capture.port);
+            const initialized = await workerApi.initializeExperimentV2(requestForPrepared(preset.prepared));
+            // Real asynchronous artifact validation occupies the ordered lane.
+            const artifact = workerApi.captureRunArtifact({
+                id: '00000000-0000-0000-0000-000000000012',
+                createdAt: '2026-09-12T12:00:00.000Z',
+                updatedAt: '2026-09-12T12:00:00.000Z',
+            });
+            await Promise.resolve();
+            // Capture publishes its own evaluation before awaiting validation;
+            // only the following display-demand updates must preserve history.
+            const history = workerApi.getMetricHistoryV2();
+            capture.messages.length = 0;
+            const visible = { ...initialDemand, needNeuronGrids: true };
+            workerApi.updateDemand(visible);
+            workerApi.updateDemand(change === 'cadence-only'
+                ? { ...visible, gridInterval: 9, activationHistogramInterval: 11 }
+                : { ...visible, needDecisionBoundary: false });
+            expect(snapshotMessages(capture.messages)).toHaveLength(0);
+            await artifact;
+            await flushMicrotasks();
+            const frames = snapshotMessages(capture.messages);
+            expect(frames).toHaveLength(1);
+            expect(isWorkerToMainMessage(frames[0])).toBe(true);
+            expect(frames[0].neuronGrids?.length).toBeGreaterThan(0);
+            if (change === 'hide-other-region') {
+                expect(frames[0].multiclassClassGrid).toBeUndefined();
+                expect(frames[0].artifacts?.decisionBoundary).toBeUndefined();
+            } else {
+                expect(frames[0].multiclassClassGrid?.length).toBeGreaterThan(0);
+            }
+            expect(frames[0].model).toEqual(initialized.evidence.latestEvaluation!.model);
+            expect(frames[0].artifacts?.neuronGrids?.model).toEqual(frames[0].model);
+            expect(frames[0].checkpointTimeline).toEqual(initialized.checkpointTimeline);
+            expect(workerApi.getMetricHistoryV2()).toEqual(history);
+            expect(evidenceMessages(capture.messages)).toHaveLength(0);
+        },
+    );
+
     it('drops superseded paused demand and keeps multiclass neuron-only provenance precise', async () => {
         vi.stubGlobal('crossOriginIsolated', true);
         const fixtures = await createScientificTrustFixtures();

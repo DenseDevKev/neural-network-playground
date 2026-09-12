@@ -439,7 +439,7 @@ function handleWorkerMessage(value: unknown): void {
 
         // Paused demand refreshes have no animation loop. Apply through the
         // same validated boundary once; running frames remain latest-wins.
-        if (_rafId === null && !_frameApplicationBlocked) applyPendingSnapshotMessage(snapshot);
+        if (_rafId === null || _frameApplicationBlocked) applyPendingSnapshotMessage(snapshot);
         else _pendingSnapshot = snapshot;
     } else if (msg.type === 'sharedBuffers') {
         // Worker (re)allocated its SAB transport. Install views immediately
@@ -695,6 +695,9 @@ function describeApplyFailure(error: unknown): string {
  */
 function applyPendingSnapshotMessage(msg: WorkerToMainMessage): void {
     try {
+        // Every application path, including stop/final flush, respects the
+        // recovery fence. Dropped snapshots still release back-pressure below.
+        if (_frameApplicationBlocked) return;
         // Write heavy arrays to frame buffer
         if (msg.type === 'snapshot') {
             const patch = buildSnapshotFramePatch(
