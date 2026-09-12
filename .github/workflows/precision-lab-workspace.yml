@@ -1,0 +1,46 @@
+name: Precision Lab isolated workspace
+
+on:
+  push:
+    branches: [codex/nn-forge-precision-lab]
+    paths: [.github/workflows/precision-lab-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Package tracked source and isolated test dependencies
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/nn-forge-workspace"
+          git rev-parse HEAD > "$RUNNER_TEMP/nn-forge-workspace/source-sha.txt"
+          git rev-parse 'HEAD^{tree}' > "$RUNNER_TEMP/nn-forge-workspace/source-tree.txt"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/nn-forge-workspace/source.tar.gz"
+          tar --exclude='*.woff' --exclude='*.woff2' --exclude='*.ttf' --exclude='*.otf' --exclude='*.eot' --exclude='*/.cache/*' -czf "$RUNNER_TEMP/nn-forge-workspace/test-dependencies.tar.gz" node_modules apps/web/node_modules packages/engine/node_modules packages/shared/node_modules
+          pnpm_root=$(dirname "$(dirname "$(readlink -f "$(command -v pnpm)")")")
+          tar -czf "$RUNNER_TEMP/nn-forge-workspace/pnpm-cli.tar.gz" -C "$pnpm_root" .
+          node --version > "$RUNNER_TEMP/nn-forge-workspace/node-version.txt"
+          pnpm --version > "$RUNNER_TEMP/nn-forge-workspace/pnpm-version.txt"
+          cd "$RUNNER_TEMP/nn-forge-workspace"
+          sha256sum *.tar.gz > contents.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: precision-lab-workspace-${{ github.sha }}
+          path: ${{ runner.temp }}/nn-forge-workspace/
+          retention-days: 1
+          if-no-files-found: error

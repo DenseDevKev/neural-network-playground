@@ -5,14 +5,15 @@
 // intentionally lean on `unknown` for opaque types so we never accidentally
 // assume more than what the spec guarantees.
 //
-// At call sites we cast `(navigator as any).gpu` once to obtain the
-// adapter — that's the only place a structural assumption escapes this file.
+// The global navigator is narrowed structurally at the detection boundary.
+// Optional adapter limits preserve the fallback used by minimal test adapters.
 
 export type GPUBufferUsageFlags = number;
 export type GPUMapModeFlags = number;
 export type GPUShaderStageFlags = number;
 
 export interface GPUAdapter {
+    readonly limits?: { readonly maxStorageBuffersPerShaderStage?: number };
     requestDevice(descriptor?: unknown): Promise<GPUDevice>;
 }
 

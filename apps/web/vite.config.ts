@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => ({
     build: {
         target: 'es2022',
         minify: 'terser',
+        // Revisit constants exposed by the first safe compression pass. This
+        // reduces split-chunk overhead without changing any bundle budget.
+        terserOptions: { compress: { passes: 2 } },
         sourcemap: mode === 'development',
         rollupOptions: {
             output: {

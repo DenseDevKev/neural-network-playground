@@ -118,6 +118,21 @@ describe('ConfusionMatrix paired evaluation provenance', () => {
             .toBeInTheDocument();
     });
 
+    it('keeps full-test metrics in a semantic definition list beside the matrix', () => {
+        useTrainingStore.setState({ latestEvaluation: binaryPair(basePair) });
+        const { container } = render(<ConfusionMatrix />);
+        const metrics = container.querySelector('dl.cm-metrics');
+        expect(metrics).not.toBeNull();
+        expect(metrics?.querySelectorAll('dt')).toHaveLength(3);
+        expect(metrics?.querySelectorAll('dd')).toHaveLength(3);
+        expect(metrics).toHaveTextContent('Accuracy83.3%');
+        expect(metrics).toHaveTextContent('Precision77.8%');
+        expect(metrics).toHaveTextContent('Recall87.5%');
+        expect(metrics?.parentElement).toHaveClass('cm-evidence-layout');
+        expect(metrics?.previousElementSibling).toHaveClass('cm-grid-container');
+        expect(container.querySelector('.cm-note')?.parentElement).toHaveClass('confusion-matrix');
+    });
+
     it('does not render for regression recipes', () => {
         const regression = prepared('regression-plane');
         usePlaygroundStore.setState({

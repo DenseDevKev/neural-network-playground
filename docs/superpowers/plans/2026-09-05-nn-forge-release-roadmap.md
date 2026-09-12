@@ -7,6 +7,24 @@
 
 This file is the canonical execution order. A checked implementation on a branch is not a release until it is accepted into `main`, and a `main` commit is not a deployed release until the actual deployment succeeds and its live URL is verified.
 
+
+## September 8 status reconciliation
+
+The accepted baseline is now merged at `98f29b86e469a2a545be75928ae6f32309fd1582`;
+main CI `34002500733` passed. The performance-policy investigation below is resolved.
+Pages run `34002943565` failed and the repository-settings blocker remains.
+
+Active branch `codex/nn-forge-precision-lab` has advanced to
+`3e7da9a4dabd2d7bc275c9aa4c614a04d9b26732`, which already integrates PrecisionLabShell,
+one selection controller and one live boundary while App owns training. Its correctness/
+build/bundle CI passed, but browser jobs failed. The September 8 continuation is a locally
+tested patch, **not pushed, browser-qualified or deployed**.
+
+This roadmap retains the dependency order and historical baseline record. Current checked
+progress and remaining gates live in the root `NN-FORGE-LIVING-EXECUTION-PLAN.md`, restored
+from the original user file. Do not treat the earlier release branch metadata or “next”
+actions below as instructions to redo the completed baseline/policy investigation.
+
 ## Product invariants
 
 Preserve the product state model:
@@ -35,10 +53,10 @@ The following are release constraints, not optional presentation preferences:
 | R2 — Hosting/state contracts | Complete | Real static subpath worker/lazy loads, shared recipe reload, skip-link integrity, WebKit reload safety |
 | R3 — Repeatable qualification | Complete on `fbae4b9` | Correctness, browser, recovery, bundle, and comparative performance gates all green |
 | R4 — Consolidated handoff | Complete with this documentation wave | Roadmap, QA, deployment, and verification evidence agree |
-| R5 — Accept into `main` | Pending | Documentation SHA requalified, reviewed PR merged, resulting `main` CI green |
-| R6 — Live publication | Pending / owner-authorized | Accepted `main` deployed through existing Pages workflow and live Chromium/WebKit verification passes |
+| R5 — Accept into `main` | Complete | Merged `98f29b86...`; main CI `34002500733` green |
+| R6 — Live publication | Blocked / owner-authorized settings | Accepted `main` deployed through existing Pages workflow and live Chromium/WebKit verification passes |
 | P1 — Executable JS bundle limits | Complete | Fixed reviewed JavaScript gzip caps enforced in CI |
-| P2–P7 — Precision Lab integration | Pending | One production presentation shell with all scientific/state/accessibility contracts retained |
+| P2–P7 — Precision Lab integration | In progress; not accepted | One production presentation shell with all scientific/state/accessibility contracts retained |
 
 ## Release qualification already implemented
 
@@ -159,7 +177,7 @@ Complete, as described above.
 ### P4 — One canonical live boundary
 
 - Maintain exactly one live decision-boundary renderer in Build/Run.
-- Separate current live boundary from pinned evidence.
+- Keep the canonical live boundary pinned in its rail; evidence detail tabs must not mount a duplicate renderer or invent persistent pinned snapshots.
 - Preserve evaluation step/age/drift provenance.
 - Update visualization-demand derivation without reducing required scientific evaluation cadence.
 

@@ -21,13 +21,13 @@ describe('deriveVisualizationDemand', () => {
         expected: VisualizationDemand;
     }>([
         {
-            name: 'Build view asks only for topology graph data',
+            name: 'Build asks for topology and the mounted live boundary',
             view: 'build',
             activeEvidenceView: 'boundary',
             audienceMode: 'explore',
             advancedToolsOpen: false,
             expected: demand({
-                needDecisionBoundary: false,
+                needDecisionBoundary: true,
                 needNeuronGrids: true,
                 needLayerStats: false,
                 needConfusionMatrix: false,
@@ -47,13 +47,13 @@ describe('deriveVisualizationDemand', () => {
             }),
         },
         {
-            name: 'Run loss evidence keeps graph demand without boundary expansion',
+            name: 'Run loss evidence keeps graph and pinned-boundary demand',
             view: 'run',
             activeEvidenceView: 'loss',
             audienceMode: 'explore',
             advancedToolsOpen: false,
             expected: demand({
-                needDecisionBoundary: false,
+                needDecisionBoundary: true,
                 needNeuronGrids: true,
                 needLayerStats: false,
                 needConfusionMatrix: false,
@@ -66,7 +66,7 @@ describe('deriveVisualizationDemand', () => {
             audienceMode: 'explore',
             advancedToolsOpen: false,
             expected: demand({
-                needDecisionBoundary: false,
+                needDecisionBoundary: true,
                 needNeuronGrids: true,
                 needLayerStats: false,
                 needConfusionMatrix: true,
@@ -79,7 +79,7 @@ describe('deriveVisualizationDemand', () => {
             audienceMode: 'explore',
             advancedToolsOpen: true,
             expected: demand({
-                needDecisionBoundary: false,
+                needDecisionBoundary: true,
                 needNeuronGrids: true,
                 needLayerStats: true,
                 needActivationHistograms: true,
@@ -93,7 +93,7 @@ describe('deriveVisualizationDemand', () => {
             audienceMode: 'explore',
             advancedToolsOpen: true,
             expected: demand({
-                needDecisionBoundary: false,
+                needDecisionBoundary: true,
                 needNeuronGrids: true,
                 needLayerStats: false,
                 needConfusionMatrix: false,
@@ -120,6 +120,7 @@ describe('deriveVisualizationDemand', () => {
             audienceMode,
             advancedToolsOpen,
             graphRenderer: 'canvas',
+            boundaryRailMounted: true,
         })).toEqual(expected);
     });
 
@@ -136,6 +137,7 @@ describe('deriveVisualizationDemand', () => {
                 audienceMode: 'beginner',
                 advancedToolsOpen: false,
                 graphRenderer: 'canvas',
+            boundaryRailMounted: true,
             });
 
             expect(result.needDecisionBoundary).toBe(true);
@@ -153,6 +155,7 @@ describe('deriveVisualizationDemand', () => {
                 audienceMode: 'explore',
                 advancedToolsOpen: false,
                 graphRenderer: 'canvas',
+            boundaryRailMounted: true,
             });
             const open = deriveVisualizationDemand({
                 view: 'run',
@@ -160,6 +163,7 @@ describe('deriveVisualizationDemand', () => {
                 audienceMode: 'explore',
                 advancedToolsOpen: true,
                 graphRenderer: 'canvas',
+            boundaryRailMounted: true,
             });
 
             expect(open).toEqual(closed);
@@ -178,6 +182,21 @@ describe('deriveVisualizationDemand', () => {
             audienceMode: 'explore',
             advancedToolsOpen: false,
             graphRenderer: 'svg',
+            boundaryRailMounted: true,
         }).needNeuronGrids).toBe(true);
     });
+});
+
+it.each(['build', 'run'] as const)('only explicit rail mount controls boundary demand in %s', (view) => {
+    for (const activeEvidenceView of ['boundary', 'loss', 'confusion', 'inspection', 'code'] as const) {
+        for (const boundaryRailMounted of [false, true]) {
+            expect(deriveVisualizationDemand({ view, activeEvidenceView, audienceMode: 'lab', advancedToolsOpen: true, graphRenderer: 'canvas', boundaryRailMounted }).needDecisionBoundary).toBe(boundaryRailMounted);
+        }
+    }
+});
+
+it.each(['build', 'run'] as const)('requests diagnostics for the visible evidence panel in %s', (view) => {
+    const input = { view, audienceMode: 'lab' as const, advancedToolsOpen: true, graphRenderer: 'canvas' as const, boundaryRailMounted: true };
+    expect(deriveVisualizationDemand({ ...input, activeEvidenceView: 'inspection' })).toMatchObject({ needLayerStats: true, needActivationHistograms: true });
+    expect(deriveVisualizationDemand({ ...input, activeEvidenceView: 'confusion' })).toMatchObject({ needConfusionMatrix: true });
 });

@@ -3,7 +3,7 @@ import type { CompiledExperimentConfig, ConfusionMatrixData } from '@nn-playgrou
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
 
-export interface LegacyDataProjectionForTest {
+interface LegacyDataProjectionForTest {
     readonly dataset: string;
     readonly problemType: string;
     readonly noise: number;
@@ -11,18 +11,18 @@ export interface LegacyDataProjectionForTest {
     readonly numSamples: number;
 }
 
-export interface LegacyFeaturesProjectionForTest {
+interface LegacyFeaturesProjectionForTest {
     readonly x: boolean;
     readonly y: boolean;
     readonly xSquared: boolean;
 }
 
-export interface LegacyTrainingProjectionForTest {
+interface LegacyTrainingProjectionForTest {
     readonly learningRate: number;
     readonly batchSize: number;
 }
 
-export interface LegacyTrainingSnapshotForTest {
+interface LegacyTrainingSnapshotForTest {
     readonly epoch?: number;
     readonly trainLoss?: number;
     readonly testLoss?: number;

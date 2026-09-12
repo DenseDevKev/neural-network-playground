@@ -53,6 +53,27 @@ export function shouldRenderEdge(weight: number, filter: EdgeFilter): boolean {
 
 // ── Visual constants (must match the SVG renderer for parity) ───────────────
 
+export interface NodeGeometry {
+    readonly width: number;
+    readonly height: number;
+    readonly cornerRadius: number;
+    readonly hitPadding: number;
+}
+
+export function deriveNodeGeometry(availableHeight: number, largestLayer: number): NodeGeometry {
+    const count = Number.isFinite(largestLayer) ? Math.max(1, Math.floor(largestLayer)) : 1;
+    const height = Number.isFinite(availableHeight) ? Math.max(160, availableHeight) : 160;
+    const size = Math.max(30, Math.min(64, Math.floor((height - 56 - (count - 1) * 8) / count)));
+    return { width: size, height: size, cornerRadius: Math.max(6, Math.min(12, Math.round(size * 0.2))), hitPadding: 6 };
+}
+
+export function describeGraphNode(layerIdx: number, nodeIdx: number, layerCount: number): string {
+    if (layerIdx === 0) return `Input ${nodeIdx + 1}`;
+    if (layerIdx === layerCount - 1) return `Output neuron ${nodeIdx + 1}`;
+    return `Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`;
+}
+
+// Legacy fallback geometry remains available to standalone painter consumers.
 export const NODE_RADIUS = 14;
 export const EDGE_HIT_THRESHOLD = 6; // pixels, perpendicular distance for hover
 export const NODE_HIT_PADDING = 4; // grow hit area a bit beyond the visible disc
@@ -149,6 +170,7 @@ export function paintEdges(
     hovered: EdgeRef | null,
     filter: EdgeFilter = 'all',
     options: {
+        highlightedEdgeKeys?: ReadonlySet<string>;
         viewMode?: GraphViewMode;
         changedEdgeKeys?: ReadonlySet<string>;
         nodeActivationByKey?: ReadonlyMap<string, number>;
@@ -156,6 +178,8 @@ export function paintEdges(
 ): void {
     if (!flat) return;
     const viewMode = options.viewMode ?? 'weights';
+    const initialAlpha = ctx.globalAlpha;
+    if (options.highlightedEdgeKeys?.size) ctx.globalAlpha = initialAlpha * 0.28;
 
     if (viewMode === 'activations') {
         for (let layerIdx = 1; layerIdx < nodePositions.length; layerIdx++) {
@@ -297,6 +321,26 @@ export function paintEdges(
             ctx.stroke();
         }
     }
+    ctx.globalAlpha = initialAlpha;
+    // At most six selected influences; ordinary edges retain their batched pass.
+    for (const key of options.highlightedEdgeKeys ?? []) {
+        const [layerIdx, nodeIdx, prevIdx] = key.split(':').map(Number);
+        const prev = nodePositions[layerIdx - 1]?.[prevIdx];
+        const node = nodePositions[layerIdx]?.[nodeIdx];
+        if (!prev || !node) continue;
+        const weight = flat.weights[layerWeightOffset(flat.layerSizes, layerIdx - 1) + nodeIdx * flat.layerSizes[layerIdx - 1] + prevIdx];
+        if (!Number.isFinite(weight) || !shouldRenderEdge(weight, filter)) continue;
+        const dx = cpX(prev, node);
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.bezierCurveTo(prev.x + dx, prev.y, node.x - dx, node.y, node.x, node.y);
+        ctx.setLineDash?.(weight < 0 ? [6, 4] : []);
+        ctx.strokeStyle = edgeColor(weight, true);
+        ctx.lineWidth = 1.5 + Math.min(3, Math.abs(weight)) * 1.5;
+        ctx.stroke();
+    }
+    ctx.setLineDash?.([]);
+
 }
 
 /**
@@ -309,7 +353,7 @@ export function paintNodes(
     ctx: CanvasRenderingContext2D,
     nodePositions: NodePos[][],
     flat: FlatNetworkView | null,
-    options: { nodeHealthByKey?: ReadonlyMap<string, NodeHealth> } = {},
+    options: { nodeHealthByKey?: ReadonlyMap<string, NodeHealth>; geometry?: NodeGeometry; selectedNode?: NodeRef | null } = {},
 ): void {
     const layerCount = nodePositions.length;
 
@@ -318,8 +362,7 @@ export function paintNodes(
     const fillPath = new Path2D();
     for (let l = 0; l < layerCount; l++) {
         for (const n of nodePositions[l]) {
-            fillPath.moveTo(n.x + NODE_RADIUS, n.y);
-            fillPath.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
+            appendNodePath(fillPath, n, options.geometry);
         }
     }
     ctx.fill(fillPath);
@@ -343,14 +386,12 @@ export function paintNodes(
             const n = layer[i];
 
             if (target) {
-                target.moveTo(n.x + NODE_RADIUS, n.y);
-                target.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
+                appendNodePath(target, n, options.geometry);
             } else {
                 // Hidden layer — bias-tinted; bucket by sign.
                 const bias = flat ? flat.biases[biasBase + i] : 0;
                 const hiddenTarget = bias >= 0 ? hiddenPos : hiddenNeg;
-                hiddenTarget.moveTo(n.x + NODE_RADIUS, n.y);
-                hiddenTarget.arc(n.x, n.y, NODE_RADIUS, 0, Math.PI * 2);
+                appendNodePath(hiddenTarget, n, options.geometry);
             }
         }
     }
@@ -369,18 +410,31 @@ export function paintNodes(
                 if (!health) continue;
                 const node = nodePositions[l][i];
                 ctx.beginPath();
-                ctx.arc(node.x, node.y, NODE_RADIUS + 4, 0, Math.PI * 2);
+                const ring = new Path2D();
+                appendNodePath(ring, node, options.geometry, 4);
                 ctx.strokeStyle = health === 'low'
                     ? 'rgba(239, 68, 68, 0.78)'
                     : 'rgba(234, 179, 8, 0.82)';
                 ctx.lineWidth = 2;
                 ctx.setLineDash?.(health === 'low' ? [3, 3] : [1, 3]);
-                ctx.stroke();
+                ctx.stroke(ring);
                 ctx.setLineDash?.([]);
             }
         }
         ctx.restore();
     }
+    const selected = options.selectedNode;
+    const node = selected && nodePositions[selected.layerIdx]?.[selected.nodeIdx];
+    if (node) {
+        ctx.save();
+        const ring = new Path2D();
+        appendNodePath(ring, node, options.geometry, 3);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        ctx.stroke(ring);
+        ctx.restore();
+    }
+
 }
 
 /**
@@ -412,6 +466,7 @@ export function hitTestNode(
     x: number,
     y: number,
     nodePositions: NodePos[][],
+    geometry?: NodeGeometry,
 ): NodeRef | null {
     const r = NODE_RADIUS + NODE_HIT_PADDING;
     const r2 = r * r;
@@ -421,7 +476,10 @@ export function hitTestNode(
             const n = layer[i];
             const dx = n.x - x;
             const dy = n.y - y;
-            if (dx * dx + dy * dy <= r2) {
+            const inside = geometry
+                ? Math.abs(dx) <= geometry.width / 2 + geometry.hitPadding && Math.abs(dy) <= geometry.height / 2 + geometry.hitPadding
+                : dx * dx + dy * dy <= r2;
+            if (inside) {
                 return { layerIdx: l, nodeIdx: i };
             }
         }
@@ -501,4 +559,26 @@ function pointSegmentDist2(
     const ex = px - cx;
     const ey = py - cy;
     return ex * ex + ey * ey;
+}
+
+function appendNodePath(path: Path2D, node: NodePos, geometry?: NodeGeometry, padding = 0): void {
+    if (!geometry) {
+        path.moveTo(node.x + NODE_RADIUS + padding, node.y);
+        path.arc(node.x, node.y, NODE_RADIUS + padding, 0, Math.PI * 2);
+        return;
+    }
+    const x = node.x - geometry.width / 2 - padding;
+    const y = node.y - geometry.height / 2 - padding;
+    const w = geometry.width + padding * 2, h = geometry.height + padding * 2;
+    const r = geometry.cornerRadius + padding, c = r * 0.55228475;
+    path.moveTo(x + r, y);
+    path.lineTo(x + w - r, y);
+    path.bezierCurveTo(x + w - r + c, y, x + w, y + r - c, x + w, y + r);
+    path.lineTo(x + w, y + h - r);
+    path.bezierCurveTo(x + w, y + h - r + c, x + w - r + c, y + h, x + w - r, y + h);
+    path.lineTo(x + r, y + h);
+    path.bezierCurveTo(x + r - c, y + h, x, y + h - r + c, x, y + h - r);
+    path.lineTo(x, y + r);
+    path.bezierCurveTo(x, y + r - c, x + r - c, y, x + r, y);
+    path.closePath();
 }

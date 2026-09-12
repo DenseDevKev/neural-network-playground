@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { axe } from 'jest-axe';
-import type { ReactNode } from 'react';
 import App from './App';
 import { useTrainingStore } from './store/useTrainingStore.ts';
 import { useLayoutStore } from './store/useLayoutStore.ts';
@@ -131,44 +130,8 @@ vi.mock('./components/layout/Header.tsx', () => ({
     ),
 }));
 
-vi.mock('./components/layout/BuildRunShell.tsx', () => ({
-    BuildRunShell: ({
-        view,
-        recipeContent,
-        runContent,
-        dataContent,
-        networkContent,
-        featuresContent,
-        hyperparamContent,
-        topologyContent,
-        transportContent,
-    }: {
-        view: string;
-        recipeContent?: ReactNode;
-        runContent?: ReactNode;
-        dataContent?: ReactNode;
-        networkContent?: ReactNode;
-        featuresContent?: ReactNode;
-        hyperparamContent?: ReactNode;
-        topologyContent?: ReactNode;
-        transportContent?: ReactNode;
-    }) => (
-        <section aria-label={`${view} workspace`} data-testid="build-run-shell">
-            <div data-forge-panel-targets="experiment">{recipeContent}</div>
-            <div data-forge-panel-targets="run">{runContent}</div>
-            <div data-forge-panel-targets="data">{dataContent}</div>
-            <div data-forge-panel-targets="network">{networkContent}</div>
-            <div data-forge-panel-targets="features">{featuresContent}</div>
-            <div data-forge-panel-targets="hyperparams">{hyperparamContent}</div>
-            <div data-forge-panel-targets="topology">{topologyContent}</div>
-            <div data-forge-panel-targets="transport">{transportContent}</div>
-        </section>
-    ),
-}));
-
-vi.mock('./components/layout/MainArea.tsx', () => ({
-    CanvasContent:   () => <div>Canvas</div>,
-    BoundaryContent: () => <div>Boundary</div>,
+vi.mock('./components/layout/PrecisionLabContent.tsx', () => ({
+    TopologyContent: () => <div>Canvas</div>,
     LossContent:     () => <div>Loss</div>,
     ConfusionContent:() => <div>Confusion</div>,
     InspectContent:  () => <div>Inspect</div>,
@@ -178,6 +141,7 @@ vi.mock('./components/layout/MainArea.tsx', () => ({
 }));
 
 vi.mock('./components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
+vi.mock('./components/visualization/DecisionBoundaryCanvas.tsx', () => ({ DecisionBoundaryCanvas: () => <canvas data-decision-boundary-canvas aria-label="Boundary paint" /> }));
 vi.mock('./components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
 vi.mock('./components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
 vi.mock('./components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));
@@ -224,6 +188,7 @@ describe('App accessibility shell', () => {
 
         useLayoutStore.setState({
             view: 'build',
+            buildContextOpen: false,
             activeRecipeSection: 'data',
             activeEvidenceView: 'boundary',
             audienceMode: 'explore',
@@ -572,20 +537,14 @@ describe('App accessibility shell', () => {
         expect(useLayoutStore.getState().view).toBe('build');
     });
 
-    it('passes target hooks to Build/Run workspace panels', () => {
-        useLayoutStore.setState({ view: 'build', phase: 'build' });
-
+    it('passes target hooks to the active Build context and permanent topology/transport', () => {
         const { container } = render(<App />);
-        const targets = Array.from(container.querySelectorAll('[data-forge-panel-targets]'))
-            .map((panel) => panel.getAttribute('data-forge-panel-targets'));
-
-        expect(targets).toEqual(expect.arrayContaining([
-            'data',
-            'topology',
-            'network',
-            'features',
-            'hyperparams',
-            'transport',
-        ]));
+        for (const section of ['data', 'network', 'features', 'hyperparams'] as const) {
+            act(() => useLayoutStore.getState().selectBuildContext(section));
+            expect(container.querySelector(`[data-forge-panel-targets="${section}"]`)).not.toBeNull();
+        }
+        for (const target of ['topology', 'transport']) {
+            expect(container.querySelector(`[data-forge-panel-targets="${target}"]`)).not.toBeNull();
+        }
     });
 });

@@ -9,21 +9,20 @@ export function deriveVisualizationDemand(args: {
     audienceMode: AudienceMode;
     advancedToolsOpen: boolean;
     graphRenderer: 'canvas' | 'svg';
+    boundaryRailMounted: boolean;
 }): VisualizationDemand {
-    const activeEvidenceVisible = args.view === 'run';
     const visibleEvidenceView = resolveVisibleEvidenceView(
         args.audienceMode,
         args.advancedToolsOpen,
         args.activeEvidenceView,
     );
-    const boundaryVisible = activeEvidenceVisible && visibleEvidenceView === 'boundary';
-    const confusionVisible = activeEvidenceVisible && visibleEvidenceView === 'confusion';
-    const inspectionVisible = activeEvidenceVisible && visibleEvidenceView === 'inspection';
+    const confusionVisible = visibleEvidenceView === 'confusion';
+    const inspectionVisible = visibleEvidenceView === 'inspection';
     const graphConsumesNeuronGrids = args.graphRenderer === 'canvas' || args.graphRenderer === 'svg';
 
     return {
         ...DEFAULT_DEMAND,
-        needDecisionBoundary: boundaryVisible,
+        needDecisionBoundary: args.boundaryRailMounted,
         needNeuronGrids: graphConsumesNeuronGrids,
         needLayerStats: inspectionVisible,
         needActivationHistograms: inspectionVisible,

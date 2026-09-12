@@ -548,6 +548,8 @@ describe('GuidedLessonPanel', () => {
                         currentPreparedForTest()?.identities.canonicalRecipeKey,
                         `${source.id}@${source.revision} -> ${lesson.id} (${target.id}@${target.revision})`,
                     ).toBe(target.prepared.identities.canonicalRecipeKey);
+                    // A source recipe can already match before asynchronous start finishes.
+                    expect(onReset).toHaveBeenCalledTimes(1);
                 });
                 expect(currentPreparedForTest()?.identities.recipeFingerprint)
                     .toBe(target.prepared.identities.recipeFingerprint);
@@ -555,7 +557,6 @@ describe('GuidedLessonPanel', () => {
                     showTestData: true,
                     discretizeOutput: true,
                 });
-                expect(onReset).toHaveBeenCalledTimes(1);
                 expect(onHighlightChange).toHaveBeenLastCalledWith(lesson.steps[0].target);
                 expect(useLayoutStore.getState()).toMatchObject({
                     activeLessonId: lesson.id,

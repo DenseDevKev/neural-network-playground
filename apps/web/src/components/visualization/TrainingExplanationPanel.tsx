@@ -12,7 +12,7 @@ function stopShortcutPropagation(event: KeyboardEvent<HTMLButtonElement>) {
     }
 }
 
-export const TrainingExplanationPanel = memo(function TrainingExplanationPanel() {
+export const TrainingExplanationPanel = /* @__PURE__ */ memo(function TrainingExplanationPanel() {
     const latestLiveSignal = useTrainingStore((state) => state.latestLiveSignal);
     const latestEvaluation = useTrainingStore((state) => state.latestEvaluation);
     const pauseReason = useTrainingStore((state) => state.pauseReason);

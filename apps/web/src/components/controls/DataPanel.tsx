@@ -1,6 +1,8 @@
 // ── Data Panel ──
-import { memo, useId } from 'react';
+import { memo, useId, useMemo } from 'react';
 import type { DatasetId } from '@nn-playground/engine';
+import { deriveDatasetPreviewModel, type DatasetPreviewModel } from './datasetPreviewModel.ts';
+import { DatasetPreviewCanvas } from './DatasetPreviewCanvas.tsx';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { commitRecipeEdit } from '../../store/commitRecipeEdit.ts';
@@ -65,6 +67,15 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
     const reshuffleEffectsId = `${controlId}-reshuffle-split-effects`;
     const trainingResetEffectsId = `${controlId}-training-reset-effects`;
 
+    const dataSeed = recipe?.data.seed;
+    const dataNoise = recipe?.data.noise;
+    const previews = useMemo(() => {
+        if (dataSeed === undefined || dataNoise === undefined) return new Map<DatasetId, DatasetPreviewModel>();
+        return new Map([...CLASSIFICATION_DATASETS, ...REGRESSION_DATASETS].map(({ id }) => [
+            id, deriveDatasetPreviewModel({ datasetId: id, seed: dataSeed, noise: dataNoise }),
+        ]));
+    }, [dataSeed, dataNoise]);
+
     const retryDataChange = () => useTrainingStore.getState().retryConfigSync();
 
     if (!recipe) {
@@ -114,7 +125,7 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
             <div className="control-row" style={{ alignItems: 'flex-start' }}>
                 <span className="control-label">Classification</span>
                 <div
-                    className="chip-group"
+                    className="precision-dataset-grid"
                     aria-label="Classification datasets"
                     style={{ marginBottom: 8 }}
                 >
@@ -122,11 +133,12 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
                         <Tooltip key={candidate.id} content={DATASET_TOOLTIPS[candidate.id]}>
                             <button
                                 type="button"
-                                className={`chip ${dataset === candidate.id ? 'active' : ''}`}
+                                className={`precision-dataset-choice ${dataset === candidate.id ? 'is-active' : ''}`}
                                 onClick={() => chooseDataset(candidate.id)}
                                 aria-pressed={dataset === candidate.id}
                             >
-                                {candidate.label}
+                                <DatasetPreviewCanvas model={previews.get(candidate.id)!} />
+                                <span>{candidate.label}</span>
                             </button>
                         </Tooltip>
                     ))}
@@ -135,16 +147,17 @@ export const DataPanel = memo(function DataPanel({ onReset }: DataPanelProps) {
 
             <div className="control-row" style={{ alignItems: 'flex-start', marginBottom: 12 }}>
                 <span className="control-label">Regression</span>
-                <div className="chip-group" aria-label="Regression datasets">
+                <div className="precision-dataset-grid" aria-label="Regression datasets">
                     {REGRESSION_DATASETS.map((candidate) => (
                         <Tooltip key={candidate.id} content={DATASET_TOOLTIPS[candidate.id]}>
                             <button
                                 type="button"
-                                className={`chip ${dataset === candidate.id ? 'active' : ''}`}
+                                className={`precision-dataset-choice ${dataset === candidate.id ? 'is-active' : ''}`}
                                 onClick={() => chooseDataset(candidate.id)}
                                 aria-pressed={dataset === candidate.id}
                             >
-                                {candidate.label}
+                                <DatasetPreviewCanvas model={previews.get(candidate.id)!} />
+                                <span>{candidate.label}</span>
                             </button>
                         </Tooltip>
                     ))}

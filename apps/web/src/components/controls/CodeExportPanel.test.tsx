@@ -8,6 +8,7 @@ import { useTrainingStore } from '../../store/useTrainingStore';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore';
 import { useLayoutStore } from '../../store/useLayoutStore';
 import { resetFrameBuffer, updateFrameBuffer } from '../../worker/frameBuffer';
+import * as frameBufferLayout from '../../worker/frameBufferLayout';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
     PREPARED_PRESETS,
@@ -228,6 +229,62 @@ describe('CodeExportPanel', () => {
 
         expect(document.querySelector('.code-export__code')?.textContent)
             .not.toContain('# Trained weights');
+    });
+
+    it('does not unpack unchanged parameters when only same-generation evidence advances', () => {
+        const unpackWeights = vi.spyOn(frameBufferLayout, 'unflattenWeights');
+        const unpackBiases = vi.spyOn(frameBufferLayout, 'unflattenBiases');
+        try {
+            render(<CodeExportPanel />);
+            const originalCode = screen.getByRole('tabpanel').textContent;
+            for (let step = 6; step <= 10; step += 1) {
+                act(() => {
+                    const signal = useTrainingStore.getState().latestLiveSignal!;
+                    useTrainingStore.setState({
+                        latestLiveSignal: {
+                            ...signal,
+                            model: { ...signal.model, revision: step, step },
+                            basis: { ...signal.basis, throughStep: step },
+                        },
+                    });
+                });
+            }
+            expect(screen.getByRole('tabpanel').textContent).toBe(originalCode);
+            expect(unpackWeights).toHaveBeenCalledTimes(1);
+            expect(unpackBiases).toHaveBeenCalledTimes(1);
+        } finally {
+            unpackWeights.mockRestore();
+            unpackBiases.mockRestore();
+        }
+    });
+
+    it.each(['Pseudocode', 'NumPy'])('refreshes %s when parameter provenance advances', (tab) => {
+        render(<CodeExportPanel />);
+        fireEvent.click(screen.getByRole('tab', { name: tab }));
+        const originalCode = screen.getByRole('tabpanel').textContent;
+        act(() => {
+            const access = usePlaygroundStore.getState().access;
+            if (access.status !== 'ready') throw new Error('expected prepared experiment');
+            installParameters(access.prepared, { generationId: 1, revision: 6, step: 6, epoch: 0 });
+            updateFrameBuffer({ weights: new Float32Array([0.9, 0.8, 0.7, 0.6, 0.5, 0.4]) });
+            useTrainingStore.setState((state) => ({ paramsVersion: state.paramsVersion + 1 }));
+        });
+        expect(screen.getByRole('tabpanel').textContent).not.toBe(originalCode);
+        if (tab === 'Pseudocode') expect(screen.getByRole('tabpanel')).toHaveTextContent('step 6');
+    });
+
+    it('drops cached parameters when the evidence generation changes or disappears', () => {
+        render(<CodeExportPanel />);
+        expect(screen.getByRole('tabpanel')).toHaveTextContent('Trained weights');
+        const signal = useTrainingStore.getState().latestLiveSignal!;
+        act(() => useTrainingStore.setState({
+            latestLiveSignal: { ...signal, model: { ...signal.model, generationId: 2 } },
+        }));
+        expect(screen.getByRole('tabpanel')).not.toHaveTextContent('Trained weights');
+        act(() => useTrainingStore.setState({ latestLiveSignal: signal }));
+        expect(screen.getByRole('tabpanel')).toHaveTextContent('Trained weights');
+        act(() => useTrainingStore.setState({ latestLiveSignal: null }));
+        expect(screen.getByRole('tabpanel')).not.toHaveTextContent('Trained weights');
     });
 
     it('switches to NumPy tab and shows numpy code', async () => {

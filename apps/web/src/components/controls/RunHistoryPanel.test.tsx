@@ -1,4 +1,6 @@
+import { makeSavedRunRecord } from '../../test/savedRunFixtures.ts';
 import { StrictMode } from 'react';
+import { useSaveCurrentRun } from '../../hooks/useSaveCurrentRun.ts';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -10,7 +12,6 @@ import {
 } from '@nn-playground/shared';
 import type {
     ExperimentRunRecordV2,
-    PreparedExperimentDocumentV2,
 } from '@nn-playground/shared';
 import { RunHistoryPanel } from './RunHistoryPanel.tsx';
 import {
@@ -43,55 +44,6 @@ function preset(id: (typeof PREPARED_PRESETS)[number]['id']) {
     return entry.prepared;
 }
 
-function makeRecord(
-    prepared: PreparedExperimentDocumentV2,
-    id: string = IDS[0],
-    title = 'Saved evidence',
-    testDataLoss = 0.5,
-): ExperimentRunRecordV2 {
-    const sampleCount = prepared.document.recipe.data.sampleCount;
-    const trainCount = Math.floor(sampleCount * prepared.document.recipe.data.trainFraction);
-    const testCount = sampleCount - trainCount;
-    const model = { generationId: Number(id.at(-1)) || 1, revision: 4, step: 4, epoch: 0 };
-    const dataset = {
-        generatorVersion: 2,
-        datasetKey: prepared.identities.datasetKey,
-        trainCount,
-        testCount,
-    };
-    const evaluation = {
-        evaluationId: 2,
-        trigger: 'save' as const,
-        model,
-        dataset,
-        objectiveKey: prepared.identities.objectiveKey,
-        train: {
-            basis: { kind: 'full-split' as const, split: 'train' as const, sampleCount: trainCount, populationCount: trainCount },
-            values: { dataLoss: 0.4 },
-        },
-        test: {
-            basis: { kind: 'full-split' as const, split: 'test' as const, sampleCount: testCount, populationCount: testCount },
-            values: { dataLoss: testDataLoss },
-        },
-        objective: { regularizationPenalty: 0, trainTotalObjective: 0.4 },
-    };
-    return {
-        kind: 'nn-playground-run',
-        schemaVersion: 2,
-        id,
-        createdAt: '2026-07-11T12:00:00.000Z',
-        updatedAt: '2026-07-11T12:00:00.000Z',
-        title,
-        recipe: prepared.document.recipe,
-        recipeFingerprint: prepared.identities.recipeFingerprint,
-        snapshot: {
-            model,
-            evaluation,
-            trendHistory: [],
-            evaluationHistory: [evaluation],
-        },
-    };
-}
 
 async function hydrateSingleton(): Promise<void> {
     await act(async () => {
@@ -112,13 +64,50 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         await hydrateSingleton();
     });
 
+    it('delegates capture to the injected App controller', async () => {
+        const commands = { save: vi.fn(async () => true), retry: vi.fn(async () => true),
+            discard: vi.fn(async () => {}), dismiss: vi.fn() };
+        render(<RunHistoryPanel saveController={{ busy: false, error: null, pending: false,
+            disabledReason: null, commands }} />);
+        await userEvent.type(screen.getByRole('textbox', { name: 'Run name' }), ' Shared title ');
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        expect(commands.save).toHaveBeenCalledWith('Shared title');
+        expect(workerApi.captureRunArtifact).not.toHaveBeenCalled();
+    });
+
+    it('retains the shared capture guard when the History drawer unmounts and reopens', async () => {
+        let finish!: (record: ExperimentRunRecordV2) => void;
+        workerApi.captureRunArtifact.mockImplementation(() => new Promise<ExperimentRunRecordV2>((resolve) => { finish = resolve; }));
+        function Owner({ historyOpen }: { historyOpen: boolean }) {
+            const save = useSaveCurrentRun();
+            return <>
+                <button onClick={() => { void save.commands.save(); }}>Transport save</button>
+                <span data-testid="capture-busy">{String(save.busy)}</span>
+                {historyOpen && <RunHistoryPanel saveController={save} />}
+            </>;
+        }
+        const view = render(<Owner historyOpen />);
+        await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
+        await waitFor(() => expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1));
+        view.rerender(<Owner historyOpen={false} />);
+        await userEvent.click(screen.getByRole('button', { name: 'Transport save' }));
+        expect(workerApi.captureRunArtifact).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId('capture-busy')).toHaveTextContent('true');
+        const metadata = workerApi.captureRunArtifact.mock.calls[0][0];
+        await act(async () => finish(makeSavedRunRecord(currentPreparedForTest()!, metadata.id, 'Closed drawer capture')));
+        await waitFor(() => expect(screen.getByTestId('capture-busy')).toHaveTextContent('false'));
+        view.rerender(<Owner historyOpen />);
+        expect(screen.getByRole('article', { name: 'Closed drawer capture' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Save current run' })).toBeEnabled();
+    });
+
     it('asks the worker to author the record from metadata only and persists its artifact', async () => {
         const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: {
             id: string;
             createdAt: string;
             updatedAt: string;
-        }) => makeRecord(prepared, metadata.id, 'Captured run'));
+        }) => makeSavedRunRecord(prepared, metadata.id, 'Captured run'));
 
         render(<RunHistoryPanel />);
         await userEvent.click(screen.getByRole('button', { name: 'Save current run' }));
@@ -140,7 +129,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     it('re-enables saving after a successful capture under StrictMode', async () => {
         const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
-            makeRecord(prepared, metadata.id, 'Strict capture')
+            makeSavedRunRecord(prepared, metadata.id, 'Strict capture')
         ));
 
         render(
@@ -176,7 +165,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         workerApi.captureRunArtifact.mockImplementation(async (metadata: {
             id: string;
             title: string;
-        }) => makeRecord(prepared, metadata.id, metadata.title));
+        }) => makeSavedRunRecord(prepared, metadata.id, metadata.title));
 
         const view = render(<RunHistoryPanel />);
         await userEvent.type(screen.getByRole('textbox', { name: 'Run name' }), '  XOR baseline  ');
@@ -200,7 +189,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     it('uses the worker-authored snapshot step in the deterministic default when the run name is blank', async () => {
         const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => {
-            const { title: _title, ...record } = makeRecord(prepared, metadata.id);
+            const { title: _title, ...record } = makeSavedRunRecord(prepared, metadata.id);
             return record;
         });
 
@@ -222,7 +211,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         workerApi.captureRunArtifact.mockImplementation(async (metadata: {
             id: string;
             title: string;
-        }) => makeRecord(prepared, metadata.id, metadata.title));
+        }) => makeSavedRunRecord(prepared, metadata.id, metadata.title));
 
         render(<RunHistoryPanel />);
         fireEvent.change(screen.getByRole('textbox', { name: 'Run name' }), {
@@ -254,7 +243,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         let resolveCapture!: () => void;
         workerApi.captureRunArtifact.mockImplementation((metadata: { id: string; title: string }) => (
             new Promise<ExperimentRunRecordV2>((resolve) => {
-                resolveCapture = () => resolve(makeRecord(prepared, metadata.id, metadata.title));
+                resolveCapture = () => resolve(makeSavedRunRecord(prepared, metadata.id, metadata.title));
             })
         ));
 
@@ -280,7 +269,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     it('retries persistence with the captured record instead of recapturing scientific state', async () => {
         const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
-            makeRecord(prepared, metadata.id, 'Retry me')
+            makeSavedRunRecord(prepared, metadata.id, 'Retry me')
         ));
         const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
         const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
@@ -303,7 +292,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     it('blocks recapture and keeps retry or discard available after error dismissal', async () => {
         const prepared = currentPreparedForTest()!;
         workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
-            makeRecord(prepared, metadata.id, 'Pending exact artifact')
+            makeSavedRunRecord(prepared, metadata.id, 'Pending exact artifact')
         ));
         const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
         const setItem = vi.spyOn(prototype, 'setItem').mockImplementation(() => {
@@ -332,7 +321,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     it('applies a saved recipe through a fresh version-2 document', async () => {
         const prepared = preset('xor-hidden');
         await act(async () => {
-            await useExperimentMemoryStore.getState().saveRecord(makeRecord(prepared));
+            await useExperimentMemoryStore.getState().saveRecord(makeSavedRunRecord(prepared));
         });
         const replaceDocument = vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument');
 
@@ -351,10 +340,10 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         const prepared = preset('circle-one-layer');
         await act(async () => {
             await useExperimentMemoryStore.getState().saveRecord(
-                makeRecord(prepared, IDS[0], 'First'),
+                makeSavedRunRecord(prepared, IDS[0], 'First'),
             );
             await useExperimentMemoryStore.getState().saveRecord(
-                makeRecord(prepared, IDS[1], 'Second'),
+                makeSavedRunRecord(prepared, IDS[1], 'Second'),
             );
         });
 
@@ -406,13 +395,13 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
     it('shows no numeric winner when dataset or objective identity differs', async () => {
         await act(async () => {
-            await useExperimentMemoryStore.getState().saveRecord(makeRecord(
+            await useExperimentMemoryStore.getState().saveRecord(makeSavedRunRecord(
                 preset('circle-one-layer'),
                 IDS[0],
                 'Circle',
                 0.4,
             ));
-            await useExperimentMemoryStore.getState().saveRecord(makeRecord(
+            await useExperimentMemoryStore.getState().saveRecord(makeSavedRunRecord(
                 preset('regression-plane'),
                 IDS[1],
                 'Regression',
@@ -430,8 +419,8 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     it('computes a numeric winner only for equal dataset and objective identities', async () => {
         const prepared = preset('circle-one-layer');
         await act(async () => {
-            await useExperimentMemoryStore.getState().saveRecord(makeRecord(prepared, IDS[0], 'Baseline', 0.6));
-            await useExperimentMemoryStore.getState().saveRecord(makeRecord(prepared, IDS[1], 'Tuned', 0.4));
+            await useExperimentMemoryStore.getState().saveRecord(makeSavedRunRecord(prepared, IDS[0], 'Baseline', 0.6));
+            await useExperimentMemoryStore.getState().saveRecord(makeSavedRunRecord(prepared, IDS[1], 'Tuned', 0.4));
         });
 
         render(<RunHistoryPanel />);
@@ -442,9 +431,9 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
     it('compares two nonadjacent choices, prunes a deleted choice, and preserves order across updates', async () => {
         const prepared = preset('circle-one-layer');
-        const first = makeRecord(prepared, IDS[0], 'First', 0.8);
-        const middle = makeRecord(prepared, IDS[1], 'Middle', 0.2);
-        const latest = makeRecord(prepared, IDS[2], 'Latest', 0.5);
+        const first = makeSavedRunRecord(prepared, IDS[0], 'First', 0.8);
+        const middle = makeSavedRunRecord(prepared, IDS[1], 'Middle', 0.2);
+        const latest = makeSavedRunRecord(prepared, IDS[2], 'Latest', 0.5);
         await act(async () => {
             await useExperimentMemoryStore.getState().saveRecord(first);
             await useExperimentMemoryStore.getState().saveRecord(middle);
@@ -461,7 +450,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
         await act(async () => {
             await useExperimentMemoryStore.getState().saveRecord(
-                makeRecord(prepared, IDS[3], 'Newly saved', 0.1),
+                makeSavedRunRecord(prepared, IDS[3], 'Newly saved', 0.1),
             );
         });
         expect(screen.getByRole('checkbox', { name: 'Compare Newly saved' })).not.toBeChecked();
@@ -483,7 +472,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
                     first,
                     middle,
                     latest,
-                    makeRecord(prepared, IDS[3], 'Newly saved', 0.1),
+                    makeSavedRunRecord(prepared, IDS[3], 'Newly saved', 0.1),
                 ],
             });
         });
@@ -505,7 +494,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
                     first,
                     middle,
                     latest,
-                    makeRecord(prepared, IDS[3], 'Newly saved', 0.1),
+                    makeSavedRunRecord(prepared, IDS[3], 'Newly saved', 0.1),
                 ],
             });
         });
@@ -523,10 +512,10 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         const title = `Duplicate ${'🧠'.repeat(50)}`;
         await act(async () => {
             await useExperimentMemoryStore.getState().saveRecord(
-                makeRecord(prepared, IDS[0], title, 0.6),
+                makeSavedRunRecord(prepared, IDS[0], title, 0.6),
             );
             await useExperimentMemoryStore.getState().saveRecord(
-                makeRecord(prepared, IDS[1], title, 0.4),
+                makeSavedRunRecord(prepared, IDS[1], title, 0.4),
             );
         });
 
@@ -543,8 +532,8 @@ describe('RunHistoryPanel V2 evidence memory', () => {
 
     it('keeps the warning local when only objective identity differs', async () => {
         const prepared = preset('circle-one-layer');
-        const baseline = makeRecord(prepared, IDS[0], 'Baseline objective', 0.6);
-        const changed = makeRecord(prepared, IDS[1], 'Changed objective', 0.4);
+        const baseline = makeSavedRunRecord(prepared, IDS[0], 'Baseline objective', 0.6);
+        const changed = makeSavedRunRecord(prepared, IDS[1], 'Changed objective', 0.4);
         const incompatible = {
             ...changed,
             snapshot: {
@@ -593,7 +582,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         const prepared = currentPreparedForTest()!;
         window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, raw);
         workerApi.captureRunArtifact.mockImplementation(async (metadata: { id: string }) => (
-            makeRecord(prepared, metadata.id, 'Saved after recovery')
+            makeSavedRunRecord(prepared, metadata.id, 'Saved after recovery')
         ));
         await hydrateSingleton();
 
@@ -615,7 +604,7 @@ describe('RunHistoryPanel V2 evidence memory', () => {
     });
 
     it('offers raw download and explicit deletion for a rejected record', async () => {
-        const valid = makeRecord(preset('circle-one-layer'));
+        const valid = makeSavedRunRecord(preset('circle-one-layer'));
         const rejected = { schemaVersion: 1, id: 'rejected' };
         window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify({
             kind: EXPERIMENT_MEMORY_ENVELOPE_KIND,

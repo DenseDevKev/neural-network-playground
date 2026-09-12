@@ -8,6 +8,13 @@
 //   NetworkNodes   — neuron circles with optional heatmaps; re-renders on bias/heatmap change
 
 import { useMemo, useState, useCallback, useEffect, useRef, memo } from 'react';
+import { NetworkGraphFrame } from './NetworkGraphFrame.tsx';
+import { useNetworkSelectionController, type NetworkSelectionController } from './useNetworkSelectionController.ts';
+import { describeGraphNode, edgeRefKey, shouldRenderEdge, nodeRefKey, type EdgeFilter, type GraphViewMode } from './networkGraphPainter.ts';
+import { classifyNeuronActivity, formatArchitectureStory, getCapacityLabel } from './NetworkGraphCanvas.tsx';
+import { useLayoutStore } from '../../store/useLayoutStore.ts';
+import { getLessonDefinition } from '../../lessons/lessonRegistry.ts';
+import { getDatasetTopologyHint } from '../../data/datasetInsights.ts';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { usePlaygroundStore } from '../../store/usePlaygroundStore.ts';
 import { getActiveFeatures, type FeatureFlags } from '@nn-playground/engine';
@@ -64,11 +71,6 @@ interface FocusTargetPosition {
     y: number;
 }
 
-function describeGraphNode(layerIdx: number, nodeIdx: number, layerCount: number): string {
-    if (layerIdx === 0) return `Input ${nodeIdx + 1}`;
-    if (layerIdx === layerCount - 1) return 'Output neuron';
-    return `Hidden ${layerIdx}, Neuron ${nodeIdx + 1}`;
-}
 
 function edgeConnectionLabel(layerIdx: number, nodeIdx: number, prevIdx: number, layerCount: number): string {
     return `${describeGraphNode(layerIdx - 1, prevIdx, layerCount)} to ${describeGraphNode(layerIdx, nodeIdx, layerCount)}`;
@@ -233,6 +235,10 @@ interface NetworkEdgesProps {
     // unrelated state (e.g. tooltip text) changes upstream.
     flat: FlatNetworkView | null;
     hoveredEdge: string | null;
+    highlightedEdgeKeys?: ReadonlySet<string>;
+    filter: EdgeFilter;
+    viewMode: GraphViewMode;
+    activations: ReadonlyMap<string, number>;
     onEdgeEnter: (layerIdx: number, nodeIdx: number, prevIdx: number, weight: number, x: number, y: number) => void;
     onEdgeLeave: () => void;
     onEdgeFocus: (layerIdx: number, nodeIdx: number, prevIdx: number, weight: number, x: number, y: number) => void;
@@ -242,6 +248,7 @@ const NetworkEdges = memo(function NetworkEdges({
     nodePositions,
     flat,
     hoveredEdge,
+    highlightedEdgeKeys, filter, viewMode, activations,
     onEdgeEnter,
     onEdgeLeave,
     onEdgeFocus,
@@ -261,7 +268,11 @@ const NetworkEdges = memo(function NetworkEdges({
                 return layerNodes.map((node, nodeIdx) =>
                     prevNodes.map((prevNode, prevIdx) => {
                         const weight = flat ? flat.weights[base + nodeIdx * fanIn + prevIdx] : 0;
-                        const safeWeight = Number.isFinite(weight) ? weight : 0;
+                        if (!Number.isFinite(weight) || !shouldRenderEdge(weight, filter)) return null;
+                        const safeWeight = weight;
+                        const selectedKey = edgeRefKey(layerIdx, nodeIdx, prevIdx);
+                        const isSelected = highlightedEdgeKeys?.has(selectedKey) ?? false;
+                        const intensity = activations.get(nodeRefKey(layerIdx, nodeIdx)) ?? 0;
                         const key = `e-${layerIdx}-${nodeIdx}-${prevIdx}`;
                         const isHovered = hoveredEdge === key;
                         const cpX = (node.x - prevNode.x) * 0.45;
@@ -295,9 +306,12 @@ const NetworkEdges = memo(function NetworkEdges({
                                 <path
                                     d={pathD}
                                     fill="none"
-                                    stroke={edgeColor(safeWeight)}
-                                    strokeWidth={isHovered ? edgeWidth(safeWeight) * 2 : edgeWidth(safeWeight)}
-                                    opacity={isHovered ? 1 : 0.7}
+                                    data-edge-key={selectedKey}
+                                    data-edge-selected={isSelected}
+                                    stroke={viewMode === 'activations' && !isSelected && !isHovered ? `rgba(249,115,22,${0.12 + intensity * 0.72})` : edgeColor(safeWeight)}
+                                    strokeWidth={isSelected ? 1.5 + Math.min(3, Math.abs(safeWeight)) * 1.5 : isHovered ? edgeWidth(safeWeight) * 2 : edgeWidth(safeWeight)}
+                                    opacity={highlightedEdgeKeys?.size && !isSelected ? 0.28 : 1}
+                                    strokeDasharray={isSelected && safeWeight < 0 ? '6 4' : undefined}
                                     style={{ transition: 'stroke-width 200ms ease, opacity 200ms ease', pointerEvents: 'none' }}
                                 />
                                 {/* Flow animation */}
@@ -309,7 +323,7 @@ const NetworkEdges = memo(function NetworkEdges({
                                         strokeWidth={1.5}
                                         strokeDasharray="4 12"
                                         className={safeWeight > 0 ? 'network-flow-anim' : 'network-flow-anim-reverse'}
-                                        opacity={0.4 + Math.min(Math.abs(safeWeight), 2) * 0.25}
+                                        opacity={(highlightedEdgeKeys?.size ? 0.1 : 1) * (0.4 + Math.min(Math.abs(safeWeight), 2) * 0.25)}
                                         style={{ pointerEvents: 'none' }}
                                     />
                                 )}
@@ -338,6 +352,7 @@ interface NetworkNodesProps {
     neuronGrids: NeuronGridEntry[] | null;
     activeFeatures: { label: string }[];
     activation: string;
+    controller: NetworkSelectionController;
     onNodeEnter: (x: number, y: number, text: string[]) => void;
     onNodeLeave: () => void;
     onNodeFocus: (x: number, y: number, text: string[]) => void;
@@ -350,6 +365,7 @@ const NetworkNodes = memo(function NetworkNodes({
     neuronGrids,
     activeFeatures,
     activation,
+    controller,
     onNodeEnter,
     onNodeLeave,
     onNodeFocus,
@@ -422,7 +438,10 @@ const NetworkNodes = memo(function NetworkNodes({
                     const heatmapIdx = getNeuronGridIndex(layerIdx, nodeIdx);
                     const heatmap = heatmapIdx != null ? neuronGrids?.[heatmapIdx] ?? null : null;
                     const tooltipLines = buildTooltipLines(layerIdx, nodeIdx);
-                    const ariaLabel = tooltipLines.join('. ');
+                    const label = describeGraphNode(layerIdx, nodeIdx, layers.length);
+                    const ariaLabel = [label, ...tooltipLines.filter((line) => line !== label)].join('. ');
+                    const selected = controller.selectedNode?.layerIdx === layerIdx && controller.selectedNode.nodeIdx === nodeIdx;
+                    const health = heatmap ? classifyNeuronActivity(heatmap.grid, activation as Parameters<typeof classifyNeuronActivity>[1]) : null;
 
                     return (
                         <g
@@ -430,7 +449,17 @@ const NetworkNodes = memo(function NetworkNodes({
                             role="button"
                             tabIndex={0}
                             aria-label={ariaLabel}
+                            aria-pressed={selected}
+                            data-grid-available={heatmap !== null}
+                            aria-description={!isInput && !heatmap ? 'Activation grid not available' : undefined}
+                            data-node-health={health ?? (heatmap ? 'available' : 'unavailable')}
                             className="network-node-hit"
+                            onClick={() => controller.commands.selectNode({ layerIdx, nodeIdx })}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault(); event.stopPropagation(); controller.commands.selectNode({ layerIdx, nodeIdx });
+                                }
+                            }}
                             style={{ cursor: 'pointer' }}
                             onMouseEnter={(e) => {
                                 const rect = (e.target as SVGElement).closest('svg')!.getBoundingClientRect();
@@ -444,6 +473,9 @@ const NetworkNodes = memo(function NetworkNodes({
                             onFocus={() => onNodeFocus(node.x, node.y, tooltipLines)}
                             onBlur={onNodeLeave}
                         >
+                            {selected && <circle cx={node.x} cy={node.y} r={NODE_RADIUS + 4} fill="none" stroke="white" strokeWidth={2.5} pointerEvents="none" />}
+                            {health && <circle cx={node.x} cy={node.y} r={NODE_RADIUS + 7} fill="none" stroke={health === 'low' ? '#ef4444' : '#eab308'} strokeWidth={2} strokeDasharray={health === 'low' ? '3 3' : '1 3'} pointerEvents="none" />}
+
                             <circle
                                 className="network-node-focus-ring"
                                 cx={node.x}
@@ -500,16 +532,10 @@ const NetworkNodes = memo(function NetworkNodes({
                                     <HeatmapCanvas grid={heatmap.grid} gridSize={heatmap.gridSize} />
                                 </foreignObject>
                             )}
-                            {/* Fallback inner value indicator (when no heatmap) */}
+                            {/* Missing activation evidence is neutral, never a fabricated grid. */}
                             {!isInput && !heatmap && (
-                                <circle
-                                    cx={node.x}
-                                    cy={node.y}
-                                    r={NODE_RADIUS - 4}
-                                    fill={nodeColor(bias)}
-                                    opacity={0.6}
-                                    style={{ pointerEvents: 'none' }}
-                                />
+                                <text x={node.x} y={node.y} textAnchor="middle" dominantBaseline="central"
+                                    fill="var(--text-muted)" fontSize={12} aria-hidden="true" pointerEvents="none">—</text>
                             )}
                             {/* Border ring on top of heatmap */}
                             {!isInput && heatmap && (
@@ -540,7 +566,14 @@ const NetworkNodes = memo(function NetworkNodes({
 // component in `./NetworkGraph.tsx` picks between this and the canvas
 // implementation at runtime via the `featuresUI.canvasNetworkGraph` flag.
 
-export function NetworkGraphSVG() {
+export function NetworkGraphSVG({ controller }: { readonly controller?: NetworkSelectionController }) {
+    return controller ? <NetworkGraphSVGView controller={controller} /> : <LocalNetworkGraphSVG />;
+}
+function LocalNetworkGraphSVG() {
+    const controller = useNetworkSelectionController();
+    return <NetworkGraphSVGView controller={controller} />;
+}
+function NetworkGraphSVGView({ controller }: { readonly controller: NetworkSelectionController }) {
     const compiled = usePlaygroundStore((s) => (
         s.access.status === 'ready' ? s.access.prepared.compiled : null
     ));
@@ -551,6 +584,14 @@ export function NetworkGraphSVG() {
     const paramsVersion = useTrainingStore((s) => s.paramsVersion);
     const neuronGridsVersion = useTrainingStore((s) => s.neuronGridsVersion);
 
+    const [viewMode, setViewMode] = useState<GraphViewMode>('weights');
+    const [filter, setFilter] = useState<EdgeFilter>('all');
+    const [viewport, setViewport] = useState({ zoom: 1, x: 0, y: 0 });
+    const drag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
+    const activeLessonId = useLayoutStore((s) => s.activeLessonId);
+    const activeLessonStepIndex = useLayoutStore((s) => s.activeLessonStepIndex);
+    const lessonStep = activeLessonId && activeLessonStepIndex !== null ? getLessonDefinition(activeLessonId)?.steps[activeLessonStepIndex] : null;
     const [tooltip, setTooltip] = useState<TooltipData | null>(null);
     const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
 
@@ -653,6 +694,36 @@ export function NetworkGraphSVG() {
         return null;
     }, [neuronGridsVersion]);
 
+    const activations = useMemo(() => {
+        const values = new Map<string, number>();
+        let index = 0;
+        for (let layer = 1; layer < layers.length; layer++) {
+            for (let node = 0; node < layers[layer]; node++, index++) {
+                const grid = neuronGrids?.[index]?.grid;
+                if (!grid?.length) continue;
+                let magnitude = 0;
+                for (let i = 0; i < grid.length; i++) magnitude += Math.abs(grid[i]);
+                values.set(nodeRefKey(layer, node), Math.max(0, Math.min(1, magnitude / grid.length)));
+            }
+        }
+        return values;
+    }, [layers, neuronGrids]);
+    const zoomBy = useCallback((factor: number) => setViewport((v) => {
+        const zoom = Math.max(0.35, Math.min(2.5, v.zoom * factor));
+        const ratio = zoom / v.zoom;
+        return { zoom, x: svgWidth / 2 - (svgWidth / 2 - v.x) * ratio, y: svgHeight / 2 - (svgHeight / 2 - v.y) * ratio };
+    }), [svgHeight, svgWidth]);
+    const resetViewport = useCallback(() => setViewport({ zoom: 1, x: 0, y: 0 }), []);
+    const layerKey = layers.join(':');
+    useEffect(() => { resetViewport(); }, [layerKey, resetViewport]);
+    useEffect(() => {
+        const svg = svgRef.current;
+        if (!svg) return;
+        const wheel = (event: WheelEvent) => { event.preventDefault(); zoomBy(event.deltaY < 0 ? 1.25 : 0.8); };
+        svg.addEventListener('wheel', wheel, { passive: false });
+        return () => svg.removeEventListener('wheel', wheel);
+    }, [zoomBy]);
+
     // ── Stable handlers (no deps — all data flows in via arguments or closure over setters) ──
 
     const handleEdgeEnter = useCallback((
@@ -673,11 +744,14 @@ export function NetworkGraphSVG() {
     }, []);
 
     const toCssPosition = useCallback(
-        ({ x, y }: FocusTargetPosition): FocusTargetPosition => ({
-            x: (x / svgWidth) * containerSize.width,
-            y: (y / svgHeight) * containerSize.height,
-        }),
-        [svgWidth, svgHeight, containerSize.width, containerSize.height],
+        ({ x, y }: FocusTargetPosition): FocusTargetPosition => {
+            const scale = Math.min(containerSize.width / svgWidth, containerSize.height / svgHeight);
+            return {
+                x: (containerSize.width - svgWidth * scale) / 2 + (x * viewport.zoom + viewport.x) * scale,
+                y: (containerSize.height - svgHeight * scale) / 2 + (y * viewport.zoom + viewport.y) * scale,
+            };
+        },
+        [svgWidth, svgHeight, containerSize.width, containerSize.height, viewport],
     );
 
     const handleEdgeFocus = useCallback((
@@ -710,8 +784,36 @@ export function NetworkGraphSVG() {
     }, []);
 
     return (
-        <div ref={containerRef} className="network-graph-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
+        <NetworkGraphFrame
+            story={formatArchitectureStory(activeFeatures.map((f) => f.label === 'x' ? 'X₁' : f.label === 'y' ? 'X₂' : f.label), hiddenLayers, outputSize, compiled?.task.outputActivation ?? 'sigmoid')}
+            capacity={getCapacityLabel(hiddenLayers)} datasetHint={compiled ? getDatasetTopologyHint(compiled.data.dataset, hiddenLayers) : null}
+            lesson={lessonStep?.target === 'network' ? lessonStep.body : undefined}
+            zoom={viewport.zoom} onZoomOut={() => zoomBy(0.8)} onZoomIn={() => zoomBy(1.25)} onFit={resetViewport}
+            viewMode={viewMode} onViewMode={setViewMode} edgeFilter={filter} onEdgeFilter={setFilter}
+        >
+        <div ref={containerRef} className="network-graph-container" style={{ position: 'relative', width: '100%', height: '100%', minWidth: 0, overflow: 'hidden' }}
+            onKeyDown={(event) => {
+                if (event.key === 'Escape' && controller.selectedNode) {
+                    event.preventDefault(); event.stopPropagation(); controller.commands.clearSelection();
+                }
+            }}>
             <svg
+                ref={svgRef}
+                aria-label="Neural network graph"
+                onPointerDown={(event) => {
+                    if (event.button !== 0 || (event.target as Element).closest('[role="button"]')) return;
+                    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+                    event.currentTarget.setPointerCapture?.(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                    if (!drag.current || drag.current.pointerId !== event.pointerId) return;
+                    const scale = Math.min(containerSize.width / svgWidth, containerSize.height / svgHeight);
+                    const dx = (event.clientX - drag.current.x) / scale, dy = (event.clientY - drag.current.y) / scale;
+                    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+                    setViewport((v) => ({ ...v, x: v.x + dx, y: v.y + dy }));
+                }}
+                onPointerUp={(event) => { drag.current = null; if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }}
+                onPointerCancel={() => { drag.current = null; }}
                 viewBox={`0 0 ${svgWidth} ${svgHeight}`}
                 preserveAspectRatio="xMidYMid meet"
                 style={{ width: '100%', height: '100%', display: 'block' }}
@@ -728,11 +830,14 @@ export function NetworkGraphSVG() {
                     </filter>
                 </defs>
 
+                <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.zoom})`}>
                 {/* Edges — re-renders on weight change or hoveredEdge change */}
                 <NetworkEdges
                     nodePositions={nodePositions}
                     flat={flat}
                     hoveredEdge={hoveredEdge}
+                    highlightedEdgeKeys={controller.model.kind === 'selected' ? controller.model.highlightedEdgeKeys : undefined}
+                    filter={filter} viewMode={viewMode} activations={activations}
                     onEdgeEnter={handleEdgeEnter}
                     onEdgeLeave={handleEdgeLeave}
                     onEdgeFocus={handleEdgeFocus}
@@ -746,6 +851,7 @@ export function NetworkGraphSVG() {
                     neuronGrids={neuronGrids}
                     activeFeatures={activeFeatures}
                     activation={activation}
+                    controller={controller}
                     onNodeEnter={handleNodeEnter}
                     onNodeLeave={handleNodeLeave}
                     onNodeFocus={handleNodeFocus}
@@ -756,6 +862,7 @@ export function NetworkGraphSVG() {
                     nodePositions={nodePositions}
                     layerLabels={layerLabels}
                 />
+                </g>
             </svg>
 
             {/* Tooltip overlay */}
@@ -769,5 +876,6 @@ export function NetworkGraphSVG() {
                 </div>
             )}
         </div>
+        </NetworkGraphFrame>
     );
 }

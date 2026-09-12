@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { LiveTrainingSignal, PairedEvaluation } from '@nn-playground/shared';
-import { LossChart } from './LossChart.tsx';
+import { LossChart, deriveLossChartViewport } from './LossChart.tsx';
 import { useTrainingStore } from '../../store/useTrainingStore.ts';
 import { createScientificTrustFixtures } from '../../test/scientificTrustFixtures.ts';
 import { useLayoutStore } from '../../store/useLayoutStore.ts';
@@ -86,6 +86,46 @@ describe('LossChart scientific evidence series', () => {
             latestEvaluation: pair,
         });
         useLayoutStore.setState({ audienceMode: 'explore' });
+    });
+
+    it('derives finite compact bounds at phone, tablet, and desktop widths', () => {
+        for (const width of [0, -10, Number.NaN, Infinity]) {
+            expect(deriveLossChartViewport(width)).toEqual({ width: 1, height: 96 });
+        }
+        expect(deriveLossChartViewport(320.2)).toEqual({ width: 320, height: 112 });
+        expect(deriveLossChartViewport(735)).toEqual({ width: 735, height: 140 });
+        expect(deriveLossChartViewport(1437)).toEqual({ width: 1437, height: 140 });
+    });
+
+    it('coalesces resize paints, ignores subpixel churn, and cancels pending work on unmount', () => {
+        let notify!: ResizeObserverCallback;
+        const disconnect = vi.fn();
+        window.ResizeObserver = vi.fn().mockImplementation((callback: ResizeObserverCallback) => {
+            notify = callback;
+            return { observe: vi.fn(), disconnect };
+        });
+        let flush!: FrameRequestCallback;
+        const schedule = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => { flush = callback; return 42; });
+        const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+        const emitWidth = (width: number) => notify([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver);
+        const view = render(<LossChart />);
+        const canvas = screen.getByLabelText('Scientific loss evidence by actual model step');
+        expect(canvas).toHaveStyle({ height: '112px' });
+        const initialPaints = fillRect.mock.calls.length;
+        act(() => { emitWidth(400.1); emitWidth(400.4); });
+        expect(schedule).toHaveBeenCalledTimes(1);
+        expect(fillRect).toHaveBeenCalledTimes(initialPaints);
+        act(() => flush(0));
+        expect(canvas).toHaveStyle({ height: '140px' });
+        expect(fillRect).toHaveBeenCalledTimes(initialPaints + 1);
+        act(() => { emitWidth(400.2); flush(0); });
+        expect(fillRect).toHaveBeenCalledTimes(initialPaints + 1);
+        act(() => emitWidth(200));
+        view.unmount();
+        expect(cancel).toHaveBeenCalledWith(42);
+        expect(disconnect).toHaveBeenCalledTimes(1);
+        schedule.mockRestore();
+        cancel.mockRestore();
     });
 
     it('uses actual model steps and keeps live/evaluation labels distinct', () => {

@@ -90,4 +90,16 @@ describe('useExperimentMemoryStorageSync', () => {
             unmount?.();
         }
     });
+    it('releases each subscription across repeated StrictMode mount cycles', () => {
+        const area = window.localStorage;
+        for (let cycle = 0; cycle < 3; cycle++) {
+            const { unmount } = renderHook(() => useExperimentMemoryStorageSync(), { wrapper: StrictWrapper });
+            dispatchStorage(EXPERIMENT_MEMORY_STORAGE_KEY, area);
+            expect(hydrate).toHaveBeenCalledTimes(cycle + 1);
+            unmount();
+            dispatchStorage(EXPERIMENT_MEMORY_STORAGE_KEY, area);
+            expect(hydrate).toHaveBeenCalledTimes(cycle + 1);
+        }
+    });
+
 });

@@ -1,12 +1,15 @@
+import { Buffer } from 'node:buffer';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 interface RecipeExpectation {
-    data: string;
-    network: string;
-    training: string;
-    loss: string;
-    features: string;
-    featureCount: string;
+    dataset: string;
+    taskKind: string;
+    hiddenLayers: readonly number[];
+    outputSize: number;
+    outputActivation: string;
+    objective: string;
+    learningRate: number;
+    noise: number;
     datasetSettings: string;
 }
 
@@ -25,33 +28,21 @@ interface PausedRunInvariant {
 
 const RECIPES = {
     regression: {
-        title: 'Regression with No Hidden Layer',
-        data: 'Regression plane regression',
-        network: '2 -> none -> 1, tanh',
-        training: 'SGD, lr 0.01',
-        loss: 'mean squared error, batch 10',
-        features: 'x, y',
-        featureCount: '2 features',
+        title: 'Regression with No Hidden Layer', dataset: 'reg-plane', taskKind: 'regression',
+        hiddenLayers: [], outputSize: 1, outputActivation: 'linear', objective: 'mean-squared-error',
+        learningRate: 0.01, noise: 5,
         datasetSettings: 'Dataset settings: 300 samples, 5 noise, 50% train',
     },
     xor: {
-        title: 'XOR Needs Hidden Layers',
-        data: 'XOR classification',
-        network: '2 -> 4 x 4 -> 1, tanh',
-        training: 'SGD, lr 0.03',
-        loss: 'binary cross entropy, batch 10',
-        features: 'x, y',
-        featureCount: '2 features',
+        title: 'XOR Needs Hidden Layers', dataset: 'xor', taskKind: 'binary-classification',
+        hiddenLayers: [4, 4], outputSize: 1, outputActivation: 'sigmoid', objective: 'binary-cross-entropy-with-logits',
+        learningRate: 0.03, noise: 0,
         datasetSettings: 'Dataset settings: 300 samples, 0 noise, 50% train',
     },
     threeClass: {
-        title: 'Three-Class Softmax Lab',
-        data: 'Three-class clusters classification',
-        network: '2 -> 6 x 6 -> 3, tanh',
-        training: 'SGD, lr 0.03',
-        loss: 'categorical cross entropy, batch 10',
-        features: 'x, y',
-        featureCount: '2 features',
+        title: 'Three-Class Softmax Lab', dataset: 'three-class-clusters', taskKind: 'multiclass-classification',
+        hiddenLayers: [6, 6], outputSize: 3, outputActivation: 'softmax', objective: 'categorical-cross-entropy-with-logits',
+        learningRate: 0.03, noise: 0.05,
         datasetSettings: 'Dataset settings: 300 samples, 0.05 noise, 50% train',
     },
 } as const;
@@ -354,21 +345,45 @@ function cssTimeToMs(value: string): number {
 }
 
 async function expectRecipe(page: Page, recipe: RecipeExpectation): Promise<void> {
-    const summary = page.getByRole('region', { name: 'Recipe summary' });
+    const summary = page.getByRole('region', { name: 'Recipe summary', exact: true });
     await expect(summary).toBeVisible();
-    await expect(summary.getByText(recipe.data, { exact: true })).toBeVisible();
-    await expect(summary.getByText(recipe.network, { exact: true })).toBeVisible();
-    await expect(summary.getByText(recipe.training, { exact: true })).toBeVisible();
-    await expect(summary.getByText(recipe.loss, { exact: true })).toBeVisible();
-    await expect(summary.getByText(recipe.features, { exact: true })).toBeVisible();
-    await expect(summary.getByText(recipe.featureCount, { exact: true })).toBeVisible();
-    await expect(summary.getByText('Ready', { exact: true })).toBeVisible();
-
+    await expect(summary.getByText(recipe.dataset, { exact: true })).toBeVisible();
+    await expect(summary.getByText([2, ...recipe.hiddenLayers, recipe.outputSize].join(' -> '), { exact: true })).toBeVisible();
+    await expect(summary.getByText('tanh', { exact: true })).toBeVisible();
+    await expect(summary.getByText(`${recipe.outputActivation} · ${recipe.objective}`, { exact: true })).toBeVisible();
+    await expect(summary.getByText('Evaluation fresh', { exact: true })).toBeVisible();
+    // Check the entire public recipe document, not a shortened UI summary or a test-only store.
+    const payload = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('r');
+    expect(payload).not.toBeNull();
+    const document = JSON.parse(Buffer.from(payload!, 'base64url').toString('utf8'));
+    expect(document.schemaVersion).toBe(2);
+    expect(document.recipe).toEqual({
+        task: { kind: recipe.taskKind, dataset: recipe.dataset },
+        data: { sampleCount: 300, trainFraction: 0.5, noise: recipe.noise, seed: 42 },
+        inputs: { featureIds: ['x', 'y'] },
+        model: { hiddenLayers: [...recipe.hiddenLayers], hiddenActivation: 'tanh', initialization: 'xavier', seed: 42 },
+        training: { batchSize: 10, learningRate: recipe.learningRate, schedule: { kind: 'constant' }, optimizer: { kind: 'sgd' }, gradientClipping: { kind: 'none' } },
+        objective: { dataLoss: { kind: recipe.objective }, penalty: { kind: 'none' }, reduction: 'mean-per-sample' },
+    });
     const workspaceView = page.getByRole('group', { name: 'Workspace view' });
     await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
-    const dataConfiguration = page.getByRole('region', { name: 'Data', exact: true });
-    await expect(dataConfiguration.getByLabel(recipe.datasetSettings, { exact: true })).toBeVisible();
-
+    const tools = page.getByRole('navigation', { name: 'Build tools' });
+    await tools.getByRole('button', { name: 'Data', exact: true }).click();
+    await expect(page.getByRole('region', { name: 'Data context', exact: true })
+        .getByLabel(recipe.datasetSettings, { exact: true })).toBeVisible();
+    const openedAdvanced = await advancedTools(page).getAttribute('aria-expanded') !== 'true';
+    if (openedAdvanced) await advancedTools(page).click();
+    await tools.getByRole('button', { name: 'Hyperparameters', exact: true }).click();
+    const hyperparameters = page.getByRole('region', { name: 'Hyperparameters context', exact: true });
+    await expect(hyperparameters.getByLabel('Learning rate', { exact: true })).toHaveValue(String(recipe.learningRate));
+    await expect(hyperparameters.getByLabel('Optimizer', { exact: true })).toHaveValue('sgd');
+    await expect(hyperparameters.getByLabel('Batch size', { exact: true })).toHaveValue('10');
+    await tools.getByRole('button', { name: 'Features', exact: true }).click();
+    const features = page.getByRole('region', { name: 'Features context', exact: true });
+    await expect(features.getByRole('button', { name: 'X₁', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(features.getByRole('button', { name: 'X₂', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(features.locator('button[aria-pressed="true"]')).toHaveCount(2);
+    if (openedAdvanced) await advancedTools(page).click();
     await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
     await expect(currentRun(page)).toBeVisible();
 }
@@ -565,7 +580,11 @@ test('concept help remains fully visible in the desktop Run workspace', async ({
     await page.getByRole('group', { name: 'Workspace view' })
         .getByRole('button', { name: 'build', exact: true })
         .click();
+    const tools = page.getByRole('navigation', { name: 'Build tools' });
+    await tools.getByRole('button', { name: 'Data', exact: true }).click();
     await expectConceptHelpInViewport(page, 'Train/test split');
+    await setAdvancedTools(page, true);
+    await tools.getByRole('button', { name: 'Hyperparameters', exact: true }).click();
     await expectConceptHelpInViewport(page, 'Learning rate');
 });
 
@@ -726,13 +745,19 @@ async function compactShellJourney({ page }: { page: Page }): Promise<void> {
 
     await expectMinimumTouchTarget(page.getByRole('button', { name: 'Learn about Epoch' }));
     await expectConceptHelpInViewport(page, 'Epoch');
+    const originalAdvancedExpanded = await advancedTools(page).getAttribute('aria-expanded');
     const workspaceView = page.getByRole('group', { name: 'Workspace view' });
     await workspaceView.getByRole('button', { name: 'build', exact: true }).click();
     for (const concept of ['Train/test split', 'Learning rate'] as const) {
+        if (concept === 'Learning rate' && await advancedTools(page).getAttribute('aria-expanded') !== 'true') await advancedTools(page).click();
+        await page.getByRole('navigation', { name: 'Build tools' }).getByRole('button', { name: concept === 'Train/test split' ? 'Data' : 'Hyperparameters', exact: true }).click();
         await expectMinimumTouchTarget(
             page.getByRole('button', { name: `Learn about ${concept}` }),
         );
         await expectConceptHelpInViewport(page, concept);
+    }
+    if (await advancedTools(page).getAttribute('aria-expanded') !== originalAdvancedExpanded) {
+        await advancedTools(page).click();
     }
     await workspaceView.getByRole('button', { name: 'run', exact: true }).click();
 
