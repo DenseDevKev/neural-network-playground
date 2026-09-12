@@ -577,6 +577,27 @@ describe('RunHistoryPanel V2 evidence memory', () => {
         expect(screen.queryByRole('alert')).toBeNull();
     });
 
+    it('requires a fresh Compare action after an external deletion invalidates the pair', async () => {
+        const prepared = preset('circle-one-layer');
+        const first = makeSavedRunRecord(prepared, IDS[0], 'First', 0.8);
+        const middle = makeSavedRunRecord(prepared, IDS[1], 'Middle', 0.2);
+        const latest = makeSavedRunRecord(prepared, IDS[2], 'Latest', 0.5);
+        await act(async () => {
+            await useExperimentMemoryStore.getState().saveRecord(first);
+            await useExperimentMemoryStore.getState().saveRecord(middle);
+            await useExperimentMemoryStore.getState().saveRecord(latest);
+        });
+        render(<RunHistoryPanel />);
+        await userEvent.click(screen.getByRole('button', { name:'Compare selected' }));
+        expect(screen.getByRole('group', { name:/Saved run comparison/ })).toBeInTheDocument();
+        act(() => useExperimentMemoryStore.setState({ records:[first,middle] }));
+        await waitFor(() => expect(screen.queryByRole('group', { name:/Saved run comparison/ })).not.toBeInTheDocument());
+        await userEvent.click(screen.getByRole('checkbox', { name:'Compare First' }));
+        expect(screen.queryByRole('group', { name:/Saved run comparison/ })).not.toBeInTheDocument();
+        await userEvent.click(screen.getByRole('button', { name:'Compare selected' }));
+        expect(screen.getByRole('group', { name:/Saved run comparison/ })).toBeInTheDocument();
+    });
+
     it('requires explicit comparison, caps two choices, filters differences and returns to retained selection', async () => {
         const prepared = preset('circle-one-layer');
         await act(async () => {

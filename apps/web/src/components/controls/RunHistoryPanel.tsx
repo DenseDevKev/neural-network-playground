@@ -146,6 +146,10 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
         });
     }, [hydrationStatus, records]);
 
+    useEffect(() => {
+        if (comparing && selectedComparisonRecords.length !== 2) setComparing(false);
+    }, [comparing, selectedComparisonRecords.length]);
+
     useLayoutEffect(() => {
         if (comparing) return;
         if (listScroll.current.length) compareButtonRef.current?.focus({ preventScroll: true });
@@ -227,7 +231,7 @@ function RunHistoryContent({ saveController }: { saveController: SaveCurrentRunC
                                 Retry saving
                             </button>
                         )}
-                        {pendingSave && <><button type="button" disabled={saving} onClick={() => { void saveController.commands.downloadPending(); }}>Download pending evidence</button><ConfirmAction label="Discard pending save" title="Discard pending save" onConfirm={saveController.commands.discard}>This removes the retained snapshot from this tab. Download its evidence first to keep a copy.</ConfirmAction></>}
+                        {pendingSave && <><button type="button" disabled={saving} onClick={() => { void saveController.commands.downloadPending(); }}>Download pending evidence</button><ConfirmAction disabled={saving} label="Discard pending save" title="Discard pending save" onConfirm={saveController.commands.discard}>This removes the retained snapshot from this tab. Download its evidence first to keep a copy.</ConfirmAction></>}
                         {persistenceError && (
                             <button
                                 type="button"
