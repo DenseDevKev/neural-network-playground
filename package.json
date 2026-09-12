@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "An interactive neural network playground for learning — inspired by TensorFlow Playground",
+  "description": "An interactive neural network playground for learning \u2014 inspired by TensorFlow Playground",
   "scripts": {
     "dev": "pnpm --filter @nn-playground/web dev",
     "build": "pnpm --filter @nn-playground/web build",
@@ -33,5 +33,16 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "globals": "^15.0.0",
     "typescript-eslint": "^8.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "undici@>=7 <7.29.0": "^7.29.0",
+      "brace-expansion@>=1 <1.1.18": "^1.1.18",
+      "brace-expansion@>=5 <5.0.9": "^5.0.9",
+      "js-yaml@>=4 <4.3.2": "^4.3.2",
+      "browserslist@<4.28.7": "^4.28.7",
+      "@babel/core@>=7 <7.29.6": "^7.29.6",
+      "baseline-browser-mapping@<2.11.0": "^2.11.0"
+    }
   }
 }
