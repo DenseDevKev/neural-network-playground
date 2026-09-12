@@ -46,6 +46,7 @@ function mockCompactLessonDrawer(matches: boolean) {
 
 function resetLayout() {
     useLayoutStore.setState({
+        destination: 'lessons', workspaceTab: 'setup', setupTab: 'dataset',
         view: 'build',
         activeRecipeSection: 'data',
         activeEvidenceView: 'boundary',
@@ -146,7 +147,7 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState()).toMatchObject({
             activeLessonId: 'lesson-xor-hidden-layers',
             activeLessonStepIndex: 0,
-            activeRecipeSection: 'data',
+            workspaceTab: 'setup', setupTab: 'dataset',
             activeTabLeft: 'data',
             view: 'build',
             phase: 'build',
@@ -168,7 +169,7 @@ describe('GuidedLessonPanel', () => {
         await screen.findByText('Step 1 of 4');
 
         expect(onReset).toHaveBeenCalledTimes(1);
-        expect(screen.queryByText(STATE_EFFECTS['lesson-start'], { exact: true })).not.toBeInTheDocument();
+        expect(screen.getByText(STATE_EFFECTS['lesson-start'], { exact: true }).closest('details')).not.toHaveAttribute('open');
         expect(screen.queryByRole('button', { name: 'Start lesson and reset' })).not.toBeInTheDocument();
     });
 
@@ -210,8 +211,7 @@ describe('GuidedLessonPanel', () => {
         expect(onHighlightChange).toHaveBeenLastCalledWith('network');
         expect(useLayoutStore.getState()).toMatchObject({
             activeLessonStepIndex: 1,
-            activeRecipeSection: 'network',
-            activeTabLeft: 'network',
+            workspaceTab: 'setup', setupTab: 'network',
             view: 'build',
             phase: 'build',
         });
@@ -237,7 +237,7 @@ describe('GuidedLessonPanel', () => {
         const user = userEvent.setup();
         useLayoutStore.setState({
             activeEvidenceView: 'loss',
-            activeTabRight: 'loss',
+            resultsTab: 'learning',
         });
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
 
@@ -250,19 +250,19 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState()).toMatchObject({
             view: 'run',
             activeEvidenceView: 'boundary',
-            activeTabRight: 'boundary',
+            resultsTab: 'boundary',
         });
         expect(screen.getByText(
-            'Select Step once, then watch the XOR decision boundary update in Boundary.',
+            'Select Step once, then watch the XOR decision boundary update in Results → Boundary.',
         )).toBeVisible();
-        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
     });
 
     it('opens Loss for a loss observation when Boundary was persisted', async () => {
         const user = userEvent.setup();
         useLayoutStore.setState({
             activeEvidenceView: 'boundary',
-            activeTabRight: 'boundary',
+            resultsTab: 'boundary',
         });
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
 
@@ -277,10 +277,10 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState()).toMatchObject({
             view: 'run',
             activeEvidenceView: 'loss',
-            activeTabRight: 'loss',
+            resultsTab: 'learning',
         });
         expect(screen.getByText(
-            'Select Step once, then compare the new and previous points in Loss.',
+            'Select Step once, then compare the new and previous points in Results → Learning.',
         )).toBeVisible();
         expect(screen.queryByText('Done')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
@@ -303,16 +303,15 @@ describe('GuidedLessonPanel', () => {
 
         expect(useLayoutStore.getState()).toMatchObject({
             view: 'build',
-            activeRecipeSection: 'hyperparams',
-            activeTabLeft: 'hyperparams',
+            workspaceTab: 'setup', setupTab: 'training',
             activeEvidenceView: 'loss',
-            activeTabRight: 'loss',
+            resultsTab: 'learning',
         });
         expect(screen.getByText(
-            'Change Penalty, select Reset, run training, then compare the train/test gap in Loss.',
+            'Change Penalty, select Apply changes, open Results → Learning, run training, then compare the train/test gap in Results → Learning.',
         )).toBeVisible();
         expect(screen.queryByText('Done')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
     });
 
     it('shows a training-step action and Done transition without gating or advancing Next', async () => {
@@ -338,10 +337,10 @@ describe('GuidedLessonPanel', () => {
 
         expect(screen.getByText('Try this')).toBeVisible();
         expect(screen.getByText(
-            'Select Step once, then compare the new and previous points in Loss.',
+            'Select Step once, then compare the new and previous points in Results → Learning.',
         )).toBeVisible();
         expect(screen.queryByText('Done')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
 
         act(() => {
@@ -397,7 +396,7 @@ describe('GuidedLessonPanel', () => {
         expect(await screen.findByText('Done')).toBeVisible();
         expect(screen.getByText('Connect rate to the loss curve')).toBeVisible();
         expect(screen.getByText('Step 2 of 4')).toBeVisible();
-        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
     });
 
@@ -417,20 +416,20 @@ describe('GuidedLessonPanel', () => {
 
         expect(screen.getByText('Keep the model fixed')).toBeVisible();
         expect(screen.getByText(
-            'Select Build, then check that the hidden-layer topology is unchanged.',
+            'Select Setup → Network, then check that the hidden-layer topology is unchanged.',
         )).toBeVisible();
-        expect(screen.queryByText('Done')).not.toBeInTheDocument();
-        expect(useLayoutStore.getState().view).toBe('run');
-        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByText('Done')).toBeInTheDocument();
+        expect(useLayoutStore.getState().workspaceTab).toBe('setup');
+        expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
 
         act(() => useLayoutStore.getState().setView('build'));
         expect(await screen.findByText('Done')).toBeVisible();
         expect(screen.getByText('Keep the model fixed')).toBeVisible();
-        expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
 
-        act(() => useLayoutStore.getState().setView('run'));
+        act(() => useLayoutStore.getState().navigate('playground', 'results'));
         await waitFor(() => expect(screen.queryByText('Done')).not.toBeInTheDocument());
         expect(screen.getByText('Keep the model fixed')).toBeVisible();
     });
@@ -464,9 +463,7 @@ describe('GuidedLessonPanel', () => {
 
         await waitFor(() => {
             expect(useLayoutStore.getState()).toMatchObject({
-                activeRecipeSection: 'features',
-                activeTabLeft: 'features',
-                advancedToolsOpen: true,
+                workspaceTab: 'setup', setupTab: 'network',
                 audienceMode: 'beginner',
             });
         });
@@ -621,7 +618,7 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState()).toMatchObject({
             activeLessonId: lesson.id,
             activeLessonStepIndex: 0,
-            activeRecipeSection: 'data',
+            workspaceTab: 'setup', setupTab: 'dataset',
             view: 'build',
         });
         expect(container.querySelector('.guided-lesson')).toHaveClass('guided-lesson--active');
@@ -821,7 +818,7 @@ describe('GuidedLessonPanel', () => {
 
         const errorFeedback = await screen.findByText('recipe: Deliberate failure');
         expect(errorFeedback).toBeVisible();
-        expect(errorFeedback.closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(errorFeedback.closest('[role="alert"]')).not.toBeNull();
         expect(currentPreparedForTest()).toBe(priorPrepared);
         expect(useTrainingStore.getState()).toMatchObject({
             pendingConfigSource: null,
@@ -839,8 +836,7 @@ describe('GuidedLessonPanel', () => {
         expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
 
         rerender(<GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />);
-        expect(screen.getByText('recipe: Deliberate failure')
-            .closest('[aria-live], [role="status"], [role="alert"]')).toBeNull();
+        expect(screen.getByRole('alert')).toHaveTextContent('recipe: Deliberate failure');
         expect(screen.getByRole('button', { name: 'Start lesson and reset' })).toBeEnabled();
     });
 
@@ -853,7 +849,7 @@ describe('GuidedLessonPanel', () => {
         await user.click(startButton);
 
         const nextButton = await screen.findByRole('button', { name: 'Next lesson step' });
-        expect(screen.getByRole('button', { name: 'Back' })).toHaveAttribute('type', 'button');
+        expect(screen.getByRole('button', { name: 'Previous' })).toHaveAttribute('type', 'button');
         nextButton.focus();
         await user.keyboard('{Enter}');
         expect(screen.getByText('Give the model capacity')).toBeInTheDocument();
@@ -906,4 +902,58 @@ describe('GuidedLessonPanel', () => {
             activeLessonStepIndex: null,
         });
     });
+    it('browses details without replacing the active experiment or progress', async () => {
+        const user = userEvent.setup();
+        const onReset = vi.fn();
+        render(<GuidedLessonPanel onReset={onReset} />);
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await user.click(await screen.findByRole('button', { name: 'Next lesson step' }));
+        const prepared = currentPreparedForTest();
+        await user.click(screen.getByRole('button', { name: 'All lessons' }));
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), 'lesson-circle-hidden-layer');
+        expect(currentPreparedForTest()).toBe(prepared);
+        expect(onReset).toHaveBeenCalledTimes(1);
+        expect(useLayoutStore.getState()).toMatchObject({ activeLessonId: 'lesson-xor-hidden-layers', activeLessonStepIndex: 1 });
+        await user.click(screen.getByRole('button', { name: 'Resume XOR Needs Hidden Layers' }));
+        expect(screen.getByText('Step 2 of 4')).toBeVisible();
+        expect(screen.getByText('Give the model capacity')).toBeVisible();
+    });
+
+    it('defers start and the entire step transition until the shared dirty-Setup guard proceeds', async () => {
+        const user = userEvent.setup();
+        let pending: (() => void) | undefined;
+        const onNavigate = vi.fn((action: () => void) => { pending = action; });
+        const onReset = vi.fn();
+        render(<GuidedLessonPanel onReset={onReset} onNavigate={onNavigate} />);
+        const prepared = currentPreparedForTest();
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        expect(onReset).not.toHaveBeenCalled();
+        expect(currentPreparedForTest()).toBe(prepared);
+        expect(useLayoutStore.getState().activeLessonId).toBeNull();
+        await act(async () => { pending!(); });
+        await screen.findByText('Step 1 of 4');
+        await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
+        expect(useLayoutStore.getState()).toMatchObject({ setupTab: 'dataset', activeLessonStepIndex: 0 });
+        expect(screen.getByText('Step 1 of 4')).toBeVisible();
+        act(() => pending!());
+        expect(useLayoutStore.getState()).toMatchObject({ setupTab: 'network', activeLessonStepIndex: 1 });
+        await user.click(screen.getByRole('button', { name: 'Exit lesson' }));
+        expect(useLayoutStore.getState().activeLessonId).not.toBeNull();
+        act(() => pending!());
+        expect(useLayoutStore.getState()).toMatchObject({ destination: 'lessons', activeLessonId: null });
+    });
+
+    it('captures pre-reset evidence even when reset clears it and rejects its later updates', async () => {
+        const user = userEvent.setup();
+        useTrainingStore.setState({ latestLiveSignal: initialLiveSignal });
+        render(<GuidedLessonPanel onReset={() => useTrainingStore.getState().resetEvidence()} />);
+        await user.selectOptions(screen.getByRole('combobox', { name: 'Guided lesson' }), 'lesson-learning-rate-tuning');
+        await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
+        await user.click(await screen.findByRole('button', { name: 'Next lesson step' }));
+        act(() => useTrainingStore.setState({ latestLiveSignal: { ...initialLiveSignal, model: { ...initialLiveSignal.model, step: 100, revision: 100 } } }));
+        expect(screen.queryByText('Done')).not.toBeInTheDocument();
+        act(() => useTrainingStore.setState({ latestLiveSignal: { ...initialLiveSignal, model: { ...initialLiveSignal.model, generationId: initialLiveSignal.model.generationId + 1, step: 1, revision: 1 } } }));
+        expect(screen.getByText('Done')).toBeVisible();
+    });
+
 });
