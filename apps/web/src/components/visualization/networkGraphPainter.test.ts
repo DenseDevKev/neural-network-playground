@@ -2,23 +2,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { deriveNodeGeometry, hitTestNode, paintEdges, type FlatNetworkView } from './networkGraphPainter.ts';
 
 describe('Precision Lab graph geometry', () => {
-    it('fits six bounded tiles into 360 CSS pixels', () => {
-        expect(deriveNodeGeometry(360, 6)).toEqual({ width: 44, height: 44, cornerRadius: 9, hitPadding: 6 });
-        expect(6 * deriveNodeGeometry(360, 6).height + 5 * 8 + 56).toBeLessThanOrEqual(360);
+    it('keeps usable square tiles and lets the viewport pan dense layers', () => {
+        expect(deriveNodeGeometry(360, 6)).toEqual({ width: 56, height: 56, cornerRadius: 3, hitPadding: 2 });
+        expect(6 * deriveNodeGeometry(360, 6).height + 5 * 8 + 56).toBeGreaterThan(360);
     });
     it.each([[100, 100], [10000, 1], [0, 0], [NaN, Infinity], [-10, -1]])('clamps geometry for %s / %s', (height, count) => {
         const geometry = deriveNodeGeometry(height, count);
-        expect(geometry.width).toBeGreaterThanOrEqual(30);
-        expect(geometry.height).toBeLessThanOrEqual(64);
-        expect(geometry.cornerRadius).toBeGreaterThanOrEqual(6);
-        expect(geometry.cornerRadius).toBeLessThanOrEqual(12);
+        expect(geometry.width).toBeGreaterThanOrEqual(56);
+        expect(geometry.height).toBeLessThanOrEqual(72);
+        expect(geometry.cornerRadius).toBe(3);
+        expect(geometry.cornerRadius).toBeLessThanOrEqual(3);
     });
     it('includes tile corners and padded hit area without changing visual size', () => {
         const geometry = deriveNodeGeometry(360, 6);
         const nodes = [[{ x: 100, y: 100 }]];
         expect(hitTestNode(124, 124, nodes, geometry)).toEqual({ layerIdx: 0, nodeIdx: 0 });
-        expect(hitTestNode(129, 100, nodes, geometry)).toBeNull();
-        expect(geometry.width).toBe(44);
+        expect(hitTestNode(131, 100, nodes, geometry)).toBeNull();
+        expect(geometry.width).toBe(56);
     });
 });
 

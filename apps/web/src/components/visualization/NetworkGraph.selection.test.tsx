@@ -86,6 +86,33 @@ for (const canvas of [true, false]) describe(canvas ? 'Canvas selection' : 'SVG 
         fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
         expect(node).toHaveAttribute('aria-pressed', 'false');
     });
+    it('restores focus to the chosen neuron when the inspector closes', () => {
+        render(<Harness />);
+        const node = screen.getByRole('button', { name: /^Hidden 1, Neuron 2/ });
+        fireEvent.click(node);
+        const close = screen.getByRole('button', { name: 'Clear selection' });
+        close.focus(); fireEvent.click(close);
+        expect(node).toHaveFocus();
+    });
+    it('hides grids from a different generation in graph and inspector', () => {
+        snapshot = { ...snapshot, neuronGridsProvenance: { ...snapshot.neuronGridsProvenance!, model: { ...snapshot.neuronGridsProvenance!.model, generationId: 6 } } };
+        const { container } = render(<Harness />);
+        expect(container.querySelectorAll('.network-graph-heatmap-slot')).toHaveLength(0);
+        fireEvent.click(screen.getByRole('button', { name: /^Hidden 1, Neuron 1/ }));
+        expect(screen.getByRole('region', { name: 'Selected neuron details' })).toHaveTextContent('activation grid at step not available');
+    });
+    it('keeps all maximum-topology neuron targets at least 44px without overlaps', () => {
+        updateCompiledForTest((c) => ({ ...c, features: { x: true, y: true, xSquared: true, ySquared: true, xy: true, sinX: true, sinY: true, cosX: true, cosY: true }, network: { ...c.network, hiddenLayers: [16,16,16,16,16,16] } }));
+        const { container } = render(<Harness />);
+        fireEvent.click(screen.getByRole('button', { name: 'Zoom out graph' }));
+        const targets = [...container.querySelectorAll<HTMLButtonElement>('.network-node-target')];
+        expect(targets).toHaveLength(106);
+        const rectangles = targets.map((target) => ({ x: parseFloat(target.style.left), y: parseFloat(target.style.top), w: parseFloat(target.style.width), h: parseFloat(target.style.height) }));
+        for (let i = 0; i < rectangles.length; i++) {
+            const a = rectangles[i]; expect(a.w).toBeGreaterThanOrEqual(44);
+            for (const b of rectangles.slice(i + 1)) expect(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y).toBe(true);
+        }
+    });
     it('exposes zoom/fit, mode, edge filters and architecture summary', () => {
         render(<Harness />);
         expect(screen.getByLabelText('Architecture summary')).toBeInTheDocument();

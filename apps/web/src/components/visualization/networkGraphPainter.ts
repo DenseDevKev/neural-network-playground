@@ -63,8 +63,8 @@ export interface NodeGeometry {
 export function deriveNodeGeometry(availableHeight: number, largestLayer: number): NodeGeometry {
     const count = Number.isFinite(largestLayer) ? Math.max(1, Math.floor(largestLayer)) : 1;
     const height = Number.isFinite(availableHeight) ? Math.max(160, availableHeight) : 160;
-    const size = Math.max(30, Math.min(64, Math.floor((height - 56 - (count - 1) * 8) / count)));
-    return { width: size, height: size, cornerRadius: Math.max(6, Math.min(12, Math.round(size * 0.2))), hitPadding: 6 };
+    const size = Math.max(56, Math.min(72, Math.floor((height - 56 - (count - 1) * 8) / count)));
+    return { width: size, height: size, cornerRadius: 3, hitPadding: 2 };
 }
 
 export function describeGraphNode(layerIdx: number, nodeIdx: number, layerCount: number): string {
@@ -78,23 +78,24 @@ export const NODE_RADIUS = 14;
 export const EDGE_HIT_THRESHOLD = 6; // pixels, perpendicular distance for hover
 export const NODE_HIT_PADDING = 4; // grow hit area a bit beyond the visible disc
 const LABEL_FONT = '600 10px Inter, sans-serif';
-const LABEL_FILL = 'rgba(255,255,255,0.35)';
+const DEFAULT_PALETTE = { surface: '#1b1e21', text: '#eef0f2', muted: '#a4abb2', rule: '#46505a' };
+type PainterPalette = typeof DEFAULT_PALETTE;
 const LABEL_Y = 20;
 
 // ── Colour helpers — identical formulas to the SVG component ───────────────
 
-function nodeColor(value: number): string {
+export function nodeColor(value: number): string {
     const abs = Math.min(Math.abs(value), 2) / 2;
-    if (value > 0) return `rgba(129, 236, 255, ${0.4 + abs * 0.6})`;
-    return `rgba(188, 135, 254, ${0.4 + abs * 0.6})`;
+    if (value > 0) return `rgba(244, 99, 48, ${0.4 + abs * 0.6})`;
+    return `rgba(59, 130, 246, ${0.4 + abs * 0.6})`;
 }
 
-function edgeColor(weight: number, isHovered: boolean): string {
+export function edgeColor(weight: number, isHovered: boolean): string {
     const abs = Math.min(Math.abs(weight), 3) / 3;
     const baseAlpha = 0.2 + abs * 0.6;
     const alpha = isHovered ? 1 : baseAlpha * 0.7 + 0.3 * baseAlpha; // emphasise on hover
-    if (weight > 0) return `rgba(129, 236, 255, ${alpha.toFixed(3)})`;
-    return `rgba(188, 135, 254, ${alpha.toFixed(3)})`;
+    if (weight > 0) return `rgba(244, 99, 48, ${alpha.toFixed(3)})`;
+    return `rgba(59, 130, 246, ${alpha.toFixed(3)})`;
 }
 
 function edgeWidth(weight: number, isHovered: boolean): number {
@@ -106,8 +107,8 @@ function modeEdgeColor(weight: number, isHovered: boolean, mode: GraphViewMode):
     if (mode === 'weights' || isHovered) return edgeColor(weight, isHovered);
     const abs = Math.min(Math.abs(weight), 3) / 3;
     const alpha = 0.14 + abs * 0.18;
-    if (weight > 0) return `rgba(129, 236, 255, ${alpha.toFixed(3)})`;
-    return `rgba(188, 135, 254, ${alpha.toFixed(3)})`;
+    if (weight > 0) return `rgba(244, 99, 48, ${alpha.toFixed(3)})`;
+    return `rgba(59, 130, 246, ${alpha.toFixed(3)})`;
 }
 
 function modeEdgeWidth(weight: number, isHovered: boolean, mode: GraphViewMode): number {
@@ -202,7 +203,7 @@ export function paintEdges(
                         node.x - dx, node.y,
                         node.x, node.y,
                     );
-                    ctx.strokeStyle = `rgba(249, 115, 22, ${(0.12 + activation * 0.72).toFixed(3)})`;
+                    ctx.strokeStyle = `rgba(${weight >= 0 ? '244, 99, 48' : '59, 130, 246'}, ${(0.12 + activation * 0.72).toFixed(3)})`;
                     ctx.lineWidth = Math.max(0.35, 0.5 + activation * 2.2);
                     ctx.stroke();
                 }
@@ -291,7 +292,7 @@ export function paintEdges(
                         node.x - dx, node.y,
                         node.x, node.y,
                     );
-                    ctx.strokeStyle = weight >= 0 ? 'rgba(129, 236, 255, 0.95)' : 'rgba(188, 135, 254, 0.95)';
+                    ctx.strokeStyle = weight >= 0 ? 'rgba(244, 99, 48, 0.95)' : 'rgba(59, 130, 246, 0.95)';
                     ctx.lineWidth = Math.max(2, modeEdgeWidth(weight, false, viewMode) * 1.6);
                     ctx.stroke();
                 }
@@ -353,12 +354,13 @@ export function paintNodes(
     ctx: CanvasRenderingContext2D,
     nodePositions: NodePos[][],
     flat: FlatNetworkView | null,
-    options: { nodeHealthByKey?: ReadonlyMap<string, NodeHealth>; geometry?: NodeGeometry; selectedNode?: NodeRef | null } = {},
+    options: { nodeHealthByKey?: ReadonlyMap<string, NodeHealth>; geometry?: NodeGeometry; selectedNode?: NodeRef | null; palette?: PainterPalette } = {},
 ): void {
     const layerCount = nodePositions.length;
 
     // Background fill — every node, single style.
-    ctx.fillStyle = '#1c2030';
+    const palette = options.palette ?? DEFAULT_PALETTE;
+    ctx.fillStyle = palette.surface;
     const fillPath = new Path2D();
     for (let l = 0; l < layerCount; l++) {
         for (const n of nodePositions[l]) {
@@ -397,8 +399,8 @@ export function paintNodes(
     }
 
     ctx.lineWidth = 1.5;
-    ctx.strokeStyle = '#00e5c3'; ctx.stroke(inputStroke);
-    ctx.strokeStyle = '#7c5cfc'; ctx.stroke(outputStroke);
+    ctx.strokeStyle = palette.rule; ctx.stroke(inputStroke);
+    ctx.strokeStyle = palette.rule; ctx.stroke(outputStroke);
     ctx.strokeStyle = nodeColor(1); ctx.stroke(hiddenPos);
     ctx.strokeStyle = nodeColor(-1); ctx.stroke(hiddenNeg);
 
@@ -429,7 +431,7 @@ export function paintNodes(
         ctx.save();
         const ring = new Path2D();
         appendNodePath(ring, node, options.geometry, 3);
-        ctx.strokeStyle = '#ffffff';
+        ctx.strokeStyle = palette.text;
         ctx.lineWidth = 2.5;
         ctx.stroke(ring);
         ctx.restore();
@@ -445,9 +447,10 @@ export function paintLabels(
     ctx: CanvasRenderingContext2D,
     nodePositions: NodePos[][],
     layerLabels: string[],
+    palette: PainterPalette = DEFAULT_PALETTE,
 ): void {
     ctx.font = LABEL_FONT;
-    ctx.fillStyle = LABEL_FILL;
+    ctx.fillStyle = palette.muted;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     for (let l = 0; l < nodePositions.length; l++) {

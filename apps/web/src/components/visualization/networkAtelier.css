@@ -1,0 +1,11 @@
+/* Graph-scoped Signal Atelier surfaces. */
+.network-graph-frame button { min-height: 44px; min-width: 44px; }
+.network-graph-frame { min-width: 0; color: var(--text-primary); }
+.network-graph-frame .network-graph-legend__swatch--positive { background: #f46330; }
+.network-graph-frame .network-graph-legend__swatch--negative { background: #3b82f6; }
+.network-graph-frame .network-node-target:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.network-graph-frame .network-tooltip { max-width: 220px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); }
+.atelier-neuron-map { width: min(100%, 256px); aspect-ratio: 1; border: 1px solid var(--border-color); border-radius: 3px; overflow: hidden; background: var(--bg-secondary); display: grid; place-items: center; }
+.precision-selection-details button { min-height: 44px; }
+.precision-influences [data-sign="positive"] > span:last-child { color: #f46330; }
+.precision-influences [data-sign="negative"] > span:last-child { color: #3b82f6; }
