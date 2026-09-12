@@ -47,15 +47,9 @@ function mockCompactLessonDrawer(matches: boolean) {
 function resetLayout() {
     useLayoutStore.setState({
         destination: 'lessons', workspaceTab: 'setup', setupTab: 'dataset',
-        view: 'build',
-        activeRecipeSection: 'data',
-        activeEvidenceView: 'boundary',
+
         audienceMode: 'explore',
-        advancedToolsOpen: false,
-        layout: 'dock',
-        phase: 'build',
-        activeTabLeft: 'data',
-        activeTabRight: 'boundary',
+
         activeLessonId: null,
         activeLessonStepIndex: null,
         lessonCueDismissed: false,
@@ -148,9 +142,7 @@ describe('GuidedLessonPanel', () => {
             activeLessonId: 'lesson-xor-hidden-layers',
             activeLessonStepIndex: 0,
             workspaceTab: 'setup', setupTab: 'dataset',
-            activeTabLeft: 'data',
-            view: 'build',
-            phase: 'build',
+
         });
         expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
     });
@@ -212,8 +204,7 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState()).toMatchObject({
             activeLessonStepIndex: 1,
             workspaceTab: 'setup', setupTab: 'network',
-            view: 'build',
-            phase: 'build',
+
         });
 
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
@@ -222,7 +213,7 @@ describe('GuidedLessonPanel', () => {
 
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
         expect(onHighlightChange).toHaveBeenLastCalledWith('transport');
-        expect(useLayoutStore.getState()).toMatchObject({ view: 'run', phase: 'run' });
+        expect(useLayoutStore.getState()).toMatchObject({ workspaceTab: 'results', resultsTab: 'boundary' });
 
         await user.click(screen.getByRole('button', { name: 'Finish guided lesson' }));
         expect(onHighlightChange).toHaveBeenLastCalledWith(null);
@@ -236,7 +227,7 @@ describe('GuidedLessonPanel', () => {
     it('opens Boundary for a boundary observation when Loss was persisted', async () => {
         const user = userEvent.setup();
         useLayoutStore.setState({
-            activeEvidenceView: 'loss',
+
             resultsTab: 'learning',
         });
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
@@ -248,8 +239,7 @@ describe('GuidedLessonPanel', () => {
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
 
         expect(useLayoutStore.getState()).toMatchObject({
-            view: 'run',
-            activeEvidenceView: 'boundary',
+
             resultsTab: 'boundary',
         });
         expect(screen.getByText(
@@ -261,7 +251,7 @@ describe('GuidedLessonPanel', () => {
     it('opens Loss for a loss observation when Boundary was persisted', async () => {
         const user = userEvent.setup();
         useLayoutStore.setState({
-            activeEvidenceView: 'boundary',
+
             resultsTab: 'boundary',
         });
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
@@ -275,8 +265,7 @@ describe('GuidedLessonPanel', () => {
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
 
         expect(useLayoutStore.getState()).toMatchObject({
-            view: 'run',
-            activeEvidenceView: 'loss',
+
             resultsTab: 'learning',
         });
         expect(screen.getByText(
@@ -298,13 +287,13 @@ describe('GuidedLessonPanel', () => {
         await screen.findByText('Step 1 of 4');
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
-        act(() => useLayoutStore.getState().setActiveEvidenceView('boundary'));
+        act(() => useLayoutStore.getState().setResultsTab('boundary'));
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
 
         expect(useLayoutStore.getState()).toMatchObject({
-            view: 'build',
+
             workspaceTab: 'setup', setupTab: 'training',
-            activeEvidenceView: 'loss',
+
             resultsTab: 'learning',
         });
         expect(screen.getByText(
@@ -411,7 +400,7 @@ describe('GuidedLessonPanel', () => {
         await user.click(screen.getByRole('button', { name: 'Start lesson and reset' }));
         await screen.findByText('Step 1 of 4');
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
-        expect(useLayoutStore.getState().view).toBe('run');
+        expect(useLayoutStore.getState().workspaceTab).toBe('results');
         await user.click(screen.getByRole('button', { name: 'Next lesson step' }));
 
         expect(screen.getByText('Keep the model fixed')).toBeVisible();
@@ -423,7 +412,7 @@ describe('GuidedLessonPanel', () => {
         expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
         expect(screen.getByRole('button', { name: 'Next lesson step' })).toBeEnabled();
 
-        act(() => useLayoutStore.getState().setView('build'));
+        act(() => useLayoutStore.getState().navigate('playground','setup'));
         expect(await screen.findByText('Done')).toBeVisible();
         expect(screen.getByText('Keep the model fixed')).toBeVisible();
         expect(screen.getByRole('button', { name: 'Previous' })).toBeEnabled();
@@ -452,7 +441,7 @@ describe('GuidedLessonPanel', () => {
 
     it('opens a hidden Beginner lesson target without changing audience mode', async () => {
         const user = userEvent.setup();
-        useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
+        useLayoutStore.setState({ audienceMode: 'beginner',  });
         render(<GuidedLessonPanel onReset={vi.fn()} onHighlightChange={vi.fn()} />);
 
         await user.selectOptions(
@@ -575,12 +564,7 @@ describe('GuidedLessonPanel', () => {
         const target = getLessonRecipe(lesson);
         const deferred = deferApplyCompletion(originalApplyRecipe);
         usePlaygroundStore.setState({ applyRecipe: deferred.applyRecipe });
-        useLayoutStore.setState({
-            view: 'run',
-            phase: 'run',
-            activeRecipeSection: 'features',
-            activeTabLeft: 'features',
-        });
+        useLayoutStore.setState({ destination: 'lessons', workspaceTab: 'results', setupTab: 'network' });
 
         const { container } = render(
             <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
@@ -600,8 +584,7 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState()).toMatchObject({
             activeLessonId: null,
             activeLessonStepIndex: null,
-            activeRecipeSection: 'features',
-            view: 'run',
+            destination: 'lessons', workspaceTab: 'results', setupTab: 'network',
         });
         expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
 
@@ -619,7 +602,7 @@ describe('GuidedLessonPanel', () => {
             activeLessonId: lesson.id,
             activeLessonStepIndex: 0,
             workspaceTab: 'setup', setupTab: 'dataset',
-            view: 'build',
+
         });
         expect(container.querySelector('.guided-lesson')).toHaveClass('guided-lesson--active');
     });
@@ -804,12 +787,7 @@ describe('GuidedLessonPanel', () => {
                 issues: [{ code: 'invalid-field' as const, path: 'recipe', message: 'Deliberate failure' }],
             })),
         });
-        useLayoutStore.setState({
-            view: 'run',
-            phase: 'run',
-            activeRecipeSection: 'features',
-            activeTabLeft: 'features',
-        });
+        useLayoutStore.setState({ destination: 'lessons', workspaceTab: 'results', setupTab: 'network' });
 
         const { container, rerender } = render(
             <GuidedLessonPanel onReset={onReset} onHighlightChange={onHighlightChange} />,
@@ -830,8 +808,7 @@ describe('GuidedLessonPanel', () => {
         expect(useLayoutStore.getState()).toMatchObject({
             activeLessonId: null,
             activeLessonStepIndex: null,
-            activeRecipeSection: 'features',
-            view: 'run',
+            destination: 'lessons', workspaceTab: 'results', setupTab: 'network',
         });
         expect(container.querySelector('.guided-lesson')).not.toHaveClass('guided-lesson--active');
 

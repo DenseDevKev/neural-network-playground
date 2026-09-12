@@ -101,11 +101,6 @@ vi.mock('./hooks/useExperimentMemoryStorageSync.ts', () => ({
     useExperimentMemoryStorageSync,
 }));
 
-
-
-
-
-
 vi.mock('./components/visualization/DecisionBoundaryCanvas.tsx', () => ({ DecisionBoundaryCanvas: () => <canvas data-decision-boundary-canvas aria-label="Boundary paint" /> }));
 vi.mock('./components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
 vi.mock('./components/controls/DatasetPreviewCanvas.tsx', () => ({ DatasetPreviewCanvas: () => <canvas aria-hidden="true" /> }));
@@ -150,16 +145,9 @@ describe('App accessibility shell', () => {
 
         useLayoutStore.setState({
             destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace',
-            view: 'build',
-            buildContextOpen: false,
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
+
             audienceMode: 'explore',
-            advancedToolsOpen: false,
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
+
         });
     });
 
@@ -503,24 +491,24 @@ describe('App accessibility shell', () => {
         expect(announcements).not.toHaveTextContent('Network update complete');
     });
 
-    it('switches Build and Run views through the store', () => {
+    it('switches Setup and Results through canonical navigation', () => {
         render(<App />);
 
         act(() => {
-            useLayoutStore.getState().setView('run');
+            useLayoutStore.getState().navigate('playground','results');
         });
-        expect(useLayoutStore.getState().view).toBe('run');
+        expect(useLayoutStore.getState().workspaceTab).toBe('results');
 
         act(() => {
-            useLayoutStore.getState().setView('build');
+            useLayoutStore.getState().openSetup('dataset');
         });
-        expect(useLayoutStore.getState().view).toBe('build');
+        expect(useLayoutStore.getState().workspaceTab).toBe('setup');
     });
 
     it('adapts old lesson targets to the shared Setup editor without resetting training', () => {
         render(<App />);
-        for (const [section,tab] of [['data','dataset'],['network','network'],['features','network'],['hyperparams','training']] as const) {
-            act(() => useLayoutStore.getState().selectBuildContext(section));
+        for (const [,tab] of [['data','dataset'],['network','network'],['features','network'],['hyperparams','training']] as const) {
+            act(() => useLayoutStore.getState().openSetup(tab));
             expect(useLayoutStore.getState().workspaceTab).toBe('setup');
             expect(useLayoutStore.getState().setupTab).toBe(tab);
             expect(screen.getByRole('region',{name:'Experiment setup'})).toBeInTheDocument();

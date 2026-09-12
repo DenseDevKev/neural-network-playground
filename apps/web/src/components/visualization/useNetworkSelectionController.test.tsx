@@ -31,7 +31,7 @@ describe('useNetworkSelectionController', () => {
         const before = usePlaygroundStore.getState().access;
         act(() => result.current.commands.selectNode({ layerIdx: 1, nodeIdx: 0 }));
         const model = result.current.model;
-        act(() => { useTrainingStore.setState({ status: 'paused', frameVersion: 3 }); useLayoutStore.setState({ audienceMode: 'lab', advancedToolsOpen: true }); });
+        act(() => { useTrainingStore.setState({ status: 'paused', frameVersion: 3 }); useLayoutStore.setState({ audienceMode: 'lab',  }); });
         expect(result.current.model).toBe(model);
         expect(usePlaygroundStore.getState().access).toBe(before);
         act(() => { snapshot = { ...snapshot, biases: new Float32Array(snapshot.biases!.length).fill(4) }; useTrainingStore.setState({ paramsVersion: 1 }); });

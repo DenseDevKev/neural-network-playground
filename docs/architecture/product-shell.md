@@ -32,11 +32,11 @@ across destinations. Navigation never starts, pauses, or resets the experiment.
 `useLayoutStore` stores navigation, code format, guidance, and lesson invitation
 preferences under `nn-playground-layout-v2`. It reads and migrates the old
 `nn-playground-layout` key without deleting it. Old Build selections map into
-Setup; Run evidence maps into Results or Inspect. Old configuration and code
+Setup; Run evidence maps into Results, Inspect, or Saved runs. Old configuration and code
 selections create a session-only export request consumed by the shell.
 
-Deprecated layout aliases remain compatibility adapters, not alternate UI
-routes. The V2 experiment fragment remains exclusively a shareable experiment
+Deprecated layout names are accepted only by the migration reader. Live layout
+state and explanation actions use the current destination and tab interfaces. The V2 experiment fragment remains exclusively a shareable experiment
 document; shell navigation and theme never enter it. Modal state, comparison
 selection, draft values, export requests, and active lesson execution are not
 persisted in experiment data. Saved-list position and comparison selection remain

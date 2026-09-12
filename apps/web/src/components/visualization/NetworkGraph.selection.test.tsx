@@ -24,7 +24,7 @@ beforeEach(() => {
     frames.resetFrameBuffer();
     usePlaygroundStore.setState({ access: { status: 'ready', prepared } });
     updateCompiledForTest((c) => ({ ...c, network: { ...c.network, hiddenLayers: [2] } }));
-    useLayoutStore.setState({ audienceMode: 'lab', advancedToolsOpen: true, activeLessonId: null });
+    useLayoutStore.setState({ audienceMode: 'lab',  activeLessonId: null });
     useTrainingStore.setState({ evidenceGenerationId: 7, paramsVersion: 0, neuronGridsVersion: 0, frameVersion: 0, layerStatsVersion: 0 });
     const model = { generationId: 7, revision: 10, step: 10, epoch: 1 };
     snapshot = { ...frames.getFrameBuffer(), weightLayout: { layerSizes: [2, 2, 1] }, weights: new Float32Array([0.3, -0.5, 0.7, -0.2, 0.9, -0.4]), biases: new Float32Array([0.1, -0.1, 0.05]),
@@ -78,7 +78,7 @@ for (const canvas of [true, false]) describe(canvas ? 'Canvas selection' : 'SVG 
         const node = screen.getByRole('button', { name: /^Hidden 1, Neuron 2/ });
         fireEvent.click(node); fireEvent.focus(node); fireEvent.blur(node); fireEvent.pointerLeave(node);
         act(() => {
-            useLayoutStore.setState({ audienceMode: 'beginner', advancedToolsOpen: false });
+            useLayoutStore.setState({ audienceMode: 'beginner',  });
             useTrainingStore.setState({ frameVersion: 100, outputGridVersion: 100 });
         });
         expect(node).toHaveAttribute('aria-pressed', 'true');

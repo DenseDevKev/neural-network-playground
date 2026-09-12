@@ -29,7 +29,7 @@ describe('Signal Atelier production composition', () => {
         localStorage.clear(); mountedTraining.mockClear();
         window.history.replaceState(null, '', encodeExperimentUrl(prepared.document));
         usePlaygroundStore.setState({ access: { status: 'ready', prepared }, preparation: { status: 'ready', requestId: 0, issues: [] } });
-        useLayoutStore.setState({ destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace',activeLessonId:null, view: 'build', phase: 'build', audienceMode: 'explore', advancedToolsOpen: false, buildContextOpen: false, activeRecipeSection: 'data', activeEvidenceView: 'boundary', codeExportTab: 'numpy', lessonCueDismissed: true });
+        useLayoutStore.setState({ destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace',activeLessonId:null,   audienceMode: 'explore',     codeExportTab: 'numpy', lessonCueDismissed: true });
         useTrainingStore.getState().resetEvidence();
         useTrainingStore.setState({ status: 'paused', evidenceGenerationId: 7, paramsVersion: 1, neuronGridsVersion: 1, workerError: null, pendingConfigSource: null, trainedRecipe: prepared.document.recipe, trainedRecipeFingerprint: prepared.identities.recipeFingerprint });
         useExperimentMemoryStore.setState({ hydrationStatus: 'ready', records: Object.freeze([]), rejectedRecords: Object.freeze([]), incompatibleEnvelope: null, pendingSave: null });

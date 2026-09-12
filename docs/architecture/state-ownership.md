@@ -13,7 +13,7 @@ is [product-shell.md](product-shell.md); historical receipts below remain dated.
 | `metricHistoryBuffer` | Bounded metric series, independently invalidated by the training store. |
 | Worker | Model, optimizer, scientific artifacts, and checkpoint payloads. |
 | `frameBuffer` | Accepted main-thread typed arrays and provenance; not a second scientific authority. |
-| `useLayoutStore` | Versioned local navigation, guidance, code format, and lesson invitation preferences; compatibility aliases and session export requests. |
+| `useLayoutStore` | Versioned local navigation, guidance, code format, and lesson invitation preferences; legacy preference migration and session export requests. |
 | Theme store | System/Light/Dark preference and resolved theme; no experiment or runtime state. |
 | `useRecipeDraft` | App-owned session candidate, base identity, raw numeric text, dirty/validation/submission state, and atomic Apply/Cancel. |
 | `useAtelierViewport` | Effective available viewport, including document zoom and virtual keyboard; no scientific state. |
@@ -65,8 +65,9 @@ injection code. Maintenance tooling is not shipped; see
 [maintenance commands](../maintenance/README.md).
 
 Replaced shell components and styles were retired only after import-closure and
-compatibility checks. Deprecated layout setters remain as migration/lesson
-adapters; their user-facing consumers use the new destination and tab types.
+compatibility checks. Deprecated layout setters and duplicate live fields were removed after consumer
+checks. The migration reader still accepts old persisted names, and explanation
+actions now navigate and focus the current destination and tab controls.
 
 ## Historical July product-shell baseline evidence
 
@@ -113,7 +114,6 @@ Idle-machine performance medians:
 These are candidates only; do not delete or relocate them in this slice.
 
 - `usePlaygroundStore.dataset` and `regenerateData`: baseline searches find only the store implementation and its unit test, but removal requires a dedicated consumer search and compatibility proof.
-- Deprecated layout aliases (`layout`, `phase`, `activeTabLeft`, `activeTabRight`, and their setters): persisted-state sanitization and compatibility tests still accept them. Retain until a dedicated compatibility migration proves older local layout state remains safe without them.
 - `NetworkGraphSVG`: a live runtime fallback selected by `featuresUI.canvasNetworkGraph`, not a dead path.
 
 ## Exact verification commands

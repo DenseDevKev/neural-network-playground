@@ -193,8 +193,6 @@ vi.mock('../components/visualization/DecisionBoundaryCanvas.tsx', () => ({
     DecisionBoundaryCanvas: () => <canvas aria-label="Mock boundary canvas" />,
 }));
 
-
-
 vi.mock('../components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
 vi.mock('../components/controls/ConfigPanel.tsx',       () => ({ ConfigPanel: () => <div>Config</div> }));
 vi.mock('../components/controls/InspectionPanel.tsx',   () => ({ InspectionPanel: () => <div>Inspection</div> }));
@@ -230,13 +228,7 @@ describe('Training integration', () => {
         resetFrameBuffer();
 
         useLayoutStore.setState({
-            view: 'build',
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
+
         });
 
         usePlaygroundStore.setState({
@@ -444,13 +436,7 @@ describe('Dataset switching scenario', () => {
         fakeNewRunTo = vi.fn();
 
         useLayoutStore.setState({
-            view: 'build',
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
+
         });
 
         fakeWorkerApi.initializeExperimentV2.mockReset().mockImplementation(

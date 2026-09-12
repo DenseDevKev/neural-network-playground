@@ -31,7 +31,6 @@ vi.mock('../hooks/useTraining.ts', () => ({
     useTraining: () => trainingMock,
 }));
 
-
 vi.mock('../components/controls/ConfigPanel.tsx', () => ({
     ConfigPanel: () => <div>Mock Config Panel</div>,
 }));
@@ -182,16 +181,9 @@ describe('App shell integration', () => {
 
         useLayoutStore.setState({
             destination: 'playground', workspaceTab: 'network', setupTab: 'dataset', resultsTab: 'boundary', inspectTab: 'trace',
-            view: 'build',
-            buildContextOpen: false,
-            activeRecipeSection: 'data',
-            activeEvidenceView: 'boundary',
+
             audienceMode: 'explore',
-            advancedToolsOpen: false,
-            layout: 'dock',
-            phase: 'build',
-            activeTabLeft: 'data',
-            activeTabRight: 'boundary',
+
             activeLessonId: null,
             activeLessonStepIndex: null,
             lessonCueDismissed: false,
@@ -308,7 +300,7 @@ describe('App shell integration', () => {
         expect(screen.queryByText('Mock Boundary')).not.toBeInTheDocument();
         expect(usePlaygroundStore.getState().demand).toMatchObject({needNeuronGrids:false,needDecisionBoundary:false});
         act(() => setViewportWidth(1440));
-        expect(screen.getByText('Mock Topology Graph')).toBeVisible();
+        expect(await screen.findByText('Mock Topology Graph')).toBeVisible();
         expect(screen.getByText('Mock Boundary')).toBeVisible();
         expect(usePlaygroundStore.getState().access).toBe(access);
         for (const command of Object.values(trainingMock)) expect(command).not.toHaveBeenCalled();

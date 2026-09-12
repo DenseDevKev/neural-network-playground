@@ -32,7 +32,7 @@ describe('EmptyState', () => {
         action={{ label: 'Start Training', onClick: handleClick }}
       />
     );
-    
+
     const button = screen.getByRole('button', { name: 'Start Training' });
     expect(button).toBeInTheDocument();
   });
@@ -40,17 +40,17 @@ describe('EmptyState', () => {
   it('should call action onClick when button is clicked', async () => {
     const user = userEvent.setup();
     const handleClick = vi.fn();
-    
+
     render(
       <EmptyState
         title="No data"
         action={{ label: 'Start Training', onClick: handleClick }}
       />
     );
-    
+
     const button = screen.getByRole('button', { name: 'Start Training' });
     await user.click(button);
-    
+
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 
@@ -64,7 +64,7 @@ describe('EmptyState', () => {
         action={{ label: 'Play', onClick: handleClick }}
       />
     );
-    
+
     expect(screen.getByText('📊')).toBeInTheDocument();
     expect(screen.getByText('No training data')).toBeInTheDocument();
     expect(screen.getByText('Click Play to start training')).toBeInTheDocument();
