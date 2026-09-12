@@ -28,7 +28,7 @@ for (const theme of ['light', 'dark'] as const) {
         await applyPreset(page, 'Circle with One Hidden Layer');
         await learning(page); await steps(page, 40);
         const receipts: object[] = [];
-        async function capture(id: number, fullPage = ![5, 14, 16, 18].includes(id)) {
+        async function capture(id: number, fullPage = ![5, 14, 15, 16, 18].includes(id)) {
             await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
             await page.evaluate(() => document.fonts.ready);
             await page.evaluate(() => window.scrollTo(0, 0));
@@ -50,7 +50,7 @@ for (const theme of ['light', 'dark'] as const) {
                 }));
                 await writeFile(resolve(output, `${String(id).padStart(2,'0')}-geometry-${theme}.json`), JSON.stringify(geometry,null,2));
             }
-            if ([5, 11, 16].includes(id)) await page.screenshot({ path: resolve(output, `${String(id).padStart(2, '0')}-${names[id - 1]}-${theme}-viewport.png`), animations: 'disabled' });
+            if ([5, 11, 15, 16].includes(id)) await page.screenshot({ path: resolve(output, `${String(id).padStart(2, '0')}-${names[id - 1]}-${theme}-viewport.png`), animations: 'disabled' });
             await page.screenshot({ path: resolve(output, `${String(id).padStart(2, '0')}-${names[id - 1]}-${theme}.png`), fullPage, animations: 'disabled' });
             if ([2, 3, 4, 20].includes(id)) {
                 const fields = page.locator('.atelier-setup-fields');
