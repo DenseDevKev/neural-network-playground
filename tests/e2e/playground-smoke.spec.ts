@@ -55,18 +55,20 @@ async function saved(page: Page) {
 }
 async function expectedRecipe(page: Page, recipe: typeof RECIPES[keyof typeof RECIPES]) {
     // Check the entire public recipe document, not a shortened UI summary or a test-only store.
-    const payload = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('r');
-    expect(payload).not.toBeNull();
-    const document = JSON.parse(Buffer.from(payload!, 'base64url').toString('utf8'));
-    expect(document.schemaVersion).toBe(2);
-    expect(document.recipe).toEqual({
-        task: { kind: recipe.taskKind, dataset: recipe.dataset },
-        data: { sampleCount: 300, trainFraction: 0.5, noise: recipe.noise, seed: 42 },
-        inputs: { featureIds: ['x', 'y'] },
-        model: { hiddenLayers: [...recipe.hiddenLayers], hiddenActivation: 'tanh', initialization: 'xavier', seed: 42 },
-        training: { batchSize: 10, learningRate: recipe.learningRate, schedule: { kind: 'constant' }, optimizer: { kind: 'sgd' }, gradientClipping: { kind: 'none' } },
-        objective: { dataLoss: { kind: recipe.objective }, penalty: { kind: 'none' }, reduction: 'mean-per-sample' },
-    });
+    await expect(async () => {
+        const payload = new URLSearchParams(new URL(page.url()).hash.slice(1)).get('r');
+        expect(payload).not.toBeNull();
+        const document = JSON.parse(Buffer.from(payload!, 'base64url').toString('utf8'));
+        expect(document.schemaVersion).toBe(2);
+        expect(document.recipe).toEqual({
+            task: { kind: recipe.taskKind, dataset: recipe.dataset },
+            data: { sampleCount: 300, trainFraction: 0.5, noise: recipe.noise, seed: 42 },
+            inputs: { featureIds: ['x', 'y'] },
+            model: { hiddenLayers: [...recipe.hiddenLayers], hiddenActivation: 'tanh', initialization: 'xavier', seed: 42 },
+            training: { batchSize: 10, learningRate: recipe.learningRate, schedule: { kind: 'constant' }, optimizer: { kind: 'sgd' }, gradientClipping: { kind: 'none' } },
+            objective: { dataLoss: { kind: recipe.objective }, penalty: { kind: 'none' }, reduction: 'mean-per-sample' },
+        });
+    }).toPass({ timeout: 10_000 });
 
     await workspace(page, 'Setup');
     const sections = page.getByRole('navigation', { name: 'Setup sections' });

@@ -26,6 +26,7 @@ export function useModalFocusContainment(
     active: boolean,
     dialogRef: RefObject<HTMLElement | null>,
     backgroundRef: RefObject<HTMLElement | null>,
+    returnFocusRef?: RefObject<HTMLElement | null>,
 ) {
     useEffect(() => {
         if (!active || typeof document === 'undefined') return;
@@ -34,7 +35,7 @@ export function useModalFocusContainment(
         const background = backgroundRef.current;
         if (!dialog || !background) return;
 
-        const activeElement = document.activeElement;
+        const activeElement = returnFocusRef?.current ?? document.activeElement;
         const priorFocus = activeElement instanceof HTMLElement && !dialog.contains(activeElement)
             ? activeElement
             : null;
@@ -186,5 +187,5 @@ export function useModalFocusContainment(
             }
             focusWithoutScroll(priorFocus);
         };
-    }, [active, backgroundRef, dialogRef]);
+    }, [active, backgroundRef, dialogRef, returnFocusRef]);
 }

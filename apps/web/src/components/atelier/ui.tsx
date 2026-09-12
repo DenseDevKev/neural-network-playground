@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode, type KeyboardEvent, type RefObject } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode, type KeyboardEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalFocusContainment } from '../../hooks/useModalFocusContainment.ts';
 import { X, Play, Pause, StepForward, RotateCcw, Settings2, Sun, Moon, Monitor, Ellipsis, ArrowUpRight, ChevronRight, History, BookOpen, type LucideIcon } from 'lucide-react';
@@ -21,16 +21,18 @@ export function Dialog({ title, children, onClose, alert = false, description, p
     const titleId = useId();
     const descriptionId = useId();
     const fallbackBackground = useRef<HTMLElement | null>(null);
-    useModalFocusContainment(persistent, ref, backgroundRef ?? fallbackBackground);
-    useEffect(() => {
+    const priorFocus = useRef<HTMLElement | null>(null);
+    useLayoutEffect(() => {
         const dialog = ref.current;
         const prior = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        priorFocus.current = prior;
         if (dialog && !dialog.open) {
             if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
             dialog.focus({ preventScroll:true });
         }
-        return () => { if (dialog?.open) dialog.close?.(); if (prior?.isConnected) prior.focus(); };
-    }, []);
+        return () => { if (dialog?.open) dialog.close?.(); if (!persistent && prior?.isConnected) prior.focus({ preventScroll:true }); };
+    }, [persistent]);
+    useModalFocusContainment(persistent, ref, backgroundRef ?? fallbackBackground, priorFocus);
     return createPortal(<dialog ref={ref} className="atelier-dialog" role={alert ? 'alertdialog' : 'dialog'} aria-labelledby={titleId} aria-describedby={description ? descriptionId : undefined} tabIndex={-1} onCancel={(event) => { event.preventDefault(); onClose(); }} onKeyDown={(event) => event.stopPropagation()}>
         <header><h2 id={titleId}>{title}</h2>{!persistent && <button className="atelier-icon-button" type="button" onClick={onClose} aria-label={`Close ${title}`}><Icon name="close" /></button>}</header>
         <div className="atelier-dialog-body">{description && <p className="sr-only" id={descriptionId}>{description}</p>}{children}</div>

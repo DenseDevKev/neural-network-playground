@@ -5,6 +5,9 @@ import { E2E_FAULTS_ENABLED } from './testing/e2eFaults.ts';
 import './styles/fonts.css';
 import './styles/components.css';
 import './styles/atelier.css';
+import './components/controls/exportUtilities.css';
+import './components/atelier/saved/saved.css';
+import './lessons/lessons.css';
 
 // E2E specs probe this marker to skip fault-injection scenarios when the
 // served bundle was built without VITE_E2E_FAULTS=1.
