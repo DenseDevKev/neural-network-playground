@@ -66,7 +66,7 @@ function sanitizePersistedLayoutState(value: unknown): typeof DEFAULT_LAYOUT_STA
         inspectTab: isOneOf(state.inspectTab, ['trace', 'activations', 'gradients']) ? state.inspectTab : 'trace',
         audienceMode: isAudienceMode(state.audienceMode) ? state.audienceMode : 'explore',
         codeExportTab: isOneOf(state.codeExportTab, CODE_EXPORT_TABS) ? state.codeExportTab : 'pseudocode',
-        exportRequest: !hasCurrentNavigation && evidence === 'code' ? { mode: 'code', id: 1 } : !hasCurrentNavigation && recipe === 'config' ? { mode: 'setup', id: 1 } : null,
+        exportRequest: !hasCurrentNavigation ? view === 'run' && evidence === 'code' ? { mode: 'code', id: 1 } : recipe === 'config' ? { mode: 'setup', id: 1 } : evidence === 'code' ? { mode: 'code', id: 1 } : null : null,
         lessonCueDismissed: typeof state.lessonCueDismissed === 'boolean' ? state.lessonCueDismissed : false,
         hasStartedLesson: typeof state.hasStartedLesson === 'boolean' ? state.hasStartedLesson : false,
     };

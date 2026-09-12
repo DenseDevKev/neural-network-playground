@@ -227,9 +227,7 @@ describe('Training integration', () => {
 
         resetFrameBuffer();
 
-        useLayoutStore.setState({
-
-        });
+        useLayoutStore.setState({ destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace' });
 
         usePlaygroundStore.setState({
             access: { status: 'ready', prepared: INITIAL_PREPARED },
@@ -435,9 +433,7 @@ describe('Dataset switching scenario', () => {
         fakeStopRenderLoop = vi.fn();
         fakeNewRunTo = vi.fn();
 
-        useLayoutStore.setState({
-
-        });
+        useLayoutStore.setState({ destination:'playground',workspaceTab:'network',setupTab:'dataset',resultsTab:'boundary',inspectTab:'trace' });
 
         fakeWorkerApi.initializeExperimentV2.mockReset().mockImplementation(
             (request: WorkerExperimentRequestV2) => fakeStrictResultForRequest(

@@ -60,6 +60,10 @@ describe('local layout preferences', () => {
         [{view:'run',activeEvidenceView:'loss'}, {workspaceTab:'results',resultsTab:'learning'}],
         [{view:'run',activeRecipeSection:'features',activeEvidenceView:'code',codeExportTab:'numpy'}, {workspaceTab:'results',setupTab:'network',codeExportTab:'numpy',exportRequest:{mode:'code',id:1}}],
         [{view:'build',activeRecipeSection:'config'}, {workspaceTab:'setup',exportRequest:{mode:'setup',id:1}}],
+        [{view:'build',activeRecipeSection:'config',activeEvidenceView:'code'}, {workspaceTab:'setup',exportRequest:{mode:'setup',id:1}}],
+        [{view:'run',activeRecipeSection:'config',activeEvidenceView:'code'}, {workspaceTab:'results',exportRequest:{mode:'code',id:1}}],
+        [{phase:'build',activeTabLeft:'config',activeTabRight:'code'}, {workspaceTab:'setup',exportRequest:{mode:'setup',id:1}}],
+        [{phase:'run',activeTabLeft:'config',activeTabRight:'code'}, {workspaceTab:'results',exportRequest:{mode:'code',id:1}}],
     ];
     it.each(legacyCases)('migrates old selections %j without writing or deleting the old key', (state, expected) => {
         const serialized = JSON.stringify({state,version:0}); localStorage.setItem(LEGACY_LAYOUT_STORAGE_KEY,serialized);
