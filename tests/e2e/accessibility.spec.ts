@@ -130,19 +130,36 @@ test('forced colors preserves distinct data legend colors and native control sty
     await page.emulateMedia({ forcedColors: 'active' });
     await loadReadyPlayground(page);
     test.skip(!await page.evaluate(() => matchMedia('(forced-colors: active)').matches), 'Browser does not emulate active forced colors');
-    await page.getByLabel('Color theme').selectOption('dark');
-    const supportsAdjustment = await page.evaluate(() => CSS.supports('forced-color-adjust', 'none'));
-    for (const selector of ['.decision-boundary__swatch', '.atelier-class-legend i']) {
-        const marks = page.locator(selector);
-        await expect(marks.first()).toBeVisible();
-        const colors = await marks.evaluateAll((nodes) => nodes.map((node) => {
+    for (const theme of ['light', 'dark']) {
+        await page.getByLabel('Color theme').selectOption(theme);
+        const supportsAdjustment = await page.evaluate(() => CSS.supports('forced-color-adjust', 'none'));
+        for (const selector of ['.decision-boundary__swatch', '.atelier-class-legend i', '.network-graph-legend__swatch']) {
+            const marks = page.locator(selector);
+            await expect(marks.first()).toBeVisible();
+            const colors = await marks.evaluateAll((nodes) => nodes.map((node) => {
+                const style = getComputedStyle(node);
+                return { color: style.backgroundColor, adjustment: style.forcedColorAdjust };
+            }));
+            expect(new Set(colors.map(({ color }) => color)).size).toBeGreaterThan(1);
+            if (supportsAdjustment) expect(colors.every(({ adjustment }) => adjustment === 'none')).toBe(true);
+        }
+        if (supportsAdjustment) expect(await page.getByLabel('Color theme').evaluate((node) => getComputedStyle(node).forcedColorAdjust)).toBe('auto');
+        const graph = page.getByRole('img', { name: 'Neural network graph', exact: true });
+        const drawing = await graph.evaluate((node) => {
             const style = getComputedStyle(node);
-            return { color: style.backgroundColor, adjustment: style.forcedColorAdjust };
-        }));
-        expect(new Set(colors.map(({ color }) => color)).size).toBeGreaterThan(1);
-        if (supportsAdjustment) expect(colors.every(({ adjustment }) => adjustment === 'none')).toBe(true);
+            const rgb = (value: string) => value.match(/[\d.]+/g)!.slice(0, 3).map(Number);
+            const luminance = (value: string) => rgb(value).map((v) => v / 255).map((v) => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4).reduce((sum, v, i) => sum + v * [.2126, .7152, .0722][i], 0);
+            const a = luminance(style.color), b = luminance(style.backgroundColor);
+            return { background: style.backgroundColor, contrast: (Math.max(a, b) + .05) / (Math.min(a, b) + .05) };
+        });
+        expect(drawing.background).toBe(theme === 'dark' ? 'rgb(23, 25, 27)' : 'rgb(247, 246, 242)');
+        expect(drawing.contrast).toBeGreaterThanOrEqual(4.5);
+        if (supportsAdjustment) {
+            for (const selector of ['html', '.network-graph-toolbar', '.network-graph-legend']) {
+                expect(await page.locator(selector).evaluate((node) => getComputedStyle(node).forcedColorAdjust)).toBe('auto');
+            }
+        }
+        await page.locator('.network-graph-frame').screenshot({ path: `../../outputs/nn-forge-implementation/display-modes/${info.project.name}-${theme}-forced-colors-graph-fixed.png` });
+        await info.attach(`forced-colors-${theme}-data-legends`, { body: await page.screenshot(), contentType: 'image/png' });
     }
-    if (supportsAdjustment) expect(await page.getByLabel('Color theme').evaluate((node) => getComputedStyle(node).forcedColorAdjust)).toBe('auto');
-    await page.screenshot({ path: `../../outputs/nn-forge-implementation/display-modes/${info.project.name}-dark-forced-colors-fixed.png` });
-    await info.attach('forced-colors-data-legends', { body: await page.screenshot(), contentType: 'image/png' });
 });

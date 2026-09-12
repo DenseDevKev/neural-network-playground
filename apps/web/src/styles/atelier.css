@@ -226,5 +226,6 @@ button:disabled {cursor:not-allowed;opacity:.48}
 .atelier-evaluation-step {display:inline-block;width:8ch;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 @media (forced-colors: active) {
-  .decision-boundary__swatch, .atelier-class-legend i, .atelier-data-plot circle {forced-color-adjust:none}
+  .decision-boundary__swatch, .atelier-class-legend i, .atelier-data-plot circle, .network-graph-legend__swatch {forced-color-adjust:none}
+  .network-graph-container > canvas, .network-graph-container > svg {forced-color-adjust:none;background:var(--bg-primary);color:var(--text-secondary)}
 }

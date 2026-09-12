@@ -108,7 +108,7 @@ test('project hosting resolves lazy evidence and reopens an unchanged shared rec
         await expect(page.getByRole('tabpanel', { name:'NumPy',exact:true })).toContainText('import numpy as np');
         await page.keyboard.press('Escape');
         await page.getByRole('button', { name:'Saved runs',exact:true }).click();
-        await expect(page.locator('.saved-runs')).toContainText(/do not\s+contain trained parameters/);
+        await expect(page.locator('.saved-runs')).toContainText('Saved evidence includes a recipe and full evaluation, without trained parameters. Applying a recipe starts a fresh model.');
         for (const prefix of ['InspectionPanel', 'CodeExportPanel', 'WorkspaceUtilities']) expectChunk(observed.resources, target, prefix);
         await workspace(page, 'Network');
         const architecture = await page.getByLabel('Architecture summary', { exact:true }).textContent();
