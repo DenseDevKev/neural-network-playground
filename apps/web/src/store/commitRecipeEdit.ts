@@ -1,4 +1,4 @@
-import type { ExperimentSchemaIssue } from '@nn-playground/shared';
+import type { ExperimentSchemaIssue, PreparedExperimentDocumentV2 } from '@nn-playground/shared';
 import type { RecipeEditIssue } from './recipeEdits.ts';
 import {
     usePlaygroundStore,
@@ -64,14 +64,14 @@ function errorMessage(error: unknown): string {
 
 /**
  * Runs one canonical recipe edit as an owned training-config transaction.
- * Returns true only when this request's exact prepared object is the current
+ * Returns this request's exact prepared object only while it is the current
  * store publication. Stale completions never clear or overwrite newer state.
  */
-export async function commitRecipeEdit(
+export async function commitRecipeEditPrepared(
     source: RecipeConfigChangeSource,
     edit: RecipeEdit,
     expectedBaseKey?: string,
-): Promise<boolean> {
+): Promise<PreparedExperimentDocumentV2 | null> {
     // Compare before beginning a transaction: stale drafts must not pause or
     // replace the active recipe, nor supersede another pending preparation.
     const current = usePlaygroundStore.getState();
@@ -80,7 +80,7 @@ export async function commitRecipeEdit(
         || current.access.prepared.identities.canonicalRecipeKey !== expectedBaseKey
         || current.preparation.status === 'preparing'
         || useTrainingStore.getState().pendingConfigSource !== null
-    )) return false;
+    )) return null;
     const transactionId = ++latestRecipeEditTransaction;
     const trainingStore = useTrainingStore.getState();
     trainingStore.beginConfigChange(source);
@@ -93,18 +93,27 @@ export async function commitRecipeEdit(
         const playground = usePlaygroundStore.getState();
 
         if (transactionId !== latestRecipeEditTransaction
-            || playground.preparation.requestId !== requestId) return false;
+            || playground.preparation.requestId !== requestId) return null;
         if (!result.ok) {
             trainingStore.failConfigChange(formatFailure(result));
-            return false;
+            return null;
         }
         return playground.access.status === 'ready'
-            && playground.access.prepared === result.value;
+            && playground.access.prepared === result.value ? result.value : null;
     } catch (error) {
         if (transactionId === latestRecipeEditTransaction
             && usePlaygroundStore.getState().preparation.requestId === requestId) {
             trainingStore.failConfigChange(errorMessage(error));
         }
-        return false;
+        return null;
     }
+}
+
+/** Compatibility facade for inline edits that only need publication success. */
+export async function commitRecipeEdit(
+    source: RecipeConfigChangeSource,
+    edit: RecipeEdit,
+    expectedBaseKey?: string,
+): Promise<boolean> {
+    return (await commitRecipeEditPrepared(source, edit, expectedBaseKey)) !== null;
 }

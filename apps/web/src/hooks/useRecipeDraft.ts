@@ -3,7 +3,7 @@ import { validateExperimentDocument, type PreparedExperimentDocumentV2, type Sta
 import { getDatasetContract, type DatasetId } from '@nn-playground/engine';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
-import { commitRecipeEdit } from '../store/commitRecipeEdit.ts';
+import { commitRecipeEditPrepared } from '../store/commitRecipeEdit.ts';
 
 export type SetupTab = 'dataset' | 'network' | 'training';
 type Draft = { base: PreparedExperimentDocumentV2; recipe: StandardExperimentRecipeV2; text: Record<string, string> };
@@ -58,16 +58,16 @@ export function useRecipeDraft(): RecipeDraftController {
             if (!expected) return;
             const ts = useTrainingStore.getState();
             const ps = usePlaygroundStore.getState();
-            if (ts.configError) {
-                setError(ts.configError);
-                resolve.current?.(false); resolve.current = null;
-                return; // Retain exact submitted candidate for existing sync recovery.
-            }
             if (ps.access.status !== 'ready' || ps.access.prepared !== expected) {
                 target.current = null; lock.current = false; setSubmitted(false);
                 setError('The active experiment changed while setup was applying. Discard this draft to reload it.');
                 resolve.current?.(false); resolve.current = null;
                 return;
+            }
+            if (ts.configError) {
+                setError(ts.configError);
+                resolve.current?.(false); resolve.current = null;
+                return; // Retain exact submitted candidate for existing sync recovery.
             }
             if (ts.pendingConfigSource === null && ts.trainedRecipeFingerprint === expected.identities.recipeFingerprint
                 && ts.trainedRecipeSource === 'config-sync') {
@@ -121,20 +121,24 @@ export function useRecipeDraft(): RecipeDraftController {
                     setError('The active recipe changed. Cancel to reload it before applying setup.'); return false;
                 }
                 lock.current = true; setSubmitted(true); setError(null);
-                const published = await commitRecipeEdit('setup', () => ({ ok: true, recipe: candidate.recipe }), candidate.base.identities.canonicalRecipeKey);
+                const published = await commitRecipeEditPrepared('setup', () => ({ ok: true, recipe: candidate.recipe }), candidate.base.identities.canonicalRecipeKey);
                 if (!published) {
                     lock.current = false; setSubmitted(false);
                     setError(useTrainingStore.getState().configError ?? 'Setup could not be applied. Your draft is preserved.');
                     return false;
                 }
                 const current = usePlaygroundStore.getState().access;
-                if (current.status !== 'ready') { lock.current = false; setSubmitted(false); return false; }
-                target.current = current.prepared;
+                if (current.status !== 'ready' || current.prepared !== published) {
+                    lock.current = false; setSubmitted(false);
+                    setError('The active experiment changed while setup was applying. Discard this draft to reload it.');
+                    return false;
+                }
+                target.current = published;
                 return new Promise<boolean>((done) => {
                     resolve.current = done;
                     const ts = useTrainingStore.getState();
                     if (ts.pendingConfigSource === null && !ts.configError && ts.trainedRecipeSource === 'config-sync'
-                        && ts.trainedRecipeFingerprint === current.prepared.identities.recipeFingerprint) {
+                        && ts.trainedRecipeFingerprint === published.identities.recipeFingerprint) {
                         target.current = null; lock.current = false; setDraft(null); setSubmitted(false); resolve.current = null; done(true);
                     } else if (ts.configError) { setError(ts.configError); resolve.current = null; done(false); }
                 });

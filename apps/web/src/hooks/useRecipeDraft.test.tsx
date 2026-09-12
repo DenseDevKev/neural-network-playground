@@ -1,9 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_EXPERIMENT_DOCUMENT } from '@nn-playground/shared';
 import { useRecipeDraft } from './useRecipeDraft.ts';
 import { usePlaygroundStore } from '../store/usePlaygroundStore.ts';
 import { useTrainingStore } from '../store/useTrainingStore.ts';
+import * as recipeCommit from '../store/commitRecipeEdit.ts';
+const originalCommitPrepared = recipeCommit.commitRecipeEditPrepared;
+afterEach(() => vi.restoreAllMocks());
 const originalEdit = usePlaygroundStore.getState().editRecipe;
 function prepared() { const access = usePlaygroundStore.getState().access; if(access.status !== 'ready') throw Error('not ready'); return access.prepared; }
 async function acknowledge() {
@@ -56,6 +59,49 @@ describe('session recipe draft', () => {
         expect(result.current.dirty).toBe(true);
         await acknowledge();expect(await apply).toBe(true);
         await waitFor(() => expect(result.current.dirty).toBe(false));
+    });
+    it('never adopts a superseding publication in the commit continuation microtask', async () => {
+        await originalEdit((recipe) => ({ok:true,recipe:{...recipe,data:{...recipe.data,noise:29}}}));
+        const superseding = prepared();
+        await usePlaygroundStore.getState().replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
+        vi.spyOn(recipeCommit, 'commitRecipeEditPrepared').mockImplementation(async (...args) => {
+            const publication = await originalCommitPrepared(...args);
+            // This replacement runs after publication succeeded but before the
+            // setup hook resumes its awaited continuation.
+            queueMicrotask(() => {
+                usePlaygroundStore.setState({access:{status:'ready',prepared:superseding}});
+                useTrainingStore.getState().markTrainedRecipe(superseding.document.recipe,'config-sync',superseding.identities.recipeFingerprint);
+                useTrainingStore.getState().finishConfigChange();
+            });
+            return publication;
+        });
+        const {result}=renderHook(useRecipeDraft);
+        act(() => result.current.commands.number('data.noise','12'));
+        await act(async () => {expect(await result.current.commands.apply()).toBe(false);});
+        expect(prepared()).toBe(superseding);
+        expect(result.current.dirty).toBe(true);
+        expect(result.current.submitted).toBe(false);
+        expect(result.current.value('data.noise')).toBe('12');
+        expect(result.current.error).toContain('active experiment changed');
+        act(() => result.current.commands.cancel());
+        expect(result.current.dirty).toBe(false);
+    });
+    it('unlocks cancellation when a failed sync is superseded while its error persists', async () => {
+        const {result}=renderHook(useRecipeDraft);
+        act(() => result.current.commands.number('data.noise','12'));
+        let apply!:Promise<boolean>;act(() => {apply=result.current.commands.apply();});
+        await waitFor(() => expect(prepared().document.recipe.data.noise).toBe(12));
+        act(() => useTrainingStore.getState().failConfigChange('Worker unavailable'));
+        expect(await apply).toBe(false);
+        expect(result.current.submitted).toBe(true);
+        await act(async () => {await originalEdit((recipe) => ({ok:true,recipe:{...recipe,data:{...recipe.data,noise:29}}}));});
+        expect(useTrainingStore.getState().configError).toBe('Worker unavailable');
+        expect(result.current.submitted).toBe(false);
+        expect(result.current.busy).toBe(false);
+        expect(result.current.dirty).toBe(true);
+        act(() => result.current.commands.cancel());
+        expect(result.current.dirty).toBe(false);
+        expect(result.current.recipe?.data.noise).toBe(29);
     });
     it('preserves input after preparation failure', async () => {
         usePlaygroundStore.setState({editRecipe:vi.fn(async () => ({ok:false as const,issues:[{code:'invalid-field' as const,path:'recipe',message:'Preparation failed'}]}))});
