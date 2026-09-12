@@ -92,7 +92,7 @@ button:disabled {cursor:not-allowed;opacity:.48}
 .atelier-transport-row select {background:var(--bg-primary);border:1px solid var(--border-color);padding:8px;min-height:44px}
 .atelier-transport-position {display:flex;gap:24px;margin-left:auto;font-size:14px;font-variant-numeric:tabular-nums}
 .atelier-transport-position span {color:var(--text-secondary)}
-.atelier-transport-status {font-size:14px;color:var(--text-secondary);margin:8px 0 0;min-height:21px;line-height:21px}
+.atelier-transport-status {font-size:14px;color:var(--text-secondary);margin:8px 0 0;height:42px;overflow:auto;line-height:21px}
 .atelier-metrics {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--border-color);gap:24px;padding-top:24px;margin-top:24px}
 .atelier-metrics dt {font-size:14px;color:var(--text-secondary);margin-bottom:8px}
 .atelier-metrics dd {font-size:26px;line-height:1.2;font-family:var(--font-mono);font-variant-numeric:tabular-nums;margin:0}
@@ -208,7 +208,7 @@ button:disabled {cursor:not-allowed;opacity:.48}
  .atelier-transport-position strong {min-width:0}
  .atelier-transport-position button {grid-column:5;grid-row:1;width:44px}
  .atelier-transport-position button span {display:none}
- .atelier-transport-status {grid-column:3/-1;grid-row:2;font-size:12px;line-height:18px;min-height:18px;margin:0}
+ .atelier-transport-status {grid-column:3/-1;grid-row:2;font-size:12px;line-height:18px;height:36px;margin:0}
 }
 
 .atelier-concepts details {border-top:1px solid var(--border-color)}

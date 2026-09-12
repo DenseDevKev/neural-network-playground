@@ -24,7 +24,7 @@ export function AtelierTransport({ training, onCheckpoints }: { training: Traini
             <label>Speed <select aria-label="Steps per frame" value={stepsPerFrame} onChange={(event) => setStepsPerFrame(Number(event.target.value))}>{[1,5,10,25,50].map((n) => <option key={n} value={n}>{n}×</option>)}</select></label>
             <div className="atelier-transport-position"><div><span>Step </span><strong>{(model?.step ?? 0).toLocaleString()}</strong></div><div><span>Epoch </span><strong>{model?.epoch ?? 0}</strong></div><button type="button" onClick={onCheckpoints} aria-label="Checkpoints" title="Session checkpoints"><Icon name="history" /><span>Checkpoints</span></button></div>
         </div>
-        <p className="atelier-transport-status" role="status">{running ? 'Training · updates run locally in your browser' : lifecycle.statusText ?? 'Ready · choose Play to begin'}</p>
+        <p className="atelier-transport-status" role="status" tabIndex={0}>{running ? 'Training · updates run locally in your browser' : lifecycle.statusText ?? 'Ready · choose Play to begin'}</p>
     </section>;
 }
 
