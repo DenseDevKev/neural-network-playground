@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
-import { DecisionBoundary } from './DecisionBoundary.tsx';
-import { classifyPointFromGrid } from './DecisionBoundary.tsx';
+import { DecisionBoundaryCanvas } from './DecisionBoundaryCanvas.tsx';
+import { useDecisionBoundaryModel, type UseDecisionBoundaryModelInput } from './useDecisionBoundaryModel.ts';
+function DecisionBoundary(props: UseDecisionBoundaryModelInput) {
+    return <DecisionBoundaryCanvas model={useDecisionBoundaryModel(props)} />;
+}
+import { classifyPointFromGrid } from './DecisionBoundaryCanvas.tsx';
 import {
     resetFrameBuffer,
     updateFrameBuffer,

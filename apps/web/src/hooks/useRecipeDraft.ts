@@ -16,6 +16,7 @@ export interface RecipeDraftController {
         set(path: string, value: unknown): void;
         number(path: string, text: string): void;
         dataset(dataset: DatasetId): void;
+        preset(recipe: StandardExperimentRecipeV2): void;
         apply(): Promise<boolean>;
         cancel(): void;
         retry(): void;
@@ -101,6 +102,17 @@ export function useRecipeDraft(): RecipeDraftController {
         value: (path) => draft?.text[path] ?? read(recipe, path),
         commands: {
             set: edit,
+            preset: (recipe) => {
+                if (lock.current || pending !== null || !prepared) return;
+                const next: Draft = {
+                    base: draftRef.current?.base ?? prepared,
+                    recipe: clone(recipe),
+                    text: {},
+                };
+                draftRef.current = next;
+                setDraft(next);
+                setError(null);
+            },
             number: (path, text) => edit(path, text.trim() === '' ? NaN : Number(text), text),
             dataset: (dataset) => {
                 if ((draftRef.current?.recipe ?? prepared?.document.recipe)?.task.dataset === dataset) return;

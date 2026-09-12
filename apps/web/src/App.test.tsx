@@ -101,48 +101,11 @@ vi.mock('./hooks/useExperimentMemoryStorageSync.ts', () => ({
     useExperimentMemoryStorageSync,
 }));
 
-vi.mock('./components/layout/Header.tsx', () => ({
-    Header: ({
-        openSurface,
-        onToggleSurface,
-        advancedToolsOpen,
-        onToggleAdvancedTools,
-    }: {
-        openSurface: 'presets' | 'lessons' | 'history' | null;
-        onToggleSurface: (surface: 'history') => void;
-        advancedToolsOpen: boolean;
-        onToggleAdvancedTools: () => void;
-    }) => (
-        <header>
-            <button
-                type="button"
-                aria-pressed={openSurface === 'history'}
-                onClick={() => onToggleSurface('history')}
-            >
-                History
-            </button>
-            <button
-                type="button"
-                aria-expanded={advancedToolsOpen}
-                onClick={onToggleAdvancedTools}
-            >
-                Advanced Tools
-            </button>
-        </header>
-    ),
-}));
 
-vi.mock('./components/layout/PrecisionLabContent.tsx', () => ({
-    TopologyContent: () => <div>Canvas</div>,
-    LossContent:     () => <div>Loss</div>,
-    ConfusionContent:() => <div>Confusion</div>,
-    InspectContent:  () => <div>Inspect</div>,
-    CodeContent:     () => <div>Code</div>,
-    HistoryContent:  () => <div>History</div>,
-    ConfigurationContent: () => <div>Config</div>,
-}));
 
-vi.mock('./components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
+
+
+
 vi.mock('./components/visualization/DecisionBoundaryCanvas.tsx', () => ({ DecisionBoundaryCanvas: () => <canvas data-decision-boundary-canvas aria-label="Boundary paint" /> }));
 vi.mock('./components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
 vi.mock('./components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));

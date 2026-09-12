@@ -192,24 +192,9 @@ vi.mock('../worker/workerBridge.ts', () => ({
 vi.mock('../components/visualization/DecisionBoundaryCanvas.tsx', () => ({
     DecisionBoundaryCanvas: () => <canvas aria-label="Mock boundary canvas" />,
 }));
-vi.mock('../components/layout/Header.tsx', () => ({
-    Header: ({ training }: { training: { play: () => void; pause: () => void } }) => (
-        <header>
-            <button onClick={() => training.play()}>Play</button>
-            <button onClick={() => training.pause()}>Pause</button>
-        </header>
-    ),
-}));
-vi.mock('../components/layout/PrecisionLabContent.tsx', () => ({
-    TopologyContent: () => <div>Canvas</div>,
-    LossContent:     () => <div>Loss</div>,
-    ConfusionContent:() => <div>Confusion</div>,
-    InspectContent:  () => <div>Inspect</div>,
-    CodeContent:     () => <div>Code</div>,
-    HistoryContent:  () => <div>History</div>,
-    ConfigurationContent: () => <div>Config</div>,
-}));
-vi.mock('../components/controls/TrainingControls.tsx', () => ({ TrainingControls: () => <div>Controls</div> }));
+
+
+
 vi.mock('../components/visualization/NetworkGraph.tsx', () => ({ NetworkGraph: () => <div>Graph</div> }));
 vi.mock('../components/controls/PresetPanel.tsx',       () => ({ PresetPanel: () => <div>Presets</div> }));
 vi.mock('../components/controls/DataPanel.tsx',         () => ({ DataPanel: () => <div>Data</div> }));

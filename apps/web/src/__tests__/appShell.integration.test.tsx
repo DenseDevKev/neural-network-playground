@@ -31,9 +31,7 @@ vi.mock('../hooks/useTraining.ts', () => ({
     useTraining: () => trainingMock,
 }));
 
-vi.mock('../components/controls/TrainingControls.tsx', () => ({
-    TrainingControls: () => <div>Mock Transport</div>,
-}));
+
 vi.mock('../components/controls/PresetPanel.tsx', () => ({
     PresetPanel: ({ onApplied }: { onApplied?: () => void }) => (
         <div>
