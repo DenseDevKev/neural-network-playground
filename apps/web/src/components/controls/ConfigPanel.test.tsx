@@ -487,4 +487,55 @@ describe('ConfigPanel strict V2 transport', () => {
         expect(screen.queryByText(/Imported setup applied/)).not.toBeInTheDocument();
     });
 
+    it.each(['result', 'rejection'] as const)('releases a failed import after unmount for a deferred %s', async (outcome) => {
+        const { unmount } = render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        const pending = deferred<Awaited<ReturnType<ReturnType<typeof usePlaygroundStore.getState>['replaceDocument']>>>();
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument').mockReturnValueOnce(pending.promise);
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('setup');
+        unmount();
+        await act(async () => {
+            if (outcome === 'result') pending.resolve({ ok: false, issues: [{ code: 'invalid-field', path: 'recipe', message: 'Preparation failed' }] });
+            else pending.reject(new Error('Preparation failed'));
+            await pending.promise.catch(() => undefined);
+        });
+        expect(currentPrepared()).toBe(before);
+        expect(useTrainingStore.getState().pendingConfigSource).toBeNull();
+        expect(useTrainingStore.getState().configError).toMatch(/Preparation failed.*Reopen Export/);
+        expect(useTrainingStore.getState().configErrorSource).toBe('setup');
+    });
+
+    it.each(['result', 'rejection'] as const)('does not release a newer transaction after an unmounted stale %s', async (outcome) => {
+        const { unmount } = render(<ConfigPanel onReset={vi.fn()} />);
+        const { before } = await stageSetup();
+        const original = usePlaygroundStore.getState().replaceDocument;
+        const pending = deferred<Awaited<ReturnType<typeof original>>>();
+        vi.spyOn(usePlaygroundStore.getState(), 'replaceDocument').mockReturnValueOnce(pending.promise);
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        unmount();
+        useTrainingStore.getState().beginConfigChange('network');
+        await original(documentWithNoise(before, 44));
+        const newer = currentPrepared();
+        await act(async () => {
+            if (outcome === 'result') pending.resolve({ ok: false, issues: [{ code: 'invalid-field', path: 'recipe', message: 'Obsolete failure' }] });
+            else pending.reject(new Error('Obsolete failure'));
+            await pending.promise.catch(() => undefined);
+        });
+        expect(currentPrepared()).toBe(newer);
+        expect(useTrainingStore.getState().pendingConfigSource).toBe('network');
+        expect(useTrainingStore.getState().configError).toBeNull();
+    });
+
+    it('bounds synchronization errors shown after import publication', async () => {
+        render(<ConfigPanel onReset={vi.fn()} />);
+        await stageSetup();
+        fireEvent.click(screen.getByRole('button', { name: 'Apply imported setup' }));
+        await waitFor(() => expect(currentPrepared()?.document.recipe.data.noise).toBe(17));
+        act(() => useTrainingStore.getState().failConfigChange('Worker refused: ' + 'x'.repeat(10_000)));
+        const alert = await screen.findByRole('alert');
+        expect(alert.textContent!.length).toBeLessThanOrEqual(1800);
+        expect(screen.getByRole('button', { name: 'Retry synchronization' })).toBeEnabled();
+    });
+
 });

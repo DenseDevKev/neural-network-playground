@@ -67,7 +67,7 @@ export const ConfigPanel = memo(function ConfigPanel(_props: ConfigPanelProps) {
         if (!mounted.current) return;
         errorGeneration.current += 1;
         setStatus(null);
-        setError(message);
+        setError(message.slice(0, 1800));
     }, [setStatus]);
 
     const reportSuccess = useCallback((message: string, startErrorGeneration: number) => {
@@ -220,18 +220,29 @@ export const ConfigPanel = memo(function ConfigPanel(_props: ConfigPanelProps) {
         const token = selection.current;
         useTrainingStore.getState().beginConfigChange('setup');
         let requestId = ps.preparation.requestId;
+        const syncNonce = useTrainingStore.getState().configSyncNonce;
+        const ownsTransaction = () => {
+            const training = useTrainingStore.getState();
+            return usePlaygroundStore.getState().preparation.requestId === requestId
+                && training.pendingConfigSource === 'setup' && training.configSyncNonce === syncNonce;
+        };
         try {
             const promise = ps.replaceDocument(stage.document);
             requestId = usePlaygroundStore.getState().preparation.requestId;
             const result = await promise;
-            if (!mounted.current || selection.current !== token || usePlaygroundStore.getState().preparation.requestId !== requestId) return;
+            if (usePlaygroundStore.getState().preparation.requestId !== requestId) return;
             if (!result.ok) {
+                if (!ownsTransaction()) return;
                 const message = formatIssues(result.issues);
-                useTrainingStore.getState().failConfigChange(message);
+                // Configuration locks outlive the dialog. Release the owned
+                // transaction even when its presentation has been unmounted.
+                useTrainingStore.getState().failConfigChange(`${message.slice(0, 1600)}. Reopen Export / import and select the setup file to retry.`);
+                if (!mounted.current || selection.current !== token) return;
                 setStage({ ...stage, baseRequestId: requestId });
                 reportError(`${message}. The staged file is preserved; retry Apply or select another file.`);
                 return;
             }
+            if (!mounted.current || selection.current !== token) return;
             const access = usePlaygroundStore.getState().access;
             if (access.status !== 'ready' || access.prepared !== result.value) return;
             target.current = result.value;
@@ -244,9 +255,10 @@ export const ConfigPanel = memo(function ConfigPanel(_props: ConfigPanelProps) {
                 target.current = null; setStage(null); reportSuccess('Imported setup applied. Training is paused.', errorGeneration.current);
             }
         } catch (cause) {
-            if (mounted.current && selection.current === token && usePlaygroundStore.getState().preparation.requestId === requestId) {
+            if (ownsTransaction()) {
                 const message = errorMessage(cause, 'Setup could not be prepared');
-                useTrainingStore.getState().failConfigChange(message);
+                useTrainingStore.getState().failConfigChange(`${message.slice(0, 1600)}. Reopen Export / import and select the setup file to retry.`);
+                if (!mounted.current || selection.current !== token) return;
                 setStage({ ...stage, baseRequestId: requestId }); reportError(`${message}. Retry Apply or select the file again.`);
             }
         } finally { if (!target.current) finishImport(); }
