@@ -1,0 +1,11 @@
+import { writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+/** Local review index. Generated captures remain evidence, never approved goldens. */
+export async function writeVisualGallery(output: string, names: string[]): Promise<void> {
+    const rows = names.map((name, index) => {
+        const id = String(index + 1).padStart(2, '0');
+        return `<section id="screen-${id}"><h2>${id} ${name.replaceAll('-', ' ')}</h2><div class="compare">${['light', 'dark'].map((theme) => `<figure><figcaption>Actual ${theme}</figcaption><a href="${id}-${name}-${theme}.png"><img loading="lazy" src="${id}-${name}-${theme}.png" alt="${name}, actual ${theme} theme"></a></figure>`).join('')}<figure><figcaption>Approved illustrative reference</figcaption><a href="../nn-forge-vision/images/${id}.png"><img loading="lazy" src="../nn-forge-vision/images/${id}.png" alt="Approved reference ${id}"></a></figure></div></section>`;
+    }).join('\n');
+    await writeFile(resolve(output, 'index.html'), `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>NN·FORGE real-engine visual review</title><style>body{background:#f7f6f2;color:#202225;font:16px system-ui;margin:32px}a{color:#a7351c}h1{font-size:32px}.compare{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}figure{margin:0}img{width:100%;height:440px;object-fit:contain;object-position:top;background:#ddd}figcaption{margin:10px 0}section{padding:24px 0;border-top:1px solid #aaa}nav{display:flex;flex-wrap:wrap;gap:12px}@media(max-width:800px){.compare{grid-template-columns:1fr}img{height:600px}}</style><h1>NN·FORGE — 40 actual application states</h1><p>Chromium, real workers, deterministic preset seeds and UI steps. These are review evidence, not visual approval or screenshot goldens. Open an image for its original size.</p><p><a href="visual-review.md">Visual review and gaps</a> · <a href="capture-receipts-light.json">Light receipts</a> · <a href="capture-receipts-dark.json">Dark receipts</a></p><nav>${names.map((_, i) => `<a href="#screen-${String(i+1).padStart(2,'0')}">${String(i+1).padStart(2,'0')}</a>`).join('')}</nav>${rows}</html>`);
+}
