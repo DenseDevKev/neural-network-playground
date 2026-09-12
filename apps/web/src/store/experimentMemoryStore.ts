@@ -79,6 +79,87 @@ export function createExperimentMemoryStore() {
     }
 
     const store = createStore<ExperimentMemoryStore>((set, get) => {
+        let persistedRaw: string | null = null;
+        const readStorage = async (): Promise<boolean> => {
+            const previous = get();
+            let legacyRaw: string | null = null;
+            let raw: string | null = null;
+            try {
+                legacyRaw = window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY);
+                raw = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+                persistedRaw = raw;
+            } catch (error) {
+                set({
+                    hydrationStatus: 'ready',
+                    records: previous.records,
+                    rejectedRecords: previous.rejectedRecords,
+                    incompatibleEnvelope: previous.incompatibleEnvelope,
+                    legacyRaw,
+                    legacyNoticeDismissed: previous.legacyNoticeDismissed
+                        && previous.legacyRaw === legacyRaw,
+                    persistenceError: previous.persistenceError ?? storageIssue(error),
+                    pendingSave: previous.pendingSave,
+                });
+                return false;
+            }
+
+            if (raw === null) {
+                set({
+                    hydrationStatus: 'ready',
+                    records: Object.freeze([]),
+                    rejectedRecords: Object.freeze([]),
+                    incompatibleEnvelope: null,
+                    legacyRaw,
+                    legacyNoticeDismissed: previous.legacyNoticeDismissed
+                        && previous.legacyRaw === legacyRaw,
+                    persistenceError: previous.persistenceError,
+                    pendingSave: previous.pendingSave,
+                });
+                return true;
+            }
+
+            const parsed = await parseExperimentMemoryEnvelopeV2(raw);
+            set({
+                hydrationStatus: 'ready',
+                records: parsed.records,
+                rejectedRecords: parsed.rejectedRecords,
+                incompatibleEnvelope: parsed.incompatibleEnvelope,
+                legacyRaw,
+                legacyNoticeDismissed: previous.legacyNoticeDismissed
+                    && previous.legacyRaw === legacyRaw,
+                persistenceError: previous.persistenceError ?? (
+                    parsed.envelopeIssues.length > 0
+                        ? firstIssue(parsed.envelopeIssues, 'Saved experiment memory is incompatible.')
+                        : null
+                ),
+                pendingSave: previous.pendingSave,
+            });
+            return true;
+        };
+
+        // All tabs use the same origin-scoped lock. Re-read after acquiring it:
+        // storage events refresh views, but cannot coordinate read/modify/write.
+        const mutate = async (
+            operation: () => Promise<boolean>,
+            pendingSaveOnFailure: ExperimentRunRecordV2 | null = get().pendingSave,
+        ): Promise<boolean> => {
+            try {
+                if (!navigator.locks) {
+                    throw new Error('Safe saving requires Web Locks support. Open this app over HTTPS or localhost in a current browser.');
+                }
+                return await navigator.locks.request(EXPERIMENT_MEMORY_STORAGE_KEY, async () => {
+                    if (!await readStorage()) {
+                        set({ pendingSave: pendingSaveOnFailure });
+                        return false;
+                    }
+                    return operation();
+                });
+            } catch (error) {
+                set({ persistenceError: storageIssue(error), pendingSave: pendingSaveOnFailure });
+                return false;
+            }
+        };
+
         const persistCandidate = async (
             records: readonly ExperimentRunRecordV2[],
             rejectedRecords: readonly RejectedExperimentRunRecordV2[],
@@ -105,6 +186,13 @@ export function createExperimentMemoryStore() {
             }
 
             const verified = await parseExperimentMemoryEnvelopeV2(serialized.value);
+            if (verified.records.length !== records.length || verified.rejectedRecords.length !== rejectedRecords.length) {
+                set({
+                    persistenceError: firstIssue([], 'Delete the affected rejected records first. This change would otherwise restore rejected saved-run data.'),
+                    pendingSave: pendingSaveOnFailure,
+                });
+                return false;
+            }
             if (verified.envelopeIssues.length > 0) {
                 set({
                     persistenceError: firstIssue(
@@ -117,6 +205,10 @@ export function createExperimentMemoryStore() {
             }
 
             try {
+                // Detect an older/uncoordinated client changing bytes while validation awaited.
+                if (window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY) !== persistedRaw) {
+                    throw new Error('Saved-run storage changed during saving. Retry with the latest saved runs.');
+                }
                 window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, serialized.value);
             } catch (error) {
                 set({ persistenceError: storageIssue(error), pendingSave: pendingSaveOnFailure });
@@ -146,58 +238,12 @@ export function createExperimentMemoryStore() {
             pendingSave: null,
 
             hydrate: () => enqueue(async () => {
-                const previous = get();
-                let legacyRaw: string | null = null;
-                let raw: string | null = null;
                 try {
-                    legacyRaw = window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY);
-                    raw = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+                    if (navigator.locks) await navigator.locks.request(EXPERIMENT_MEMORY_STORAGE_KEY, readStorage);
+                    else await readStorage();
                 } catch (error) {
-                    set({
-                        hydrationStatus: 'ready',
-                        records: Object.freeze([]),
-                        rejectedRecords: Object.freeze([]),
-                        incompatibleEnvelope: previous.incompatibleEnvelope,
-                        legacyRaw,
-                        legacyNoticeDismissed: previous.legacyNoticeDismissed
-                            && previous.legacyRaw === legacyRaw,
-                        persistenceError: previous.persistenceError ?? storageIssue(error),
-                        pendingSave: previous.pendingSave,
-                    });
-                    return;
+                    set({ hydrationStatus: 'ready', persistenceError: storageIssue(error) });
                 }
-
-                if (raw === null) {
-                    set({
-                        hydrationStatus: 'ready',
-                        records: Object.freeze([]),
-                        rejectedRecords: Object.freeze([]),
-                        incompatibleEnvelope: null,
-                        legacyRaw,
-                        legacyNoticeDismissed: previous.legacyNoticeDismissed
-                            && previous.legacyRaw === legacyRaw,
-                        persistenceError: previous.persistenceError,
-                        pendingSave: previous.pendingSave,
-                    });
-                    return;
-                }
-
-                const parsed = await parseExperimentMemoryEnvelopeV2(raw);
-                set({
-                    hydrationStatus: 'ready',
-                    records: parsed.records,
-                    rejectedRecords: parsed.rejectedRecords,
-                    incompatibleEnvelope: parsed.incompatibleEnvelope,
-                    legacyRaw,
-                    legacyNoticeDismissed: previous.legacyNoticeDismissed
-                        && previous.legacyRaw === legacyRaw,
-                    persistenceError: previous.persistenceError ?? (
-                        parsed.envelopeIssues.length > 0
-                            ? firstIssue(parsed.envelopeIssues, 'Saved experiment memory is incompatible.')
-                            : null
-                    ),
-                    pendingSave: previous.pendingSave,
-                });
             }),
 
             saveRecord: (record) => {
@@ -219,22 +265,25 @@ export function createExperimentMemoryStore() {
                         return false;
                     }
                     const artifact = validated.value;
-                    const state = get();
-                    if (state.pendingSave !== null) return false;
-                    const candidate = [
-                        artifact,
-                        ...state.records.filter((existing) => existing.id !== artifact.id),
-                    ];
-                    return persistCandidate(
-                        candidate,
-                        state.rejectedRecords,
-                        artifact,
-                        null,
-                    );
+                    if (get().pendingSave !== null) return false;
+                    return mutate(async () => {
+                        const state = get();
+                        if (state.pendingSave !== null) return false;
+                        const candidate = [
+                            artifact,
+                            ...state.records.filter((existing) => existing.id !== artifact.id),
+                        ];
+                        return persistCandidate(
+                            candidate,
+                            state.rejectedRecords,
+                            artifact,
+                            null,
+                        );
+                    }, artifact);
                 });
             },
 
-            retryPersistence: () => enqueue(async () => {
+            retryPersistence: () => enqueue(() => mutate(async () => {
                 const state = get();
                 if (!state.pendingSave) return false;
                 const candidate = [
@@ -247,7 +296,7 @@ export function createExperimentMemoryStore() {
                     state.pendingSave,
                     null,
                 );
-            }),
+            })),
 
             dismissPersistenceError: () => set({ persistenceError: null }),
 
@@ -255,7 +304,7 @@ export function createExperimentMemoryStore() {
                 set({ pendingSave: null, persistenceError: null });
             }),
 
-            renameRecord: (id, title, now = () => new Date()) => enqueue(async () => {
+            renameRecord: (id, title, now = () => new Date()) => enqueue(() => mutate(async () => {
                 const state = get();
                 const trimmed = title.trim();
                 const record = state.records.find((entry) => entry.id === id);
@@ -273,9 +322,9 @@ export function createExperimentMemoryStore() {
                     state.pendingSave,
                     state.pendingSave,
                 );
-            }),
+            })),
 
-            removeRecord: (id) => enqueue(async () => {
+            removeRecord: (id) => enqueue(() => mutate(async () => {
                 const state = get();
                 return persistCandidate(
                     state.records.filter((record) => record.id !== id),
@@ -283,9 +332,9 @@ export function createExperimentMemoryStore() {
                     state.pendingSave,
                     state.pendingSave,
                 );
-            }),
+            })),
 
-            clearRecords: () => enqueue(async () => {
+            clearRecords: () => enqueue(() => mutate(async () => {
                 const state = get();
                 return persistCandidate(
                     [],
@@ -293,63 +342,70 @@ export function createExperimentMemoryStore() {
                     state.pendingSave,
                     state.pendingSave,
                 );
-            }),
+            })),
 
-            deleteRejectedRecord: (sourceIndex) => enqueue(async () => {
-                const state = get();
-                const candidate = state.rejectedRecords.filter(
-                    (record) => record.sourceIndex !== sourceIndex,
-                );
-                if (candidate.length === state.rejectedRecords.length) return false;
-                return persistCandidate(
-                    state.records,
-                    candidate,
-                    state.pendingSave,
-                    state.pendingSave,
-                );
-            }),
+            deleteRejectedRecord: (sourceIndex) => {
+                const target = get().rejectedRecords.find((record) => record.sourceIndex === sourceIndex);
+                return enqueue(() => mutate(async () => {
+                    const state = get();
+                    const index = state.rejectedRecords.findIndex((record) => record.rawJson === target?.rawJson);
+                    const candidate = state.rejectedRecords.filter((_, position) => position !== index);
+                    if (candidate.length === state.rejectedRecords.length) return false;
+                    return persistCandidate(
+                        state.records,
+                        candidate,
+                        state.pendingSave,
+                        state.pendingSave,
+                    );
+                }));
+            },
 
-            deleteIncompatibleEnvelope: () => enqueue(async () => {
-                const state = get();
-                if (state.incompatibleEnvelope === null) return false;
-                try {
-                    const current = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
-                    if (current !== state.incompatibleEnvelope.rawJson) {
-                        set({
-                            persistenceError: Object.freeze({
-                                code: 'invalid-field',
-                                path: '$',
-                                message: 'Saved-run storage changed before deletion. Reload before trying again.',
-                            }),
-                        });
+            deleteIncompatibleEnvelope: () => {
+                const target = get().incompatibleEnvelope?.rawJson;
+                return enqueue(() => mutate(async () => {
+                    const state = get();
+                    if (state.incompatibleEnvelope === null) return false;
+                    try {
+                        const current = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+                        if (current !== target) {
+                            set({
+                                persistenceError: Object.freeze({
+                                    code: 'invalid-field',
+                                    path: '$',
+                                    message: 'Saved-run storage changed before deletion. Reload before trying again.',
+                                }),
+                            });
+                            return false;
+                        }
+                        window.localStorage.removeItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+                    } catch (error) {
+                        set({ persistenceError: storageIssue(error) });
                         return false;
                     }
-                    window.localStorage.removeItem(EXPERIMENT_MEMORY_STORAGE_KEY);
-                } catch (error) {
-                    set({ persistenceError: storageIssue(error) });
-                    return false;
-                }
-                set({
-                    records: Object.freeze([]),
-                    rejectedRecords: Object.freeze([]),
-                    incompatibleEnvelope: null,
-                    persistenceError: null,
-                });
-                return true;
-            }),
+                    set({
+                        records: Object.freeze([]),
+                        rejectedRecords: Object.freeze([]),
+                        incompatibleEnvelope: null,
+                        persistenceError: null,
+                    });
+                    return true;
+                }));
+            },
 
             dismissLegacyNotice: () => set({ legacyNoticeDismissed: true }),
 
-            deleteLegacyStorage: () => enqueue(async () => {
-                try {
+            deleteLegacyStorage: () => {
+                const target = get().legacyRaw;
+                return enqueue(() => mutate(async () => {
+                    if (target === null) return false;
+                    if (window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY) !== target) {
+                        throw new Error('Earlier saved-run storage changed before deletion. Review the latest file before trying again.');
+                    }
                     window.localStorage.removeItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY);
-                } catch (error) {
-                    set({ persistenceError: storageIssue(error) });
-                    return false;
-                }
-                set({ legacyRaw: null, legacyNoticeDismissed: false });
-                return true;
-            }),
+                    set({ legacyRaw: null, legacyNoticeDismissed: false });
+                    return true;
+                }));
+            },
         };
     });
 

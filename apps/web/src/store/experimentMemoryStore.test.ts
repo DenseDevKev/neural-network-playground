@@ -129,6 +129,168 @@ describe('version-2 experiment memory store', () => {
         expect(store.getState().pendingSave?.id).toBe(IDS[EXPERIMENT_MEMORY_MAX_RECORDS]);
     });
 
+    it('preserves successful saves from independent stores with stale hydrated records', async () => {
+        const first = createExperimentMemoryStore();
+        const second = createExperimentMemoryStore();
+        await Promise.all([first.getState().hydrate(), second.getState().hydrate()]);
+        const a = await makeRecord(0);
+        const b = await makeRecord(1);
+        expect(await Promise.all([first.getState().saveRecord(a), second.getState().saveRecord(b)]))
+            .toEqual([true, true]);
+        await first.getState().hydrate();
+        expect(first.getState().records.map((record) => record.id).sort()).toEqual([a.id, b.id].sort());
+    });
+
+    it('applies stale-store rename and delete to the current envelope without resurrecting records', async () => {
+        const first = createExperimentMemoryStore();
+        const second = createExperimentMemoryStore();
+        await first.getState().saveRecord(await makeRecord(0));
+        await second.getState().hydrate();
+        await first.getState().saveRecord(await makeRecord(1));
+        expect(await second.getState().renameRecord(IDS[0], 'Renamed in another tab')).toBe(true);
+        expect(await first.getState().removeRecord(IDS[0])).toBe(true);
+        expect(await second.getState().saveRecord(await makeRecord(2))).toBe(true);
+        await first.getState().hydrate();
+        expect(first.getState().records.map((record) => record.id).sort()).toEqual([IDS[1], IDS[2]].sort());
+    });
+
+    it('preserves another store save and rename while retrying the exact quota-failed artifact', async () => {
+        const first = createExperimentMemoryStore();
+        const second = createExperimentMemoryStore();
+        await Promise.all([first.getState().hydrate(), second.getState().hydrate()]);
+        const pending = await makeRecord(0);
+        const setItem = vi.spyOn(Object.getPrototypeOf(window.localStorage) as Storage, 'setItem')
+            .mockImplementationOnce(() => { throw new DOMException('Quota', 'QuotaExceededError'); });
+        expect(await first.getState().saveRecord(pending)).toBe(false);
+        setItem.mockRestore();
+        await second.getState().saveRecord(await makeRecord(1));
+        await second.getState().renameRecord(IDS[1], 'Other tab');
+        expect(await first.getState().retryPersistence()).toBe(true);
+        expect(first.getState().records).toEqual([pending, expect.objectContaining({ id: IDS[1], title: 'Other tab' })]);
+    });
+
+    it('blocks stale saves when an incompatible envelope has arrived without a storage event', async () => {
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const raw = '{"kind":"nn-playground-experiment-memory","schemaVersion":3,"records":[]}';
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, raw);
+        const record = await makeRecord();
+        expect(await store.getState().saveRecord(record)).toBe(false);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(raw);
+        expect(store.getState().pendingSave).toEqual(record);
+        expect(store.getState().incompatibleEnvelope?.rawJson).toBe(raw);
+    });
+
+    it('deletes the selected rejected bytes even when another save moved their source index', async () => {
+        const a = { schemaVersion: 1, id: 'rejected-a' };
+        const b = { schemaVersion: 1, id: 'rejected-b' };
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, JSON.stringify({
+            kind: EXPERIMENT_MEMORY_ENVELOPE_KIND, schemaVersion: 2, records: [a, b],
+        }));
+        const first = createExperimentMemoryStore();
+        const second = createExperimentMemoryStore();
+        await Promise.all([first.getState().hydrate(), second.getState().hydrate()]);
+        await first.getState().saveRecord(await makeRecord(0));
+        expect(await second.getState().deleteRejectedRecord(1)).toBe(true);
+        await first.getState().hydrate();
+        expect(first.getState().records.map((record) => record.id)).toEqual([IDS[0]]);
+        expect(first.getState().rejectedRecords.map((record) => record.rawJson)).toEqual([JSON.stringify(a)]);
+    });
+
+    it('retains a failed artifact instead of writing without cross-tab lock support', async () => {
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        vi.spyOn(navigator, 'locks', 'get').mockReturnValue(undefined as unknown as LockManager);
+        const record = await makeRecord();
+        expect(await store.getState().saveRecord(record)).toBe(false);
+        expect(store.getState().pendingSave).toEqual(record);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBeNull();
+    });
+
+    it('keeps the first exact artifact when overlapping saves cannot acquire a lock', async () => {
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const first = await makeRecord(0);
+        const second = await makeRecord(1);
+        vi.spyOn(navigator, 'locks', 'get').mockReturnValue(undefined as unknown as LockManager);
+        expect(await Promise.all([store.getState().saveRecord(first), store.getState().saveRecord(second)]))
+            .toEqual([false, false]);
+        expect(store.getState().pendingSave).toEqual(first);
+    });
+
+    it('enforces capacity against successful writes from another store', async () => {
+        const first = createExperimentMemoryStore();
+        const stale = createExperimentMemoryStore();
+        await stale.getState().hydrate();
+        for (let index = 0; index < EXPERIMENT_MEMORY_MAX_RECORDS; index++) {
+            expect(await first.getState().saveRecord(await makeRecord(index))).toBe(true);
+        }
+        const before = window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY);
+        const record = await makeRecord(EXPERIMENT_MEMORY_MAX_RECORDS);
+        expect(await stale.getState().saveRecord(record)).toBe(false);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(before);
+        expect(stale.getState().pendingSave).toEqual(record);
+    });
+
+    it('does not overwrite incompatible bytes arriving during asynchronous validation', async () => {
+        const store = createExperimentMemoryStore();
+        await store.getState().saveRecord(await makeRecord(0));
+        const record = await makeRecord(1);
+        const raw = '{"kind":"nn-playground-experiment-memory","schemaVersion":3,"records":[]}';
+        const prototype = Object.getPrototypeOf(window.localStorage) as Storage;
+        const getItem = prototype.getItem;
+        let replaced = false;
+        vi.spyOn(prototype, 'getItem').mockImplementation(function (this: Storage, key: string) {
+            const current = getItem.call(this, key);
+            if (key === EXPERIMENT_MEMORY_STORAGE_KEY && !replaced) {
+                replaced = true;
+                queueMicrotask(() => window.localStorage.setItem(key, raw));
+            }
+            return current;
+        });
+        expect(await store.getState().saveRecord(record)).toBe(false);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(raw);
+        expect(store.getState().pendingSave).toEqual(record);
+        expect(await store.getState().retryPersistence()).toBe(false);
+        expect(store.getState().incompatibleEnvelope?.rawJson).toBe(raw);
+    });
+
+    it('does not delete a replacement incompatible file that the user did not select', async () => {
+        const raw = '{"kind":"nn-playground-experiment-memory","schemaVersion":3,"records":[]}';
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, raw);
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const replacement = raw.replace('3', '4');
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, replacement);
+        expect(await store.getState().deleteIncompatibleEnvelope()).toBe(false);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(replacement);
+    });
+
+    it('does not resurrect a rejected duplicate when removing the accepted record', async () => {
+        const record = await makeRecord(0);
+        const raw = JSON.stringify({ kind: EXPERIMENT_MEMORY_ENVELOPE_KIND, schemaVersion: 2, records: [record, record] });
+        window.localStorage.setItem(EXPERIMENT_MEMORY_STORAGE_KEY, raw);
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        expect(await store.getState().removeRecord(record.id)).toBe(false);
+        expect(window.localStorage.getItem(EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(raw);
+        expect(store.getState().persistenceError?.message).toMatch(/rejected/i);
+        expect(await store.getState().deleteRejectedRecord(1)).toBe(true);
+        expect(await store.getState().removeRecord(record.id)).toBe(true);
+        expect(store.getState().records).toEqual([]);
+    });
+
+    it('does not delete replacement legacy bytes that were not selected', async () => {
+        const raw = '{"schemaVersion":1,"records":[]}';
+        window.localStorage.setItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY, raw);
+        const store = createExperimentMemoryStore();
+        await store.getState().hydrate();
+        const replacement = '{"schemaVersion":1,"records":[{"id":"keep"}]}';
+        window.localStorage.setItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY, replacement);
+        expect(await store.getState().deleteLegacyStorage()).toBe(false);
+        expect(window.localStorage.getItem(LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY)).toBe(replacement);
+    });
+
     it('keeps quota errors until retry and reuses the exact captured record', async () => {
         const store = createExperimentMemoryStore();
         await store.getState().hydrate();

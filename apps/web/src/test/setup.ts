@@ -40,6 +40,19 @@ Object.defineProperty(window, 'localStorage', {
     value: jsdomWindow?.localStorage ?? createMemoryStorage(),
 });
 
+// JSDOM has no Web Locks implementation. Model exclusive per-name ownership
+// here; real cross-tab coordination is covered by the browser suite.
+const lockQueues = new Map<string, Promise<unknown>>();
+const testLocks = {
+    request<T>(name: string, callback: () => Promise<T>): Promise<T> {
+        const previous = lockQueues.get(name) ?? Promise.resolve();
+        const pending = previous.then(callback, callback);
+        lockQueues.set(name, pending.catch(() => undefined));
+        return pending;
+    },
+};
+Object.defineProperty(navigator, 'locks', { configurable: true, get: () => testLocks });
+
 // JSDOM doesn't implement Path2D, but the canvas-based NetworkGraph (AS-5)
 // instantiates them during paint. Provide a minimal no-op shim so render
 // tests can run; production paths still use the real browser Path2D.
