@@ -2594,17 +2594,20 @@ Kept changes and their measured effect on total gzip:
 
 Measured and rejected (no gain or worse):
 
-| Lever | Total gzip vs. current |
+| Lever (delta is total gzip bytes against the baseline it was measured on) | Delta |
 | --- | ---: |
-| Terser `passes: 3`, `toplevel`, `module`, `ecma: 2020` together | +607 |
-| Terser `passes: 3` alone | +610 |
-| `ecma: 2020/2022`, `module`, `toplevel` individually | within ±12 |
-| `inline: 0/3`, `reduce_funcs/hoist_props: false` | within ±30 |
-| `join_vars: false`, `hoist_funs`+`keep_fargs: false` | +1,000 to +2,960 |
-| `experimentalMinChunkSize` 15,000-28,000 | 0 (only merges shared chunks) |
-| `experimentalMinChunkSize: 0` | +840 (more chunks) |
-| `modulePreload: false` | -16 beyond polyfill removal; not kept |
-| Deduplicate identical WebGPU offset helpers | +50 (gzip noise) |
+| Terser `passes: 3`, `toplevel`, `module`, `ecma: 2020` together (vs 234,088) | +607 |
+| Terser `passes: 3` alone (vs 234,088) | +618 |
+| Terser `ecma: 2020` / `module` / `toplevel` individually (vs 234,088) | -8 / 0 / 0 |
+| `ecma: 2022`, `passes: 1`, `sequences: 20` (vs 233,096) | -6 / -7 / +4 |
+| `inline: 3`, `inline: 0` (vs 233,096) | +207 / +173 |
+| `hoist_props: false`, `reduce_funcs: false` (vs 233,096) | +183 / +224 |
+| `join_vars: false` (vs 233,096) | +984 |
+| `hoist_funs` plus `keep_fargs: false` (vs 233,096) | +2,963 (entry over cap) |
+| `experimentalMinChunkSize` 15,000, 20,000, 28,000 (vs 234,084) | 0 (only merges shared chunks) |
+| `experimentalMinChunkSize: 0` (vs 234,084) | +853 (more chunks) |
+| `modulePreload: false` instead of polyfill-off (vs 233,096) | -16, not kept |
+| Deduplicate identical WebGPU offset helpers (vs 233,096) | +50 (gzip noise) |
 
 Not done: `Network` still carries legacy methods used only by unit tests
 (`trainBatch`, `backward`, `tracePrediction`, `explainBackpropStep`,
