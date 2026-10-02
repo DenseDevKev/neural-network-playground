@@ -1,9 +1,5 @@
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import {
-    generateDatasetV2,
-    type DataSplit,
-} from '@nn-playground/engine';
-import {
     DEFAULT_DEMAND,
     DEFAULT_EXPERIMENT_DOCUMENT,
     decodeExperimentUrl,
@@ -68,7 +64,6 @@ export interface PlaygroundStore {
 
     featuresUI: FeaturesUI;
     demand: VisualizationDemand;
-    dataset: DataSplit | null;
 
     replaceDocument(value: unknown): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
     replaceImportedDocument(
@@ -93,7 +88,6 @@ export interface PlaygroundStore {
     loadFromUrl(): Promise<SchemaResult<PreparedExperimentDocumentV2>>;
 
     setDemand(demand: VisualizationDemand): void;
-    regenerateData(): void;
 }
 
 export type PlaygroundStoreApi = UseBoundStore<StoreApi<PlaygroundStore>>;
@@ -307,7 +301,6 @@ export function createPlaygroundStore(
                 : { status: 'error', requestId: 0, issues: [] },
             featuresUI: { ...DEFAULT_FEATURES_UI },
             demand: { ...DEFAULT_DEMAND },
-            dataset: null,
 
             replaceDocument: (value) => replace(value),
             replaceImportedDocument: (value, file) => replace(value, { kind: 'file', file }),
@@ -353,20 +346,6 @@ export function createPlaygroundStore(
             },
 
             setDemand: (demand) => set({ demand }),
-            regenerateData: () => {
-                const access = get().access;
-                if (access.status !== 'ready') return;
-                const prepared = access.prepared;
-                const recipe = prepared.document.recipe;
-                const dataset = generateDatasetV2({
-                    dataset: recipe.task.dataset,
-                    sampleCount: recipe.data.sampleCount,
-                    trainFraction: recipe.data.trainFraction,
-                    noise: recipe.data.noise,
-                    seed: recipe.data.seed,
-                });
-                set({ dataset });
-            },
         };
     });
 }

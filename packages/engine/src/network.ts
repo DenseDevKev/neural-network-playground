@@ -1698,28 +1698,6 @@ export class Network {
         return this.trainValidatedBatch(inputs, targets, 0, inputs.length, training);
     }
 
-    trainBatchIndexed(
-        inputs: number[][],
-        targets: number[][],
-        indices: ArrayLike<number>,
-        start: number,
-        end: number,
-        training: TrainingConfig,
-    ): number {
-        assertIndexedBatchSelection(
-            inputs,
-            targets,
-            indices,
-            start,
-            end,
-            this.config.inputSize,
-            this.config.outputSize,
-        );
-        if (start === end) return 0;
-
-        return this.trainValidatedBatch(inputs, targets, start, end, training, indices);
-    }
-
     trainBatchV2(
         inputs: number[][],
         targets: number[][],
@@ -1850,14 +1828,13 @@ export class Network {
         start: number,
         end: number,
         training: TrainingConfig,
-        indices?: ArrayLike<number>,
     ): number {
         const effectiveLossType = training.lossType as NetworkLossKind;
         let totalLoss = 0;
         let count = 0;
 
         for (let s = start; s < end; s++) {
-            const sampleIdx = indices == null ? s : indices[s];
+            const sampleIdx = s;
             const out = this.forwardInto(inputs[sampleIdx]);
             const tgt = targets[sampleIdx];
             const sampleLoss = this.accumulateLoss(
@@ -2318,10 +2295,6 @@ export class Network {
 
     predict(input: number[]): number[] {
         return this.forward(input);
-    }
-
-    predictBatch(inputs: number[][]): number[][] {
-        return inputs.map((inp) => this.forward(inp));
     }
 
     predictGrid(gridInputs: number[][]): Float32Array {

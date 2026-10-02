@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => ({
     },
     build: {
         target: 'es2022',
+        modulePreload: { polyfill: false },
         minify: 'terser',
         // Two safe compression passes reduce repeated expressions without unsafe rewrites.
         terserOptions: { compress: { passes: 2, inline: 1 } },
