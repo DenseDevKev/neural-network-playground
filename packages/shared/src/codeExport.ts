@@ -75,7 +75,7 @@ function regularizationSummary(training: TrainingConfig): string | null {
 function tfjsKernelRegularizer(training: TrainingConfig): string | null {
     if (training.regularization === 'none' || !(training.regularizationRate > 0)) return null;
     return training.regularization === 'l2'
-        ? `tf.regularizers.l2({ l2: ${training.regularizationRate} })`
+        ? `tf.regularizers.l2({ l2: ${training.regularizationRate / 2} })`
         : `tf.regularizers.l1({ l1: ${training.regularizationRate} })`;
 }
 
@@ -192,7 +192,7 @@ function numpyActivationDefinition(act: string): string {
         case 'leakyRelu': return `def leakyRelu(x):\n    return np.where(x > 0, x, 0.01 * x)\n\n`;
         case 'elu': return `def elu(x):\n    return np.where(x > 0, x, np.exp(x) - 1)\n\n`;
         case 'swish': return `def swish(x):\n    return x / (1 + np.exp(-x))\n\n`;
-        case 'softplus': return `def softplus(x):\n    return np.log(1 + np.exp(x))\n\n`;
+        case 'softplus': return `def softplus(x):\n    return np.logaddexp(0, x)\n\n`;
         case 'softmax': return `def softmax(x):\n    e = np.exp(x - np.max(x))\n    return e / np.sum(e)\n\n`;
         default: return `def ${act}(x):\n    return x  # linear\n\n`;
     }
