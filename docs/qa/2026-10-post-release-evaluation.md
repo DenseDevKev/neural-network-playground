@@ -74,7 +74,7 @@ No blocking defects were found. Console output on every load contained one error
 
 - Repro: load the preview with devtools open; the console shows `Failed to load resource: ... 404`. `apps/web/index.html` declares no icon and `apps/web/public/` contains only `font-licenses.txt`.
 - A static asset or an inline `<link rel="icon">` data URI resolves it; no JavaScript change.
-- No spec or script in the repository mentions a favicon; whether the browser specs already filter this console message was not checked.
+- Consequence in this environment: with the available Chromium 1194 (the repository's Playwright 1.61.1 expects build 1228, which is not installed here), `tests/e2e/playground-smoke.spec.ts` fails all 19 tests on its "no console errors" assertion because of this one 404 (checked for the first test; the other 18 were not individually inspected). CI is reported green with its own browsers, so the favicon request is likely browser-build dependent; a favicon would remove the dependency either way. No spec mentions a favicon.
 
 ### Observations that need no action
 
