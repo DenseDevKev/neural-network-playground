@@ -2556,3 +2556,58 @@ Post-optimization controlled results:
 Each post-optimization command reported 2 passing benchmark files and 3
 passing benchmark tests. The accompanying Adam/SGD measurements were
 3.3567/1.0326, 3.3951/1.0055, and 3.6684/1.0037 ms across the three commands.
+
+## 2026-10-02 JavaScript Gzip Headroom Recovery
+
+Goal: recover total JavaScript gzip headroom without changing the caps in
+`scripts/check-web-bundle-gzip.mjs` (entry 152,245; InspectionPanel 7,373;
+total 234,161), engine algorithms, schemas, worker protocol, or persistence.
+
+Per-module attribution used a temporary local `sourcemap: true` build and a
+scratch script (outside the repository) that summed generated-code spans per
+source from `dist/assets/*.js.map`. Largest contributors: entry — react-dom
+(~175 KB min), `useTraining`, `NetworkGraphCanvas`, shared `workerProtocol`,
+`lessonRegistry`; worker — engine `network.ts` (~51 KB min),
+`training.worker.ts` (~40 KB), `experimentSchema`, WebGPU predictor.
+
+| Measure (gzip bytes) | Before | After |
+| --- | ---: | ---: |
+| Entry | 150,841 | 150,603 |
+| InspectionPanel | 6,591 | 6,590 |
+| Training worker | 54,477 | 53,723 |
+| Total JavaScript | 234,088 | 233,096 |
+| Total headroom | 73 | 1,065 |
+
+Kept changes and their measured effect on total gzip:
+
+- Disable the Vite module-preload polyfill (`build.modulePreload.polyfill:
+  false`): about -235 bytes in the entry.
+- Compact the embedded WGSL shader string in `predictGridGPU.ts` (comments and
+  alignment removed, tokens unchanged; the documentation block above it is the
+  reference): about -690 bytes in the worker.
+- Remove unreferenced `Network.trainBatchIndexed`, `Network.predictBatch`, and
+  `ExperimentRequestGate.getLatestRequestId`: about -75 bytes (worker).
+- Remove `usePlaygroundStore.dataset`/`regenerateData` (no production, e2e, or
+  window-hook consumer; verified by grep) and gate the E2E worker-fault helper
+  calls behind the build-time `VITE_E2E_FAULTS` check so production bundles drop
+  them. Net effect within gzip noise (about -85 bytes) but removes dead code.
+
+Measured and rejected (no gain or worse):
+
+| Lever | Total gzip vs. current |
+| --- | ---: |
+| Terser `passes: 3`, `toplevel`, `module`, `ecma: 2020` together | +607 |
+| Terser `passes: 3` alone | +610 |
+| `ecma: 2020/2022`, `module`, `toplevel` individually | within ±12 |
+| `inline: 0/3`, `reduce_funcs/hoist_props: false` | within ±30 |
+| `join_vars: false`, `hoist_funs`+`keep_fargs: false` | +1,000 to +2,960 |
+| `experimentalMinChunkSize` 15,000-28,000 | 0 (only merges shared chunks) |
+| `experimentalMinChunkSize: 0` | +840 (more chunks) |
+| `modulePreload: false` | -16 beyond polyfill removal; not kept |
+| Deduplicate identical WebGPU offset helpers | +50 (gzip noise) |
+
+Not done: `Network` still carries legacy methods used only by unit tests
+(`trainBatch`, `backward`, `tracePrediction`, `explainBackpropStep`,
+`probeLossLandscape`, and their private helpers). They cannot be removed
+without deleting or migrating those tests, which is outside this slice and is
+the largest remaining worker-size candidate.
