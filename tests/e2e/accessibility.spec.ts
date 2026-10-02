@@ -159,7 +159,7 @@ test('forced colors preserves distinct data legend colors and native control sty
                 expect(await page.locator(selector).evaluate((node) => getComputedStyle(node).forcedColorAdjust)).toBe('auto');
             }
         }
-        await page.locator('.network-graph-frame').screenshot({ path: `../../outputs/nn-forge-implementation/display-modes/${info.project.name}-${theme}-forced-colors-graph-fixed.png` });
+        await page.locator('.network-graph-frame').screenshot({ path: info.outputPath(`${info.project.name}-${theme}-forced-colors-graph-fixed.png`) });
         await info.attach(`forced-colors-${theme}-data-legends`, { body: await page.screenshot(), contentType: 'image/png' });
     }
 });

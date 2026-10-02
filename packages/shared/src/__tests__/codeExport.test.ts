@@ -12,6 +12,7 @@ import type {
   NetworkConfig,
   FeatureFlags,
 } from "@nn-playground/engine";
+import { l2Penalty, l2PenaltyGradient } from "@nn-playground/engine";
 
 const mockConfig: NetworkConfig = {
   ...DEFAULT_NETWORK,
@@ -429,10 +430,35 @@ describe("codeExport", () => {
           null,
         );
         const expected = kind === "l2"
-          ? "tf.regularizers.l2({ l2: 0.01 })"
+          ? "tf.regularizers.l2({ l2: 0.005 })"
           : "tf.regularizers.l1({ l1: 0.01 })";
         // Hidden layer + output layer both carry the penalty.
         expect(output.match(new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))).toHaveLength(2);
+      },
+    );
+
+    it.each([0.001, 0.1, 1])(
+      "preserves the engine's L2 penalty and gradient for coefficient %s",
+      (coefficient) => {
+        const output = generateTFJS(
+          mockConfig,
+          { ...DEFAULT_TRAINING, regularization: "l2", regularizationRate: coefficient },
+          DEFAULT_FEATURES,
+          null,
+        );
+        const regularizers = [...output.matchAll(/tf\.regularizers\.l2\(\{ l2: ([\d.e+-]+) \}\)/g)];
+        expect(regularizers).toHaveLength(mockConfig.hiddenLayers.length + 1);
+        const weights = [2, -3, 0];
+        for (const match of regularizers) {
+          const exportedCoefficient = Number(match[1]);
+          // TF.js L2 is coefficient * sum(w²), without the engine's 1/2 factor.
+          expect(exportedCoefficient * weights.reduce((sum, weight) => sum + weight ** 2, 0))
+            .toBeCloseTo(l2Penalty(weights, coefficient), 12);
+          const expectedGradient = l2PenaltyGradient(weights, coefficient);
+          weights.forEach((weight, index) => {
+            expect(2 * exportedCoefficient * weight).toBeCloseTo(expectedGradient[index], 12);
+          });
+        }
       },
     );
 
