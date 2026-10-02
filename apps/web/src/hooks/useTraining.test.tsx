@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { NetworkConfig, NetworkSnapshot } from '@nn-playground/engine';
 import {
     type ArtifactBasis,
@@ -495,7 +495,13 @@ describe('useTraining', () => {
         bridge.emitE2EWorkerError.mockReset().mockReturnValue(true);
     });
 
+    afterEach(() => {
+        vi.unstubAllEnvs();
+    });
+
     it('keeps a consumed E2E startup fault sticky across StrictMode effect replay', async () => {
+        // The hook only consults the fault helper in builds with VITE_E2E_FAULTS=1.
+        vi.stubEnv('VITE_E2E_FAULTS', '1');
         let subscribed: ((message: WorkerToMainMessage) => void) | null = null;
         const subscriptions: Array<(message: WorkerToMainMessage) => void> = [];
         const lifecycle: string[] = [];
