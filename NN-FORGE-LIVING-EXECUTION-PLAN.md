@@ -663,20 +663,20 @@ Evaluation written 2026-10-02: [docs/qa/2026-10-post-release-evaluation.md](docs
 Do **not** automatically invent another giant roadmap.
 
 - [ ] Use NN.FORGE as a real learner/experimenter.
-- [ ] Evaluate experiment creation.
-- [ ] Evaluate architecture construction.
-- [ ] Evaluate training controls.
-- [ ] Evaluate evidence comprehension.
-- [ ] Evaluate train/test distinction.
-- [ ] Evaluate evaluation-age/drift clarity.
-- [ ] Evaluate network inspection.
-- [ ] Evaluate save/compare workflow.
-- [ ] Evaluate code export.
-- [ ] Evaluate sharing.
-- [ ] Evaluate mobile use.
+- [x] Evaluate experiment creation — agent walkthrough, item 1 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate architecture construction — agent walkthrough, item 2 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate training controls — agent walkthrough, item 3 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate evidence comprehension — agent walkthrough, item 4 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate train/test distinction — agent walkthrough, item 5 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate evaluation-age/drift clarity — agent walkthrough, item 6 of `docs/qa/2026-10-post-release-evaluation.md`; not user research (drift observed only via unit test, not in the browser).
+- [x] Evaluate network inspection — agent walkthrough, item 7 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate save/compare workflow — agent walkthrough, item 8 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate code export — agent walkthrough, item 9 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate sharing — agent walkthrough, item 10 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
+- [x] Evaluate mobile use — agent walkthrough, item 11–12 of `docs/qa/2026-10-post-release-evaluation.md`; not user research.
 - [ ] Gather actual usage/feedback evidence.
 - [ ] Rank problems by frequency/severity.
-- [ ] Choose exactly one next milestone.
+- [ ] Choose exactly one next milestone. — proposed in the evaluation report ("First-run and share polish"); needs owner approval.
 
 ---
 
