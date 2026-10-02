@@ -56,6 +56,10 @@ describe('ConfigPanel strict V2 transport', () => {
         const restored = await usePlaygroundStore.getState()
             .replaceDocument(DEFAULT_EXPERIMENT_DOCUMENT);
         expect(restored.ok).toBe(true);
+        // Vitest 4 restoreAllMocks no longer resets call history. Zustand copies
+        // an earlier test's replaceDocument spy onto each new state object, so
+        // clear that retained history explicitly (Vitest 3 did it implicitly).
+        vi.clearAllMocks();
 
         Object.defineProperty(navigator, 'clipboard', {
             value: { writeText: vi.fn().mockResolvedValue(undefined) },

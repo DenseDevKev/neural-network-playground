@@ -68,11 +68,13 @@ describe('LossChart scientific evidence series', () => {
             objective: { regularizationPenalty: 0.05, trainTotalObjective: 0.75 },
         }, 1230);
 
-        window.ResizeObserver = vi.fn().mockImplementation(() => ({
-            observe: vi.fn(),
-            unobserve: vi.fn(),
-            disconnect: vi.fn(),
-        }));
+        window.ResizeObserver = vi.fn().mockImplementation(function () {
+            return {
+                observe: vi.fn(),
+                unobserve: vi.fn(),
+                disconnect: vi.fn(),
+            };
+        });
         fillRect.mockClear();
         HTMLCanvasElement.prototype.getContext = vi.fn(
             () => createMockContext() as unknown as CanvasRenderingContext2D,
@@ -100,7 +102,7 @@ describe('LossChart scientific evidence series', () => {
     it('coalesces resize paints, ignores subpixel churn, and cancels pending work on unmount', () => {
         let notify!: ResizeObserverCallback;
         const disconnect = vi.fn();
-        window.ResizeObserver = vi.fn().mockImplementation((callback: ResizeObserverCallback) => {
+        window.ResizeObserver = vi.fn().mockImplementation(function (callback: ResizeObserverCallback) {
             notify = callback;
             return { observe: vi.fn(), disconnect };
         });

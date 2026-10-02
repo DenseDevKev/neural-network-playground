@@ -5,6 +5,5 @@ export default defineConfig({
         include: ['src/__benchmarks__/**/*.bench.ts'],
         fileParallelism: false,
         maxWorkers: 1,
-        minWorkers: 1,
     },
 });

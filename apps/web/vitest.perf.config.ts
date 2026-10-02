@@ -6,6 +6,5 @@ export default defineConfig({
         include: ['src/worker/scientificTrust.performance.test.ts'],
         fileParallelism: false,
         maxWorkers: 1,
-        minWorkers: 1,
     },
 });
