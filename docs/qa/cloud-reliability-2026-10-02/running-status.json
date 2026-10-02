@@ -1,0 +1,1718 @@
+[
+  {
+    "engine": "chromium",
+    "theme": "light",
+    "width": 320,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 266.796875,
+          "width": 180,
+          "height": 36,
+          "right": 304,
+          "bottom": 302.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 267.796875,
+            "right": 299,
+            "bottom": 282.796875,
+            "width": 175,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 285.796875,
+            "right": 200,
+            "bottom": 300.796875,
+            "width": 76,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 180,
+        "scrollWidth": 180,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,400",
+          "rect": {
+            "x": 16,
+            "y": 266.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 302.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 275.796875,
+              "right": 42,
+              "bottom": 293.796875,
+              "width": 26,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 276.796875,
+              "right": 42,
+              "bottom": 291.796875,
+              "width": 26,
+              "height": 15
+            },
+            {
+              "x": 46,
+              "y": 275.796875,
+              "right": 60,
+              "bottom": 293.796875,
+              "width": 14,
+              "height": 18
+            },
+            {
+              "x": 46,
+              "y": 276.796875,
+              "right": 81,
+              "bottom": 291.796875,
+              "width": 35,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 160",
+          "rect": {
+            "x": 66,
+            "y": 266.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 302.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 275.796875,
+              "right": 101,
+              "bottom": 293.796875,
+              "width": 35,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 276.796875,
+              "right": 101,
+              "bottom": 291.796875,
+              "width": 35,
+              "height": 15
+            },
+            {
+              "x": 105,
+              "y": 275.796875,
+              "right": 118,
+              "bottom": 293.796875,
+              "width": 13,
+              "height": 18
+            },
+            {
+              "x": 105,
+              "y": 276.796875,
+              "right": 129,
+              "bottom": 291.796875,
+              "width": 24,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 207.796875,
+        "width": 288,
+        "height": 103,
+        "right": 304,
+        "bottom": 310.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2400"
+    }
+  },
+  {
+    "engine": "chromium",
+    "theme": "light",
+    "width": 360,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 218.796875,
+          "width": 220,
+          "height": 36,
+          "right": 344,
+          "bottom": 254.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 219.796875,
+            "right": 328,
+            "bottom": 234.796875,
+            "width": 204,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 237.796875,
+            "right": 171,
+            "bottom": 252.796875,
+            "width": 47,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 220,
+        "scrollWidth": 220,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,600",
+          "rect": {
+            "x": 16,
+            "y": 218.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 227.796875,
+              "right": 42,
+              "bottom": 245.796875,
+              "width": 26,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 228.796875,
+              "right": 42,
+              "bottom": 243.796875,
+              "width": 26,
+              "height": 15
+            },
+            {
+              "x": 46,
+              "y": 227.796875,
+              "right": 60,
+              "bottom": 245.796875,
+              "width": 14,
+              "height": 18
+            },
+            {
+              "x": 46,
+              "y": 228.796875,
+              "right": 81,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 173",
+          "rect": {
+            "x": 66,
+            "y": 218.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 227.796875,
+              "right": 101,
+              "bottom": 245.796875,
+              "width": 35,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 228.796875,
+              "right": 101,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            },
+            {
+              "x": 105,
+              "y": 227.796875,
+              "right": 118,
+              "bottom": 245.796875,
+              "width": 13,
+              "height": 18
+            },
+            {
+              "x": 105,
+              "y": 228.796875,
+              "right": 129,
+              "bottom": 243.796875,
+              "width": 24,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 159.796875,
+        "width": 328,
+        "height": 103,
+        "right": 344,
+        "bottom": 262.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2600"
+    }
+  },
+  {
+    "engine": "chromium",
+    "theme": "light",
+    "width": 390,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 218.796875,
+          "width": 250,
+          "height": 36,
+          "right": 374,
+          "bottom": 254.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 219.796875,
+            "right": 328,
+            "bottom": 234.796875,
+            "width": 204,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 237.796875,
+            "right": 171,
+            "bottom": 252.796875,
+            "width": 47,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 250,
+        "scrollWidth": 250,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,850",
+          "rect": {
+            "x": 16,
+            "y": 218.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 227.796875,
+              "right": 42,
+              "bottom": 245.796875,
+              "width": 26,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 228.796875,
+              "right": 42,
+              "bottom": 243.796875,
+              "width": 26,
+              "height": 15
+            },
+            {
+              "x": 46,
+              "y": 227.796875,
+              "right": 60,
+              "bottom": 245.796875,
+              "width": 14,
+              "height": 18
+            },
+            {
+              "x": 46,
+              "y": 228.796875,
+              "right": 81,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 190",
+          "rect": {
+            "x": 66,
+            "y": 218.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 227.796875,
+              "right": 101,
+              "bottom": 245.796875,
+              "width": 35,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 228.796875,
+              "right": 101,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            },
+            {
+              "x": 105,
+              "y": 227.796875,
+              "right": 118,
+              "bottom": 245.796875,
+              "width": 13,
+              "height": 18
+            },
+            {
+              "x": 105,
+              "y": 228.796875,
+              "right": 129,
+              "bottom": 243.796875,
+              "width": 24,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 159.796875,
+        "width": 358,
+        "height": 103,
+        "right": 374,
+        "bottom": 262.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2850"
+    }
+  },
+  {
+    "engine": "chromium",
+    "theme": "dark",
+    "width": 320,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 266.796875,
+          "width": 180,
+          "height": 36,
+          "right": 304,
+          "bottom": 302.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 267.796875,
+            "right": 299,
+            "bottom": 282.796875,
+            "width": 175,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 285.796875,
+            "right": 200,
+            "bottom": 300.796875,
+            "width": 76,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 180,
+        "scrollWidth": 180,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,400",
+          "rect": {
+            "x": 16,
+            "y": 266.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 302.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 275.796875,
+              "right": 42,
+              "bottom": 293.796875,
+              "width": 26,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 276.796875,
+              "right": 42,
+              "bottom": 291.796875,
+              "width": 26,
+              "height": 15
+            },
+            {
+              "x": 46,
+              "y": 275.796875,
+              "right": 60,
+              "bottom": 293.796875,
+              "width": 14,
+              "height": 18
+            },
+            {
+              "x": 46,
+              "y": 276.796875,
+              "right": 81,
+              "bottom": 291.796875,
+              "width": 35,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 160",
+          "rect": {
+            "x": 66,
+            "y": 266.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 302.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 275.796875,
+              "right": 101,
+              "bottom": 293.796875,
+              "width": 35,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 276.796875,
+              "right": 101,
+              "bottom": 291.796875,
+              "width": 35,
+              "height": 15
+            },
+            {
+              "x": 105,
+              "y": 275.796875,
+              "right": 118,
+              "bottom": 293.796875,
+              "width": 13,
+              "height": 18
+            },
+            {
+              "x": 105,
+              "y": 276.796875,
+              "right": 129,
+              "bottom": 291.796875,
+              "width": 24,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 207.796875,
+        "width": 288,
+        "height": 103,
+        "right": 304,
+        "bottom": 310.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2400"
+    }
+  },
+  {
+    "engine": "chromium",
+    "theme": "dark",
+    "width": 360,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 218.796875,
+          "width": 220,
+          "height": 36,
+          "right": 344,
+          "bottom": 254.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 219.796875,
+            "right": 328,
+            "bottom": 234.796875,
+            "width": 204,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 237.796875,
+            "right": 171,
+            "bottom": 252.796875,
+            "width": 47,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 220,
+        "scrollWidth": 220,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,600",
+          "rect": {
+            "x": 16,
+            "y": 218.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 227.796875,
+              "right": 42,
+              "bottom": 245.796875,
+              "width": 26,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 228.796875,
+              "right": 42,
+              "bottom": 243.796875,
+              "width": 26,
+              "height": 15
+            },
+            {
+              "x": 46,
+              "y": 227.796875,
+              "right": 60,
+              "bottom": 245.796875,
+              "width": 14,
+              "height": 18
+            },
+            {
+              "x": 46,
+              "y": 228.796875,
+              "right": 81,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 173",
+          "rect": {
+            "x": 66,
+            "y": 218.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 227.796875,
+              "right": 101,
+              "bottom": 245.796875,
+              "width": 35,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 228.796875,
+              "right": 101,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            },
+            {
+              "x": 105,
+              "y": 227.796875,
+              "right": 118,
+              "bottom": 245.796875,
+              "width": 13,
+              "height": 18
+            },
+            {
+              "x": 105,
+              "y": 228.796875,
+              "right": 129,
+              "bottom": 243.796875,
+              "width": 24,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 159.796875,
+        "width": 328,
+        "height": 103,
+        "right": 344,
+        "bottom": 262.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2600"
+    }
+  },
+  {
+    "engine": "chromium",
+    "theme": "dark",
+    "width": 390,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 218.796875,
+          "width": 250,
+          "height": 36,
+          "right": 374,
+          "bottom": 254.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 219.796875,
+            "right": 328,
+            "bottom": 234.796875,
+            "width": 204,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 237.796875,
+            "right": 171,
+            "bottom": 252.796875,
+            "width": 47,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 250,
+        "scrollWidth": 250,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,900",
+          "rect": {
+            "x": 16,
+            "y": 218.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 227.796875,
+              "right": 42,
+              "bottom": 245.796875,
+              "width": 26,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 228.796875,
+              "right": 42,
+              "bottom": 243.796875,
+              "width": 26,
+              "height": 15
+            },
+            {
+              "x": 46,
+              "y": 227.796875,
+              "right": 60,
+              "bottom": 245.796875,
+              "width": 14,
+              "height": 18
+            },
+            {
+              "x": 46,
+              "y": 228.796875,
+              "right": 81,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 193",
+          "rect": {
+            "x": 66,
+            "y": 218.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 254.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 227.796875,
+              "right": 101,
+              "bottom": 245.796875,
+              "width": 35,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 228.796875,
+              "right": 101,
+              "bottom": 243.796875,
+              "width": 35,
+              "height": 15
+            },
+            {
+              "x": 105,
+              "y": 227.796875,
+              "right": 118,
+              "bottom": 245.796875,
+              "width": 13,
+              "height": 18
+            },
+            {
+              "x": 105,
+              "y": 228.796875,
+              "right": 129,
+              "bottom": 243.796875,
+              "width": 24,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 159.796875,
+        "width": 358,
+        "height": 103,
+        "right": 374,
+        "bottom": 262.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2900"
+    }
+  },
+  {
+    "engine": "webkit",
+    "theme": "light",
+    "width": 320,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 267.796875,
+          "width": 180,
+          "height": 36,
+          "right": 304,
+          "bottom": 303.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 269.296875,
+            "right": 300.80078125,
+            "bottom": 284.296875,
+            "width": 176.80078125,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 287.296875,
+            "right": 199.005859375,
+            "bottom": 302.296875,
+            "width": 75.005859375,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 180,
+        "scrollWidth": 180,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,200",
+          "rect": {
+            "x": 16,
+            "y": 267.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 276.796875,
+              "right": 41.859375,
+              "bottom": 294.796875,
+              "width": 25.859375,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 278.296875,
+              "right": 41.8515625,
+              "bottom": 293.296875,
+              "width": 25.8515625,
+              "height": 15
+            },
+            {
+              "x": 45.859375,
+              "y": 276.796875,
+              "right": 60,
+              "bottom": 294.796875,
+              "width": 14.140625,
+              "height": 18
+            },
+            {
+              "x": 45.859375,
+              "y": 278.296875,
+              "right": 80.11328125,
+              "bottom": 293.296875,
+              "width": 34.25390625,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 146",
+          "rect": {
+            "x": 66,
+            "y": 267.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 276.796875,
+              "right": 101.71875,
+              "bottom": 294.796875,
+              "width": 35.71875,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 278.296875,
+              "right": 101.70703125,
+              "bottom": 293.296875,
+              "width": 35.70703125,
+              "height": 15
+            },
+            {
+              "x": 105.71875,
+              "y": 276.796875,
+              "right": 118,
+              "bottom": 294.796875,
+              "width": 12.28125,
+              "height": 18
+            },
+            {
+              "x": 105.71875,
+              "y": 278.296875,
+              "right": 128.9921875,
+              "bottom": 293.296875,
+              "width": 23.2734375,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 207.796875,
+        "width": 288,
+        "height": 104,
+        "right": 304,
+        "bottom": 311.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2200"
+    }
+  },
+  {
+    "engine": "webkit",
+    "theme": "light",
+    "width": 360,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 267.796875,
+          "width": 220,
+          "height": 36,
+          "right": 344,
+          "bottom": 303.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 269.296875,
+            "right": 329.494140625,
+            "bottom": 284.296875,
+            "width": 205.494140625,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 287.296875,
+            "right": 170.3125,
+            "bottom": 302.296875,
+            "width": 46.3125,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 220,
+        "scrollWidth": 220,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,500",
+          "rect": {
+            "x": 16,
+            "y": 267.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 276.796875,
+              "right": 41.859375,
+              "bottom": 294.796875,
+              "width": 25.859375,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 278.296875,
+              "right": 41.8515625,
+              "bottom": 293.296875,
+              "width": 25.8515625,
+              "height": 15
+            },
+            {
+              "x": 45.859375,
+              "y": 276.796875,
+              "right": 60,
+              "bottom": 294.796875,
+              "width": 14.140625,
+              "height": 18
+            },
+            {
+              "x": 45.859375,
+              "y": 278.296875,
+              "right": 80.11328125,
+              "bottom": 293.296875,
+              "width": 34.25390625,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 166",
+          "rect": {
+            "x": 66,
+            "y": 267.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 276.796875,
+              "right": 101.71875,
+              "bottom": 294.796875,
+              "width": 35.71875,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 278.296875,
+              "right": 101.70703125,
+              "bottom": 293.296875,
+              "width": 35.70703125,
+              "height": 15
+            },
+            {
+              "x": 105.71875,
+              "y": 276.796875,
+              "right": 118,
+              "bottom": 294.796875,
+              "width": 12.28125,
+              "height": 18
+            },
+            {
+              "x": 105.71875,
+              "y": 278.296875,
+              "right": 128.9921875,
+              "bottom": 293.296875,
+              "width": 23.2734375,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 207.796875,
+        "width": 328,
+        "height": 104,
+        "right": 344,
+        "bottom": 311.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2500"
+    }
+  },
+  {
+    "engine": "webkit",
+    "theme": "light",
+    "width": 390,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 219.796875,
+          "width": 250,
+          "height": 36,
+          "right": 374,
+          "bottom": 255.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 221.296875,
+            "right": 329.494140625,
+            "bottom": 236.296875,
+            "width": 205.494140625,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 239.296875,
+            "right": 170.3125,
+            "bottom": 254.296875,
+            "width": 46.3125,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 250,
+        "scrollWidth": 250,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,800",
+          "rect": {
+            "x": 16,
+            "y": 219.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 255.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 228.796875,
+              "right": 41.859375,
+              "bottom": 246.796875,
+              "width": 25.859375,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 230.296875,
+              "right": 41.8515625,
+              "bottom": 245.296875,
+              "width": 25.8515625,
+              "height": 15
+            },
+            {
+              "x": 45.859375,
+              "y": 228.796875,
+              "right": 60,
+              "bottom": 246.796875,
+              "width": 14.140625,
+              "height": 18
+            },
+            {
+              "x": 45.859375,
+              "y": 230.296875,
+              "right": 80.11328125,
+              "bottom": 245.296875,
+              "width": 34.25390625,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 186",
+          "rect": {
+            "x": 66,
+            "y": 219.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 255.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 228.796875,
+              "right": 101.71875,
+              "bottom": 246.796875,
+              "width": 35.71875,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 230.296875,
+              "right": 101.70703125,
+              "bottom": 245.296875,
+              "width": 35.70703125,
+              "height": 15
+            },
+            {
+              "x": 105.71875,
+              "y": 228.796875,
+              "right": 118,
+              "bottom": 246.796875,
+              "width": 12.28125,
+              "height": 18
+            },
+            {
+              "x": 105.71875,
+              "y": 230.296875,
+              "right": 128.9921875,
+              "bottom": 245.296875,
+              "width": 23.2734375,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 159.796875,
+        "width": 358,
+        "height": 104,
+        "right": 374,
+        "bottom": 263.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2800"
+    }
+  },
+  {
+    "engine": "webkit",
+    "theme": "dark",
+    "width": 320,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 267.796875,
+          "width": 180,
+          "height": 36,
+          "right": 304,
+          "bottom": 303.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 269.296875,
+            "right": 300.80078125,
+            "bottom": 284.296875,
+            "width": 176.80078125,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 287.296875,
+            "right": 199.005859375,
+            "bottom": 302.296875,
+            "width": 75.005859375,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 180,
+        "scrollWidth": 180,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,250",
+          "rect": {
+            "x": 16,
+            "y": 267.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 276.796875,
+              "right": 41.859375,
+              "bottom": 294.796875,
+              "width": 25.859375,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 278.296875,
+              "right": 41.8515625,
+              "bottom": 293.296875,
+              "width": 25.8515625,
+              "height": 15
+            },
+            {
+              "x": 45.859375,
+              "y": 276.796875,
+              "right": 60,
+              "bottom": 294.796875,
+              "width": 14.140625,
+              "height": 18
+            },
+            {
+              "x": 45.859375,
+              "y": 278.296875,
+              "right": 80.11328125,
+              "bottom": 293.296875,
+              "width": 34.25390625,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 150",
+          "rect": {
+            "x": 66,
+            "y": 267.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 276.796875,
+              "right": 101.71875,
+              "bottom": 294.796875,
+              "width": 35.71875,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 278.296875,
+              "right": 101.70703125,
+              "bottom": 293.296875,
+              "width": 35.70703125,
+              "height": 15
+            },
+            {
+              "x": 105.71875,
+              "y": 276.796875,
+              "right": 118,
+              "bottom": 294.796875,
+              "width": 12.28125,
+              "height": 18
+            },
+            {
+              "x": 105.71875,
+              "y": 278.296875,
+              "right": 128.9921875,
+              "bottom": 293.296875,
+              "width": 23.2734375,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 207.796875,
+        "width": 288,
+        "height": 104,
+        "right": 304,
+        "bottom": 311.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2250"
+    }
+  },
+  {
+    "engine": "webkit",
+    "theme": "dark",
+    "width": 360,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 267.796875,
+          "width": 220,
+          "height": 36,
+          "right": 344,
+          "bottom": 303.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 269.296875,
+            "right": 329.494140625,
+            "bottom": 284.296875,
+            "width": 205.494140625,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 287.296875,
+            "right": 170.3125,
+            "bottom": 302.296875,
+            "width": 46.3125,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 220,
+        "scrollWidth": 220,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,500",
+          "rect": {
+            "x": 16,
+            "y": 267.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 276.796875,
+              "right": 41.859375,
+              "bottom": 294.796875,
+              "width": 25.859375,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 278.296875,
+              "right": 41.8515625,
+              "bottom": 293.296875,
+              "width": 25.8515625,
+              "height": 15
+            },
+            {
+              "x": 45.859375,
+              "y": 276.796875,
+              "right": 60,
+              "bottom": 294.796875,
+              "width": 14.140625,
+              "height": 18
+            },
+            {
+              "x": 45.859375,
+              "y": 278.296875,
+              "right": 80.11328125,
+              "bottom": 293.296875,
+              "width": 34.25390625,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 166",
+          "rect": {
+            "x": 66,
+            "y": 267.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 303.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 276.796875,
+              "right": 101.71875,
+              "bottom": 294.796875,
+              "width": 35.71875,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 278.296875,
+              "right": 101.70703125,
+              "bottom": 293.296875,
+              "width": 35.70703125,
+              "height": 15
+            },
+            {
+              "x": 105.71875,
+              "y": 276.796875,
+              "right": 118,
+              "bottom": 294.796875,
+              "width": 12.28125,
+              "height": 18
+            },
+            {
+              "x": 105.71875,
+              "y": 278.296875,
+              "right": 128.9921875,
+              "bottom": 293.296875,
+              "width": 23.2734375,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 207.796875,
+        "width": 328,
+        "height": 104,
+        "right": 344,
+        "bottom": 311.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2500"
+    }
+  },
+  {
+    "engine": "webkit",
+    "theme": "dark",
+    "width": 390,
+    "geometry": {
+      "status": {
+        "text": "Training · updates run locally in your browser",
+        "rect": {
+          "x": 124,
+          "y": 219.796875,
+          "width": 250,
+          "height": 36,
+          "right": 374,
+          "bottom": 255.796875
+        },
+        "textRects": [
+          {
+            "x": 124,
+            "y": 221.296875,
+            "right": 329.494140625,
+            "bottom": 236.296875,
+            "width": 205.494140625,
+            "height": 15
+          },
+          {
+            "x": 124,
+            "y": 239.296875,
+            "right": 170.3125,
+            "bottom": 254.296875,
+            "width": 46.3125,
+            "height": 15
+          }
+        ],
+        "clientHeight": 36,
+        "scrollHeight": 36,
+        "clientWidth": 250,
+        "scrollWidth": 250,
+        "overflow": "auto"
+      },
+      "metrics": [
+        {
+          "text": "Step 2,800",
+          "rect": {
+            "x": 16,
+            "y": 219.796875,
+            "width": 44,
+            "height": 36,
+            "right": 60,
+            "bottom": 255.796875
+          },
+          "textRects": [
+            {
+              "x": 16,
+              "y": 228.796875,
+              "right": 41.859375,
+              "bottom": 246.796875,
+              "width": 25.859375,
+              "height": 18
+            },
+            {
+              "x": 16,
+              "y": 230.296875,
+              "right": 41.8515625,
+              "bottom": 245.296875,
+              "width": 25.8515625,
+              "height": 15
+            },
+            {
+              "x": 45.859375,
+              "y": 228.796875,
+              "right": 60,
+              "bottom": 246.796875,
+              "width": 14.140625,
+              "height": 18
+            },
+            {
+              "x": 45.859375,
+              "y": 230.296875,
+              "right": 80.11328125,
+              "bottom": 245.296875,
+              "width": 34.25390625,
+              "height": 15
+            }
+          ]
+        },
+        {
+          "text": "Epoch 186",
+          "rect": {
+            "x": 66,
+            "y": 219.796875,
+            "width": 52,
+            "height": 36,
+            "right": 118,
+            "bottom": 255.796875
+          },
+          "textRects": [
+            {
+              "x": 66,
+              "y": 228.796875,
+              "right": 101.71875,
+              "bottom": 246.796875,
+              "width": 35.71875,
+              "height": 18
+            },
+            {
+              "x": 66,
+              "y": 230.296875,
+              "right": 101.70703125,
+              "bottom": 245.296875,
+              "width": 35.70703125,
+              "height": 15
+            },
+            {
+              "x": 105.71875,
+              "y": 228.796875,
+              "right": 118,
+              "bottom": 246.796875,
+              "width": 12.28125,
+              "height": 18
+            },
+            {
+              "x": 105.71875,
+              "y": 230.296875,
+              "right": 128.9921875,
+              "bottom": 245.296875,
+              "width": 23.2734375,
+              "height": 15
+            }
+          ]
+        }
+      ],
+      "transport": {
+        "x": 16,
+        "y": 159.796875,
+        "width": 358,
+        "height": 104,
+        "right": 374,
+        "bottom": 263.796875
+      },
+      "pageOverflow": 0,
+      "modelStep": "2800"
+    }
+  }
+]

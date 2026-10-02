@@ -1,0 +1,22 @@
+[
+  {
+    "engine": "chromium",
+    "focusBeforeAnyPostReloadClick": {
+      "tag": "BODY",
+      "id": "",
+      "inert": false
+    },
+    "firstTab": "Skip to main content",
+    "realStep": 1
+  },
+  {
+    "engine": "webkit",
+    "focusBeforeAnyPostReloadClick": {
+      "tag": "BODY",
+      "id": "",
+      "inert": false
+    },
+    "firstTab": "Skip to main content",
+    "realStep": 1
+  }
+]

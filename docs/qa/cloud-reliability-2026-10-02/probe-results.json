@@ -1,0 +1,3242 @@
+[
+  {
+    "engine": "chromium",
+    "theme": "light",
+    "share": {
+      "selectedTab": "Code",
+      "copyLinkVisible": false,
+      "before": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2550",
+        "step": "2550"
+      },
+      "after": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2550",
+        "step": "2550"
+      },
+      "copyLinkAfterSelectingSetup": true
+    },
+    "captures": [
+      {
+        "width": 320,
+        "tab": "Results",
+        "filename": "chromium-light-results-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 266.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 275.796875,
+                "right": 81,
+                "bottom": 293.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 266.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 275.796875,
+                "right": 129,
+                "bottom": 293.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 44,
+                "right": 254,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 304,
+                "bottom": 260.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 266.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 302.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 267.796875,
+              "right": 221,
+              "bottom": 282.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 320,
+        "tab": "Setup",
+        "filename": "chromium-light-setup-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 266.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 275.796875,
+                "right": 81,
+                "bottom": 293.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 266.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 275.796875,
+                "right": 129,
+                "bottom": 293.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 44,
+                "right": 254,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 304,
+                "bottom": 260.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 266.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 302.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 267.796875,
+              "right": 221,
+              "bottom": 282.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Results",
+        "filename": "chromium-light-results-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 120,
+                "height": 44,
+                "right": 294,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 344,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Setup",
+        "filename": "chromium-light-setup-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 120,
+                "height": 44,
+                "right": 294,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 344,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Results",
+        "filename": "chromium-light-results-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 44,
+                "right": 324,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 374,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Setup",
+        "filename": "chromium-light-setup-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 44,
+                "right": 324,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 374,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      }
+    ],
+    "errors": []
+  },
+  {
+    "engine": "chromium",
+    "theme": "dark",
+    "share": {
+      "selectedTab": "Code",
+      "copyLinkVisible": false,
+      "before": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2550",
+        "step": "2550"
+      },
+      "after": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2550",
+        "step": "2550"
+      },
+      "copyLinkAfterSelectingSetup": true
+    },
+    "captures": [
+      {
+        "width": 320,
+        "tab": "Results",
+        "filename": "chromium-dark-results-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 266.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 275.796875,
+                "right": 81,
+                "bottom": 293.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 266.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 275.796875,
+                "right": 129,
+                "bottom": 293.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 44,
+                "right": 254,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 304,
+                "bottom": 260.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 266.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 302.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 267.796875,
+              "right": 221,
+              "bottom": 282.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 320,
+        "tab": "Setup",
+        "filename": "chromium-dark-setup-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 266.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 275.796875,
+                "right": 81,
+                "bottom": 293.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 266.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 302.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 275.796875,
+                "right": 129,
+                "bottom": 293.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 44,
+                "right": 254,
+                "bottom": 260.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 44,
+                "right": 304,
+                "bottom": 260.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 266.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 302.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 267.796875,
+              "right": 221,
+              "bottom": 282.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Results",
+        "filename": "chromium-dark-results-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 120,
+                "height": 44,
+                "right": 294,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 344,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Setup",
+        "filename": "chromium-dark-setup-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 120,
+                "height": 44,
+                "right": 294,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 344,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Results",
+        "filename": "chromium-dark-results-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 44,
+                "right": 324,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 374,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Setup",
+        "filename": "chromium-dark-setup-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,550",
+              "box": {
+                "x": 16,
+                "y": 218.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 227.796875,
+                "right": 81,
+                "bottom": 245.796875,
+                "width": 65,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 170",
+              "box": {
+                "x": 66,
+                "y": 218.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 254.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 227.796875,
+                "right": 129,
+                "bottom": 245.796875,
+                "width": 63,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 60,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 44,
+                "right": 118,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 168,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 44,
+                "right": 324,
+                "bottom": 212.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 44,
+                "right": 374,
+                "bottom": 212.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 218.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 254.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 219.796875,
+              "right": 221,
+              "bottom": 234.796875,
+              "width": 97,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2550",
+          "step": "2550"
+        }
+      }
+    ],
+    "errors": []
+  },
+  {
+    "engine": "webkit",
+    "theme": "light",
+    "share": {
+      "selectedTab": "Code",
+      "copyLinkVisible": false,
+      "before": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2500",
+        "step": "2500"
+      },
+      "after": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2500",
+        "step": "2500"
+      },
+      "copyLinkAfterSelectingSetup": true
+    },
+    "captures": [
+      {
+        "width": 320,
+        "tab": "Results",
+        "filename": "webkit-light-results-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 45,
+                "right": 254,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 304,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 320,
+        "tab": "Setup",
+        "filename": "webkit-light-setup-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 45,
+                "right": 254,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 304,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Results",
+        "filename": "webkit-light-results-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 120,
+                "height": 45,
+                "right": 294,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 344,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Setup",
+        "filename": "webkit-light-setup-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 120,
+                "height": 45,
+                "right": 294,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 344,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Results",
+        "filename": "webkit-light-results-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 219.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 228.796875,
+                "right": 80.11328125,
+                "bottom": 246.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 219.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 228.796875,
+                "right": 128.9921875,
+                "bottom": 246.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 45,
+                "right": 324,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 374,
+                "bottom": 213.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 219.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 255.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 221.296875,
+              "right": 220.33984375,
+              "bottom": 236.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Setup",
+        "filename": "webkit-light-setup-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 219.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 228.796875,
+                "right": 80.11328125,
+                "bottom": 246.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 219.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 228.796875,
+                "right": 128.9921875,
+                "bottom": 246.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 45,
+                "right": 324,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 374,
+                "bottom": 213.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 219.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 255.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 221.296875,
+              "right": 220.33984375,
+              "bottom": 236.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      }
+    ],
+    "errors": []
+  },
+  {
+    "engine": "webkit",
+    "theme": "dark",
+    "share": {
+      "selectedTab": "Code",
+      "copyLinkVisible": false,
+      "before": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2500",
+        "step": "2500"
+      },
+      "after": {
+        "url": "http://127.0.0.1:4173/",
+        "generation": "1",
+        "revision": "2500",
+        "step": "2500"
+      },
+      "copyLinkAfterSelectingSetup": true
+    },
+    "captures": [
+      {
+        "width": 320,
+        "tab": "Results",
+        "filename": "webkit-dark-results-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 45,
+                "right": 254,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 304,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 320,
+        "tab": "Setup",
+        "filename": "webkit-dark-setup-320.png",
+        "geometry": {
+          "scrollWidth": 320,
+          "clientWidth": 320,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 80,
+                "height": 45,
+                "right": 254,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 260,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 304,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 180,
+              "height": 36,
+              "right": 304,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Results",
+        "filename": "webkit-dark-results-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 120,
+                "height": 45,
+                "right": 294,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 344,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 360,
+        "tab": "Setup",
+        "filename": "webkit-dark-setup-360.png",
+        "geometry": {
+          "scrollWidth": 360,
+          "clientWidth": 360,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 267.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 276.796875,
+                "right": 80.11328125,
+                "bottom": 294.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 267.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 303.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 276.796875,
+                "right": 128.9921875,
+                "bottom": 294.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 216.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 216.796875,
+                "width": 120,
+                "height": 45,
+                "right": 294,
+                "bottom": 261.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 300,
+                "y": 216.796875,
+                "width": 44,
+                "height": 45,
+                "right": 344,
+                "bottom": 261.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 267.796875,
+              "width": 220,
+              "height": 36,
+              "right": 344,
+              "bottom": 303.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 269.296875,
+              "right": 220.33984375,
+              "bottom": 284.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Results",
+        "filename": "webkit-dark-results-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 219.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 228.796875,
+                "right": 80.11328125,
+                "bottom": 246.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 219.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 228.796875,
+                "right": 128.9921875,
+                "bottom": 246.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 45,
+                "right": 324,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 374,
+                "bottom": 213.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 219.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 255.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 221.296875,
+              "right": 220.33984375,
+              "bottom": 236.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      },
+      {
+        "width": 390,
+        "tab": "Setup",
+        "filename": "webkit-dark-setup-390.png",
+        "geometry": {
+          "scrollWidth": 390,
+          "clientWidth": 390,
+          "metrics": [
+            {
+              "text": "Step 2,500",
+              "box": {
+                "x": 16,
+                "y": 219.796875,
+                "width": 44,
+                "height": 36,
+                "right": 60,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 16,
+                "y": 228.796875,
+                "right": 80.11328125,
+                "bottom": 246.796875,
+                "width": 64.11328125,
+                "height": 18
+              }
+            },
+            {
+              "text": "Epoch 166",
+              "box": {
+                "x": 66,
+                "y": 219.796875,
+                "width": 52,
+                "height": 36,
+                "right": 118,
+                "bottom": 255.796875
+              },
+              "textBox": {
+                "x": 66,
+                "y": 228.796875,
+                "right": 128.9921875,
+                "bottom": 246.796875,
+                "width": 62.9921875,
+                "height": 18
+              }
+            }
+          ],
+          "controls": [
+            {
+              "name": "Resume training",
+              "box": {
+                "x": 16,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 60,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Run one training step",
+              "box": {
+                "x": 66,
+                "y": 168.796875,
+                "width": 52,
+                "height": 45,
+                "right": 118,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Reset training",
+              "box": {
+                "x": 124,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 168,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Steps per frame",
+              "box": {
+                "x": 174,
+                "y": 168.796875,
+                "width": 150,
+                "height": 45,
+                "right": 324,
+                "bottom": 213.796875
+              }
+            },
+            {
+              "name": "Checkpoints",
+              "box": {
+                "x": 330,
+                "y": 168.796875,
+                "width": 44,
+                "height": 45,
+                "right": 374,
+                "bottom": 213.796875
+              }
+            }
+          ],
+          "status": {
+            "text": "Paused manually",
+            "box": {
+              "x": 124,
+              "y": 219.796875,
+              "width": 250,
+              "height": 36,
+              "right": 374,
+              "bottom": 255.796875
+            },
+            "textBox": {
+              "x": 124,
+              "y": 221.296875,
+              "right": 220.33984375,
+              "bottom": 236.296875,
+              "width": 96.33984375,
+              "height": 15
+            }
+          }
+        },
+        "identity": {
+          "url": "http://127.0.0.1:4173/",
+          "generation": "1",
+          "revision": "2500",
+          "step": "2500"
+        }
+      }
+    ],
+    "errors": []
+  }
+]

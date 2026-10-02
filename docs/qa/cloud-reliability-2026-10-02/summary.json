@@ -1,0 +1,1907 @@
+{
+  "application_commit": "a48ff98eb261688cab3a17975aa650df24195a45",
+  "modes": {
+    "visual-chromium": {
+      "stats": {
+        "startTime": "2026-10-02T19:55:55.754Z",
+        "duration": 37306.727000000006,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "title": "all twenty approved states, light",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "all twenty approved states, dark",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        }
+      ]
+    },
+    "visual-webkit": {
+      "stats": {
+        "startTime": "2026-10-02T19:56:33.827Z",
+        "duration": 60939.017,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "title": "all twenty approved states, light",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "all twenty approved states, dark",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        }
+      ]
+    },
+    "recovery": {
+      "stats": {
+        "startTime": "2026-10-02T19:58:40.210Z",
+        "duration": 3969.286,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "title": "@fault-enabled recovers from an injected startup failure",
+          "file": "worker-recovery.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "@fault-enabled recovers from an injected startup failure",
+          "file": "worker-recovery.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        }
+      ]
+    },
+    "fault-disabled": {
+      "stats": {
+        "startTime": "2026-10-02T19:58:55.977Z",
+        "duration": 3564.4,
+        "expected": 2,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "title": "@fault-disabled normal builds ignore the fault query",
+          "file": "worker-recovery.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "@fault-disabled normal builds ignore the fault query",
+          "file": "worker-recovery.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        }
+      ]
+    },
+    "subpath": {
+      "stats": {
+        "startTime": "2026-10-02T19:59:26.727Z",
+        "duration": 213741.833,
+        "expected": 156,
+        "skipped": 6,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "tests": [
+        {
+          "title": "320px neuron targets support keyboard selection without changing the model",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "390px evidence regions support native keyboard focus and horizontal scrolling",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "forced colors preserves distinct data legend colors and native control styling",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "320px neuron targets support keyboard selection without changing the model",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "390px evidence regions support native keyboard focus and horizontal scrolling",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "forced colors preserves distinct data legend colors and native control styling",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "has no serious or critical Axe violations",
+          "file": "accessibility.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "system light, live preference, override and persistence preserve model",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "system dark, live preference, override and persistence preserve model",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "theme remains usable when theme storage is denied",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "three setup sections retain raw drafts and accept one combined paused transaction",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "dirty navigation supports Stay, Discard, and Apply",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "XOR engine diagnostics retain paused identity and task-aware trace",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Three-Class engine diagnostics retain paused identity and task-aware trace",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Plane engine diagnostics retain paused identity and task-aware trace",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "export files roundtrip through staged review and invalid files preserve the model",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "code parameter snapshots cannot retain learned weights after a new recipe",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: XOR Needs Hidden Layers",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Single Neuron Linear Separator",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Regression Plane Baseline",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Circle With One Hidden Layer",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Feature Engineering Helps",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Spiral Needs Depth",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Learning Rate Tuning",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Regularization and Overfitting",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Noisy Data Robustness",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Three-Class Softmax Lab",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "system light, live preference, override and persistence preserve model",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "system dark, live preference, override and persistence preserve model",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "theme remains usable when theme storage is denied",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "three setup sections retain raw drafts and accept one combined paused transaction",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "dirty navigation supports Stay, Discard, and Apply",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "XOR engine diagnostics retain paused identity and task-aware trace",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Three-Class engine diagnostics retain paused identity and task-aware trace",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Plane engine diagnostics retain paused identity and task-aware trace",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "export files roundtrip through staged review and invalid files preserve the model",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "code parameter snapshots cannot retain learned weights after a new recipe",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: XOR Needs Hidden Layers",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Single Neuron Linear Separator",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Regression Plane Baseline",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Circle With One Hidden Layer",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Feature Engineering Helps",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Spiral Needs Depth",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Learning Rate Tuning",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Regularization and Overfitting",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Noisy Data Robustness",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "complete lesson journey: Three-Class Softmax Lab",
+          "file": "atelier-critical-flows.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "active lesson aligns with the workspace at 1440px in both themes",
+          "file": "atelier-guided-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "active lesson aligns with the workspace at 1280px in both themes",
+          "file": "atelier-guided-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "active lesson aligns with the workspace at 390px in both themes",
+          "file": "atelier-guided-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "active lesson aligns with the workspace at 1440px in both themes",
+          "file": "atelier-guided-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "active lesson aligns with the workspace at 1280px in both themes",
+          "file": "atelier-guided-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "active lesson aligns with the workspace at 390px in both themes",
+          "file": "atelier-guided-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "paused navigation refreshes all Circle with One Hidden Layer activation maps without a model update",
+          "file": "atelier-paused-visuals.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "paused navigation refreshes all Three-Class Softmax Lab activation maps without a model update",
+          "file": "atelier-paused-visuals.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "paused navigation refreshes all Circle with One Hidden Layer activation maps without a model update",
+          "file": "atelier-paused-visuals.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "paused navigation refreshes all Three-Class Softmax Lab activation maps without a model update",
+          "file": "atelier-paused-visuals.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "all twenty approved states, light",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "chromium",
+          "status": "skipped",
+          "outcomes": [
+            "skipped"
+          ]
+        },
+        {
+          "title": "all twenty approved states, dark",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "chromium",
+          "status": "skipped",
+          "outcomes": [
+            "skipped"
+          ]
+        },
+        {
+          "title": "all twenty approved states, light",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "webkit",
+          "status": "skipped",
+          "outcomes": [
+            "skipped"
+          ]
+        },
+        {
+          "title": "all twenty approved states, dark",
+          "file": "atelier-visual-evidence.spec.ts",
+          "project": "webkit",
+          "status": "skipped",
+          "outcomes": [
+            "skipped"
+          ]
+        },
+        {
+          "title": "record container-query coordinate spaces before and after document zoom",
+          "file": "container-zoom-coordinates.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "record container-query coordinate spaces before and after document zoom",
+          "file": "container-zoom-coordinates.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "non-isolated project hosting loads the real worker and publishes a paired manual step",
+          "file": "deployment-contract.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "project hosting resolves lazy evidence and reopens an unchanged shared recipe",
+          "file": "deployment-contract.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "non-isolated project hosting loads the real worker and publishes a paired manual step",
+          "file": "deployment-contract.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "project hosting resolves lazy evidence and reopens an unchanged shared recipe",
+          "file": "deployment-contract.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "bundled fonts load from the application origin before and after native reload",
+          "file": "font-delivery.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "bundled fonts load from the application origin before and after native reload",
+          "file": "font-delivery.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "skip-to-main keyboard preserves the experiment and trained snapshot",
+          "file": "navigation-integrity.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "skip-to-main pointer preserves the experiment and trained snapshot",
+          "file": "navigation-integrity.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "skip-to-main keyboard preserves the experiment and trained snapshot",
+          "file": "navigation-integrity.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "skip-to-main pointer preserves the experiment and trained snapshot",
+          "file": "navigation-integrity.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "training can pause, single-step, preview and restore the initial checkpoint",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical presets reset complete recipes and expose all multiclass cells",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "saved runs survive reload and explicitly reapply their complete recipe",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "cross-tab saved-run memory follows native localStorage events",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "paused scientific evidence, checkpoints, records and code preference survive all navigation and guidance",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 1440px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 1401px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 1280px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 950px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 901px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 800px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 390px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 320px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "reduced motion disables shell animation and transitions",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical concept help and keyboard shortcuts remain reachable at 1280px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical concept help and keyboard shortcuts remain reachable at 390px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical concept help and keyboard shortcuts remain reachable at 320px",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "training can pause, single-step, preview and restore the initial checkpoint",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical presets reset complete recipes and expose all multiclass cells",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "saved runs survive reload and explicitly reapply their complete recipe",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "cross-tab saved-run memory follows native localStorage events",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "paused scientific evidence, checkpoints, records and code preference survive all navigation and guidance",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 1440px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 1401px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 1280px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 950px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 901px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 800px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 390px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "global controls remain inside the header at 320px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "reduced motion disables shell animation and transitions",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical concept help and keyboard shortcuts remain reachable at 1280px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical concept help and keyboard shortcuts remain reachable at 390px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "canonical concept help and keyboard shortcuts remain reachable at 320px",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "graph, results, diagnostics, lessons and utilities remain reachable",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "graph, results, diagnostics, lessons and utilities remain reachable",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "graph, results, diagnostics, lessons and utilities remain reachable",
+          "file": "playground-smoke.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "graph, results, diagnostics, lessons and utilities remain reachable",
+          "file": "playground-smoke.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Neuron selection preserves scientific state at 1437px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Neuron selection preserves scientific state at 735px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Neuron selection preserves scientific state at 320px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Save retry and download retain the exact artifact across recipe change and navigation at 1437px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Save retry and download retain the exact artifact across recipe change and navigation at 320px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Neuron selection preserves scientific state at 1437px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Neuron selection preserves scientific state at 735px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Neuron selection preserves scientific state at 320px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Save retry and download retain the exact artifact across recipe change and navigation at 1437px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Save retry and download retain the exact artifact across recipe change and navigation at 320px",
+          "file": "precision-acceptance.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "utility dialogs remain reachable beneath the modal layer with a wrapping header",
+          "file": "precision-drawer.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "utility dialogs remain reachable beneath the modal layer with a wrapping header",
+          "file": "precision-drawer.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "first-visit lesson invitation works at 1280x720",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "first-visit lesson invitation works at 1437x742",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "first-visit lesson invitation works at 390x844",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 1440x900",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 1024x900",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 768x900",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 390x844",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 360x800",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "first-visit lesson invitation works at 1280x720",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "first-visit lesson invitation works at 1437x742",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "first-visit lesson invitation works at 390x844",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 1440x900",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 1024x900",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 768x900",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 390x844",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "visible graph artifacts and training layout stay stable at 360x800",
+          "file": "precision-lab-layout.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Signal Atelier retains readable reflow and usable controls at 200% document zoom in Setup",
+          "file": "precision-zoom.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Signal Atelier retains readable reflow and usable controls at 200% document zoom in Network",
+          "file": "precision-zoom.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "phone transport and setup actions remain reachable without covering the form across viewport changes",
+          "file": "precision-zoom.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Signal Atelier retains readable reflow and usable controls at 200% document zoom in Setup",
+          "file": "precision-zoom.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "Signal Atelier retains readable reflow and usable controls at 200% document zoom in Network",
+          "file": "precision-zoom.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "phone transport and setup actions remain reachable without covering the form across viewport changes",
+          "file": "precision-zoom.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "two tabs preserve both saves when a stale save is delayed during validation",
+          "file": "saved-run-concurrency.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "a second tab waits while the first writer validates its envelope under the origin lock",
+          "file": "saved-run-concurrency.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "two tabs preserve both saves when a stale save is delayed during validation",
+          "file": "saved-run-concurrency.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "a second tab waits while the first writer validates its envelope under the origin lock",
+          "file": "saved-run-concurrency.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "@fault-enabled recovers from an injected startup failure",
+          "file": "worker-recovery.spec.ts",
+          "project": "chromium",
+          "status": "skipped",
+          "outcomes": [
+            "skipped"
+          ]
+        },
+        {
+          "title": "@fault-disabled normal builds ignore the fault query",
+          "file": "worker-recovery.spec.ts",
+          "project": "chromium",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        },
+        {
+          "title": "@fault-enabled recovers from an injected startup failure",
+          "file": "worker-recovery.spec.ts",
+          "project": "webkit",
+          "status": "skipped",
+          "outcomes": [
+            "skipped"
+          ]
+        },
+        {
+          "title": "@fault-disabled normal builds ignore the fault query",
+          "file": "worker-recovery.spec.ts",
+          "project": "webkit",
+          "status": "expected",
+          "outcomes": [
+            "passed"
+          ]
+        }
+      ]
+    }
+  },
+  "hosting_tests": [
+    {
+      "title": "non-isolated project hosting loads the real worker and publishes a paired manual step",
+      "file": "deployment-contract.spec.ts",
+      "project": "chromium",
+      "status": "expected",
+      "outcomes": [
+        "passed"
+      ]
+    },
+    {
+      "title": "project hosting resolves lazy evidence and reopens an unchanged shared recipe",
+      "file": "deployment-contract.spec.ts",
+      "project": "chromium",
+      "status": "expected",
+      "outcomes": [
+        "passed"
+      ]
+    },
+    {
+      "title": "non-isolated project hosting loads the real worker and publishes a paired manual step",
+      "file": "deployment-contract.spec.ts",
+      "project": "webkit",
+      "status": "expected",
+      "outcomes": [
+        "passed"
+      ]
+    },
+    {
+      "title": "project hosting resolves lazy evidence and reopens an unchanged shared recipe",
+      "file": "deployment-contract.spec.ts",
+      "project": "webkit",
+      "status": "expected",
+      "outcomes": [
+        "passed"
+      ]
+    }
+  ],
+  "command_receipts": {
+    "normal-bundle": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "pnpm",
+        "test:bundle"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "subpath": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "env",
+        "-u",
+        "PLAYWRIGHT_PORT",
+        "PLAYWRIGHT_BASE_URL=http://127.0.0.1:4174/neural-network-playground/",
+        "pnpm",
+        "test:e2e",
+        "--workers=2",
+        "--max-failures=5"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "visual-chromium": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "env",
+        "ATELIER_VISUAL_EVIDENCE=1",
+        "ATELIER_VISUAL_OUTPUT=/workspace/outputs/cloud-reliability/chromium",
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "tests/e2e/atelier-visual-evidence.spec.ts",
+        "--project=chromium",
+        "--workers=1"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "capture-build": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "env",
+        "-u",
+        "VITE_E2E_FAULTS",
+        "pnpm",
+        "build"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "visual-webkit": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "env",
+        "ATELIER_VISUAL_EVIDENCE=1",
+        "ATELIER_VISUAL_OUTPUT=/workspace/outputs/cloud-reliability/webkit",
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "tests/e2e/atelier-visual-evidence.spec.ts",
+        "--project=webkit",
+        "--workers=1"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "recovery-rebuild": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "env",
+        "-u",
+        "VITE_E2E_FAULTS",
+        "pnpm",
+        "build"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "focused-probes": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "node",
+        "/workspace/outputs/cloud-reliability/probe.mjs"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "fault-disabled": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "tests/e2e/worker-recovery.spec.ts",
+        "--grep",
+        "@fault-disabled",
+        "--workers=2"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "recovery": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": false
+      },
+      "command": [
+        "pnpm",
+        "test:e2e:recovery"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "focus-fault-build": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": true
+      },
+      "command": [
+        "pnpm",
+        "build:e2e"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "review-normal-bundle": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": true
+      },
+      "command": [
+        "pnpm",
+        "test:bundle"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "review-fault-disabled": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": true
+      },
+      "command": [
+        "pnpm",
+        "exec",
+        "playwright",
+        "test",
+        "tests/e2e/worker-recovery.spec.ts",
+        "--grep",
+        "@fault-disabled",
+        "--workers=2"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "review-normal-rebuild": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": true
+      },
+      "command": [
+        "env",
+        "-u",
+        "VITE_E2E_FAULTS",
+        "pnpm",
+        "build"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "running-status": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": true
+      },
+      "command": [
+        "node",
+        "/workspace/outputs/cloud-reliability/running-status.mjs"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    },
+    "recovery-focus": {
+      "source": {
+        "sha": "a48ff98eb261688cab3a17975aa650df24195a45",
+        "tree": "8467c7c7462eebe5f6e1c9bf554449dc57869e66",
+        "trackedChanges": true
+      },
+      "command": [
+        "node",
+        "/workspace/outputs/cloud-reliability/recovery-focus.mjs"
+      ],
+      "status": "passed",
+      "exitCode": 0
+    }
+  },
+  "review_supplements": {
+    "recovery_focus": [
+      {
+        "engine": "chromium",
+        "focusBeforeAnyPostReloadClick": {
+          "tag": "BODY",
+          "id": "",
+          "inert": false
+        },
+        "firstTab": "Skip to main content",
+        "realStep": 1
+      },
+      {
+        "engine": "webkit",
+        "focusBeforeAnyPostReloadClick": {
+          "tag": "BODY",
+          "id": "",
+          "inert": false
+        },
+        "firstTab": "Skip to main content",
+        "realStep": 1
+      }
+    ],
+    "running_status_cases": 12,
+    "final_fault_disabled_stats": {
+      "startTime": "2026-10-02T20:06:57.727Z",
+      "duration": 3484.642,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "staged_changes": "Documentation and evidence only; application source unchanged."
+  }
+}
