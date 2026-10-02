@@ -1,6 +1,6 @@
 import { StrictMode, type ReactNode } from 'react';
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import {
     EXPERIMENT_MEMORY_STORAGE_KEY,
     LEGACY_EXPERIMENT_MEMORY_STORAGE_KEY,
@@ -18,7 +18,7 @@ function dispatchStorage(key: string | null, storageArea: Storage | null): void 
 
 describe('useExperimentMemoryStorageSync', () => {
     const originalHydrate = useExperimentMemoryStore.getState().hydrate;
-    let hydrate: ReturnType<typeof vi.fn>;
+    let hydrate: Mock<() => Promise<void>>;
 
     beforeEach(() => {
         hydrate = vi.fn().mockResolvedValue(undefined);

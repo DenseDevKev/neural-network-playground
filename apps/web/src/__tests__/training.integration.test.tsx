@@ -2,7 +2,7 @@
 // Exercises the training loop pipeline through a mocked workerBridge,
 // driving synthetic snapshots and asserting store updates.
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App';
 import { useTrainingStore } from '../store/useTrainingStore';
@@ -20,11 +20,11 @@ import { getDatasetContract } from '@nn-playground/engine';
 // ── Fake workerBridge ──
 
 let capturedOnSnapshot: ((msg: unknown) => void) | null = null;
-let fakeTerminateWorker: ReturnType<typeof vi.fn>;
-let fakePostStreamCommand: ReturnType<typeof vi.fn>;
-let fakeStartRenderLoop: ReturnType<typeof vi.fn>;
-let fakeStopRenderLoop: ReturnType<typeof vi.fn>;
-let fakeNewRunTo: ReturnType<typeof vi.fn>;
+let fakeTerminateWorker: Mock<(...args: unknown[]) => unknown>;
+let fakePostStreamCommand: Mock<(...args: unknown[]) => unknown>;
+let fakeStartRenderLoop: Mock<(...args: unknown[]) => unknown>;
+let fakeStopRenderLoop: Mock<(...args: unknown[]) => unknown>;
+let fakeNewRunTo: Mock<(...args: unknown[]) => unknown>;
 
 const INITIAL_ACCESS = usePlaygroundStore.getState().access;
 if (INITIAL_ACCESS.status !== 'ready') throw new Error('missing integration prepared fixture');
