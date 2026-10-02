@@ -185,8 +185,4 @@ export class ExperimentRequestGate {
             value: committed,
         };
     }
-
-    getLatestRequestId(): number {
-        return this.latestRequestId;
-    }
 }
