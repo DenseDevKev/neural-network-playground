@@ -6,8 +6,7 @@ Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
 Space Grotesk — @fontsource/space-grotesk 5.3.0
 Copyright 2020 The Space Grotesk Project Authors (https://github.com/floriankarsten/space-grotesk)
 
-Both font families are distributed under the following license. Fonts remain
-under this license rather than the application's Apache-2.0 license.
+Both font families are distributed under the following SIL Open Font License.
 Upstream notices: google/fonts ofl/inter/OFL.txt and ofl/spacegrotesk/OFL.txt.
 
 -----------------------------------------------------------

@@ -171,8 +171,7 @@ served from the application origin. Native reloads must not depend on Google
 Fonts or weaken cross-origin isolation. The original families and requested
 weights remain; the production build includes `font-licenses.txt`.
 
-## 📄 License
+## Credits
 
-Application code: [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0).
 Fonts retain their [SIL Open Font License notices](apps/web/public/font-licenses.txt).
 Inspired by [TensorFlow Playground](https://github.com/tensorflow/playground) by Daniel Smilkov & Shan Carter.
