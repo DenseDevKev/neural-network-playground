@@ -188,6 +188,56 @@ test('code parameter snapshots cannot retain learned weights after a new recipe'
     await expect(page.locator('.code-export__code')).toContainText(/linear|regression/i);
 });
 
+for (const decision of ['no draft', 'Stay', 'Discard changes', 'Apply changes'] as const) {
+    test(`Share setup targets sharing after Code with ${decision}`, async ({ page }) => {
+        await page.getByRole('button', { name: 'Run one training step' }).click();
+        await expect(transport(page)).toHaveAttribute('data-model-step', '1');
+        await utility(page, 'Export / import');
+        await page.getByRole('tab', { name: 'Code', exact: true }).click();
+        await page.getByRole('tab', { name: 'TF.js', exact: true }).click();
+        await page.getByRole('button', { name: 'Close Export / import', exact: true }).click();
+        // Generic Utilities access keeps the selected export tab and language.
+        await utility(page, 'Export / import');
+        await expect(page.getByRole('tab', { name: 'Code', exact: true })).toHaveAttribute('aria-selected', 'true');
+        await expect(page.getByRole('tab', { name: 'TF.js', exact: true })).toHaveAttribute('aria-selected', 'true');
+        await page.getByRole('button', { name: 'Close Export / import', exact: true }).click();
+        await workspace(page, 'Setup');
+        await setupSection(page, 'Data').click();
+        const seed = page.getByLabel('Data seed', { exact: true });
+        const originalSeed = await seed.inputValue();
+        const changedSeed = String(Number(originalSeed) + 1);
+        if (decision !== 'no draft') await seed.fill(changedSeed);
+        const before = await identity(page);
+
+        await page.getByRole('button', { name: 'Share setup', exact: true }).click();
+        if (decision !== 'no draft') {
+            const guard = page.getByRole('alertdialog', { name: 'Apply your setup changes?' });
+            await expect(guard).toBeVisible();
+            await guard.getByRole('button', { name: decision, exact: true }).click();
+            await expect(guard).toBeHidden();
+        }
+        if (decision === 'Stay') {
+            await expect(seed).toHaveValue(changedSeed);
+            expect(await identity(page)).toEqual(before);
+            await expect(page.getByRole('dialog', { name: 'Export / import' })).toHaveCount(0);
+            await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+            await utility(page, 'Export / import');
+            await expect(page.getByRole('tab', { name: 'Code', exact: true })).toHaveAttribute('aria-selected', 'true');
+        } else {
+            await expect(page.getByRole('tab', { name: 'Setup & sharing', exact: true })).toHaveAttribute('aria-selected', 'true');
+            await expect(page.getByRole('button', { name: 'Copy setup link', exact: true })).toBeVisible();
+            if (decision === 'Apply changes') {
+                await expect(transport(page)).toHaveAttribute('data-model-generation', String(Number(before.generation) + 1));
+                await expect(transport(page)).toHaveAttribute('data-model-step', '0');
+            } else expect(await identity(page)).toEqual(before);
+            await page.getByRole('tab', { name: 'Code', exact: true }).click();
+        }
+        await expect(page.getByRole('tab', { name: 'TF.js', exact: true })).toHaveAttribute('aria-selected', 'true');
+        await page.getByRole('button', { name: 'Close Export / import', exact: true }).click();
+        await expect(seed).toHaveValue(decision === 'Apply changes' ? changedSeed : originalSeed);
+    });
+}
+
 for (const lesson of LESSON_DEFINITIONS as readonly LessonDefinition[]) {
     test(`complete lesson journey: ${lesson.title}`, async ({ page }) => {
         await page.getByRole('button', { name: 'Lessons', exact: true }).click();

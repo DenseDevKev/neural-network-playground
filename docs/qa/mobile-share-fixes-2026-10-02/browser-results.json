@@ -1,0 +1,70 @@
+{
+  "red": {
+    "startTime": "2026-10-02T21:10:57.045Z",
+    "duration": 48999.880000000005,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 10,
+    "flaky": 0,
+    "skippedTests": []
+  },
+  "green": {
+    "startTime": "2026-10-02T21:12:23.517Z",
+    "duration": 25216.448,
+    "expected": 12,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0,
+    "skippedTests": []
+  },
+  "full": {
+    "startTime": "2026-10-02T21:13:29.009Z",
+    "duration": 252544.301,
+    "expected": 164,
+    "skipped": 10,
+    "unexpected": 0,
+    "flaky": 0,
+    "skippedTests": [
+      {
+        "project": "chromium",
+        "title": "all twenty approved states, light"
+      },
+      {
+        "project": "chromium",
+        "title": "all twenty approved states, dark"
+      },
+      {
+        "project": "webkit",
+        "title": "all twenty approved states, light"
+      },
+      {
+        "project": "webkit",
+        "title": "all twenty approved states, dark"
+      },
+      {
+        "project": "chromium",
+        "title": "non-isolated project hosting loads the real worker and publishes a paired manual step"
+      },
+      {
+        "project": "chromium",
+        "title": "project hosting resolves lazy evidence and reopens an unchanged shared recipe"
+      },
+      {
+        "project": "webkit",
+        "title": "non-isolated project hosting loads the real worker and publishes a paired manual step"
+      },
+      {
+        "project": "webkit",
+        "title": "project hosting resolves lazy evidence and reopens an unchanged shared recipe"
+      },
+      {
+        "project": "chromium",
+        "title": "@fault-enabled recovers from an injected startup failure"
+      },
+      {
+        "project": "webkit",
+        "title": "@fault-enabled recovers from an injected startup failure"
+      }
+    ]
+  }
+}

@@ -18,7 +18,9 @@ Use installed Inter for text and Space Grotesk for numeric evidence. Body 16px, 
 
 Desktop from 1200px uses horizontal experiment composition. From 760–1199px, supporting regions stack around a dedicated graph. Below 760px, Data, Network and Prediction use focused region tabs; graph/table overflow stays local. Controls have 44px targets, safe-area padding, visible keyboard focus, and respect reduced motion and forced colors.
 
-One modal owns focus at a time. Escape dismisses the innermost dismissible surface. Essential errors persist beside their actions; transient status is reserved for acknowledgements. Setup changes have a shared Apply changes / Cancel footer and a guarded exit. Numeric drafts may be incomplete; canonical candidate validation determines whether they can apply.
+Compact training controls keep the 44px action row, give Step and Epoch room across multiple columns, and place status on its own full-width row. Complete metric values remain visible as their digit counts grow; the status row reserves space while running and paused.
+
+One modal owns focus at a time. Escape dismisses the innermost dismissible surface. Essential errors persist beside their actions; transient status is reserved for acknowledgements. Setup changes have a shared Apply changes / Cancel footer and a guarded exit. Numeric drafts may be incomplete; canonical candidate validation determines whether they can apply. Share setup explicitly selects Setup & sharing only after that guard succeeds; generic Export / import access retains its last selected tab and code format.
 
 Every visual acceptance capture must use deterministic recipes and real engine output. Reference accuracy values must never become fixture UI data. Review light/dark captures at 1440/1280/1024/768/390/360px, breakpoint boundaries, landscape and 200% zoom before creating screenshot baselines.
 

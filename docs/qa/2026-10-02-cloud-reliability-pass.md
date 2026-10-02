@@ -1,6 +1,8 @@
 # Cloud reliability and browser evidence — October 2, 2026
 
-Executed the [cloud reliability plan](../superpowers/plans/2026-10-02-cloud-reliability-pass.md) against application commit `a48ff98eb261688cab3a17975aa650df24195a45`, freshly confirmed against `origin/main`. Application source, tests, manifests, and lockfile are unchanged. This pass adds evidence and fix scopes; the two reproduced issues below remain unfixed.
+**Follow-up:** Both findings below are now fixed and verified in a [subsequent implementation pass](2026-10-02-mobile-share-fixes.md). The original baseline evidence and proposed scopes are preserved below.
+
+Executed the [cloud reliability plan](../superpowers/plans/2026-10-02-cloud-reliability-pass.md) against application commit `a48ff98eb261688cab3a17975aa650df24195a45`, freshly confirmed against `origin/main`. Application source, tests, manifests, and lockfile were unchanged during this pass. This pass added evidence and fix scopes; the two reproduced issues below were unfixed at that baseline.
 
 ## Results
 
@@ -74,4 +76,4 @@ An Astra reviewer checked the report against raw screenshots, Playwright results
 - No performance qualification is claimed. The existing five-pair same-host reference policy remains the requirement for such a claim.
 - The historical favicon defect is already fixed in the tested main. Historical bundle headroom and old unexecuted checkboxes were not treated as current findings.
 - Skill helper resources were unavailable and the checklist tool rejected this session mode, so the execution ledger uses explicit task records and the repository's command-receipt wrapper. This reduces bookkeeping automation, not browser assertions.
-- Scope remains the approved verification/reporting plan: preserve raw evidence and produce fix scopes. The two defects need a subsequent implementation pass; no source changes or new publication were included.
+- Scope remained the approved verification/reporting plan: preserve raw evidence and produce fix scopes. No source changes or new publication were included in this pass; the subsequent implementation is linked above.

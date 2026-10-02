@@ -122,6 +122,7 @@ function AtelierShell() {
         const action = () => setUtility(surface);
         if (surface === 'exports') guard(action); else action();
     };
+    const shareSetup = () => guard(() => { setExportTab('setup'); setUtility('exports'); });
     useEffect(() => { if (destination === 'saved-runs') setSavedVisited(true); if (destination === 'lessons') setLessonsVisited(true); }, [destination]);
 
     const regression = prepared?.document.recipe.task.kind === 'regression';
@@ -173,7 +174,7 @@ function AtelierShell() {
         <AccessibilityAnnouncer status={status} pauseReason={pauseReason} workerError={workerError} pendingConfigSource={pendingConfigSource} configError={configError} configErrorSource={configErrorSource} evidenceGenerationId={evidenceGenerationId} trainedRecipe={trainedRecipe} trainedRecipeSource={trainedRecipeSource} />
         <AtelierHeader destination={destination} onNavigate={(next) => navigate(next)} onUtility={openUtility} />
         <main data-guided={activeLessonId && destination === 'playground' ? 'true' : undefined} id="main-content" tabIndex={-1} className="atelier-main" aria-label="Neural network playground workspace">
-            <div className="atelier-heading"><div><h1>{heading}</h1><p>{description}</p></div>{destination === 'playground' && <div className="atelier-heading-actions"><button type="button" onClick={() => openUtility('exports')}>Share setup</button><button type="button" onClick={() => navigate('saved-runs')}>Save run</button></div>}</div>
+            <div className="atelier-heading"><div><h1>{heading}</h1><p>{description}</p></div>{destination === 'playground' && <div className="atelier-heading-actions"><button type="button" onClick={shareSetup}>Share setup</button><button type="button" onClick={() => navigate('saved-runs')}>Save run</button></div>}</div>
             {configError && <div className="atelier-notice" role="alert"><p>{configError}</p><button type="button" onClick={() => useTrainingStore.getState().retryConfigSync()}>Retry configuration</button></div>}
             <AtelierTransport training={training} onCheckpoints={() => openUtility('checkpoints')} />
             <div className="atelier-workspace-layout">

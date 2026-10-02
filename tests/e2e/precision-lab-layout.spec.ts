@@ -18,6 +18,64 @@ async function expectControlContained(control: Locator, container: Locator, labe
     expect(box!.height).toBeGreaterThanOrEqual(44);
 }
 
+async function expectReadableTransport(page: Page) {
+    const geometry = await transport(page).evaluate((element) => {
+        const targets = [...element.querySelectorAll('.atelier-transport-position > div'), element.querySelector('.atelier-transport-status')!];
+        const text = targets.map((target) => {
+            const range = document.createRange();
+            range.selectNodeContents(target);
+            return { label: target.textContent, rects: [...range.getClientRects()].map((rect) => rect.toJSON()) };
+        });
+        const status = targets[2];
+        return { text, statusOverflow: { x: status.scrollWidth - status.clientWidth, y: status.scrollHeight - status.clientHeight } };
+    });
+    for (let i = 0; i < geometry.text.length; i++) for (let j = i + 1; j < geometry.text.length; j++) {
+        const first = geometry.text[i]; const second = geometry.text[j];
+        for (const a of first.rects) for (const b of second.rects) {
+            const overlaps = Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5
+                && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+            expect(overlaps, `${first.label} overlaps ${second.label}`).toBe(false);
+        }
+    }
+    expect(geometry.statusOverflow.x).toBeLessThanOrEqual(1);
+    expect(geometry.statusOverflow.y).toBeLessThanOrEqual(1);
+    for (const control of await transport(page).locator('button, select').all()) {
+        await expectControlContained(control, transport(page), await control.getAttribute('aria-label') ?? 'Transport control');
+        expect((await control.boundingBox())!.width).toBeGreaterThanOrEqual(44);
+    }
+    for (const overrun of Object.values(await horizontalOverflow(page))) expect(overrun).toBeLessThanOrEqual(1);
+}
+
+for (const theme of ['light', 'dark'] as const) {
+    test(`phone training metrics stay readable with long values in ${theme}`, async ({ page }, info) => {
+        await page.setViewportSize({ width: 320, height: 844 });
+        await page.goto('./'); await ready(page);
+        await page.getByLabel('Color theme').selectOption(theme);
+        await workspace(page, 'Results');
+        await page.getByLabel('Steps per frame').selectOption('50');
+        await page.getByRole('button', { name: 'Start training', exact: true }).click();
+        await expect.poll(async () => Number(await transport(page).getAttribute('data-model-step'))).toBeGreaterThanOrEqual(1500);
+        await expect.poll(async () => Number(await page.locator('.atelier-transport-position > div').nth(1).locator('strong').textContent())).toBeGreaterThanOrEqual(100);
+        for (const width of [320, 360, 390]) {
+            await page.setViewportSize({ width, height: 844 });
+            await expect(transport(page)).toHaveAttribute('data-status', 'running');
+            await expectReadableTransport(page);
+        }
+        await page.getByRole('button', { name: 'Pause training', exact: true }).click();
+        await expect(transport(page)).toHaveAttribute('data-status', 'paused');
+        const paused = await identity(page);
+        for (const width of [320, 360, 390]) {
+            await page.setViewportSize({ width, height: 844 });
+            for (const view of ['Results', 'Setup'] as const) {
+                await workspace(page, view);
+                await expectReadableTransport(page);
+                expect(await identity(page)).toEqual(paused);
+            }
+        }
+        await info.attach('phone-transport', { body: await transport(page).screenshot(), contentType: 'image/png' });
+    });
+}
+
 for (const viewport of [{ width: 1280, height: 720 }, { width: 1437, height: 742 }, { width: 390, height: 844 }]) {
     test(`first-visit lesson invitation works at ${viewport.width}x${viewport.height}`, async ({ page }) => {
         await page.setViewportSize(viewport);
