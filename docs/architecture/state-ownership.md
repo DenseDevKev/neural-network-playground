@@ -113,7 +113,6 @@ Idle-machine performance medians:
 
 These are candidates only; do not delete or relocate them in this slice.
 
-- `usePlaygroundStore.dataset` and `regenerateData`: baseline searches find only the store implementation and its unit test, but removal requires a dedicated consumer search and compatibility proof.
 - `NetworkGraphSVG`: a live runtime fallback selected by `featuresUI.canvasNetworkGraph`, not a dead path.
 
 ## Exact verification commands

@@ -1112,15 +1112,18 @@ export function useTraining(): TrainingHook {
             );
             return;
         }
-        const fault = consumeE2EWorkerFault(
-            new URL(window.location.href),
-            window.sessionStorage,
-            import.meta.env.VITE_E2E_FAULTS === '1',
-        );
-        if (fault === 'startup-once') {
-            e2eStartupFaultActiveRef.current = true;
-            queueMicrotask(() => emitE2EWorkerError(E2E_WORKER_FAULT_MESSAGE));
-            return;
+        // Build-time guard: production bundles drop the fault-injection helpers.
+        if (import.meta.env.VITE_E2E_FAULTS === '1') {
+            const fault = consumeE2EWorkerFault(
+                new URL(window.location.href),
+                window.sessionStorage,
+                true,
+            );
+            if (fault === 'startup-once') {
+                e2eStartupFaultActiveRef.current = true;
+                queueMicrotask(() => emitE2EWorkerError(E2E_WORKER_FAULT_MESSAGE));
+                return;
+            }
         }
         initializeWorker(prepared).catch((error) => {
             reportWorkerError(error, 'Failed to initialize training worker.');

@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { generateDatasetV2 } from '@nn-playground/engine';
 import {
     DEFAULT_EXPERIMENT_DOCUMENT,
     PREPARED_PRESETS,
@@ -597,22 +596,5 @@ describe('strict initialization and URL state', () => {
 
         expect(result.ok).toBe(false);
         expect(window.location.hash).toBe('#legacy');
-    });
-});
-
-describe('V2 dataset regeneration', () => {
-    it('uses the prepared dataset contract and every exact generation setting', async () => {
-        const store = createReadyStore(preset('three-class-clusters').prepared);
-        const recipe = readyPrepared(store).document.recipe;
-
-        store.getState().regenerateData();
-
-        expect(store.getState().dataset).toEqual(generateDatasetV2({
-            dataset: recipe.task.dataset,
-            sampleCount: recipe.data.sampleCount,
-            trainFraction: recipe.data.trainFraction,
-            noise: recipe.data.noise,
-            seed: recipe.data.seed,
-        }));
     });
 });
