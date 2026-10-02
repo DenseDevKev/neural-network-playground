@@ -20,9 +20,26 @@ The completion candidate fixes saved-run concurrency and destructive-cleanup ide
 
 # 0. Control state
 
+## October 2026 reconciliation (2026-10-02) — current control state
+
+This block supersedes every present-tense statement in the historical September blocks below. Those blocks are preserved as receipts.
+
+- Authority: `main` at `ec3a6194b1714ceb9cad1ad996300f52a8b91c2d` (a documentation-only commit that follows the PR #39 merge; it removes `FEATURE_BRAINSTORM.md`).
+- Merged work: [PR #36](https://github.com/DenseDevKev/neural-network-playground/pull/36) (Precision Lab completion, merge `1a68f8d`), PR #37 (lesson-cue containment, merge `e4d8142`), [PR #38](https://github.com/DenseDevKev/neural-network-playground/pull/38) (Signal Atelier redesign, merge `7e1a6d6`) and [PR #39](https://github.com/DenseDevKev/neural-network-playground/pull/39) (cold-load dialog focus and saved-recipe acceptance timing, merge `38bd4d98a79ddcb8efe6a4dff475f0d6ce1fd8df`; qualified source `4f7e83e4e327381a985efdd4af43984c8c229a37` is reported tree-identical to that merge).
+- Current presentation: `App.tsx` defines `AtelierShell`. `PrecisionLabShell` and `precisionLab.css` no longer exist on `main`; the Precision Lab shell is **superseded by Signal Atelier**. The experiment/training/evidence contracts and invariants above are unchanged.
+- PR #39 receipts (as reported in the PR description): [PR CI `34697473097`](https://github.com/DenseDevKev/neural-network-playground/actions/runs/34697473097), [six exact-source release jobs `34697489874`](https://github.com/DenseDevKev/neural-network-playground/actions/runs/34697489874), [main CI `34698166259`](https://github.com/DenseDevKev/neural-network-playground/actions/runs/34698166259), [main qualification `34698166255`](https://github.com/DenseDevKev/neural-network-playground/actions/runs/34698166255), [Deploy to GitHub Pages `34698692211`](https://github.com/DenseDevKev/neural-network-playground/actions/runs/34698692211). The Pages run was independently read through the GitHub API on 2026-10-02: workflow `Deploy to GitHub Pages`, run number 53 attempt 1, event `workflow_run`, branch `main`, head `38bd4d98...`, conclusion `success`.
+- PR #39 reported test totals: 156 infrastructure and 1,836 unit tests; Chromium/WebKit preview 152 passed with 10 intentional skips; project-subpath suite 156 passed with 6 intentional skips; public run 153 passed with 6 skips plus 3 initial-load network interruptions that passed focused replay (a full run plus replay, not a clean single full run).
+- JavaScript gzip at that merge (unchanged limits): entry 150,841 of 152,245; inspection 6,591 of 7,373; total 234,088 of 234,161, leaving 73 bytes of total headroom. Initial CSS grew by 1,290 gzip bytes.
+- [!] Owner confirmation needed: the R7 live-deployment boxes in section 10 stay unticked. The successful Pages run and the PR's public-acceptance narrative are recorded above, but this repository contains no committed deployment receipt naming the actual `page_url`, deployed artifact digest, or the live Chromium/WebKit results, and the PR text is not an independent record. The owner should confirm the PR #39 deployment receipt (and the live URL) before section 10 is ticked.
+- Sections 13–16 (P2–P5) were reconciled on 2026-10-02: boxes that were open only because the Precision Lab acceptance record was never finalized are ticked below only where a named test or e2e spec exists on `main`; Precision Lab shell-specific items are marked `[-] superseded by Signal Atelier`.
+- The post-release evaluation required by section 20 is written up in [docs/qa/2026-10-post-release-evaluation.md](docs/qa/2026-10-post-release-evaluation.md). Agent walkthroughs there are not real-usage evidence.
+- Bundle-size and test-runner-upgrade work proceeds in parallel branches; their results belong in their own PRs, not in this block.
+
+**Historical statements follow.** Where they say Precision Lab was not merged, Pages was not deployed, or the active branch is `codex/nn-forge-precision-lab`, they describe September 10–11 and are no longer current.
+
 **Historical qualification state — September 11, 2026:** exact tested product head `fcc382658396defa1a19c3a5543478ebe6b0986f`, tree `e74b3561f2287d3f921851bb877686dbd0cca83a`, passed all six required jobs on attempt 2 of exact-head run `34543410273`: source evidence, focused correctness/build/bundle, preview browsers, project-subpath browsers, recovery and accepted five-pair performance. The owner changed the repository from private to public before the bounded rerun; standard GitHub-hosted runners then started normally, removing the earlier account billing/spend-limit startup block. Preview passed 82 tests with 6 intentional mode skips; subpath passed 86 with 2 intentional mode skips; both reported zero unexpected and zero flaky tests. Recovery passed both fault-enabled tests and both clean-build fault-disabled tests. No additional product correction was needed after `6f478eae8a390e5a0c5d0ea80263198b10c66ddd`. Sections 28–29 preserve the historical failures and current evidence. A documentation-only closure commit created from this record must receive its own exact-head run before it becomes the final qualified branch head.
 
-**Reconciled September 10, 2026 against GitHub refs and exact-source CI. Sections explicitly marked historical are receipts, not current acceptance.**
+**Historical reconciliation, September 10, 2026, against GitHub refs and exact-source CI. Sections explicitly marked historical are receipts, not current acceptance.**
 
 - Repository: `DenseDevKev/neural-network-playground` (public as of the September 11 bounded rerun; visibility was changed by the owner, not by the qualification agent).
 - Product authority: `main` at `98f29b86e469a2a545be75928ae6f32309fd1582`.
@@ -32,8 +49,8 @@ The completion candidate fixes saved-run concurrency and destructive-cleanup ide
 - Maintenance intake: `6de861dd4e00f3223ec8985a0b6c00bdbfa7abe9`, tree `12a57ef8e463e7386c687b602f2501de088d798c`.
 - Historical maintenance implementation: `7ec856a39079141a040624e9fe2927218e0db8f8`, tree `4447aed98747a411e9fef2211cb2785de1c2bde6`. Maintenance documentation closure was `679789d5`; later qualification candidates are recorded in section 28.
 - Exact-source maintenance CI receipt: `5092ee69abc8714ff906d5d63bbd5b5263f62368`, run `34529946854`; correctness, types, lint, build, recovery and accepted reference performance pass. The total-JavaScript guard failed in that historical maintenance run; it passes on the later `6bd20da6` intake run recorded in section 28. `7ec856a3` only tightens reporting source-tree validation; its documentation-head CI is inspected separately.
-- Main composition: accepted Build/Run presentation. Active-branch composition: **PrecisionLabShell already integrated**, not a future shell.
-- Precision Lab merged to main: **no**. Successful Pages deployment: **no**.
+- (Historical, September 10) Main composition then: accepted Build/Run presentation. Active-branch composition then: `PrecisionLabShell`; that shell has since been replaced by `AtelierShell` on `main`.
+- (Historical, September 10; superseded by the October 2026 reconciliation above) Precision Lab merged to main: **no**. Successful Pages deployment: **no**.
 - Continuation implementation is **committed on the active GitHub branch**: 32 non-workflow files at `20831874d436aac55c3c100ffe84949e967e8a37`, qualification workflow at `3b567950d3c725e5dc2856b4331813db26edba39`, and targeted browser corrections at `950142880d11e78d58eaa271904c6c8a4d2facb9`.
 - Historical browser-fix qualification: code `88e107a9` passed run `34410864082`. Later selection/zoom additions and graph-control correction reached intake `6de861dd`; run `34522259192` failed preview/subpath and bundle while correctness, recovery and the accepted performance comparison passed. Do not carry the older green browser receipt onto this newer candidate.
 - Maintenance scope is closed by section 27 and `docs/maintenance/2026-09-10-review.md`; Precision Lab release acceptance remains open. No inherited acceptance failure is waived.
@@ -339,10 +356,12 @@ Evidence: current GitHub ref, merge commit and main Actions run read through the
 
 # 10. R7 — Live deployment
 
-**[!] Repository-settings blocker remains.** Deployment run `34002943565` at accepted main failed. There is no successful Pages receipt or verified live URL. Do not change repository visibility, claim a deployment, or interpret settings failure as a product regression. This continuation makes no deployment changes.
+**[!] Historical (September 6–11) blocker; see the October 2026 reconciliation for the PR #39 Pages run, whose receipt the owner must still confirm.** Original text: **Repository-settings blocker remains.** Deployment run `34002943565` at accepted main failed. There is no successful Pages receipt or verified live URL. Do not change repository visibility, claim a deployment, or interpret settings failure as a product regression. This continuation makes no deployment changes.
 
 
 **Owner-gated because this changes external release state.**
+
+> [!] Owner action: confirm the PR #39 Pages deployment receipt (run `34698692211`, actual `page_url`, deployed SHA/digest, live Chromium/WebKit results). The boxes below stay unticked until that receipt is committed or confirmed by the owner.
 
 ## Deployment decision
 - [ ] Confirm desired audience/visibility.
@@ -410,7 +429,7 @@ No separate pending shell files were found beyond available committed/source art
 
 # 13. P2 — Display-safe Precision Lab shell
 
-**Committed integration exists:** `3e7da9a...`, Actions `34254380062` focused correctness/build/bundle job passed; browser jobs failed, so the milestone is not accepted. App uses PrecisionLabShell, one `useTraining`, one selection controller and one live boundary controller. The committed continuation preserves this ownership and adds the shared save controller. Whole-product browser/keyboard/viewport acceptance remains pending for the current candidate.
+**Historical (September 8–10; the Precision Lab shell was superseded by Signal Atelier, see section 0):** committed integration existed: `3e7da9a...`, Actions `34254380062` focused correctness/build/bundle job passed; browser jobs failed, so the milestone is not accepted. App uses PrecisionLabShell, one `useTraining`, one selection controller and one live boundary controller. The committed continuation preserves this ownership and adds the shared save controller. Whole-product browser/keyboard/viewport acceptance remains pending for the current candidate.
 
 
 ## Architecture
@@ -418,28 +437,28 @@ No separate pending shell files were found beyond available committed/source art
 - [x] no raw worker envelopes in presentation props. — committed `3e7da9a...`; focused/full package CI passed.
 - [x] typed display adapters. — committed `3e7da9a...`; focused/full package CI passed.
 - [x] no duplicate runtime state system. — committed `3e7da9a...`; focused/full package CI passed.
-- [ ] preserve experiment URL.
-- [ ] preserve checkpoints.
-- [ ] preserve saved runs.
-- [ ] preserve code-export selection.
-- [ ] preserve workspace profiles / Advanced Tools.
-- [ ] preserve evaluation provenance.
+- [x] preserve experiment URL. — `apps/web/src/__tests__/appShell.integration.test.tsx` ("preserves all scientific identities, checkpoints, saved records and URL across themes, guidance and navigation")
+- [x] preserve checkpoints. — `apps/web/src/__tests__/appShell.integration.test.tsx` ("preserves all scientific identities, checkpoints, saved records and URL across themes, guidance and navigation")
+- [x] preserve saved runs. — `apps/web/src/__tests__/appShell.integration.test.tsx` ("preserves all scientific identities, checkpoints, saved records and URL across themes, guidance and navigation")
+- [x] preserve code-export selection. — `apps/web/src/__tests__/appShell.integration.test.tsx` ("preserves all scientific identities, checkpoints, saved records and URL across themes, guidance and navigation") (asserts `codeExportTab`)
+- [x] preserve workspace profiles / Advanced Tools. — `apps/web/src/productShell/audienceProfiles.test.ts`, `apps/web/src/productShell/visibleShell.test.ts` and the profile switching loop in `apps/web/src/__tests__/appShell.integration.test.tsx` ("preserves all scientific identities, checkpoints, saved records and URL across themes, guidance and navigation")
+- [x] preserve evaluation provenance. — `apps/web/src/store/evidenceSelectors.test.ts` and the `latestEvaluation` identity assertions in `apps/web/src/__tests__/appShell.integration.test.tsx` ("preserves all scientific identities, checkpoints, saved records and URL across themes, guidance and navigation")
 
 ## Shell models
-- [ ] shell view model.
-- [ ] workspace-profile visibility model.
+- [x] shell view model. — `apps/web/src/productShell/visibleShell.test.ts` (Atelier visible-shell model)
+- [x] workspace-profile visibility model. — `apps/web/src/productShell/audienceProfiles.test.ts`
 - [ ] disclosure model.
 - [ ] focus model.
 - [ ] compact-layout model.
 - [ ] unit tests for each.
 
 ## Composition
-- [x] Precision Lab layout components. — committed `3e7da9a...`; focused/full package CI passed.
+- [x] Precision Lab layout components (historical; the shell was superseded by Signal Atelier). — committed `3e7da9a...`; focused/full package CI passed.
 - [x] production state only, no mock experiment state. — committed `3e7da9a...`; focused/full package CI passed.
-- [ ] Build/Run semantics preserved.
-- [ ] status/evaluation age/drift preserved.
-- [ ] keyboard navigation preserved.
-- [ ] skip link preserved.
+- [-] Build/Run semantics preserved. — superseded by Signal Atelier: Build/Run tabs were replaced by the Setup/Network/Results/Inspect workspaces (see `docs/qa/signal-atelier-acceptance.md`)
+- [x] status/evaluation age/drift preserved. — `apps/web/src/store/evidenceSelectors.test.ts` (age/drift/provenance) and `tests/e2e/precision-acceptance.spec.ts` (`expectEvidence`)
+- [x] keyboard navigation preserved. — `apps/web/src/__tests__/appShell.integration.test.tsx` ("keeps header controls in logical keyboard order") and `tests/e2e/accessibility.spec.ts`
+- [x] skip link preserved. — `tests/e2e/navigation-integrity.spec.ts` (skip-to-main keeps experiment and trained snapshot)
 
 **Exit:** new presentation exists without changing experiment semantics.
 
@@ -464,16 +483,16 @@ No separate pending shell files were found beyond available committed/source art
 - [x] Canvas integration. — committed renderer/controller tests at `6e06b678...` / `3e7da9a...`.
 - [x] accessible/SVG fallback where required. — committed renderer/controller tests at `6e06b678...` / `3e7da9a...`.
 - [x] no large live-grid copies into React state. — committed renderer/controller tests at `6e06b678...` / `3e7da9a...`.
-- [ ] accessible selection semantics.
+- [x] accessible selection semantics. — `tests/e2e/accessibility.spec.ts` (320px keyboard selection, `aria-pressed`) and `apps/web/src/components/visualization/NetworkGraph.selection.test.tsx`
 
 ## Interaction
-- [ ] pointer.
-- [ ] keyboard.
-- [ ] clear.
-- [ ] architecture changes.
-- [ ] model generation changes.
-- [ ] profile/disclosure transitions.
-- [ ] mobile fallback.
+- [x] pointer. — `apps/web/src/components/visualization/NetworkGraph.selection.test.tsx` ("selects by pointer and keyboard")
+- [x] keyboard. — `apps/web/src/components/visualization/NetworkGraph.selection.test.tsx` and `tests/e2e/precision-acceptance.spec.ts` (Enter/Space selection)
+- [x] clear. — `apps/web/src/components/visualization/NetworkSelectionDeck.test.tsx` ("forwards clear exactly once") and `apps/web/src/components/visualization/useNetworkSelectionController.test.tsx`
+- [x] architecture changes. — `apps/web/src/components/visualization/useNetworkSelectionController.test.tsx` ("clears on architecture changes")
+- [x] model generation changes. — `apps/web/src/components/visualization/useNetworkSelectionController.test.tsx` ("clears on a new generation")
+- [x] profile/disclosure transitions. — `apps/web/src/components/visualization/NetworkGraph.selection.test.tsx` ("does not clear selection on hover, blur, profile, disclosure...")
+- [x] mobile fallback. — `tests/e2e/accessibility.spec.ts` (320px neuron targets) and `tests/e2e/precision-acceptance.spec.ts` (320px)
 
 **Exit:** actual network inspection works without a second model-state architecture.
 
@@ -493,7 +512,7 @@ Evidence: committed App, DecisionBoundaryController, PrecisionLabShell and their
 ## Pinned rail (live, not a saved snapshot)
 
 - [ ] Qualify the same connected canvas across Build/Run, profiles, disclosures and evidence tabs in Chromium/WebKit.
-- [ ] Prove layout remains readable and without unintended overflow at all three required viewports.
+- [x] Prove layout remains readable and without unintended overflow at all three required viewports. — `tests/e2e/precision-acceptance.spec.ts` (1437x742, 735x860, 320x844) and `tests/e2e/precision-lab-layout.spec.ts` (document overflow assertions); CI pass counts are in the October 2026 block
 - [ ] Verify visibility/demand transitions do not lower required scientific evaluation cadence.
 
 Browser specifications retain connected-canvas identity and URL assertions, both Build/Run and all major region bounds, and 5.5 seconds at 50 steps/frame with <=1 CSS px movement and Chromium CLS = 0. These ran successfully on historical code `88e107a9` in `34410864082`; the later whole-product candidate still fails separate acceptance gates. Do not describe the current tests as merely discovered or carry an older full acceptance result forward.
@@ -508,19 +527,19 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
 
 
 ## Dataset previews
-- [ ] enumerate all production dataset IDs.
-- [ ] deterministic production generators.
-- [ ] no mock point clouds.
-- [ ] tests for every dataset.
-- [ ] correct labels/classes/axes.
+- [x] enumerate all production dataset IDs. — `apps/web/src/components/controls/datasetPreviewModel.test.ts` (`it.each(DATASET_IDS)`)
+- [x] deterministic production generators. — `apps/web/src/components/controls/datasetPreviewModel.test.ts` (equals the `generateDatasetV2` split, repeatable, frozen)
+- [x] no mock point clouds. — `apps/web/src/components/controls/datasetPreviewModel.test.ts` and `apps/web/src/components/controls/DatasetPreviewCanvas.test.tsx` ("never fake points")
+- [x] tests for every dataset. — `apps/web/src/components/controls/datasetPreviewModel.test.ts`
+- [x] correct labels/classes/axes. — `apps/web/src/components/controls/datasetPreviewModel.test.ts` (task kind and input/value domains from `getDatasetContract`) and `DatasetPreviewCanvas.test.tsx` (class colors vs regression scale)
 
 ## Loss/confusion
 - [x] compact LossChart — committed responsive/coalesced implementation + component/full-suite evidence in run `34271728441`.
 - [x] compact ConfusionMatrix — committed semantic compact implementation + component/full-suite evidence in run `34271728441`.
 - [x] provenance labels preserved — full regression suite green in run `34271728441`.
 - [x] train/test distinction preserved — full regression suite green in run `34271728441`.
-- [ ] no horizontal overflow.
-- [ ] mobile operation.
+- [x] no horizontal overflow. — `tests/e2e/precision-zoom.spec.ts` and `tests/e2e/precision-lab-layout.spec.ts` (document-level overflow assertions); `tests/e2e/accessibility.spec.ts` for intentionally scrollable evidence regions
+- [x] mobile operation. — `tests/e2e/precision-zoom.spec.ts` ("phone transport and setup actions remain reachable") and `tests/e2e/accessibility.spec.ts` (390px)
 
 ## Training controls
 - [x] Run/Pause — committed control tests + full regression suite green in run `34271728441`.
@@ -529,7 +548,7 @@ Do not implement pin/replace/clear or persistent pinned snapshots: that was a st
 - [x] speed / steps-per-frame — committed control tests + full regression suite green in run `34271728441`.
 - [x] disabled reasons — committed control tests + full regression suite green in run `34271728441`.
 - [x] keyboard — committed control tests + full regression suite green in run `34271728441`.
-- [ ] touch targets.
+- [x] touch targets. — `tests/e2e/playground-smoke.spec.ts` (44px transport target and header controls, 320–1440px) and `apps/web/src/components/visualization/NetworkGraph.selection.test.tsx` (44px neuron targets)
 
 ## Save/history
 - [x] save exact intended artifact — App-owned save controller + committed retry/capture tests green in run `34271728441`.
@@ -613,7 +632,7 @@ At 50 steps/frame for at least 5 seconds:
 
 # 18. P7 — One final production shell
 
-**September 12 completion:** `App` composes `PrecisionLabShell` and the live display exports in `PrecisionLabContent`. Dead `BuildRunShell`, `RegionShell`, `Sidebar`, `MainArea` adapters and their unused private components are retired. Relevant configuration, boundary, profile and preset tests are migrated to current production consumers. App retains training/save/selection/boundary ownership. Dead selectors are removed while live topology-stage and lesson-cue styles remain.
+**September 12 completion (historical; the shell was later replaced by `AtelierShell` in PR #38):** `App` composed `PrecisionLabShell` and the live display exports in `PrecisionLabContent`. Dead `BuildRunShell`, `RegionShell`, `Sidebar`, `MainArea` adapters and their unused private components are retired. Relevant configuration, boundary, profile and preset tests are migrated to current production consumers. App retains training/save/selection/boundary ownership. Dead selectors are removed while live topology-stage and lesson-cue styles remain.
 
 The complete package suite, typechecks, production build and unchanged bundle budgets pass in the completion checkout. Final cross-browser, recovery, performance, review and exact-commit provenance receipts belong to [PR #36](https://github.com/DenseDevKev/neural-network-playground/pull/36); no historical result substitutes for the final candidate.
 
@@ -638,6 +657,8 @@ Qualification keeps the existing fixed bundle caps, zero Playwright retries, fau
 ---
 
 # 20. Post-release evaluation
+
+Evaluation written 2026-10-02: [docs/qa/2026-10-post-release-evaluation.md](docs/qa/2026-10-post-release-evaluation.md). It is an agent walkthrough of the production build, not user research; the "gather actual usage" box therefore stays open and the single milestone it proposes needs owner approval.
 
 Do **not** automatically invent another giant roadmap.
 
