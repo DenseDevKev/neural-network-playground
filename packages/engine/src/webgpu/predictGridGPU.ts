@@ -79,115 +79,94 @@ function getGpuActivationId(activation: ActivationType): number {
 //   9 (storage, read)        neuronOffsets   — u32[MAX_GPU_LAYERS-1]
 //                                              cumulative sum of fanOuts
 
+// Deliberately compact (no comments or alignment): the string ships verbatim in the
+// worker bundle, so the layout documentation above is the reference.
 const SHADER_SOURCE = /* wgsl */`
-const MAX_WIDTH: u32 = ${MAX_GPU_WIDTH}u;
-const MAX_LAYERS: u32 = ${MAX_GPU_LAYERS}u;
-
-@group(0) @binding(0) var<storage, read>       weights      : array<f32>;
-@group(0) @binding(1) var<storage, read>       biases       : array<f32>;
-@group(0) @binding(2) var<storage, read>       gridInputs   : array<f32>;
-@group(0) @binding(3) var<storage, read_write> outputGrid   : array<f32>;
-@group(0) @binding(4) var<storage, read_write> neuronGrids  : array<f32>;
-
-struct Meta {
-    gridLen        : u32,
-    inputSize      : u32,
-    numLayers      : u32,    // count of weight matrices = layers - 1
-    actHidden      : u32,
-    actOutput      : u32,
-    writeNeurons   : u32,    // 0 = skip neuronGrids, 1 = write
-    _pad0          : u32,
-    _pad1          : u32,
+const MAX_WIDTH:u32=${MAX_GPU_WIDTH}u;
+const MAX_LAYERS:u32=${MAX_GPU_LAYERS}u;
+@group(0)@binding(0)var<storage,read> weights:array<f32>;
+@group(0)@binding(1)var<storage,read> biases:array<f32>;
+@group(0)@binding(2)var<storage,read> gridInputs:array<f32>;
+@group(0)@binding(3)var<storage,read_write> outputGrid:array<f32>;
+@group(0)@binding(4)var<storage,read_write> neuronGrids:array<f32>;
+struct Meta{
+gridLen:u32,
+inputSize:u32,
+numLayers:u32,
+actHidden:u32,
+actOutput:u32,
+writeNeurons:u32,
+_pad0:u32,
+_pad1:u32,
 };
-@group(0) @binding(5) var<uniform>            params       : Meta;
-@group(0) @binding(6) var<storage, read>       layerSizes    : array<u32>;
-@group(0) @binding(7) var<storage, read>       weightOffsets : array<u32>;
-@group(0) @binding(8) var<storage, read>       biasOffsets   : array<u32>;
-@group(0) @binding(9) var<storage, read>       neuronOffsets : array<u32>;
-
-fn apply_activation(x: f32, id: u32) -> f32 {
-    // Branches in switch statements compile to a select on most backends,
-    // so this stays branch-free at runtime for any single thread.
-    switch (id) {
-        case 0u: { return max(0.0, x); }                          // relu
-        case 1u: { return tanh(x); }                              // tanh
-        case 2u: { return 1.0 / (1.0 + exp(-x)); }                // sigmoid
-        case 3u: { return x; }                                    // linear
-        case 4u: { return select(0.01 * x, x, x > 0.0); }         // leakyRelu
-        case 5u: { return select(exp(x) - 1.0, x, x >= 0.0); }    // elu
-        case 6u: { return x / (1.0 + exp(-x)); }                  // swish
-        case 7u: {                                                // softplus
-            if (x > 0.0) {
-                return x + log(1.0 + exp(-x));
-            }
-            return log(1.0 + exp(x));
-        }
-        default: { return x; }
-    }
+@group(0)@binding(5)var<uniform> params:Meta;
+@group(0)@binding(6)var<storage,read> layerSizes:array<u32>;
+@group(0)@binding(7)var<storage,read> weightOffsets:array<u32>;
+@group(0)@binding(8)var<storage,read> biasOffsets:array<u32>;
+@group(0)@binding(9)var<storage,read> neuronOffsets:array<u32>;
+fn apply_activation(x:f32,id:u32)-> f32{
+switch(id){
+case 0u:{return max(0.0,x);}
+case 1u:{return tanh(x);}
+case 2u:{return 1.0/(1.0+exp(-x));}
+case 3u:{return x;}
+case 4u:{return select(0.01*x,x,x > 0.0);}
+case 5u:{return select(exp(x)- 1.0,x,x >=0.0);}
+case 6u:{return x/(1.0+exp(-x));}
+case 7u:{
+if(x > 0.0){
+return x+log(1.0+exp(-x));
 }
-
+return log(1.0+exp(x));
+}
+default:{return x;}
+}
+}
 @compute @workgroup_size(64)
-fn forward_grid(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let pixel : u32 = gid.x;
-    if (pixel >= params.gridLen) {
-        return;
-    }
-
-    // Two ping-pong scratch arrays. WGSL forbids dynamic-size private
-    // arrays, but fixed-size arrays of MAX_WIDTH cover every supported
-    // network. The runtime cap matches the playground's per-layer maximum.
-    var bufA : array<f32, MAX_WIDTH>;
-    var bufB : array<f32, MAX_WIDTH>;
-
-    // Load the input vector for this pixel.
-    let inputBase : u32 = pixel * params.inputSize;
-    let inputSize = params.inputSize;
-    for (var i : u32 = 0u; i < inputSize; i = i + 1u) {
-        bufA[i] = gridInputs[inputBase + i];
-    }
-    var prevLen : u32 = inputSize;
-    var srcIsA : bool = true;
-
-    let numLayers = params.numLayers;
-    for (var l : u32 = 0u; l < numLayers; l = l + 1u) {
-        let fanIn  : u32 = layerSizes[l];
-        let fanOut : u32 = layerSizes[l + 1u];
-        let wBase  : u32 = weightOffsets[l];
-        let bBase  : u32 = biasOffsets[l];
-        let isLast : bool = (l + 1u == numLayers);
-        let actId  : u32 = select(params.actHidden, params.actOutput, isLast);
-
-        for (var n : u32 = 0u; n < fanOut; n = n + 1u) {
-            var sum : f32 = biases[bBase + n];
-            let rowStart : u32 = wBase + n * fanIn;
-            for (var k : u32 = 0u; k < fanIn; k = k + 1u) {
-                let prevVal : f32 = select(bufB[k], bufA[k], srcIsA);
-                sum = sum + weights[rowStart + k] * prevVal;
-            }
-            let out : f32 = apply_activation(sum, actId);
-            if (srcIsA) { bufB[n] = out; } else { bufA[n] = out; }
-        }
-
-        // Optionally write this layer's activations to the per-neuron
-        // grid so the visualization can show the inner heatmaps.
-        if (params.writeNeurons == 1u) {
-            let nBase : u32 = neuronOffsets[l];
-            for (var n : u32 = 0u; n < fanOut; n = n + 1u) {
-                let val : f32 = select(bufA[n], bufB[n], srcIsA);
-                neuronGrids[(nBase + n) * params.gridLen + pixel] = val;
-            }
-        }
-
-        srcIsA = !srcIsA;
-        prevLen = fanOut;
-    }
-
-    // Last layer's output[0] is the decision-boundary value. After the
-    // final swap, the produced layer lives in the buffer we just wrote to:
-    //   if srcIsA is now true, that means we just wrote into bufA on the
-    //   last iteration → output is in bufA. (And vice versa.)
-    let result : f32 = select(bufB[0], bufA[0], srcIsA);
-    outputGrid[pixel] = result;
+fn forward_grid(@builtin(global_invocation_id)gid:vec3<u32>){
+let pixel:u32=gid.x;
+if(pixel >=params.gridLen){
+return;
+}
+var bufA:array<f32,MAX_WIDTH>;
+var bufB:array<f32,MAX_WIDTH>;
+let inputBase:u32=pixel*params.inputSize;
+let inputSize=params.inputSize;
+for(var i:u32=0u;i < inputSize;i=i+1u){
+bufA[i]=gridInputs[inputBase+i];
+}
+var prevLen:u32=inputSize;
+var srcIsA:bool=true;
+let numLayers=params.numLayers;
+for(var l:u32=0u;l < numLayers;l=l+1u){
+let fanIn:u32=layerSizes[l];
+let fanOut:u32=layerSizes[l+1u];
+let wBase:u32=weightOffsets[l];
+let bBase:u32=biasOffsets[l];
+let isLast:bool=(l+1u==numLayers);
+let actId:u32=select(params.actHidden,params.actOutput,isLast);
+for(var n:u32=0u;n < fanOut;n=n+1u){
+var sum:f32=biases[bBase+n];
+let rowStart:u32=wBase+n*fanIn;
+for(var k:u32=0u;k < fanIn;k=k+1u){
+let prevVal:f32=select(bufB[k],bufA[k],srcIsA);
+sum=sum+weights[rowStart+k]*prevVal;
+}
+let out:f32=apply_activation(sum,actId);
+if(srcIsA){bufB[n]=out;}else{bufA[n]=out;}
+}
+if(params.writeNeurons==1u){
+let nBase:u32=neuronOffsets[l];
+for(var n:u32=0u;n < fanOut;n=n+1u){
+let val:f32=select(bufA[n],bufB[n],srcIsA);
+neuronGrids[(nBase+n)*params.gridLen+pixel]=val;
+}
+}
+srcIsA=!srcIsA;
+prevLen=fanOut;
+}
+let result:f32=select(bufB[0],bufA[0],srcIsA);
+outputGrid[pixel]=result;
 }
 `;
 
