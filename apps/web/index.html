@@ -8,6 +8,7 @@
     <script>
         (() => { let p = 'system'; try { p = localStorage.getItem('nn-playground-theme') || p; } catch {} const t = p === 'light' || p === 'dark' ? p : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; document.documentElement.dataset.theme = t; document.documentElement.style.colorScheme = t; })();
     </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>NN·FORGE — Neural Network Playground</title>
     <meta name="description"
         content="An interactive neural network playground for learning — explore classification, regression, and decision boundaries in your browser." />
