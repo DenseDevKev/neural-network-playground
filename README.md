@@ -121,12 +121,16 @@ current release proof.
 ## 🚢 Deployment
 
 The app is a fully static SPA — no backend and no runtime environment variables.
-Once the owner has approved public publication and enabled Pages with GitHub
-Actions, successful CI for a pushed `main` SHA permits deployment of that exact
-tested commit. A private source repository does not make its Pages site private.
-The separate release-verification workflow never publishes the application.
-For self-hosting or custom base-path configuration, see
-[docs/deployment.md](docs/deployment.md).
+A successful CI run for a pushed `main` SHA lets the `Deploy to GitHub Pages`
+workflow publish that exact tested commit; the
+[run for the PR #39 merge](https://github.com/DenseDevKev/neural-network-playground/actions/runs/34698692211)
+completed successfully. The repository does not commit a deployment receipt
+naming the live `page_url`, so this README does not state a live URL; the
+conventional project URL and the receipt rules are in
+[docs/deployment.md](docs/deployment.md). <!-- Owner: confirm the PR #39 deployment receipt and add the live URL here. -->
+A private source repository would not make its Pages site private. The separate
+release-verification workflow never publishes the application. For self-hosting
+or custom base-path configuration, see [docs/deployment.md](docs/deployment.md).
 
 ## 🧪 Testing
 
